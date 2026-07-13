@@ -1,0 +1,149 @@
+# Sticky Notes
+
+A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with a **Rust** backend (axum + SQLite). Built for smoothness — every interaction is optimistic-first, every layout change animates, and collaboration syncs live over WebSockets.
+
+<p align="center"><em>Masonry grid · drag-to-reorder · checklists with typing suggestions · sharing & live co-editing · reminders · labels · images · dark mode</em></p>
+
+## Features
+
+**Note types**
+- Text notes and **checklists** (convert between them any time)
+- **Image attachments** (rendered inline) and **any other file type** (stored and served as safe downloads with original filename — PDFs, archives, audio, spreadsheets…)
+- Checklists **remember what you've checked off** and **suggest items while you type**, in a popup anchored under the row with the matched prefix bolded — type "mi" and get "Milk" from your history; your most frequent items surface when the field is empty. Perfect for grocery lists.
+- Checking an item **animates it down into a collapsible "checked" section** where it stays visible; unchecking glides it back
+- **Drag handles** (⠿) reorder checklist items with live animated reflow
+- **Undo/redo** in the editor (bottom-bar arrows, Cmd/Ctrl+Z / Shift+Z): typing groups into bursts; checks, adds, removes, reorders, and conversions are each one step
+
+**Organization**
+- Keep's classic 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
+- Flat labels (create/rename/delete; filter from the drawer)
+- Pinning, archive, trash (auto-purged after 7 days)
+- **Drag-to-reorder** with animated reflow, edge auto-scroll, haptics
+- Grid / single-column list toggle; responsive 1–5 columns from phone to desktop
+- **Sort by** custom order / recently edited / recently added / oldest
+- Library-wide instant search + **find-in-note** with match highlighting
+- **Semantic search** (✨ toggle in the search bar): notes are embedded locally with an ONNX model (all-MiniLM-L6-v2, no external AI services) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vector storage is swappable: built-in SQLite brute-force by default, **Qdrant** when `STICKY_NOTES_QDRANT_URL` is set.
+
+**Per-user settings** (synced across devices, gear icon in the drawer)
+- Theme (system/light/dark), default grid vs list layout
+- Date format (5 styles) and 12h/24h time — applied to reminder chips and "Edited" stamps everywhere
+- **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
+
+**Reminders**
+- Time-based reminders per note, shown as chips (overdue = struck through) and collected in a drawer "Reminders" view. Local to the app — no calendar integration.
+
+**Collaboration**
+- User accounts (username + password, argon2-hashed, token sessions)
+- Share notes with other users by username; everyone can edit, only the owner can trash/delete/share
+- **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
+- Labels stay personal — each participant tags a shared note with their own labels
+
+**Out of scope** (would need AI services / heavy platform APIs): drawings, audio recording, voice transcription, OCR. The schema (attachments table, note `kind` field) leaves room for them.
+
+## Architecture
+
+```
+sticky_notes/
+├── backend/            Rust: axum + SQLite
+│   ├── src/
+│   │   ├── main.rs       wiring (swap the repository here)
+│   │   ├── lib.rs        router (build_app) — reused by tests
+│   │   ├── store/        Repository trait  ← the DB swap point
+│   │   │   └── sqlite.rs SQLite implementation (sqlx)
+│   │   ├── handlers.rs   HTTP + WebSocket handlers, permissions
+│   │   ├── auth.rs       argon2 hashing + bearer-token extractor
+│   │   ├── ws.rs         per-user change-event fan-out hub
+│   │   ├── files.rs      attachment blobs on disk
+│   │   └── models.rs     domain + payload types
+│   └── tests/api.rs    21 integration tests (in-memory SQLite)
+└── app/                Flutter
+    ├── lib/
+    │   ├── api/          Api interface + HTTP/WS client
+    │   ├── state/        NotesStore (optimistic + retry queue), AuthStore
+    │   ├── widgets/      AnimatedMasonry (custom), note card, dialogs…
+    │   ├── screens/      home, editor, login
+    │   └── theme.dart    Keep palette, light/dark themes
+    └── test/           33 unit + widget tests (FakeApi)
+```
+
+**Swappable storage.** All persistence goes through the `Repository` trait ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; to move to Postgres, implement the trait and change one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` (disk today, S3 tomorrow).
+
+**Optimistic-first client.** Every action updates the UI immediately; writes flow through a serial queue that retries on network failure (a banner shows offline state). The network is never in the tap path — that's where the smoothness comes from.
+
+**Custom animated masonry.** Keep's grid is a masonry with drag-to-reorder; no Flutter package does both, so [app/lib/widgets/masonry.dart](app/lib/widgets/masonry.dart) implements it: tiles are measured after layout and absolutely positioned, so any reflow — reorder, edit, column change — glides tiles to their new spots. Long-press lifts a card; siblings flow around the pointer in real time.
+
+## Running it
+
+### Docker (everything in one command)
+
+```sh
+docker compose up -d        # builds web + server, starts Qdrant → http://localhost:8787
+```
+
+The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Qdrant backs semantic search inside the stack.
+
+### Local development
+
+Prereqs: Rust (1.85+), Flutter (3.22+).
+
+**Backend** (port 8787):
+
+```sh
+cd backend
+cargo run                                              # built-in vector index
+# or with Qdrant:
+docker compose up -d qdrant
+STICKY_NOTES_QDRANT_URL=http://localhost:6334 cargo run
+```
+
+Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_QDRANT_URL` (optional vector DB), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely). The embedding model (~80 MB) downloads to a local cache on first start.
+
+**Flutter app** — pick a device:
+
+```sh
+cd app
+flutter run -d chrome                 # web (dev)
+flutter run -d <ios-or-android-id>    # mobile
+```
+
+The app talks to `http://localhost:8787` by default. Override with `--dart-define=API_BASE=http://<host>:8787` — needed on Android emulators (`http://10.0.2.2:8787`) or real phones (your machine's LAN IP).
+
+**Single-binary production deploy:** build the web app, then run the server — it detects and serves the bundle:
+
+```sh
+cd app && flutter build web --release
+cd ../backend && cargo run            # → open http://localhost:8787
+```
+
+## Tests
+
+```sh
+cd backend && cargo test    # 21 integration tests over the HTTP API
+cd app && flutter test      # 33 store/model/widget tests
+```
+
+Backend tests run the real router against in-memory SQLite: auth flows, per-user scoping, sharing permission matrix, personal labels on shared notes, checklist history recording, reminders, attachments (multipart upload → serve → delete), trash purge. Flutter tests cover the optimistic store (drafts, debounce, offline retry queue, 4xx dropping), suggestion ranking, sort/search/views, and widget behavior (checklist cards, masonry drag-reorder, editor lifecycle, find-in-note).
+
+## API sketch
+
+All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` or `/auth/login`).
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET /auth/me` | Accounts & sessions |
+| `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` clears) |
+| `POST /notes/reorder` | Persist drag order (renumbers the given ids) |
+| `POST /notes/{id}/collaborators`, `DELETE /notes/{id}/collaborators/{user}` | Sharing |
+| `POST /notes/{id}/attachments`, `DELETE /attachments/{id}`, `GET /files/{id}` | Images (files are served unauthenticated by unguessable UUID so `<img>` tags work) |
+| `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per-user) |
+| `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
+| `GET /search?q=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
+| `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
+| `GET /ws?token=…` | WebSocket: `{"type":"notes_changed"}` pushes (notes *and* settings) |
+
+## Design notes & trade-offs
+
+- **Co-editing is last-write-wins** at note granularity (no CRDT). The WS nudge keeps everyone fresh; a reorder mid-drag from another device is never committed as your drag.
+- **Pin/archive/order are shared** on a shared note (Keep makes them per-user; kept global for simplicity).
+- Client-generated UUIDs let notes be created offline and synced later; the server accepts them idempotently (409 on reuse).
+- Checklist history records on the *check-off* transition, credited to whoever checked it, capped at 500 entries per user.

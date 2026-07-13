@@ -1,0 +1,10 @@
+.DS_Store
+*.log
+
+# Runtime data — SQLite DB, uploaded files, downloaded embedding model
+backend/sticky_notes.db
+backend/uploads/
+backend/.fastembed_cache/
+
+# Personal Claude Code settings (launch.json is shared, this is not)
+.claude/settings.local.json

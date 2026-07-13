@@ -1,0 +1,28 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "flutter-web",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": [
+        "run",
+        "-d",
+        "web-server",
+        "--web-port=5271",
+        "--web-hostname=localhost"
+      ],
+      "cwd": "app",
+      "port": 5271
+    },
+    {
+      "name": "prod-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "STICKY_NOTES_ADDR=0.0.0.0:8790 STICKY_NOTES_DB=sticky_notes.db STICKY_NOTES_SEMANTIC=off ./target/debug/sticky-notes-server"
+      ],
+      "cwd": "backend",
+      "port": 8790
+    }
+  ]
+}

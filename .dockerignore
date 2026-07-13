@@ -1,0 +1,10 @@
+backend/target
+backend/sticky_notes.db
+backend/uploads
+app/build
+app/.dart_tool
+app/.idea
+app/ios
+app/android
+.git
+*.md

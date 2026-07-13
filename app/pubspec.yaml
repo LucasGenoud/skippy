@@ -1,0 +1,32 @@
+name: sticky_notes
+description: "A Google Keep style notes app with a Rust backend."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  http: ^1.2.0
+  http_parser: ^4.0.0
+  animations: ^2.0.11
+  uuid: ^4.4.0
+  shared_preferences: ^2.3.0
+  web_socket_channel: ^3.0.0
+  image_picker: ^1.1.0
+  file_picker: ^10.0.0
+  url_launcher: ^6.3.0
+  web: ^1.1.0
+  flutter_markdown_plus: ^1.0.12
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
