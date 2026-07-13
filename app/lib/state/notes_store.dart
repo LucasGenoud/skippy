@@ -78,6 +78,11 @@ class NotesStore extends ChangeNotifier {
 
   List<Label> get labels => List.unmodifiable(_labels);
 
+  /// Notes for a data export: everything except trash, in display order.
+  List<Note> get notesForExport =>
+      _notes.where((n) => !n.trashed).toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
+
   Note? noteById(String id) {
     for (final n in _notes) {
       if (n.id == id) return n;

@@ -6,6 +6,8 @@ import 'package:sticky_notes/models/note.dart';
 import 'package:sticky_notes/screens/editor_screen.dart';
 import 'package:sticky_notes/state/notes_store.dart';
 import 'package:sticky_notes/state/settings_store.dart';
+import 'package:sticky_notes/widgets/animated_checklist.dart';
+import 'package:sticky_notes/widgets/markdown_toolbar.dart';
 import 'package:sticky_notes/widgets/masonry.dart';
 import 'package:sticky_notes/widgets/note_card.dart';
 import 'package:sticky_notes/widgets/quick_add_bar.dart';
@@ -262,6 +264,70 @@ void main() {
       expect(find.text('Close'), findsNothing);
       await flushTimers(tester);
     });
+
+    testWidgets('checklist icon composes a checklist inline, not in a popup', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(harness(store, const QuickAddBar()));
+
+      await tester.tap(find.byTooltip('New checklist'));
+      await tester.pumpAndSettle();
+
+      // Editing happens in the bar itself — no editor route is pushed.
+      expect(find.byType(AnimatedChecklist), findsOneWidget);
+      expect(find.byType(EditorScreen), findsNothing);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'List item'),
+        'Milk',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'List item'),
+        'Eggs',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      final note = store.notesFor(ViewSelection.notes, '').others.single;
+      expect(note.kind, NoteKind.checklist);
+      expect(note.items.map((i) => i.text), ['Milk', 'Eggs']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('markdown icon composes markdown inline with a toolbar', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(harness(store, const QuickAddBar()));
+
+      await tester.tap(find.byTooltip('New markdown note'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownToolbar), findsOneWidget);
+      expect(find.byType(EditorScreen), findsNothing);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Markdown…'),
+        'hello',
+      );
+      // Bold with no selection drops the markers in at the caret.
+      await tester.tap(find.byTooltip('Bold'));
+      await tester.pump();
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      final note = store.notesFor(ViewSelection.notes, '').others.single;
+      expect(note.kind, NoteKind.markdown);
+      expect(note.content, 'hello****');
+      await flushTimers(tester);
+    });
   });
 
   group('EditorScreen', () {
@@ -456,6 +522,33 @@ void main() {
       },
     );
 
+    testWidgets('a checked-off item is offered back as a suggestion', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [const ChecklistItem(id: 'a', text: 'Milk')],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Check it off — it stays on the list, struck through, and remembered.
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byIcon(Icons.history), findsNothing);
+
+      // Focusing the new-item row now suggests the checked item back, so it
+      // can be re-added — this is what was broken (checked items stayed on
+      // the list and so were wrongly excluded from their own suggestions).
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+      expect(find.byIcon(Icons.history), findsOneWidget);
+      await flushTimers(tester);
+    });
+
     testWidgets('undo and redo walk the editor history', (tester) async {
       api.notes['n1'] = serverNote('n1', title: 'T', content: 'hello');
       await store.load();
@@ -518,6 +611,84 @@ void main() {
       await tester.pump();
       expect(find.text('3 found'), findsOneWidget);
       await flushTimers(tester);
+    });
+  });
+
+  group('MarkdownToolbar', () {
+    Future<TextEditingController> pumpToolbar(
+      WidgetTester tester,
+      String text,
+      TextSelection selection,
+    ) async {
+      final controller = TextEditingController(text: text)
+        ..selection = selection;
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: MarkdownToolbar(controller: controller))),
+      );
+      return controller;
+    }
+
+    testWidgets('wraps the current selection in bold markers', (tester) async {
+      final controller = await pumpToolbar(
+        tester,
+        'make me bold',
+        const TextSelection(baseOffset: 8, extentOffset: 12),
+      );
+      await tester.tap(find.byTooltip('Bold'));
+      await tester.pump();
+      expect(controller.text, 'make me **bold**');
+      // The wrapped word stays selected so it can be re-styled.
+      expect(controller.selection.textInside(controller.text), 'bold');
+      controller.dispose();
+    });
+
+    testWidgets('drops markers at the caret when nothing is selected', (
+      tester,
+    ) async {
+      final controller = await pumpToolbar(
+        tester,
+        'x',
+        const TextSelection.collapsed(offset: 1),
+      );
+      await tester.tap(find.byTooltip('Italic'));
+      await tester.pump();
+      expect(controller.text, 'x__');
+      // Caret parked between the markers.
+      expect(controller.selection.baseOffset, 2);
+      controller.dispose();
+    });
+
+    testWidgets('sets and re-levels the heading on the caret line', (
+      tester,
+    ) async {
+      final controller = await pumpToolbar(
+        tester,
+        'Groceries',
+        const TextSelection.collapsed(offset: 3),
+      );
+      await tester.tap(find.byTooltip('Heading 2'));
+      await tester.pump();
+      expect(controller.text, '## Groceries');
+      // Re-leveling replaces the marker instead of stacking it.
+      await tester.tap(find.byTooltip('Heading 1'));
+      await tester.pump();
+      expect(controller.text, '# Groceries');
+      controller.dispose();
+    });
+
+    testWidgets('inserts a link with the url placeholder selected', (
+      tester,
+    ) async {
+      final controller = await pumpToolbar(
+        tester,
+        'see Flutter',
+        const TextSelection(baseOffset: 4, extentOffset: 11),
+      );
+      await tester.tap(find.byTooltip('Link'));
+      await tester.pump();
+      expect(controller.text, 'see [Flutter](url)');
+      expect(controller.selection.textInside(controller.text), 'url');
+      controller.dispose();
     });
   });
 }

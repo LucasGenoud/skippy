@@ -1,3 +1,4 @@
+import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ import '../widgets/animated_checklist.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
+import '../widgets/markdown_toolbar.dart';
 import '../widgets/share_dialog.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
@@ -33,10 +35,66 @@ import '../widgets/share_dialog.dart';
 class EditorScreen extends StatefulWidget {
   final String? noteId;
   final NoteKind kind;
-  const EditorScreen({super.key, this.noteId, this.kind = NoteKind.text});
+
+  /// Presented as a centered dialog (wide/desktop layouts) rather than a
+  /// fullscreen route: the body shrinks to its content and the back arrow
+  /// becomes a close button. Use [openNoteEditor] instead of setting this
+  /// directly.
+  final bool modal;
+
+  const EditorScreen({
+    super.key,
+    this.noteId,
+    this.kind = NoteKind.text,
+    this.modal = false,
+  });
 
   @override
   State<EditorScreen> createState() => _EditorScreenState();
+}
+
+/// Whether this layout opens notes as a centered modal (Keep's web behavior)
+/// instead of fullscreen. Same breakpoint as the quick-add bar.
+bool wantsModalEditor(BuildContext context) =>
+    MediaQuery.sizeOf(context).width >= 600;
+
+/// Open the editor the Keep way for the current layout: a centered
+/// fade-scale modal over a dimmed barrier on wide screens, or the given
+/// fullscreen container-transform ([openFullscreen], from an enclosing
+/// OpenContainer) on narrow ones. Dismissing the modal — barrier tap,
+/// Escape, or the close button — finalizes the note exactly like popping
+/// the fullscreen editor.
+Future<void> openNoteEditor(
+  BuildContext context, {
+  required VoidCallback openFullscreen,
+  String? noteId,
+  NoteKind kind = NoteKind.text,
+}) {
+  if (!wantsModalEditor(context)) {
+    openFullscreen();
+    return Future<void>.value();
+  }
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Close note',
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    transitionDuration: const Duration(milliseconds: 220),
+    transitionBuilder: (context, animation, secondaryAnimation, child) =>
+        FadeScaleTransition(animation: animation, child: child),
+    pageBuilder: (context, animation, secondaryAnimation) => Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 600,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: EditorScreen(noteId: noteId, kind: kind, modal: true),
+        ),
+      ),
+    ),
+  );
 }
 
 /// One undo/redo step: the note's editable content at a point in time.
@@ -413,7 +471,10 @@ class _EditorScreenState extends State<EditorScreen> {
   /// Files dragged in from the OS attach to this note (web only).
   Future<void> _addDroppedFiles(List<DroppedFile> files) async {
     if (_note?.trashed ?? false) return;
-    await _uploadAll(files, failureMessage: "Couldn't upload the dropped files");
+    await _uploadAll(
+      files,
+      failureMessage: "Couldn't upload the dropped files",
+    );
   }
 
   Future<void> _editReminder() async {
@@ -528,7 +589,9 @@ class _EditorScreenState extends State<EditorScreen> {
     final archived = note?.archived ?? false;
     return AppBar(
       backgroundColor: Colors.transparent,
-      leading: BackButton(onPressed: () => Navigator.of(context).maybePop()),
+      leading: widget.modal
+          ? CloseButton(onPressed: () => Navigator.of(context).maybePop())
+          : BackButton(onPressed: () => Navigator.of(context).maybePop()),
       title: _finding
           ? TextField(
               controller: _findController,
@@ -663,16 +726,27 @@ class _EditorScreenState extends State<EditorScreen> {
             const SingleActivator(LogicalKeyboardKey.keyY, control: true):
                 _redo,
           },
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            appBar: _buildAppBar(note),
+          child: _editorShell(
+            note: note,
             body: SafeArea(
-              child: Center(
+              // heightFactor 1 makes the modal hug its content instead of
+              // stretching to the dialog's max height; fullscreen keeps the
+              // usual fill (the column is max-size there anyway).
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: widget.modal ? 1.0 : null,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 680),
                   child: Column(
+                    // Modal: shrink to the note's content (the dialog grows
+                    // with the note, like Keep's web editor) instead of
+                    // filling the screen.
+                    mainAxisSize: widget.modal
+                        ? MainAxisSize.min
+                        : MainAxisSize.max,
                     children: [
-                      Expanded(
+                      Flexible(
+                        fit: widget.modal ? FlexFit.loose : FlexFit.tight,
                         child: GestureDetector(
                           onTap: trashed
                               ? () => showAppSnack(
@@ -680,6 +754,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                 )
                               : null,
                           child: ListView(
+                            shrinkWrap: widget.modal,
                             padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                             children: [
                               TextField(
@@ -708,6 +783,15 @@ class _EditorScreenState extends State<EditorScreen> {
                           ),
                         ),
                       ),
+                      // Formatting accessory bar while editing markdown.
+                      if (_kind == NoteKind.markdown &&
+                          !_previewMarkdown &&
+                          !_finding &&
+                          !trashed)
+                        MarkdownToolbar(
+                          controller: _contentController,
+                          focusNode: _contentFocus,
+                        ),
                       if (_uploading)
                         const LinearProgressIndicator(minHeight: 2),
                       _BottomBar(
@@ -749,6 +833,29 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Fullscreen: a regular Scaffold. Modal: no Scaffold — it would expand to
+  /// the dialog's max height — so a min-height column lets the dialog hug the
+  /// note's content, Keep-style.
+  Widget _editorShell({required Note? note, required Widget body}) {
+    if (!widget.modal) {
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: _buildAppBar(note),
+        body: body,
+      );
+    }
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildAppBar(note),
+          Flexible(child: body),
+        ],
       ),
     );
   }
@@ -829,7 +936,9 @@ class _EditorScreenState extends State<EditorScreen> {
               onDeleted: trashed
                   ? null
                   : () => _store.toggleLabelOnNote(note.id, label.id),
-              onPressed: trashed ? null : () => LabelsSheet.show(context, note.id),
+              onPressed: trashed
+                  ? null
+                  : () => LabelsSheet.show(context, note.id),
             ),
         ],
       ),
@@ -933,8 +1042,9 @@ class _EditorScreenState extends State<EditorScreen> {
                       ),
                       Text(
                         formatBytes(attachment.size),
-                        style: Theme.of(context).textTheme.labelSmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1176,17 +1286,20 @@ class _BottomBar extends StatelessWidget {
             tooltip: 'Collaborators',
             onPressed: onShare,
           ),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              editedStamp,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          // Takes the whole middle band (not a third of it, the way two
+          // Spacers flanking a Flexible would) so the stamp isn't needlessly
+          // truncated to "Edit…".
+          Expanded(
+            child: Center(
+              child: Text(
+                editedStamp,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
             ),
           ),
-          const Spacer(),
           IconButton(
             icon: const Icon(Icons.undo),
             tooltip: 'Undo',

@@ -616,10 +616,18 @@ class _NewNoteFabs extends StatelessWidget {
           closedShape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(size >= 56 ? 16 : 12),
           ),
-          closedBuilder: (context, open) => SizedBox(
-            width: size,
-            height: size,
-            child: Icon(icon, size: size / 2, color: onColor),
+          tappable: false,
+          closedBuilder: (context, open) => InkWell(
+            customBorder: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(size >= 56 ? 16 : 12),
+            ),
+            onTap: () =>
+                openNoteEditor(context, openFullscreen: open, kind: kind),
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: Icon(icon, size: size / 2, color: onColor),
+            ),
           ),
           openBuilder: (context, close) =>
               EditorScreen(noteId: null, kind: kind),

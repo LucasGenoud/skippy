@@ -301,14 +301,17 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   ({String rowId, LayerLink link, List<String> suggestions})? _popupTarget() {
     if (widget.readOnly) return null;
-    final existingTexts = {
+    // Only items still *active* (unchecked) block a suggestion. A checked-off
+    // item is done, so offering it back is exactly what you want — re-adding
+    // last week's groceries is the whole point of the history.
+    final activeTexts = {
       for (final item in widget.items)
-        if (item.text.trim().isNotEmpty) item.text,
+        if (!item.done && item.text.trim().isNotEmpty) item.text,
     };
     if (_newRow.focusNode.hasFocus) {
       final suggestions = widget.suggestionsFor(
         _newRow.controller.text,
-        existingTexts,
+        activeTexts,
       );
       if (suggestions.isEmpty) return null;
       return (rowId: _kNewRowId, link: _newRow.link, suggestions: suggestions);
@@ -318,7 +321,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       if (h.focusNode.hasFocus &&
           h.typedSinceFocus &&
           h.controller.text.trim().isNotEmpty) {
-        final exclude = {...existingTexts}..remove(_itemById(entry.key)?.text);
+        final exclude = {...activeTexts}..remove(_itemById(entry.key)?.text);
         final suggestions = widget.suggestionsFor(h.controller.text, exclude);
         if (suggestions.isEmpty) return null;
         return (rowId: entry.key, link: h.link, suggestions: suggestions);

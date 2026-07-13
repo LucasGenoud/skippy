@@ -63,8 +63,15 @@ class _NoteTileState extends State<NoteTile> {
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: borderColor),
           ),
-          closedBuilder: (context, open) =>
-              _NoteCardContent(note: note, hovered: _hovered),
+          // Tap handling is ours: wide layouts open a centered modal
+          // instead of letting the container expand fullscreen.
+          tappable: false,
+          closedBuilder: (context, open) => InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () =>
+                openNoteEditor(context, openFullscreen: open, noteId: note.id),
+            child: _NoteCardContent(note: note, hovered: _hovered),
+          ),
           openBuilder: (context, close) => EditorScreen(noteId: note.id),
         ),
       ),

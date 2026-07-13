@@ -1,0 +1,120 @@
+import 'dart:convert';
+
+import '../models/note.dart';
+
+/// Serialization targets for a bulk note export.
+enum ExportFormat {
+  json('JSON', 'json', 'application/json'),
+  markdown('Markdown', 'md', 'text/markdown'),
+  text('Plain text', 'txt', 'text/plain');
+
+  final String label;
+  final String extension;
+  final String mime;
+  const ExportFormat(this.label, this.extension, this.mime);
+}
+
+/// A timestamped, filesystem-safe download name, e.g.
+/// `sticky-notes-2026-07-13.md`.
+String exportFilename(ExportFormat format, [DateTime? now]) {
+  final d = now ?? DateTime.now();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return 'sticky-notes-${d.year}-${two(d.month)}-${two(d.day)}.${format.extension}';
+}
+
+/// Render [notes] into a single [format] document. [labels] resolves the
+/// label ids carried on each note into human names.
+String exportNotes(
+  List<Note> notes,
+  ExportFormat format, {
+  List<Label> labels = const [],
+  DateTime? now,
+}) {
+  final names = {for (final l in labels) l.id: l.name};
+  return switch (format) {
+    ExportFormat.json => _toJson(notes, names, now ?? DateTime.now()),
+    ExportFormat.markdown => _toMarkdown(notes, names, now ?? DateTime.now()),
+    ExportFormat.text => _toText(notes, names),
+  };
+}
+
+List<String> _labelNames(Note n, Map<String, String> names) => [
+  for (final id in n.labelIds)
+    if (names[id] case final String name) name,
+]..sort();
+
+String _toJson(List<Note> notes, Map<String, String> names, DateTime now) {
+  final data = {
+    'exported_at': now.toUtc().toIso8601String(),
+    'version': 1,
+    'notes': [
+      for (final n in notes)
+        {
+          'id': n.id,
+          'kind': n.kind.wire,
+          'title': n.title,
+          'content': n.content,
+          'items': [
+            for (final i in n.items) {'text': i.text, 'done': i.done},
+          ],
+          'color': n.color,
+          'pinned': n.pinned,
+          'archived': n.archived,
+          'reminder_at': n.reminderAt?.toUtc().toIso8601String(),
+          'labels': _labelNames(n, names),
+          'created_at': n.createdAt.toUtc().toIso8601String(),
+          'updated_at': n.updatedAt.toUtc().toIso8601String(),
+        },
+    ],
+  };
+  return const JsonEncoder.withIndent('  ').convert(data);
+}
+
+String _toMarkdown(List<Note> notes, Map<String, String> names, DateTime now) {
+  final buf = StringBuffer('# Sticky Notes export\n\n');
+  String two(int v) => v.toString().padLeft(2, '0');
+  buf.writeln(
+    '_Exported ${now.year}-${two(now.month)}-${two(now.day)} · '
+    '${notes.length} ${notes.length == 1 ? 'note' : 'notes'}_\n',
+  );
+  for (final n in notes) {
+    buf.writeln('---\n');
+    final title = n.title.trim();
+    if (title.isNotEmpty) buf.writeln('## $title\n');
+    if (n.isChecklist) {
+      for (final i in n.items) {
+        buf.writeln('- [${i.done ? 'x' : ' '}] ${i.text}');
+      }
+      buf.writeln();
+    } else if (n.content.trim().isNotEmpty) {
+      // text and markdown notes both round-trip as their raw body.
+      buf.writeln('${n.content.trimRight()}\n');
+    }
+    final labels = _labelNames(n, names);
+    if (labels.isNotEmpty) {
+      buf.writeln('${labels.map((l) => '`$l`').join(' ')}\n');
+    }
+  }
+  return '${buf.toString().trimRight()}\n';
+}
+
+String _toText(List<Note> notes, Map<String, String> names) {
+  final buf = StringBuffer();
+  for (var idx = 0; idx < notes.length; idx++) {
+    final n = notes[idx];
+    if (idx > 0) buf.writeln('${'—' * 40}\n');
+    final title = n.title.trim();
+    if (title.isNotEmpty) buf.writeln('$title\n');
+    if (n.isChecklist) {
+      for (final i in n.items) {
+        buf.writeln('[${i.done ? 'x' : ' '}] ${i.text}');
+      }
+      buf.writeln();
+    } else if (n.content.trim().isNotEmpty) {
+      buf.writeln('${n.content.trimRight()}\n');
+    }
+    final labels = _labelNames(n, names);
+    if (labels.isNotEmpty) buf.writeln('Labels: ${labels.join(', ')}\n');
+  }
+  return '${buf.toString().trimRight()}\n';
+}

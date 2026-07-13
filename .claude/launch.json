@@ -15,6 +15,16 @@
       "port": 5271
     },
     {
+      "name": "backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "STICKY_NOTES_DB=sticky_notes.db STICKY_NOTES_SEMANTIC=off ./target/debug/sticky-notes-server"
+      ],
+      "cwd": "backend",
+      "port": 8787
+    },
+    {
       "name": "prod-web",
       "runtimeExecutable": "bash",
       "runtimeArgs": [
