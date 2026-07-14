@@ -26,15 +26,18 @@ ThemeData buildTheme(Brightness brightness) {
             ? const Color(0xFFE9EBEE)
             : const Color(0xFF3C3D41),
       );
+  // A very light grey canvas so white note cards lift off the background.
+  // (Dark mode keeps its darker surface, where cards are already lighter.)
+  final canvas = light ? const Color(0xFFF4F5F7) : scheme.surface;
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: scheme.surface,
+    scaffoldBackgroundColor: canvas,
     splashFactory: InkSparkle.splashFactory,
   );
   return base.copyWith(
     appBarTheme: base.appBarTheme.copyWith(
-      backgroundColor: scheme.surface,
+      backgroundColor: canvas,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
     ),

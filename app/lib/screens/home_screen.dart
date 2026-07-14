@@ -155,10 +155,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final settings = context.watch<SettingsStore>();
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.
-    final semanticAvailable = _semanticAvailable && settings.semanticSearchAvailable;
+    final semanticAvailable =
+        _semanticAvailable && settings.semanticSearchAvailable;
     final searching = _query.trim().isNotEmpty;
     // Semantic mode replaces keyword filtering with the server's ranking.
-    final semanticActive = _semantic &&
+    final semanticActive =
+        _semantic &&
         semanticAvailable &&
         searching &&
         _selection.view == NoteView.notes;
@@ -182,116 +184,135 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () => FocusScope.of(context).unfocus(),
         child: Scaffold(
           drawer: AppDrawer(selection: _selection, onSelect: _selectView),
-          floatingActionButton: const _NewNoteFabs(),
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              final horizontalPad = width >= 900 ? 32.0 : 16.0;
-              final contentWidth = width - horizontalPad * 2;
-              final gridMaxWidth = _listMode ? 600.0 : 1400.0;
-              final effectiveWidth = contentWidth > gridMaxWidth
-                  ? gridMaxWidth
-                  : contentWidth;
-              final columns = _listMode
-                  ? 1
-                  : (effectiveWidth / 250).floor().clamp(2, 5);
+          // The note-creation FABs live inside the body (not the Scaffold's
+          // floatingActionButton slot) so a floating SnackBar sits at the
+          // bottom instead of floating above this tall FAB column. Still in
+          // the body, so the drawer scrim covers them like a normal FAB.
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final horizontalPad = width >= 900 ? 32.0 : 16.0;
+                    final contentWidth = width - horizontalPad * 2;
+                    final gridMaxWidth = _listMode ? 600.0 : 1400.0;
+                    final effectiveWidth = contentWidth > gridMaxWidth
+                        ? gridMaxWidth
+                        : contentWidth;
+                    final columns = _listMode
+                        ? 1
+                        : (effectiveWidth / 250).floor().clamp(2, 5);
 
-              return RefreshIndicator(
-                onRefresh: store.load,
-                edgeOffset: 80,
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverAppBar(
-                      floating: true,
-                      snap: true,
-                      toolbarHeight: 72,
-                      automaticallyImplyLeading: false,
-                      titleSpacing: horizontalPad,
-                      title: _SearchBar(
-                        controller: _searchController,
-                        listMode: _listMode,
-                        semantic: _semantic,
-                        semanticAvailable: semanticAvailable,
-                        semanticBusy: _semanticBusy,
-                        onQuery: _onQueryChanged,
-                        onToggleSemantic: _toggleSemantic,
-                        onToggleLayout: () =>
-                            setState(() => _listMode = !_listMode),
-                      ),
-                    ),
-                    if (store.offline)
-                      SliverToBoxAdapter(
-                        child: _OfflineBanner(onRetry: store.retryNow),
-                      ),
-                    // Keep-style quick add: wide screens, main notes view only.
-                    if (_selection == ViewSelection.notes &&
-                        !searching &&
-                        width >= 600)
-                      SliverToBoxAdapter(
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 600),
-                            child: const Padding(
-                              padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
-                              child: QuickAddBar(),
+                    return RefreshIndicator(
+                      onRefresh: store.load,
+                      edgeOffset: 80,
+                      child: CustomScrollView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverAppBar(
+                            floating: true,
+                            snap: true,
+                            toolbarHeight: 72,
+                            automaticallyImplyLeading: false,
+                            titleSpacing: horizontalPad,
+                            title: _SearchBar(
+                              controller: _searchController,
+                              listMode: _listMode,
+                              semantic: _semantic,
+                              semanticAvailable: semanticAvailable,
+                              semanticBusy: _semanticBusy,
+                              onQuery: _onQueryChanged,
+                              onToggleSemantic: _toggleSemantic,
+                              onToggleLayout: () =>
+                                  setState(() => _listMode = !_listMode),
                             ),
                           ),
-                        ),
+                          if (store.offline)
+                            SliverToBoxAdapter(
+                              child: _OfflineBanner(onRetry: store.retryNow),
+                            ),
+                          // Keep-style quick add: wide screens, main notes view only.
+                          if (_selection == ViewSelection.notes &&
+                              !searching &&
+                              width >= 600)
+                            SliverToBoxAdapter(
+                              child: Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 600,
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.fromLTRB(
+                                      16,
+                                      12,
+                                      16,
+                                      24,
+                                    ),
+                                    child: QuickAddBar(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_viewTitle(store).isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: _ViewHeader(
+                                title: _viewTitle(store),
+                                isTrash: _selection.view == NoteView.trash,
+                                hasTrashedNotes: sections.others.isNotEmpty,
+                                onEmptyTrash: () => _confirmEmptyTrash(store),
+                              ),
+                            ),
+                          if (store.loading)
+                            const SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          else if (sections.isEmpty)
+                            SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: EmptyState(
+                                icon: searching ? Icons.search_off : _emptyIcon,
+                                message: searching
+                                    ? 'No matching notes'
+                                    : _emptyMessage,
+                              ),
+                            )
+                          else ...[
+                            if (sections.pinned.isNotEmpty) ...[
+                              _sectionLabel(context, 'Pinned', horizontalPad),
+                              _grid(
+                                store,
+                                sections.pinned,
+                                columns,
+                                horizontalPad,
+                                gridMaxWidth,
+                                dragEnabled,
+                              ),
+                              if (sections.others.isNotEmpty)
+                                _sectionLabel(context, 'Others', horizontalPad),
+                            ],
+                            _grid(
+                              store,
+                              sections.others,
+                              columns,
+                              horizontalPad,
+                              gridMaxWidth,
+                              dragEnabled,
+                            ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 200),
+                            ),
+                          ],
+                        ],
                       ),
-                    if (_viewTitle(store).isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: _ViewHeader(
-                          title: _viewTitle(store),
-                          isTrash: _selection.view == NoteView.trash,
-                          hasTrashedNotes: sections.others.isNotEmpty,
-                          onEmptyTrash: () => _confirmEmptyTrash(store),
-                        ),
-                      ),
-                    if (store.loading)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (sections.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: EmptyState(
-                          icon: searching ? Icons.search_off : _emptyIcon,
-                          message: searching
-                              ? 'No matching notes'
-                              : _emptyMessage,
-                        ),
-                      )
-                    else ...[
-                      if (sections.pinned.isNotEmpty) ...[
-                        _sectionLabel(context, 'Pinned', horizontalPad),
-                        _grid(
-                          store,
-                          sections.pinned,
-                          columns,
-                          horizontalPad,
-                          gridMaxWidth,
-                          dragEnabled,
-                        ),
-                        if (sections.others.isNotEmpty)
-                          _sectionLabel(context, 'Others', horizontalPad),
-                      ],
-                      _grid(
-                        store,
-                        sections.others,
-                        columns,
-                        horizontalPad,
-                        gridMaxWidth,
-                        dragEnabled,
-                      ),
-                      const SliverToBoxAdapter(child: SizedBox(height: 200)),
-                    ],
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
+              ),
+              const Positioned(right: 16, bottom: 16, child: _NewNoteFabs()),
+            ],
           ),
         ),
       ),
@@ -384,10 +405,16 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final light = scheme.brightness == Brightness.light;
     final isNarrow = MediaQuery.sizeOf(context).width < 480;
     return Material(
-      color: scheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(28),
+      // Sit the field above the grey canvas: white (light) / lighter surface
+      // (dark), with a hairline border so it always reads as an input.
+      color: light ? scheme.surface : scheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
       child: SizedBox(
         height: 52,
         child: Row(
@@ -650,10 +677,7 @@ class _NewNoteFabs extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (showAudio) ...[
-          const _AudioNoteFab(),
-          const SizedBox(height: 12),
-        ],
+        if (showAudio) ...[const _AudioNoteFab(), const SizedBox(height: 12)],
         fab(
           size: 44,
           icon: Icons.article_outlined,
@@ -714,7 +738,11 @@ class _AudioNoteFab extends StatelessWidget {
           child: SizedBox(
             width: 44,
             height: 44,
-            child: Icon(Icons.mic_none, size: 22, color: scheme.onSurfaceVariant),
+            child: Icon(
+              Icons.mic_none,
+              size: 22,
+              color: scheme.onSurfaceVariant,
+            ),
           ),
         ),
       ),

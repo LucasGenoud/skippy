@@ -4,8 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:sticky_notes/models/note.dart';
 import 'package:sticky_notes/screens/editor_screen.dart';
+import 'package:sticky_notes/screens/home_screen.dart';
 import 'package:sticky_notes/state/notes_store.dart';
 import 'package:sticky_notes/state/settings_store.dart';
+import 'package:sticky_notes/theme.dart';
+import 'package:sticky_notes/util/snack.dart';
 import 'package:sticky_notes/widgets/animated_checklist.dart';
 import 'package:sticky_notes/widgets/markdown_toolbar.dart';
 import 'package:sticky_notes/widgets/masonry.dart';
@@ -599,7 +602,9 @@ void main() {
       final controller = TextEditingController(text: text)
         ..selection = selection;
       await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: MarkdownToolbar(controller: controller))),
+        MaterialApp(
+          home: Scaffold(body: MarkdownToolbar(controller: controller)),
+        ),
       );
       return controller;
     }
@@ -666,5 +671,51 @@ void main() {
       expect(controller.selection.textInside(controller.text), 'url');
       controller.dispose();
     });
+  });
+
+  group('home screen layout', () {
+    Widget homeApp(NotesStore store) => MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: store),
+        ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+      ],
+      child: MaterialApp(
+        theme: buildTheme(Brightness.light),
+        scaffoldMessengerKey: scaffoldMessengerKey,
+        home: const HomeScreen(),
+      ),
+    );
+
+    testWidgets(
+      'note FABs stay out of the Scaffold slot so snackbars hug the bottom',
+      (tester) async {
+        await store.load();
+        await tester.pumpWidget(homeApp(store));
+        await tester.pump();
+
+        // The tall note-creation FAB column must not sit in the Scaffold's
+        // floatingActionButton slot: a floating SnackBar is laid out *above*
+        // that slot, which used to shove notifications into the middle of the
+        // screen. The FABs live in the body instead.
+        final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
+        expect(scaffold.floatingActionButton, isNull);
+        expect(find.byIcon(Icons.add), findsWidgets); // FABs still rendered
+
+        showAppSnack('saved');
+        await tester.pump(); // build the snackbar
+        await tester.pump(const Duration(milliseconds: 750)); // finish entrance
+
+        final appHeight = tester.getSize(find.byType(MaterialApp)).height;
+        final snackBottom = tester.getRect(find.byType(SnackBar)).bottom;
+        expect(
+          appHeight - snackBottom,
+          lessThan(60),
+          reason: 'snackbar should hug the bottom, not float above the FABs',
+        );
+
+        scaffoldMessengerKey.currentState!.clearSnackBars();
+        await flushTimers(tester);
+      },
+    );
   });
 }
