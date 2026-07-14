@@ -5,6 +5,7 @@ pub mod handlers;
 pub mod models;
 pub mod search;
 pub mod store;
+pub mod transcribe;
 pub mod ws;
 
 use std::sync::Arc;
@@ -25,15 +26,22 @@ pub struct AppState {
     pub files: FileStore,
     /// Present when semantic search is enabled.
     pub search: Option<Arc<search::SearchService>>,
+    /// Present when audio transcription (Whisper) is enabled.
+    pub transcribe: Option<Arc<dyn transcribe::Transcriber>>,
 }
 
 impl AppState {
     pub fn new(repo: Arc<dyn Repository>, files: FileStore) -> Self {
-        Self { repo, hub: Hub::default(), files, search: None }
+        Self { repo, hub: Hub::default(), files, search: None, transcribe: None }
     }
 
     pub fn with_search(mut self, service: Arc<search::SearchService>) -> Self {
         self.search = Some(service);
+        self
+    }
+
+    pub fn with_transcription(mut self, service: Arc<dyn transcribe::Transcriber>) -> Self {
+        self.transcribe = Some(service);
         self
     }
 }
@@ -42,6 +50,7 @@ impl AppState {
 pub fn build_app(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(handlers::health))
+        .route("/capabilities", get(handlers::capabilities))
         .route("/auth/register", post(handlers::register))
         .route("/auth/login", post(handlers::login))
         .route("/auth/logout", post(handlers::logout))
@@ -60,6 +69,7 @@ pub fn build_app(state: AppState) -> Router {
             axum::routing::delete(handlers::remove_collaborator),
         )
         .route("/notes/{id}/attachments", post(handlers::upload_attachment))
+        .route("/notes/{id}/transcribe", post(handlers::transcribe_note))
         .route("/attachments/{id}", axum::routing::delete(handlers::delete_attachment))
         .route("/files/{id}", get(handlers::serve_file))
         .route("/checklist-history", get(handlers::checklist_history))

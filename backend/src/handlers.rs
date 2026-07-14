@@ -58,6 +58,37 @@ impl AppState {
             let _ = search.remove_note(&note_id).await;
         });
     }
+
+    /// Transcribe an audio attachment in the background (fire and forget).
+    /// The caller is expected to have already marked the note `pending`; this
+    /// only runs Whisper, then stores the transcript (`done`) or marks
+    /// `failed`, re-indexing for search on success. No-op when transcription
+    /// is disabled.
+    pub fn transcribe_later(&self, note_id: &str, attachment_id: &str, filename: &str) {
+        let Some(transcriber) = self.transcribe.clone() else { return };
+        let state = self.clone();
+        let note_id = note_id.to_string();
+        let attachment_id = attachment_id.to_string();
+        let filename = filename.to_string();
+        tokio::spawn(async move {
+            let status_and_content = match state.files.read(&attachment_id).await {
+                Some(bytes) => match transcriber.transcribe(bytes, &filename).await {
+                    Ok(text) => (TRANSCRIPT_DONE, Some(text)),
+                    Err(e) => {
+                        eprintln!("transcription failed for {note_id}: {e:#}");
+                        (TRANSCRIPT_FAILED, None)
+                    }
+                },
+                None => (TRANSCRIPT_FAILED, None),
+            };
+            let (status, content) = status_and_content;
+            let _ = state.repo.set_transcript(&note_id, status, content.as_deref()).await;
+            if status == TRANSCRIPT_DONE {
+                state.index_note_later(&note_id);
+            }
+            state.notify_note(&note_id).await;
+        });
+    }
 }
 
 /// Load a note, requiring the user to be owner or collaborator. Strangers get
@@ -76,6 +107,17 @@ async fn require_participant(
 
 pub async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "ok": true }))
+}
+
+/// Which optional, service-backed features this server has enabled. The client
+/// uses it to show or hide the semantic-search toggle and the audio-note
+/// recorder — a feature whose backing service isn't running simply never
+/// appears. Unauthenticated, like [`health`]: it leaks nothing user-specific.
+pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "semantic_search": state.search.is_some(),
+        "audio_transcription": state.transcribe.is_some(),
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +192,7 @@ pub async fn me(
 // Notes
 
 fn validate_kind(kind: &str) -> ApiResult<()> {
-    if kind == KIND_TEXT || kind == KIND_CHECKLIST || kind == KIND_MARKDOWN {
+    if kind == KIND_TEXT || kind == KIND_CHECKLIST || kind == KIND_MARKDOWN || kind == KIND_AUDIO {
         Ok(())
     } else {
         Err(ApiError::BadRequest(format!("unknown note kind '{kind}'")))
@@ -212,6 +254,7 @@ pub async fn create_note(
         trashed: false,
         position,
         reminder_at: body.reminder_at,
+        transcript_status: TRANSCRIPT_NONE.to_string(),
         created_at: ts.clone(),
         updated_at: ts,
     };
@@ -444,7 +487,7 @@ pub async fn upload_attachment(
     Path(id): Path<String>,
     mut multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Attachment>)> {
-    require_participant(&state, &id, &user_id).await?;
+    let record = require_participant(&state, &id, &user_id).await?;
     while let Some(field) = multipart
         .next_field()
         .await
@@ -470,10 +513,44 @@ pub async fn upload_attachment(
         };
         state.files.save(&attachment.id, &bytes).await?;
         state.repo.insert_attachment(&attachment, &id).await?;
+        // An audio clip dropped onto an audio note kicks off transcription:
+        // mark pending now (synchronously, so any refetch sees it) and run
+        // Whisper in the background. No-op when transcription is disabled.
+        if state.transcribe.is_some()
+            && record.kind == KIND_AUDIO
+            && attachment.mime.starts_with("audio/")
+        {
+            state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
+            state.transcribe_later(&id, &attachment.id, &attachment.filename);
+        }
         state.notify_note(&id).await;
         return Ok((StatusCode::CREATED, Json(attachment)));
     }
     Err(ApiError::BadRequest("no file field in upload".to_string()))
+}
+
+/// Re-run transcription on an audio note's most recent audio clip. Powers the
+/// "Retry" affordance after a failed transcription.
+pub async fn transcribe_note(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    require_participant(&state, &id, &user_id).await?;
+    if state.transcribe.is_none() {
+        return Err(ApiError::Unavailable("audio transcription is not enabled on this server"));
+    }
+    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let clip = view
+        .attachments
+        .into_iter()
+        .rev()
+        .find(|a| a.mime.starts_with("audio/"))
+        .ok_or_else(|| ApiError::BadRequest("note has no audio to transcribe".to_string()))?;
+    state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
+    state.transcribe_later(&id, &clip.id, &clip.filename);
+    state.notify_note(&id).await;
+    Ok(StatusCode::ACCEPTED)
 }
 
 fn sanitize_filename(name: &str) -> String {

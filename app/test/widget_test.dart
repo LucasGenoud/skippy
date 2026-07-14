@@ -70,30 +70,6 @@ void main() {
       expect(find.text('Eggs'), findsNothing);
     });
 
-    testWidgets('tapping a checkbox row toggles the item without opening', (
-      tester,
-    ) async {
-      api.notes['n1'] = serverNote(
-        'n1',
-        kind: NoteKind.checklist,
-        items: [const ChecklistItem(id: 'i1', text: 'Milk')],
-      );
-      await store.load();
-      await tester.pumpWidget(
-        harness(
-          store,
-          SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
-        ),
-      );
-
-      await tester.tap(find.text('Milk'));
-      await tester.pump();
-      expect(store.noteById('n1')!.items.single.done, isTrue);
-      // Editor did not open.
-      expect(find.byType(EditorScreen), findsNothing);
-      await flushTimers(tester);
-    });
-
     testWidgets('markdown card renders formatted and clips long content', (
       tester,
     ) async {

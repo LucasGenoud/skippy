@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 enum NoteKind {
   text,
   checklist,
-  markdown;
+  markdown,
+  audio;
 
   /// Wire name used by the API.
   String get wire => name;
@@ -11,6 +12,7 @@ enum NoteKind {
   static NoteKind fromWire(String? value) => switch (value) {
     'checklist' => NoteKind.checklist,
     'markdown' => NoteKind.markdown,
+    'audio' => NoteKind.audio,
     _ => NoteKind.text,
   };
 }
@@ -72,6 +74,7 @@ class Attachment {
   });
 
   bool get isImage => mime.startsWith('image/');
+  bool get isAudio => mime.startsWith('audio/');
 
   factory Attachment.fromJson(Map<String, dynamic> json) => Attachment(
     id: json['id'] as String,
@@ -93,6 +96,9 @@ class Note {
   final bool trashed;
   final double position;
   final DateTime? reminderAt;
+  /// Audio-note transcription state: `none` (not an audio note or no clip yet),
+  /// `pending` (Whisper running), `done`, or `failed`. Server-owned.
+  final String transcriptStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
   final Set<String> labelIds;
@@ -112,6 +118,7 @@ class Note {
     this.trashed = false,
     this.position = 0,
     this.reminderAt,
+    this.transcriptStatus = 'none',
     required this.createdAt,
     required this.updatedAt,
     this.labelIds = const {},
@@ -121,6 +128,18 @@ class Note {
   });
 
   bool get isChecklist => kind == NoteKind.checklist;
+  bool get isAudio => kind == NoteKind.audio;
+
+  /// The recorded clip, if this audio note has one.
+  Attachment? get audioClip {
+    for (final a in attachments) {
+      if (a.isAudio) return a;
+    }
+    return null;
+  }
+
+  bool get transcribing => transcriptStatus == 'pending';
+  bool get transcriptFailed => transcriptStatus == 'failed';
 
   bool get isEmpty =>
       title.trim().isEmpty &&
@@ -145,6 +164,7 @@ class Note {
     bool? trashed,
     double? position,
     Object? reminderAt = _sentinelDate,
+    String? transcriptStatus,
     DateTime? updatedAt,
     Set<String>? labelIds,
     List<UserRef>? collaborators,
@@ -164,6 +184,7 @@ class Note {
       reminderAt: reminderAt == _sentinelDate
           ? this.reminderAt
           : reminderAt as DateTime?,
+      transcriptStatus: transcriptStatus ?? this.transcriptStatus,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       labelIds: labelIds ?? this.labelIds,
@@ -190,6 +211,7 @@ class Note {
       reminderAt: json['reminder_at'] == null
           ? null
           : DateTime.tryParse(json['reminder_at'] as String)?.toLocal(),
+      transcriptStatus: json['transcript_status'] as String? ?? 'none',
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),

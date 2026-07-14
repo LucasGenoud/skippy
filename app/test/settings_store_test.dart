@@ -108,6 +108,32 @@ void main() {
     },
   );
 
+  test('feature availability = server capability AND user toggle', () async {
+    // Search service running, transcription not.
+    api.capabilities = (semanticSearch: true, audioTranscription: false);
+    await settings.load();
+    expect(settings.semanticSearchCapable, isTrue);
+    expect(settings.audioTranscriptionCapable, isFalse);
+    // Both toggles default on, but audio is hidden because its service is down.
+    expect(settings.semanticSearchAvailable, isTrue);
+    expect(settings.audioNotesAvailable, isFalse);
+
+    // Turning a capable feature off hides it and persists the choice.
+    settings.setSemanticSearchEnabled(false);
+    expect(settings.semanticSearchAvailable, isFalse);
+    await settleSave();
+    expect(api.settings['semantic_search'], isFalse);
+
+    // Another device with both services up: the enabled feature is available,
+    // the one the user turned off stays hidden.
+    api.capabilities = (semanticSearch: true, audioTranscription: true);
+    final other = SettingsStore(api: api);
+    await other.load();
+    expect(other.audioNotesAvailable, isTrue);
+    expect(other.semanticSearchAvailable, isFalse);
+    other.dispose();
+  });
+
   test('date and time formats follow preferences', () {
     final dt = DateTime(2026, 7, 15, 18, 5);
     expect(settings.formatDate(dt), 'Jul 15, 2026');

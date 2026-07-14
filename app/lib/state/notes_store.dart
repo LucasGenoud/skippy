@@ -683,6 +683,43 @@ class NotesStore extends ChangeNotifier {
   String fileUrl(String attachmentId) => api.fileUrl(attachmentId);
 
   // ---------------------------------------------------------------------
+  // Audio notes
+
+  /// Recording finished → create an audio note holding the clip. The note is
+  /// shown as transcribing immediately (optimistic); uploading the clip makes
+  /// the server run Whisper and fill in the transcript. Returns the note id,
+  /// or null when the upload failed (the empty draft is discarded).
+  Future<String?> createAudioNote(Uint8List bytes, String mime) async {
+    final note = createDraft(kind: NoteKind.audio);
+    // Surface the transcribing animation before the round-trip completes.
+    _replace(note.copyWith(transcriptStatus: 'pending'));
+    final ext = switch (mime.split(';').first.trim()) {
+      'audio/webm' => 'webm',
+      'audio/ogg' => 'ogg',
+      'audio/mp4' => 'm4a',
+      'audio/mpeg' => 'mp3',
+      'audio/wav' || 'audio/x-wav' => 'wav',
+      _ => 'audio',
+    };
+    try {
+      await uploadFile(note.id, bytes, mime, 'recording.$ext');
+    } catch (_) {
+      deleteForever(note.id);
+      return null;
+    }
+    return note.id;
+  }
+
+  /// Retry a failed (or stale) transcription. Optimistically flips the note
+  /// back to transcribing while the server re-runs Whisper.
+  void retranscribe(String id) {
+    final note = noteById(id);
+    if (note == null) return;
+    _replace(note.copyWith(transcriptStatus: 'pending'));
+    _enqueue(() => api.transcribeNote(id));
+  }
+
+  // ---------------------------------------------------------------------
   // Semantic search
 
   /// Ranked note ids for a meaning-based query, filtered to notes we

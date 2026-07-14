@@ -7,6 +7,8 @@ import '../models/note.dart';
 import '../screens/editor_screen.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import 'transcribing_indicator.dart';
+import '../util/platform.dart';
 
 /// A note in the grid. The whole tile is an [OpenContainer], so tapping it
 /// morphs the card into the editor (Keep's signature transition).
@@ -103,10 +105,14 @@ class _NoteCardContent extends StatelessWidget {
     final previewItems = unchecked.take(8).toList();
 
     final images = note.attachments.where((a) => a.isImage).toList();
-    final files = note.attachments.where((a) => !a.isImage).toList();
+    // Audio clips are represented by the audio note's own player, not a chip.
+    final files = note.attachments
+        .where((a) => !a.isImage && !a.isAudio)
+        .toList();
 
     final hasTextBlock =
         note.title.isNotEmpty ||
+        note.isAudio ||
         (!note.isChecklist && note.content.isNotEmpty) ||
         (note.isChecklist && visibleItems.isNotEmpty) ||
         note.isEmpty; // truly empty draft shows the placeholder
@@ -149,7 +155,32 @@ class _NoteCardContent extends StatelessWidget {
                     if (note.title.isNotEmpty &&
                         (note.content.isNotEmpty || previewItems.isNotEmpty))
                       const SizedBox(height: 8),
-                    if (note.kind == NoteKind.markdown &&
+                    if (note.isAudio) ...[
+                      if (note.title.isNotEmpty) const SizedBox(height: 8),
+                      const _AudioPill(),
+                      if (note.transcribing)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 10),
+                          child: TranscribingIndicator(compact: true),
+                        )
+                      else if (note.transcriptFailed)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 10),
+                          child: TranscriptFailed(compact: true),
+                        )
+                      else if (note.content.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            note.content,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              height: 1.45,
+                            ),
+                            maxLines: 6,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ] else if (note.kind == NoteKind.markdown &&
                         note.content.isNotEmpty)
                       // Rendered markdown preview, clipped like long text.
                       // The never-scrollable scroll view absorbs the
@@ -302,7 +333,8 @@ class _NoteCardContent extends StatelessWidget {
   }
 }
 
-/// Checkbox rows on the card itself — tappable without opening the editor.
+/// Checkbox rows on the card itself — tappable on desktop/web without opening
+/// the editor. Disabled on touch platforms to prevent accidental checks.
 class _ChecklistRow extends StatelessWidget {
   final Note note;
   final ChecklistItem item;
@@ -311,13 +343,16 @@ class _ChecklistRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // On mobile, tapping the tiny checkbox area in the grid is too easy to
+    // trigger accidentally. Only allow toggling from inside the editor.
+    final canToggle = !note.trashed && !isTouchPrimaryPlatform;
     return InkWell(
-      onTap: note.trashed
-          ? null
-          : () => context.read<NotesStore>().toggleChecklistItem(
+      onTap: canToggle
+          ? () => context.read<NotesStore>().toggleChecklistItem(
               note.id,
               item.id,
-            ),
+            )
+          : null,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -474,6 +509,40 @@ class _FileChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Compact "this is an audio note" affordance on a card; the real player lives
+/// in the editor the card opens.
+class _AudioPill extends StatelessWidget {
+  const _AudioPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: scheme.onSurface.withValues(alpha: 0.06),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.graphic_eq, size: 15, color: scheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              'Audio',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

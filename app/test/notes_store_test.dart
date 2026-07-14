@@ -451,6 +451,50 @@ void main() {
     });
   });
 
+  group('audio notes', () {
+    test('createAudioNote makes an audio note that starts transcribing',
+        () async {
+      final id = await store.createAudioNote(
+        Uint8List.fromList(List.filled(64, 1)),
+        'audio/webm',
+      );
+      expect(id, isNotNull);
+
+      final note = store.noteById(id!)!;
+      expect(note.kind, NoteKind.audio);
+      // Shown as transcribing immediately, before the server responds.
+      expect(note.transcriptStatus, 'pending');
+      expect(note.transcribing, isTrue);
+      // The clip is attached and recognized as audio.
+      expect(note.audioClip, isNotNull);
+      expect(note.audioClip!.mime, 'audio/webm');
+      // Persisted server-side as an audio note.
+      expect(api.notes[id]!.kind, NoteKind.audio);
+    });
+
+    test('a failed upload discards the draft', () async {
+      api.failWith = ApiException(500, 'boom');
+      final id = await store.createAudioNote(Uint8List(16), 'audio/webm');
+      expect(id, isNull);
+      expect(
+        store.notesFor(ViewSelection.notes, '').others.where((n) => n.isAudio),
+        isEmpty,
+      );
+    });
+
+    test('retranscribe flips back to pending and calls the server', () async {
+      api.notes['a1'] = serverNote('a1', kind: NoteKind.audio)
+          .copyWith(transcriptStatus: 'failed');
+      await store.load();
+      expect(store.noteById('a1')!.transcriptFailed, isTrue);
+
+      store.retranscribe('a1');
+      expect(store.noteById('a1')!.transcriptStatus, 'pending');
+      await settle();
+      expect(api.log, contains('transcribe:a1'));
+    });
+  });
+
   group('sharing', () {
     test(
       'addCollaborator updates the roster; leaving removes the note',

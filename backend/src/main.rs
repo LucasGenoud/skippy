@@ -6,6 +6,7 @@ use sticky_notes_server::search::{
     FastEmbedder, QdrantIndex, SearchService, SqliteVectorIndex, VectorIndex,
 };
 use sticky_notes_server::store::sqlite::SqliteRepository;
+use sticky_notes_server::transcribe::{Transcriber, WhisperService};
 use sticky_notes_server::{AppState, build_app, handlers};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -46,6 +47,22 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
     Some(Arc::new(SearchService::new(embedder, index)))
 }
 
+/// Audio transcription wiring: a self-hosted Whisper service, enabled by
+/// STICKY_NOTES_WHISPER_URL. Unset or unreachable -> feature stays off.
+async fn init_transcription() -> Option<Arc<dyn Transcriber>> {
+    let url = std::env::var("STICKY_NOTES_WHISPER_URL").ok()?;
+    match WhisperService::connect(&url).await {
+        Ok(service) => {
+            println!("audio transcription: whisper at {url}");
+            Some(Arc::new(service))
+        }
+        Err(e) => {
+            eprintln!("audio transcription disabled ({e:#})");
+            None
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let db_path = std::env::var("STICKY_NOTES_DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
@@ -55,6 +72,9 @@ async fn main() -> anyhow::Result<()> {
     // this constructor.
     let repo = Arc::new(SqliteRepository::connect(&db_path).await?);
     let mut state = AppState::new(repo, FileStore::new(&uploads));
+    if let Some(service) = init_transcription().await {
+        state = state.with_transcription(service);
+    }
     if let Some(service) = init_search(&db_path).await {
         state = state.with_search(service);
         // Bring the index up to date with existing notes in the background.

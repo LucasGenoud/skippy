@@ -35,6 +35,43 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _showAddUrlDialog() async {
+    final urlController = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Server'),
+        content: TextField(
+          controller: urlController,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(
+            labelText: 'Server URL',
+            hintText: 'http://example.com:8787',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.dns_outlined),
+          ),
+          onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(urlController.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    urlController.dispose();
+    if (result != null && result.isNotEmpty && mounted) {
+      await context.read<AuthStore>().addUrl(result);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthStore>();
@@ -72,7 +109,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
+                // ── Backend URL selector ────────────────────────────
+                _BackendUrlSelector(
+                  activeUrl: auth.activeUrl,
+                  savedUrls: auth.savedUrls,
+                  onSelected: (url) => auth.setActiveUrl(url),
+                  onAdd: _showAddUrlDialog,
+                  onRemove: (url) => auth.removeUrl(url),
+                ),
+                const SizedBox(height: 24),
                 TextField(
                   controller: _username,
                   autofocus: true,
@@ -143,5 +189,118 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+}
+
+// ── Backend URL selector widget ──────────────────────────────────────────────
+
+class _BackendUrlSelector extends StatelessWidget {
+  final String activeUrl;
+  final List<String> savedUrls;
+  final ValueChanged<String> onSelected;
+  final VoidCallback onAdd;
+  final ValueChanged<String> onRemove;
+
+  const _BackendUrlSelector({
+    required this.activeUrl,
+    required this.savedUrls,
+    required this.onSelected,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: MenuAnchor(
+        builder: (context, controller, child) {
+          return ActionChip(
+            avatar: Icon(
+              Icons.dns_outlined,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+            label: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    _displayUrl(activeUrl),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.arrow_drop_down,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+            onPressed: () {
+              if (controller.isOpen) {
+                controller.close();
+              } else {
+                controller.open();
+              }
+            },
+          );
+        },
+        menuChildren: [
+          ...savedUrls.map(
+            (url) => MenuItemButton(
+              leadingIcon: url == activeUrl
+                  ? Icon(Icons.check, size: 18, color: scheme.primary)
+                  : const SizedBox(width: 18),
+              trailingIcon: savedUrls.length > 1 && url != activeUrl
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      onPressed: () => onRemove(url),
+                      tooltip: 'Remove',
+                      visualDensity: VisualDensity.compact,
+                    )
+                  : null,
+              onPressed: () => onSelected(url),
+              child: Text(
+                _displayUrl(url),
+                style: TextStyle(
+                  fontWeight:
+                      url == activeUrl ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          MenuItemButton(
+            leadingIcon: Icon(
+              Icons.add,
+              size: 18,
+              color: scheme.primary,
+            ),
+            onPressed: onAdd,
+            child: Text(
+              'Add server…',
+              style: TextStyle(color: scheme.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Strip the protocol prefix for a cleaner display.
+  String _displayUrl(String url) {
+    return url
+        .replaceFirst(RegExp(r'^https?://'), '')
+        .replaceFirst(RegExp(r'/+$'), '');
   }
 }

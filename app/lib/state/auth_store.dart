@@ -15,9 +15,67 @@ class AuthStore extends ChangeNotifier {
   String? error;
 
   static const _tokenKey = 'sticky_notes_token';
+  static const _urlsKey = 'sticky_notes_backend_urls';
+  static const _activeUrlKey = 'sticky_notes_active_url';
+
+  /// All backend URLs the user has saved.
+  List<String> savedUrls = [];
+
+  /// The currently active backend URL.
+  String get activeUrl => api.baseUrl;
 
   AuthStore({required this.api}) {
     api.onUnauthorized = _onSessionRejected;
+  }
+
+  // ── Backend URL management ──────────────────────────────────────────────
+
+  /// Load saved URLs from disk (call early, before [restore]).
+  Future<void> loadSavedUrls() async {
+    final prefs = await SharedPreferences.getInstance();
+    savedUrls = prefs.getStringList(_urlsKey) ?? [];
+    final active = prefs.getString(_activeUrlKey);
+    if (active != null && active.isNotEmpty) {
+      api.baseUrl = active;
+    }
+    // Ensure the current URL is always in the saved list.
+    if (!savedUrls.contains(api.baseUrl)) {
+      savedUrls.insert(0, api.baseUrl);
+      await prefs.setStringList(_urlsKey, savedUrls);
+    }
+    notifyListeners();
+  }
+
+  /// Switch to a different saved backend URL.
+  Future<void> setActiveUrl(String url) async {
+    if (url == api.baseUrl) return;
+    // Sign out of the current server first.
+    await _clearSession();
+    api.baseUrl = url;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activeUrlKey, url);
+    notifyListeners();
+  }
+
+  /// Add a new backend URL and switch to it.
+  Future<void> addUrl(String url) async {
+    final normalized = url.trimRight().replaceAll(RegExp(r'/+$'), '');
+    if (normalized.isEmpty) return;
+    if (!savedUrls.contains(normalized)) {
+      savedUrls.add(normalized);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_urlsKey, savedUrls);
+    }
+    await setActiveUrl(normalized);
+  }
+
+  /// Remove a saved URL (cannot remove the currently active one).
+  Future<void> removeUrl(String url) async {
+    if (url == api.baseUrl || savedUrls.length <= 1) return;
+    savedUrls.remove(url);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_urlsKey, savedUrls);
+    notifyListeners();
   }
 
   Future<void> restore() async {

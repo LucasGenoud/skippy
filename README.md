@@ -23,6 +23,8 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - **Sort by** custom order / recently edited / recently added / oldest
 - Library-wide instant search + **find-in-note** with match highlighting
 - **Semantic search** (✨ toggle in the search bar): notes are embedded locally with an ONNX model (all-MiniLM-L6-v2, no external AI services) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vector storage is swappable: built-in SQLite brute-force by default, **Qdrant** when `STICKY_NOTES_QDRANT_URL` is set.
+- **Audio notes** (mic button, when transcription is enabled): record a voice clip in a focused overlay with a live level meter, then it's transcribed locally by a self-hosted **Whisper** service — no external AI. The clip stays playable in the note and the transcript is editable, searchable, and exportable text.
+- **Feature detection**: semantic search and audio notes each have a Settings toggle, and disappear entirely when their backing service isn't running (`GET /api/capabilities`).
 
 **Per-user settings** (synced across devices, gear icon in the drawer)
 - Theme (system/light/dark), default grid vs list layout
@@ -77,10 +79,10 @@ sticky_notes/
 ### Docker (everything in one command)
 
 ```sh
-docker compose up -d        # builds web + server, starts Qdrant → http://localhost:8787
+docker compose up -d        # builds web + server, starts Qdrant + Whisper → http://localhost:8787
 ```
 
-The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Qdrant backs semantic search inside the stack.
+The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Qdrant backs semantic search and a self-hosted Whisper service backs audio-note transcription inside the stack.
 
 ### Local development
 
@@ -91,12 +93,13 @@ Prereqs: Rust (1.85+), Flutter (3.22+).
 ```sh
 cd backend
 cargo run                                              # built-in vector index
-# or with Qdrant:
-docker compose up -d qdrant
-STICKY_NOTES_QDRANT_URL=http://localhost:6334 cargo run
+# or with Qdrant + Whisper:
+docker compose up -d qdrant whisper
+STICKY_NOTES_QDRANT_URL=http://localhost:6334 \
+STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
-Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_QDRANT_URL` (optional vector DB), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely). The embedding model (~80 MB) downloads to a local cache on first start.
+Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_QDRANT_URL` (optional vector DB), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service — enables audio-note transcription; feature is hidden when unset/unreachable). The embedding model (~80 MB) downloads to a local cache on first start.
 
 **Flutter app** — pick a device:
 
@@ -108,6 +111,49 @@ flutter run -d <ios-or-android-id>    # mobile
 
 The app talks to `http://localhost:8787` by default. Override with `--dart-define=API_BASE=http://<host>:8787` — needed on Android emulators (`http://10.0.2.2:8787`) or real phones (your machine's LAN IP).
 
+You can also set the backend URL directly from the login screen — tap the server chip below the title to switch between saved servers or add a new one. The selection is persisted locally on the device.
+
+### iOS device deployment
+
+**Build the release binary:**
+
+```sh
+cd app
+flutter build ios --release
+```
+
+**Deploy to a connected iPhone** (USB or wireless):
+
+```sh
+flutter devices                               # find your device ID
+flutter run --release --device-id <device-id>  # build + install + launch
+# or just install without launching:
+flutter install --device-id <device-id>
+```
+
+**First-time setup on the iPhone:**
+
+1. **Enable Developer Mode** — Settings → Privacy & Security → Developer Mode → toggle on (requires restart).
+2. **Trust the developer certificate** — after the first install, go to Settings → General → VPN & Device Management and trust your developer profile.
+3. **Keep the phone unlocked** while the install command runs.
+
+**Fallback — deploy via Xcode:**
+
+```sh
+open ios/Runner.xcworkspace
+```
+
+Select your iPhone as the run destination in the toolbar and press ▶️. Xcode gives better error messages for signing or provisioning issues.
+
+**Connecting to the backend from a physical device:**
+
+`localhost` won't work from a phone. Either:
+
+- Use the login screen's server selector to point at your Mac's LAN IP (e.g. `http://192.168.1.42:8787`).
+- Or pass it at build time: `flutter run --release --dart-define=API_BASE=http://192.168.1.42:8787`.
+
+Make sure the backend is running with `STICKY_NOTES_ADDR=0.0.0.0:8787` (the default) and that your Mac's firewall allows port 8787.
+
 **Single-binary production deploy:** build the web app, then run the server — it detects and serves the bundle:
 
 ```sh
@@ -118,11 +164,11 @@ cd ../backend && cargo run            # → open http://localhost:8787
 ## Tests
 
 ```sh
-cd backend && cargo test    # 21 integration tests over the HTTP API
-cd app && flutter test      # 33 store/model/widget tests
+cd backend && cargo test    # 30 integration tests over the HTTP API
+cd app && flutter test      # store/model/widget tests
 ```
 
-Backend tests run the real router against in-memory SQLite: auth flows, per-user scoping, sharing permission matrix, personal labels on shared notes, checklist history recording, reminders, attachments (multipart upload → serve → delete), trash purge. Flutter tests cover the optimistic store (drafts, debounce, offline retry queue, 4xx dropping), suggestion ranking, sort/search/views, and widget behavior (checklist cards, masonry drag-reorder, editor lifecycle, find-in-note).
+Backend tests run the real router against in-memory SQLite: auth flows, per-user scoping, sharing permission matrix, personal labels on shared notes, checklist history recording, reminders, attachments (multipart upload → serve → delete), trash purge, capabilities reporting, and the audio-note transcription flow (upload → pending → transcript, with a deterministic fake Whisper). Flutter tests cover the optimistic store (drafts, debounce, offline retry queue, 4xx dropping), audio-note creation, feature-availability logic, suggestion ranking, sort/search/views, and widget behavior (checklist cards, masonry drag-reorder, editor lifecycle, find-in-note).
 
 ## API sketch
 
@@ -138,6 +184,8 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per-user) |
 | `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
 | `GET /search?q=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
+| `POST /notes/{id}/transcribe` | Re-run Whisper on an audio note's clip (retry; 503 when disabled) |
+| `GET /capabilities` | Which optional services are on: `{semantic_search, audio_transcription}` (unauthenticated) |
 | `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
 | `GET /ws?token=…` | WebSocket: `{"type":"notes_changed"}` pushes (notes *and* settings) |
 

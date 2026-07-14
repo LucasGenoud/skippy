@@ -40,6 +40,14 @@ pub struct AuthResponse {
 pub const KIND_TEXT: &str = "text";
 pub const KIND_CHECKLIST: &str = "checklist";
 pub const KIND_MARKDOWN: &str = "markdown";
+pub const KIND_AUDIO: &str = "audio";
+
+/// Transcription lifecycle for an audio note. Non-audio notes are always
+/// `none`. The server owns every transition (client never patches it).
+pub const TRANSCRIPT_NONE: &str = "none";
+pub const TRANSCRIPT_PENDING: &str = "pending";
+pub const TRANSCRIPT_DONE: &str = "done";
+pub const TRANSCRIPT_FAILED: &str = "failed";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChecklistItem {
@@ -71,6 +79,8 @@ pub struct NoteRecord {
     pub trashed: bool,
     pub position: f64,
     pub reminder_at: Option<String>,
+    /// Audio-note transcription state (`none`/`pending`/`done`/`failed`).
+    pub transcript_status: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -101,6 +111,7 @@ pub struct NoteFields {
     pub trashed: bool,
     pub position: f64,
     pub reminder_at: Option<String>,
+    pub transcript_status: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -119,6 +130,7 @@ impl NoteRecord {
             trashed: self.trashed,
             position: self.position,
             reminder_at: self.reminder_at.clone(),
+            transcript_status: self.transcript_status.clone(),
             created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
         }

@@ -82,6 +82,14 @@ abstract class Api {
   /// Throws [ApiException] (503) when the server has it disabled.
   Future<List<String>> semanticSearch(String query, {int limit = 20});
 
+  /// Which optional, service-backed features this server has enabled. Drives
+  /// whether the audio recorder and semantic-search toggle appear at all.
+  Future<({bool semanticSearch, bool audioTranscription})> fetchCapabilities();
+
+  /// Ask the server to (re)transcribe an audio note's clip. Used to retry a
+  /// failed transcription.
+  Future<void> transcribeNote(String noteId);
+
   /// Server-push change events; emits whenever this user's notes change.
   Stream<void> changeEvents();
 }
@@ -96,7 +104,7 @@ class ApiClient implements Api {
     return 'http://localhost:8787';
   }
 
-  final String baseUrl;
+  String baseUrl;
   final http.Client _client = http.Client();
 
   /// Session token; set by the auth store after sign-in.
@@ -382,6 +390,33 @@ class ApiClient implements Api {
     ).replace(queryParameters: {'q': query, 'limit': '$limit'});
     final data = _decode(await _client.get(uri, headers: _headers())) as List;
     return [for (final hit in data) (hit as Map)['note_id'] as String];
+  }
+
+  // -- capabilities & transcription --------------------------------------------
+
+  @override
+  Future<({bool semanticSearch, bool audioTranscription})>
+  fetchCapabilities() async {
+    // Unauthenticated endpoint; no bearer needed.
+    final data = _decode(
+      await _client.get(_uri('/capabilities')),
+      authed: false,
+    );
+    final map = (data as Map?) ?? const {};
+    return (
+      semanticSearch: map['semantic_search'] == true,
+      audioTranscription: map['audio_transcription'] == true,
+    );
+  }
+
+  @override
+  Future<void> transcribeNote(String noteId) async {
+    _decode(
+      await _client.post(
+        _uri('/notes/$noteId/transcribe'),
+        headers: _headers(),
+      ),
+    );
   }
 
   // -- live sync ---------------------------------------------------------------

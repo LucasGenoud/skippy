@@ -47,6 +47,15 @@ pub trait Repository: Send + Sync {
     async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<String>>;
     /// Every note id in the store (used for search reindexing at startup).
     async fn all_note_ids(&self) -> RepoResult<Vec<String>>;
+    /// Set an audio note's transcription status, and (when `content` is
+    /// `Some`) its transcript text. Server-owned — the transcription pipeline
+    /// is the only writer. Bumps `updated_at` so viewers refetch.
+    async fn set_transcript(
+        &self,
+        note_id: &str,
+        status: &str,
+        content: Option<&str>,
+    ) -> RepoResult<()>;
 
     // -- sharing ---------------------------------------------------------------
     async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>>;

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS notes (
     trashed INTEGER NOT NULL DEFAULT 0,
     position REAL NOT NULL DEFAULT 0,
     reminder_at TEXT,
+    transcript_status TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     trashed_at TEXT
@@ -98,6 +99,7 @@ impl SqliteRepository {
         for ddl in [
             "ALTER TABLE attachments ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE attachments ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE notes ADD COLUMN transcript_status TEXT NOT NULL DEFAULT 'none'",
         ] {
             let _ = sqlx::query(ddl).execute(&pool).await;
         }
@@ -141,6 +143,7 @@ fn record_from_row(row: &sqlx::sqlite::SqliteRow) -> NoteRecord {
         trashed: row.get::<i64, _>("trashed") != 0,
         position: row.get("position"),
         reminder_at: row.get("reminder_at"),
+        transcript_status: row.get("transcript_status"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
@@ -450,6 +453,27 @@ impl Repository for SqliteRepository {
     async fn all_note_ids(&self) -> RepoResult<Vec<String>> {
         let rows = sqlx::query("SELECT id FROM notes").fetch_all(&self.pool).await?;
         Ok(rows.iter().map(|r| r.get("id")).collect())
+    }
+
+    async fn set_transcript(
+        &self,
+        note_id: &str,
+        status: &str,
+        content: Option<&str>,
+    ) -> RepoResult<()> {
+        // COALESCE keeps the existing content when we only move the status
+        // (pending/failed pass content = NULL).
+        sqlx::query(
+            "UPDATE notes SET transcript_status = ?,
+             content = COALESCE(?, content), updated_at = ? WHERE id = ?",
+        )
+        .bind(status)
+        .bind(content)
+        .bind(now())
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     // -- sharing ---------------------------------------------------------------

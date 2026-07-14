@@ -15,11 +15,13 @@ import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/snack.dart';
 import '../widgets/animated_checklist.dart';
+import '../widgets/audio_player.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/share_dialog.dart';
+import '../widgets/transcribing_indicator.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
 /// debounces the network write); empty notes are discarded on close, exactly
@@ -863,6 +865,9 @@ class _EditorScreenState extends State<EditorScreen> {
   /// The note's main content area: checklist rows, rendered markdown
   /// preview, or the (highlightable) plain text field.
   Widget _contentEditor({required bool trashed, required String query}) {
+    if (_kind == NoteKind.audio) {
+      return _audioEditor(trashed: trashed, query: query);
+    }
     if (_kind == NoteKind.checklist) {
       return AnimatedChecklist(
         items: _items,
@@ -904,6 +909,47 @@ class _EditorScreenState extends State<EditorScreen> {
       query: query,
       monospace: _kind == NoteKind.markdown,
       autofocus: widget.noteId == null && widget.kind != NoteKind.checklist,
+    );
+  }
+
+  /// Audio note: the clip player on top, then the transcript — a live
+  /// "Transcribing…" animation while Whisper runs, a retry affordance if it
+  /// failed, otherwise the transcript as an editable text field.
+  Widget _audioEditor({required bool trashed, required String query}) {
+    final note = _note;
+    final clip = note?.audioClip;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (clip != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: AudioPlayerBar(url: _store.fileUrl(clip.id)),
+          ),
+        if (note?.transcribing ?? false)
+          const Padding(
+            padding: EdgeInsets.only(top: 8, bottom: 8),
+            child: TranscribingIndicator(),
+          )
+        else ...[
+          if (note?.transcriptFailed ?? false)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 4),
+              child: TranscriptFailed(
+                onRetry: trashed || _noteId == null
+                    ? null
+                    : () => _store.retranscribe(_noteId!),
+              ),
+            ),
+          _HighlightedTextField(
+            controller: _contentController,
+            focusNode: _contentFocus,
+            readOnly: trashed,
+            query: query,
+            autofocus: false,
+          ),
+        ],
+      ],
     );
   }
 
@@ -952,7 +998,10 @@ class _EditorScreenState extends State<EditorScreen> {
     return [
       for (final attachment in note.attachments.where((a) => a.isImage))
         _imageAttachment(note, attachment),
-      for (final attachment in note.attachments.where((a) => !a.isImage))
+      // Audio clips are played by the audio-note body, not listed as files.
+      for (final attachment in note.attachments.where(
+        (a) => !a.isImage && !a.isAudio,
+      ))
         _fileAttachment(note, attachment),
     ];
   }
@@ -1321,8 +1370,9 @@ class _BottomBar extends StatelessWidget {
               }
             },
             itemBuilder: (context) => [
+              // Audio notes come from a recording, never a conversion target.
               for (final target in NoteKind.values)
-                if (target != kind)
+                if (target != kind && target != NoteKind.audio)
                   PopupMenuItem(
                     value: 'convert:${target.name}',
                     enabled: onConvert != null,

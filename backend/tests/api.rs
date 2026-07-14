@@ -8,9 +8,11 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use sticky_notes_server::files::FileStore;
+use async_trait::async_trait;
 use sticky_notes_server::search::{SearchService, SqliteVectorIndex, TextEmbedder};
 use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
+use sticky_notes_server::transcribe::Transcriber;
 use sticky_notes_server::{AppState, build_app};
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,21 @@ async fn state_with_search() -> AppState {
     state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+}
+
+/// Deterministic stand-in for the Whisper service: echoes the clip size so
+/// tests can assert the transcript landed on the note without a container.
+struct FakeTranscriber;
+
+#[async_trait]
+impl Transcriber for FakeTranscriber {
+    async fn transcribe(&self, audio: Vec<u8>, _filename: &str) -> anyhow::Result<String> {
+        Ok(format!("transcript of {} bytes", audio.len()))
+    }
+}
+
+async fn state_with_transcription() -> AppState {
+    state().await.with_transcription(Arc::new(FakeTranscriber))
 }
 
 /// Background indexing runs on spawned tasks; give them a beat to finish.
@@ -310,7 +327,7 @@ async fn checklist_items_roundtrip_and_kind_validation() {
         "PATCH",
         &format!("/api/notes/{id}"),
         Some(&token),
-        Some(json!({"kind": "audio"})),
+        Some(json!({"kind": "sketch"})),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1112,4 +1129,97 @@ async fn settings_roundtrip_scoped_and_validated() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = send(&app, "GET", "/api/settings", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// Capabilities & audio transcription
+
+#[tokio::test]
+async fn capabilities_reflect_wired_services() {
+    // Nothing wired: both optional features report off (unauthenticated).
+    let app = app().await;
+    let (status, caps) = send(&app, "GET", "/api/capabilities", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(caps["semantic_search"], json!(false));
+    assert_eq!(caps["audio_transcription"], json!(false));
+
+    let app = build_app(state_with_search().await);
+    let (_, caps) = send(&app, "GET", "/api/capabilities", None, None).await;
+    assert_eq!(caps["semantic_search"], json!(true));
+    assert_eq!(caps["audio_transcription"], json!(false));
+
+    let app = build_app(state_with_transcription().await);
+    let (_, caps) = send(&app, "GET", "/api/capabilities", None, None).await;
+    assert_eq!(caps["semantic_search"], json!(false));
+    assert_eq!(caps["audio_transcription"], json!(true));
+}
+
+#[tokio::test]
+async fn audio_note_upload_triggers_transcription() {
+    let app = build_app(state_with_transcription().await);
+    let (token, _) = register(&app, "ada").await;
+
+    // A fresh audio note carries no transcript yet.
+    let note = create_note(&app, &token, json!({"kind": "audio"})).await;
+    let id = note["id"].as_str().unwrap().to_string();
+    assert_eq!(note["kind"], json!("audio"));
+    assert_eq!(note["transcript_status"], json!("none"));
+
+    // Uploading the clip runs Whisper and stores the transcript as content.
+    let (status, _) = upload(&app, &token, &id, "audio/webm", b"fake-audio-bytes").await;
+    assert_eq!(status, StatusCode::CREATED);
+    settle_index().await;
+
+    let refreshed = &list_notes(&app, &token).await[0];
+    assert_eq!(refreshed["transcript_status"], json!("done"));
+    assert_eq!(refreshed["content"], json!("transcript of 16 bytes"));
+}
+
+#[tokio::test]
+async fn retry_transcription_validates_and_reruns() {
+    let app = build_app(state_with_transcription().await);
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"kind": "audio"})).await;
+    let id = note["id"].as_str().unwrap().to_string();
+
+    // Nothing to transcribe yet.
+    let (status, _) =
+        send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // With a clip attached, an explicit retry re-runs and lands the transcript.
+    upload(&app, &token, &id, "audio/webm", b"hello").await;
+    settle_index().await;
+    let (status, _) =
+        send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    settle_index().await;
+    let refreshed = &list_notes(&app, &token).await[0];
+    assert_eq!(refreshed["transcript_status"], json!("done"));
+    assert_eq!(refreshed["content"], json!("transcript of 5 bytes"));
+}
+
+#[tokio::test]
+async fn non_audio_upload_leaves_transcript_untouched() {
+    let app = build_app(state_with_transcription().await);
+    let (token, _) = register(&app, "ada").await;
+    // A text note with an image attachment is never transcribed.
+    let note = create_note(&app, &token, json!({"title": "hi"})).await;
+    let id = note["id"].as_str().unwrap().to_string();
+    upload(&app, &token, &id, "image/png", b"\x89PNG\r\n").await;
+    settle_index().await;
+    let refreshed = &list_notes(&app, &token).await[0];
+    assert_eq!(refreshed["transcript_status"], json!("none"));
+    assert_eq!(refreshed["content"], json!(""));
+}
+
+#[tokio::test]
+async fn transcribe_reports_unavailable_when_disabled() {
+    let app = app().await; // no transcription service wired
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"kind": "audio"})).await;
+    let id = note["id"].as_str().unwrap().to_string();
+    let (status, _) =
+        send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }

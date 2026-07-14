@@ -34,7 +34,7 @@ class _StickyNotesAppState extends State<StickyNotesApp> {
   void initState() {
     super.initState();
     _auth.addListener(_onAuthChanged);
-    _auth.restore();
+    _auth.loadSavedUrls().then((_) => _auth.restore());
   }
 
   void _onAuthChanged() {

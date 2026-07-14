@@ -136,6 +136,21 @@ class SettingsStore extends ChangeNotifier {
   List<PaletteEntry> palette = List.of(kDefaultPalette);
   bool loaded = false;
 
+  // Optional features. Each has a server *capability* (is the backing service
+  // running?) fetched from /api/capabilities and NOT persisted, plus a synced
+  // user *toggle*. A feature is available only when both are true — so it
+  // hides automatically when the service is down, and can be turned off by the
+  // user even when it's up.
+  bool semanticSearchCapable = false;
+  bool audioTranscriptionCapable = false;
+  bool semanticSearchEnabled = true;
+  bool audioNotesEnabled = true;
+
+  bool get semanticSearchAvailable =>
+      semanticSearchCapable && semanticSearchEnabled;
+  bool get audioNotesAvailable =>
+      audioTranscriptionCapable && audioNotesEnabled;
+
   Timer? _saveDebounce;
   bool _savePending = false;
   int _customCounter = 0;
@@ -143,12 +158,22 @@ class SettingsStore extends ChangeNotifier {
   SettingsStore({required this.api});
 
   Future<void> load() async {
-    // Never clobber local edits that haven't reached the server yet.
-    if (_savePending) return;
+    // Server capabilities are independent of the (debounced) settings save, so
+    // refresh them even while a local edit is still pending.
     try {
-      _applyJson(await api.fetchSettings());
+      final caps = await api.fetchCapabilities();
+      semanticSearchCapable = caps.semanticSearch;
+      audioTranscriptionCapable = caps.audioTranscription;
     } catch (_) {
-      // Offline: defaults (or last applied values) stay in effect.
+      // Unreachable: leave capabilities as they were (default off).
+    }
+    // Never clobber local edits that haven't reached the server yet.
+    if (!_savePending) {
+      try {
+        _applyJson(await api.fetchSettings());
+      } catch (_) {
+        // Offline: defaults (or last applied values) stay in effect.
+      }
     }
     loaded = true;
     notifyListeners();
@@ -165,6 +190,10 @@ class SettingsStore extends ChangeNotifier {
         AppDateFormat.monthFirst;
     use24hTime = json['time_format'] == '24h';
     defaultListMode = json['default_view'] == 'list';
+    // Feature toggles default ON when absent (they only take effect when the
+    // server also advertises the capability).
+    semanticSearchEnabled = json['semantic_search'] != false;
+    audioNotesEnabled = json['audio_notes'] != false;
     final rawPalette = json['palette'];
     if (rawPalette is List) {
       final parsed = [
@@ -185,6 +214,8 @@ class SettingsStore extends ChangeNotifier {
     'date_format': dateFormat.name,
     'time_format': use24hTime ? '24h' : '12h',
     'default_view': defaultListMode ? 'list' : 'grid',
+    'semantic_search': semanticSearchEnabled,
+    'audio_notes': audioNotesEnabled,
     'palette': [for (final entry in palette) entry.toJson()],
   };
 
@@ -214,6 +245,10 @@ class SettingsStore extends ChangeNotifier {
       _mutate(() => dateFormat = format);
   void setUse24hTime(bool value) => _mutate(() => use24hTime = value);
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
+  void setSemanticSearchEnabled(bool value) =>
+      _mutate(() => semanticSearchEnabled = value);
+  void setAudioNotesEnabled(bool value) =>
+      _mutate(() => audioNotesEnabled = value);
 
   // -- palette ---------------------------------------------------------------
 

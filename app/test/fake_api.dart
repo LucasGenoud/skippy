@@ -15,6 +15,13 @@ class FakeApi implements Api {
   Map<String, List<String>> history = {};
   Map<String, dynamic> settings = {};
 
+  /// Server feature flags returned by [fetchCapabilities]; tests flip these to
+  /// exercise the availability logic.
+  ({bool semanticSearch, bool audioTranscription}) capabilities = (
+    semanticSearch: true,
+    audioTranscription: false,
+  );
+
   /// When set, every call throws it (network-down simulation).
   Exception? failWith;
 
@@ -239,6 +246,18 @@ class FakeApi implements Api {
     scored.sort((a, b) => b.$2.compareTo(a.$2));
     return [for (final s in scored.take(limit)) s.$1];
   });
+
+  @override
+  Future<({bool semanticSearch, bool audioTranscription})>
+  fetchCapabilities() => _run('fetchCapabilities', () => capabilities);
+
+  @override
+  Future<void> transcribeNote(String noteId) =>
+      _run('transcribe:$noteId', () {
+        if (!notes.containsKey(noteId)) {
+          throw ApiException(404, '{"error":"not found"}');
+        }
+      });
 
   @override
   Future<Map<String, dynamic>> fetchSettings() =>

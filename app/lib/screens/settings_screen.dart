@@ -50,6 +50,25 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: settings.setDefaultListMode,
               ),
               const Divider(height: 32),
+              const _SectionHeader('Features'),
+              _FeatureToggle(
+                icon: Icons.auto_awesome,
+                title: 'Semantic search',
+                available: 'Search your notes by meaning, not just keywords',
+                capable: settings.semanticSearchCapable,
+                value: settings.semanticSearchEnabled,
+                onChanged: settings.setSemanticSearchEnabled,
+              ),
+              _FeatureToggle(
+                icon: Icons.mic_none,
+                title: 'Audio notes',
+                available:
+                    'Record voice notes and transcribe them with local Whisper',
+                capable: settings.audioTranscriptionCapable,
+                value: settings.audioNotesEnabled,
+                onChanged: settings.setAudioNotesEnabled,
+              ),
+              const Divider(height: 32),
               const _SectionHeader('Date & time'),
               ListTile(
                 leading: const Icon(Icons.calendar_today_outlined),
@@ -122,6 +141,41 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A toggle for an optional, service-backed feature. When the server doesn't
+/// advertise the capability the switch is disabled and explains why, so the
+/// preference is still visible but clearly inert.
+class _FeatureToggle extends StatelessWidget {
+  final IconData icon;
+  final String title;
+
+  /// Subtitle shown when the backing service is running.
+  final String available;
+  final bool capable;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _FeatureToggle({
+    required this.icon,
+    required this.title,
+    required this.available,
+    required this.capable,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: Icon(icon),
+      title: Text(title),
+      subtitle: Text(capable ? available : 'Not available on this server'),
+      // Off and inert when the service isn't running.
+      value: capable && value,
+      onChanged: capable ? onChanged : null,
     );
   }
 }

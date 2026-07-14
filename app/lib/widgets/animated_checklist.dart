@@ -331,6 +331,33 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   }
 
   void _applySuggestion(String rowId, String text) {
+    // If a checked item with this exact text already exists, uncheck it
+    // instead of creating a duplicate.
+    final existingChecked = widget.items
+        .where((item) => item.done && item.text == text)
+        .toList();
+    if (existingChecked.isNotEmpty) {
+      widget.onToggle(existingChecked.first.id);
+      if (rowId == _kNewRowId) {
+        _newRow.controller.clear();
+        _newRow.focusNode.requestFocus();
+      } else {
+        // If the user was typing in an existing row and picked a suggestion
+        // that matches a checked item, restore the row's original text.
+        final original = _itemById(rowId)?.text ?? '';
+        final handles = _handles[rowId];
+        if (handles != null) {
+          handles.controller.text = original;
+          handles.controller.selection = TextSelection.collapsed(
+            offset: original.length,
+          );
+          handles.typedSinceFocus = false;
+        }
+      }
+      setState(() {});
+      return;
+    }
+
     if (rowId == _kNewRowId) {
       widget.onAdd(text);
       _newRow.controller.clear();
