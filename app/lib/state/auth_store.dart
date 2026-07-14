@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,6 +17,7 @@ class AuthStore extends ChangeNotifier {
   String? error;
 
   static const _tokenKey = 'sticky_notes_token';
+  static const _userKey = 'sticky_notes_user';
   static const _urlsKey = 'sticky_notes_backend_urls';
   static const _activeUrlKey = 'sticky_notes_active_url';
 
@@ -89,17 +92,32 @@ class AuthStore extends ChangeNotifier {
     api.token = saved;
     try {
       user = await api.me();
+      await prefs.setString(_userKey, jsonEncode(user!.toJson()));
       status = AuthStatus.signedIn;
     } on ApiException {
       // Token revoked or expired; anything else (network) keeps the token and
       // signs in optimistically so the app works offline.
       api.token = null;
       await prefs.remove(_tokenKey);
+      await prefs.remove(_userKey);
       status = AuthStatus.signedOut;
     } catch (_) {
+      // Network unreachable: stay signed in with the last-known user so the
+      // per-user offline cache (keyed by user id) loads.
+      user = _cachedUser(prefs) ?? user;
       status = AuthStatus.signedIn;
     }
     notifyListeners();
+  }
+
+  AuthUser? _cachedUser(SharedPreferences prefs) {
+    final raw = prefs.getString(_userKey);
+    if (raw == null) return null;
+    try {
+      return AuthUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> _authenticate(
@@ -115,6 +133,7 @@ class AuthStore extends ChangeNotifier {
       status = AuthStatus.signedIn;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenKey, result.token);
+      await prefs.setString(_userKey, jsonEncode(result.user.toJson()));
       return true;
     } on ApiException catch (e) {
       error = switch (e.statusCode) {
@@ -157,6 +176,7 @@ class AuthStore extends ChangeNotifier {
     status = AuthStatus.signedOut;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
+    await prefs.remove(_userKey);
     notifyListeners();
   }
 }

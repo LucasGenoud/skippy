@@ -58,6 +58,8 @@ class UserRef {
 
   factory UserRef.fromJson(Map<String, dynamic> json) =>
       UserRef(id: json['id'] as String, username: json['username'] as String);
+
+  Map<String, dynamic> toJson() => {'id': id, 'username': username};
 }
 
 class Attachment {
@@ -82,6 +84,13 @@ class Attachment {
     filename: json['filename'] as String? ?? '',
     size: (json['size'] as num?)?.toInt() ?? 0,
   );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'mime': mime,
+    'filename': filename,
+    'size': size,
+  };
 }
 
 class Note {
@@ -96,6 +105,7 @@ class Note {
   final bool trashed;
   final double position;
   final DateTime? reminderAt;
+
   /// Audio-note transcription state: `none` (not an audio note or no clip yet),
   /// `pending` (Whisper running), `done`, or `failed`. Server-owned.
   final String transcriptStatus;
@@ -233,6 +243,30 @@ class Note {
     );
   }
 
+  /// Full, lossless serialization — the inverse of [Note.fromJson], used to
+  /// cache notes locally for offline use. Keys match the wire format so a
+  /// cached note reads back identically to one fetched from the server.
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'kind': kind.wire,
+    'title': title,
+    'content': content,
+    'items': itemsToJson(items),
+    'color': color,
+    'pinned': pinned,
+    'archived': archived,
+    'trashed': trashed,
+    'position': position,
+    'reminder_at': reminderAt?.toUtc().toIso8601String(),
+    'transcript_status': transcriptStatus,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+    'label_ids': labelIds.toList(),
+    'owner': owner?.toJson(),
+    'collaborators': [for (final c in collaborators) c.toJson()],
+    'attachments': [for (final a in attachments) a.toJson()],
+  };
+
   static List<Map<String, dynamic>> itemsToJson(List<ChecklistItem> items) => [
     for (final i in items) i.toJson(),
   ];
@@ -246,6 +280,8 @@ class Label {
 
   factory Label.fromJson(Map<String, dynamic> json) =>
       Label(id: json['id'] as String, name: json['name'] as String);
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
 }
 
 @immutable
@@ -257,4 +293,6 @@ class AuthUser {
 
   factory AuthUser.fromJson(Map<String, dynamic> json) =>
       AuthUser(id: json['id'] as String, username: json['username'] as String);
+
+  Map<String, dynamic> toJson() => {'id': id, 'username': username};
 }

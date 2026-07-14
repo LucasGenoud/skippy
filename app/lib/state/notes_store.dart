@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../util/connectivity.dart';
+import 'local_cache.dart';
 
 enum NoteView { notes, reminders, archive, trash, label }
 
@@ -43,6 +45,11 @@ class NoteSections {
 class NotesStore extends ChangeNotifier {
   final Api api;
 
+  /// Persists notes + the pending sync queue locally so unsynced edits survive
+  /// a reload and the app opens instantly, even offline. Defaults to an
+  /// in-memory cache (tests); the app injects [PrefsLocalCache].
+  final LocalCache cache;
+
   /// The signed-in user; used to scope trash and owner-only actions.
   final String? currentUserId;
 
@@ -62,19 +69,31 @@ class NotesStore extends ChangeNotifier {
   bool offline = false;
   SortMode sortMode = SortMode.custom;
 
-  final List<Future<void> Function()> _queue = [];
+  final List<PendingOp> _queue = [];
   bool _flushing = false;
   Timer? _retryTimer;
   final Map<String, Timer> _saveDebounce = {};
+
+  /// The local cache is loaded exactly once, at the first [load]. Until then we
+  /// must not persist (that would clobber the on-disk copy with empty state).
+  bool _hydrated = false;
+  bool _persistDirty = false;
+  bool _persisting = false;
 
   /// Notes created locally that have not been sent to the server yet.
   final Set<String> _drafts = {};
 
   StreamSubscription<void>? _syncSub;
+  StreamSubscription<void>? _onlineSub;
   Timer? _syncReloadDebounce;
   bool _reloadPending = false;
 
-  NotesStore({required this.api, this.currentUserId, this.onRemoteChange});
+  NotesStore({
+    required this.api,
+    LocalCache? cache,
+    this.currentUserId,
+    this.onRemoteChange,
+  }) : cache = cache ?? MemoryLocalCache();
 
   List<Label> get labels => List.unmodifiable(_labels);
 
@@ -103,6 +122,7 @@ class NotesStore extends ChangeNotifier {
       _queue.isNotEmpty || _drafts.isNotEmpty || _saveDebounce.isNotEmpty;
 
   Future<void> load() async {
+    await _hydrate();
     try {
       final notes = await api.fetchNotes();
       final labels = await api.fetchLabels();
@@ -125,6 +145,103 @@ class NotesStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------------------------------------------------------------
+  // Local persistence (offline cache)
+
+  String get _cacheKey => currentUserId ?? 'local';
+
+  /// Load the on-disk snapshot so notes render instantly — before, and even
+  /// without, a network round-trip. Runs once; the network fetch in [load]
+  /// then reconciles (local unsynced edits win). Persisted pending writes are
+  /// replayed right away.
+  Future<void> _hydrate() async {
+    if (_hydrated) return;
+    try {
+      final doc = await cache.read(_cacheKey);
+      if (doc != null) {
+        _notes = [
+          for (final j in (doc['notes'] as List? ?? const []))
+            Note.fromJson((j as Map).cast<String, dynamic>()),
+        ]..sort((a, b) => a.position.compareTo(b.position));
+        _labels = [
+          for (final j in (doc['labels'] as List? ?? const []))
+            Label.fromJson((j as Map).cast<String, dynamic>()),
+        ];
+        _checklistHistory = {
+          for (final e in (doc['history'] as Map? ?? const {}).entries)
+            e.key as String: (e.value as List).cast<String>(),
+        };
+        _queue
+          ..clear()
+          ..addAll([
+            for (final j in (doc['queue'] as List? ?? const []))
+              PendingOp.fromJson((j as Map).cast<String, dynamic>()),
+          ]);
+      }
+    } catch (_) {
+      // Corrupt/unreadable cache: start empty rather than fail to open.
+    }
+    _hydrated = true;
+    if (_notes.isNotEmpty || _labels.isNotEmpty) {
+      loading = false;
+      notifyListeners();
+    }
+    if (_queue.isNotEmpty) _flush();
+  }
+
+  /// Snapshot of everything worth keeping across launches. Empty drafts (a note
+  /// just started, no content yet) are transient and left out.
+  Map<String, dynamic> _toCacheDoc() {
+    final ops = [for (final op in _queue) op.toJson()];
+    // A content edit made in the last <400ms before a reload hasn't been
+    // enqueued yet (it's mid-debounce); fold those pending saves in so nothing
+    // is lost.
+    for (final id in _saveDebounce.keys) {
+      final note = noteById(id);
+      if (note != null) ops.add(_contentPatchOp(id, note).toJson());
+    }
+    return {
+      // Note.toJson carries attachment *metadata* only (id/mime/name/size) —
+      // never file bytes. Uploaded media stays on the server and is fetched by
+      // URL on demand, so the cache stays small regardless of attachment size.
+      'notes': [
+        for (final n in _notes)
+          if (!(_drafts.contains(n.id) && n.isEmpty)) n.toJson(),
+      ],
+      'labels': [for (final l in _labels) l.toJson()],
+      'history': _checklistHistory,
+      'queue': ops,
+    };
+  }
+
+  /// Coalesced, one-writer-at-a-time persistence. Uses a microtask (not a
+  /// timer) so it runs promptly after each change without leaking test timers.
+  void _persistSoon() {
+    if (!_hydrated) return;
+    _persistDirty = true;
+    if (_persisting) return;
+    _persisting = true;
+    scheduleMicrotask(_persistLoop);
+  }
+
+  Future<void> _persistLoop() async {
+    while (_persistDirty) {
+      _persistDirty = false;
+      try {
+        await cache.write(_cacheKey, _toCacheDoc());
+      } catch (_) {
+        // Best-effort; the next change retries the write.
+      }
+    }
+    _persisting = false;
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    _persistSoon();
+  }
+
   /// Live sync: any server-side change to this user's notes triggers a
   /// debounced refetch (skipped while our own edits are still in flight).
   void startSync() {
@@ -140,6 +257,10 @@ class NotesStore extends ChangeNotifier {
         }
       });
     });
+    // The browser fires 'online' the instant connectivity returns; flush the
+    // pending queue right away instead of waiting for the 5s retry tick.
+    _onlineSub?.cancel();
+    _onlineSub = onlineEvents().listen((_) => retryNow());
   }
 
   // ---------------------------------------------------------------------
@@ -273,15 +394,19 @@ class NotesStore extends ChangeNotifier {
   void _enqueueContentPatch(String id) {
     final latest = noteById(id);
     if (latest == null) return;
-    _enqueue(
-      () => api.patchNote(id, {
-        'kind': latest.kind.wire,
-        'title': latest.title,
-        'content': latest.content,
-        'items': Note.itemsToJson(latest.items),
-      }),
-    );
+    _enqueue(_contentPatchOp(id, latest));
   }
+
+  PendingOp _contentPatchOp(String id, Note note) => PendingOp(
+    'patch',
+    id: id,
+    data: {
+      'kind': note.kind.wire,
+      'title': note.title,
+      'content': note.content,
+      'items': Note.itemsToJson(note.items),
+    },
+  );
 
   /// Toggle a checklist box (works from the card without opening the note).
   void toggleChecklistItem(String noteId, String itemId) {
@@ -378,11 +503,15 @@ class NotesStore extends ChangeNotifier {
     _replace(updated.copyWith(updatedAt: DateTime.now()));
     if (_drafts.contains(id)) return;
     _enqueue(
-      () => api.patchNote(id, {
-        'kind': updated.kind.wire,
-        'content': updated.content,
-        'items': Note.itemsToJson(updated.items),
-      }),
+      PendingOp(
+        'patch',
+        id: id,
+        data: {
+          'kind': updated.kind.wire,
+          'content': updated.content,
+          'items': Note.itemsToJson(updated.items),
+        },
+      ),
     );
   }
 
@@ -390,11 +519,7 @@ class NotesStore extends ChangeNotifier {
     final note = noteById(id);
     if (note == null || note.isEmpty) return;
     _drafts.remove(id);
-    _enqueue(() async {
-      final latest = noteById(id);
-      if (latest == null) return;
-      await api.createNote(latest);
-    });
+    _enqueue(PendingOp('create', id: id));
   }
 
   void _replace(Note updated) {
@@ -424,7 +549,7 @@ class NotesStore extends ChangeNotifier {
     _replace(updated.copyWith(updatedAt: DateTime.now()));
     // Drafts have no server row yet; local state rides along in the create.
     if (_drafts.contains(id)) return;
-    _enqueue(() => api.patchNote(id, fields));
+    _enqueue(PendingOp('patch', id: id, data: fields));
   }
 
   void togglePin(String id) {
@@ -486,7 +611,7 @@ class NotesStore extends ChangeNotifier {
     _notes.removeWhere((n) => n.id == id);
     final wasDraft = _drafts.remove(id);
     notifyListeners();
-    if (!wasDraft) _enqueue(() => api.deleteNote(id));
+    if (!wasDraft) _enqueue(PendingOp('delete', id: id));
   }
 
   void emptyTrash() {
@@ -505,7 +630,7 @@ class NotesStore extends ChangeNotifier {
     ids.contains(labelId) ? ids.remove(labelId) : ids.add(labelId);
     _replace(note.copyWith(labelIds: ids));
     if (_drafts.contains(noteId)) return;
-    _enqueue(() => api.patchNote(noteId, {'label_ids': ids.toList()}));
+    _enqueue(PendingOp('patch', id: noteId, data: {'label_ids': ids.toList()}));
   }
 
   /// Persist a drag reorder: renumber the given section locally exactly the
@@ -517,8 +642,9 @@ class NotesStore extends ChangeNotifier {
     }
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
-    final ids = List<String>.from(orderedIds);
-    _enqueue(() => api.reorderNotes(ids));
+    _enqueue(
+      PendingOp('reorder', data: {'ids': List<String>.from(orderedIds)}),
+    );
   }
 
   /// "Make a copy": clone content into a fresh note at the front of the grid.
@@ -546,12 +672,16 @@ class NotesStore extends ChangeNotifier {
     _notes.insert(0, copy);
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
-    _enqueue(() async {
-      await api.createNote(copy);
-      if (copy.labelIds.isNotEmpty) {
-        await api.patchNote(copy.id, {'label_ids': copy.labelIds.toList()});
-      }
-    });
+    _enqueue(PendingOp('create', id: copy.id));
+    if (copy.labelIds.isNotEmpty) {
+      _enqueue(
+        PendingOp(
+          'patch',
+          id: copy.id,
+          data: {'label_ids': copy.labelIds.toList()},
+        ),
+      );
+    }
   }
 
   /// Flush pending edits when an editor closes. Returns true when the note
@@ -613,7 +743,9 @@ class NotesStore extends ChangeNotifier {
         ),
       );
     }
-    _enqueue(() => api.removeCollaborator(noteId, userId));
+    _enqueue(
+      PendingOp('removeCollaborator', id: noteId, data: {'userId': userId}),
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -677,7 +809,7 @@ class NotesStore extends ChangeNotifier {
             .toList(),
       ),
     );
-    _enqueue(() => api.deleteAttachment(attachmentId));
+    _enqueue(PendingOp('deleteAttachment', id: attachmentId));
   }
 
   String fileUrl(String attachmentId) => api.fileUrl(attachmentId);
@@ -716,7 +848,7 @@ class NotesStore extends ChangeNotifier {
     final note = noteById(id);
     if (note == null) return;
     _replace(note.copyWith(transcriptStatus: 'pending'));
-    _enqueue(() => api.transcribeNote(id));
+    _enqueue(PendingOp('transcribe', id: id));
   }
 
   // ---------------------------------------------------------------------
@@ -742,7 +874,9 @@ class NotesStore extends ChangeNotifier {
     _labels = [..._labels, label]
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     notifyListeners();
-    _enqueue(() => api.createLabel(label.id, label.name));
+    _enqueue(
+      PendingOp('labelCreate', id: label.id, data: {'name': label.name}),
+    );
     return label;
   }
 
@@ -754,7 +888,7 @@ class NotesStore extends ChangeNotifier {
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
     notifyListeners();
-    _enqueue(() => api.renameLabel(id, name.trim()));
+    _enqueue(PendingOp('labelRename', id: id, data: {'name': name.trim()}));
   }
 
   void deleteLabel(String id) {
@@ -767,14 +901,15 @@ class NotesStore extends ChangeNotifier {
       }
     }
     notifyListeners();
-    _enqueue(() => api.deleteLabel(id));
+    _enqueue(PendingOp('labelDelete', id: id));
   }
 
   // ---------------------------------------------------------------------
   // Sync queue
 
-  void _enqueue(Future<void> Function() op) {
+  void _enqueue(PendingOp op) {
     _queue.add(op);
+    _persistSoon();
     _flush();
   }
 
@@ -795,8 +930,9 @@ class NotesStore extends ChangeNotifier {
     while (_queue.isNotEmpty) {
       final op = _queue.first;
       try {
-        await op();
+        await _run(op);
         _queue.removeAt(0);
+        _persistSoon();
         if (offline) {
           offline = false;
           notifyListeners();
@@ -807,6 +943,7 @@ class NotesStore extends ChangeNotifier {
         if (e.statusCode >= 400 && e.statusCode < 500) {
           debugPrint('dropping rejected op: $e');
           _queue.removeAt(0);
+          _persistSoon();
           continue;
         }
         _scheduleRetry();
@@ -820,6 +957,37 @@ class NotesStore extends ChangeNotifier {
     if (_queue.isEmpty && _reloadPending && !_hasLocalChangesInFlight) {
       _reloadPending = false;
       load();
+    }
+  }
+
+  /// Execute one queued write. Creates re-read the freshest note so edits made
+  /// after enqueuing still go up; a create for a note deleted in the meantime
+  /// is a no-op (a trailing delete/404 tidies the server side).
+  Future<void> _run(PendingOp op) {
+    switch (op.kind) {
+      case 'create':
+        final note = noteById(op.id!);
+        return note == null ? Future.value() : api.createNote(note);
+      case 'patch':
+        return api.patchNote(op.id!, op.data);
+      case 'delete':
+        return api.deleteNote(op.id!);
+      case 'reorder':
+        return api.reorderNotes((op.data['ids'] as List).cast<String>());
+      case 'labelCreate':
+        return api.createLabel(op.id!, op.data['name'] as String);
+      case 'labelRename':
+        return api.renameLabel(op.id!, op.data['name'] as String);
+      case 'labelDelete':
+        return api.deleteLabel(op.id!);
+      case 'removeCollaborator':
+        return api.removeCollaborator(op.id!, op.data['userId'] as String);
+      case 'deleteAttachment':
+        return api.deleteAttachment(op.id!);
+      case 'transcribe':
+        return api.transcribeNote(op.id!);
+      default:
+        return Future<void>.value();
     }
   }
 
@@ -846,9 +1014,33 @@ class NotesStore extends ChangeNotifier {
     _retryTimer?.cancel();
     _syncReloadDebounce?.cancel();
     _syncSub?.cancel();
+    _onlineSub?.cancel();
     for (final t in _saveDebounce.values) {
       t.cancel();
     }
     super.dispose();
   }
+}
+
+/// A serializable pending write. Replacing closures with these lets the sync
+/// queue be persisted and replayed after a reload. [kind] selects the API call
+/// (see `NotesStore._run`); [id] and [data] carry its arguments.
+class PendingOp {
+  final String kind;
+  final String? id;
+  final Map<String, dynamic> data;
+
+  const PendingOp(this.kind, {this.id, this.data = const {}});
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind,
+    if (id != null) 'id': id,
+    if (data.isNotEmpty) 'data': data,
+  };
+
+  factory PendingOp.fromJson(Map<String, dynamic> json) => PendingOp(
+    json['kind'] as String,
+    id: json['id'] as String?,
+    data: (json['data'] as Map?)?.cast<String, dynamic>() ?? const {},
+  );
 }

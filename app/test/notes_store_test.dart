@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sticky_notes/api/api_client.dart';
 import 'package:sticky_notes/models/dropped_file.dart';
 import 'package:sticky_notes/models/note.dart';
+import 'package:sticky_notes/state/local_cache.dart';
 import 'package:sticky_notes/state/notes_store.dart';
 
 import 'fake_api.dart';
@@ -452,25 +453,27 @@ void main() {
   });
 
   group('audio notes', () {
-    test('createAudioNote makes an audio note that starts transcribing',
-        () async {
-      final id = await store.createAudioNote(
-        Uint8List.fromList(List.filled(64, 1)),
-        'audio/webm',
-      );
-      expect(id, isNotNull);
+    test(
+      'createAudioNote makes an audio note that starts transcribing',
+      () async {
+        final id = await store.createAudioNote(
+          Uint8List.fromList(List.filled(64, 1)),
+          'audio/webm',
+        );
+        expect(id, isNotNull);
 
-      final note = store.noteById(id!)!;
-      expect(note.kind, NoteKind.audio);
-      // Shown as transcribing immediately, before the server responds.
-      expect(note.transcriptStatus, 'pending');
-      expect(note.transcribing, isTrue);
-      // The clip is attached and recognized as audio.
-      expect(note.audioClip, isNotNull);
-      expect(note.audioClip!.mime, 'audio/webm');
-      // Persisted server-side as an audio note.
-      expect(api.notes[id]!.kind, NoteKind.audio);
-    });
+        final note = store.noteById(id!)!;
+        expect(note.kind, NoteKind.audio);
+        // Shown as transcribing immediately, before the server responds.
+        expect(note.transcriptStatus, 'pending');
+        expect(note.transcribing, isTrue);
+        // The clip is attached and recognized as audio.
+        expect(note.audioClip, isNotNull);
+        expect(note.audioClip!.mime, 'audio/webm');
+        // Persisted server-side as an audio note.
+        expect(api.notes[id]!.kind, NoteKind.audio);
+      },
+    );
 
     test('a failed upload discards the draft', () async {
       api.failWith = ApiException(500, 'boom');
@@ -483,8 +486,10 @@ void main() {
     });
 
     test('retranscribe flips back to pending and calls the server', () async {
-      api.notes['a1'] = serverNote('a1', kind: NoteKind.audio)
-          .copyWith(transcriptStatus: 'failed');
+      api.notes['a1'] = serverNote(
+        'a1',
+        kind: NoteKind.audio,
+      ).copyWith(transcriptStatus: 'failed');
       await store.load();
       expect(store.noteById('a1')!.transcriptFailed, isTrue);
 
@@ -550,5 +555,139 @@ void main() {
       await settle();
       expect(store.noteById('n1')!.title, 'after (remote)');
     });
+  });
+
+  group('offline persistence', () {
+    test('edits are written to the local cache', () async {
+      final cache = MemoryLocalCache();
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await s.load();
+
+      s.setColor('n1', 'teal');
+      await settle();
+
+      final doc = await cache.read('u-me');
+      final notes = (doc!['notes'] as List).cast<Map<String, dynamic>>();
+      expect(notes.single['color'], 'teal');
+      expect(doc['queue'] as List, isEmpty); // synced; nothing left pending
+      s.dispose();
+    });
+
+    test('opens from cache when the server is unreachable', () async {
+      final cache = MemoryLocalCache();
+      // Seed a previous session's snapshot.
+      await cache.write('u-me', {
+        'notes': [serverNote('n1', title: 'cached').toJson()],
+        'labels': <dynamic>[],
+        'history': <String, dynamic>{},
+        'queue': <dynamic>[],
+      });
+      api.failWith = Exception('offline');
+
+      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await s.load();
+
+      expect(s.offline, isTrue);
+      expect(s.noteById('n1')?.title, 'cached'); // rendered with no network
+      s.dispose();
+    });
+
+    test('a note created offline syncs on the next (online) launch', () async {
+      final cache = MemoryLocalCache();
+
+      // Session 1: offline. Compose a note; it never reaches the server.
+      api.failWith = Exception('offline');
+      final s1 = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await s1.load();
+      final draft = s1.createDraft();
+      s1.updateNoteContent(draft.id, title: 'written offline');
+      await settle();
+      expect(s1.offline, isTrue);
+      expect(api.notes, isEmpty);
+      s1.dispose();
+
+      // Session 2: same cache, back online. The note pushes up on its own.
+      api.failWith = null;
+      final s2 = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await s2.load();
+      await settle();
+      expect(api.notes[draft.id]?.title, 'written offline');
+      s2.dispose();
+    });
+
+    test('persisted pending writes replay on the next launch', () async {
+      final cache = MemoryLocalCache();
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      await cache.write('u-me', {
+        'notes': [api.notes['n1']!.copyWith(color: 'teal').toJson()],
+        'labels': <dynamic>[],
+        'history': <String, dynamic>{},
+        'queue': [
+          {
+            'kind': 'patch',
+            'id': 'n1',
+            'data': {'color': 'teal'},
+          },
+        ],
+      });
+
+      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await s.load();
+      await settle();
+
+      expect(api.notes['n1']!.color, 'teal'); // queued patch reached the server
+      final doc = await cache.read('u-me');
+      expect(doc!['queue'] as List, isEmpty); // and drained from the cache
+      s.dispose();
+    });
+
+    test('a rejected (4xx) pending write is dropped, not wedged', () async {
+      final cache = MemoryLocalCache();
+      await cache.write('u-me', {
+        'notes': <dynamic>[],
+        'labels': <dynamic>[],
+        'history': <String, dynamic>{},
+        'queue': [
+          {
+            'kind': 'patch',
+            'id': 'ghost', // no such note server-side -> 404
+            'data': {'color': 'teal'},
+          },
+        ],
+      });
+
+      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await s.load();
+      await settle();
+
+      expect(s.offline, isFalse);
+      final doc = await cache.read('u-me');
+      expect(doc!['queue'] as List, isEmpty);
+      s.dispose();
+    });
+
+    test(
+      'a content edit still mid-debounce is captured in the cache',
+      () async {
+        final cache = MemoryLocalCache();
+        api.notes['n1'] = serverNote('n1', title: 'a');
+        final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+        await s.load();
+
+        s.updateNoteContent('n1', content: 'typed, then reloaded');
+        // Let the persist microtask run, but NOT the 400ms save debounce.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final doc = await cache.read('u-me');
+        final queue = (doc!['queue'] as List).cast<Map<String, dynamic>>();
+        final patch = queue.firstWhere(
+          (op) => op['kind'] == 'patch' && op['id'] == 'n1',
+          orElse: () => <String, dynamic>{},
+        );
+        expect((patch['data'] as Map?)?['content'], 'typed, then reloaded');
+        s.dispose();
+      },
+    );
   });
 }

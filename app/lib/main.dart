@@ -5,6 +5,7 @@ import 'api/api_client.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'state/auth_store.dart';
+import 'state/local_cache.dart';
 import 'state/notes_store.dart';
 import 'state/settings_store.dart';
 import 'theme.dart';
@@ -48,6 +49,7 @@ class _StickyNotesAppState extends State<StickyNotesApp> {
       _store =
           NotesStore(
               api: _api,
+              cache: PrefsLocalCache(),
               currentUserId: userId,
               // Settings changes on other devices arrive on the same socket.
               onRemoteChange: () => settings.load(),
