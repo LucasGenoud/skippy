@@ -1,4 +1,5 @@
 import 'package:animations/animations.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
@@ -370,8 +371,11 @@ class _NoteCardContent extends StatelessWidget {
   }
 }
 
-/// Checkbox rows on the card itself — tappable on desktop/web without opening
-/// the editor. Disabled on touch platforms to prevent accidental checks.
+/// Checkbox rows on the card itself. Only the checkbox is tappable so
+/// checking an item from the grid never opens the editor; the rest of the
+/// row still opens the note. On the web (any device) and desktop apps the
+/// checkbox toggles in place; on native mobile it stays inert so the whole
+/// tap opens the editor (avoids accidental checks on a tiny grid target).
 class _ChecklistRow extends StatelessWidget {
   final Note note;
   final ChecklistItem item;
@@ -380,42 +384,46 @@ class _ChecklistRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // On mobile, tapping the tiny checkbox area in the grid is too easy to
-    // trigger accidentally. Only allow toggling from inside the editor.
-    final canToggle = !note.trashed && !isTouchPrimaryPlatform;
-    return InkWell(
-      onTap: canToggle
-          ? () =>
-                context.read<NotesStore>().toggleChecklistItem(note.id, item.id)
-          : null,
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              item.done
-                  ? Icons.check_box_outlined
-                  : Icons.check_box_outline_blank,
-              size: 18,
-              color: scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                item.text,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  height: 1.35,
-                  decoration: item.done ? TextDecoration.lineThrough : null,
-                  color: item.done ? scheme.onSurfaceVariant : null,
-                ),
+    final canToggle = !note.trashed && (kIsWeb || !isTouchPrimaryPlatform);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Enlarge the checkbox hit target without growing the visible icon.
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: InkWell(
+              onTap: canToggle
+                  ? () => context
+                      .read<NotesStore>()
+                      .toggleChecklistItem(note.id, item.id)
+                  : null,
+              borderRadius: BorderRadius.circular(4),
+              child: Icon(
+                item.done
+                    ? Icons.check_box_outlined
+                    : Icons.check_box_outline_blank,
+                size: 18,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              item.text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                height: 1.35,
+                decoration: item.done ? TextDecoration.lineThrough : null,
+                color: item.done ? scheme.onSurfaceVariant : null,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
