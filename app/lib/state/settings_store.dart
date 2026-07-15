@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../theme.dart';
 
 /// One entry in the user's note-color palette.
 class PaletteEntry {
@@ -130,6 +131,7 @@ class SettingsStore extends ChangeNotifier {
   final Api api;
 
   ThemeMode themeMode = ThemeMode.system;
+  Color accentColor = kDefaultAccent;
   AppDateFormat dateFormat = AppDateFormat.monthFirst;
   bool use24hTime = false;
   bool defaultListMode = false;
@@ -185,6 +187,8 @@ class SettingsStore extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+    accentColor =
+        PaletteEntry.hexToColor(json['accent'] as String?) ?? kDefaultAccent;
     dateFormat =
         AppDateFormat.values.asNameMap()[json['date_format']] ??
         AppDateFormat.monthFirst;
@@ -211,6 +215,7 @@ class SettingsStore extends ChangeNotifier {
       ThemeMode.dark => 'dark',
       ThemeMode.system => 'system',
     },
+    'accent': PaletteEntry.colorToHex(accentColor),
     'date_format': dateFormat.name,
     'time_format': use24hTime ? '24h' : '12h',
     'default_view': defaultListMode ? 'list' : 'grid',
@@ -235,6 +240,7 @@ class SettingsStore extends ChangeNotifier {
   }
 
   void setThemeMode(ThemeMode mode) => _mutate(() => themeMode = mode);
+  void setAccentColor(Color color) => _mutate(() => accentColor = color);
 
   /// Cycle light/dark from the app-bar button, given the effective brightness.
   void toggleTheme(Brightness current) => _mutate(() {

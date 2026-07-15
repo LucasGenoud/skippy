@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sticky_notes/state/settings_store.dart';
+import 'package:sticky_notes/theme.dart';
 
 import 'fake_api.dart';
 
@@ -60,6 +61,27 @@ void main() {
     expect(other.palette.last.name, 'Lava');
     expect(other.palette.last.light, const Color(0xFFFF5722));
     other.dispose();
+  });
+
+  test('accent color persists, roundtrips, and defaults when absent', () async {
+    await settings.load();
+    expect(settings.accentColor, kDefaultAccent);
+
+    settings.setAccentColor(const Color(0xFF1A73E8));
+    await settleSave();
+    expect(api.settings['accent'], '#1A73E8');
+
+    final other = SettingsStore(api: api);
+    await other.load();
+    expect(other.accentColor, const Color(0xFF1A73E8));
+    other.dispose();
+
+    // A payload without (or with a broken) accent falls back to the default.
+    api.settings = {'accent': 'nope'};
+    final third = SettingsStore(api: api);
+    await third.load();
+    expect(third.accentColor, kDefaultAccent);
+    third.dispose();
   });
 
   test('malformed settings fall back to defaults per field', () async {

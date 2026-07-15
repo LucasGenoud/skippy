@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../models/note.dart';
+import '../util/motion.dart';
 import '../util/platform.dart';
 import 'measure_size.dart';
 
@@ -60,7 +61,7 @@ class _Layout {
 }
 
 class _AnimatedMasonryState extends State<AnimatedMasonry>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const double _estimatedHeight = 120;
   static const Duration _moveDuration = Duration(milliseconds: 240);
 
@@ -85,16 +86,27 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   late final Ticker _autoScrollTicker;
   Duration _lastTick = Duration.zero;
 
+  // One-shot staggered entrance: every tile shares this controller and takes a
+  // staggered slice of it (see [_TileEntrance]), so the grid cascades in once
+  // heights are known.
+  late final AnimationController _entranceController;
+  bool _entranceStarted = false;
+
   @override
   void initState() {
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
     _autoScrollTicker = createTicker(_onAutoScrollTick);
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
   }
 
   @override
   void dispose() {
     _autoScrollTicker.dispose();
+    _entranceController.dispose();
     super.dispose();
   }
 
@@ -354,30 +366,80 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
             if (mounted) setState(() => _snapFrame = false);
           });
         }
-        return AnimatedOpacity(
-          opacity: _ready ? 1 : 0,
-          duration: const Duration(milliseconds: 200),
-          child: SizedBox(
-            height: layout.totalHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (final id in _orderIds)
-                  if (_noteById(id) case final Note note)
-                    AnimatedPositioned(
-                      key: ValueKey(id),
-                      duration: snap ? Duration.zero : _moveDuration,
-                      curve: Curves.easeOutCubic,
-                      left: layout.slots[id]!.x,
-                      top: layout.slots[id]!.y,
-                      width: layout.columnWidth,
-                      child: MeasureSize(
-                        onChange: (size) => _onHeightMeasured(id, size.height),
+        // Kick the one-shot entrance off once every tile has been measured
+        // (before that, tiles sit at the controller's 0 value — invisible —
+        // while their heights settle).
+        if (_ready && !_entranceStarted) {
+          _entranceStarted = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (Motion.reduced(context)) {
+              _entranceController.value = 1;
+            } else {
+              _entranceController.forward(from: 0);
+            }
+          });
+        }
+        return SizedBox(
+          height: layout.totalHeight,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var i = 0; i < _orderIds.length; i++)
+                if (_noteById(_orderIds[i]) case final Note note)
+                  AnimatedPositioned(
+                    key: ValueKey(note.id),
+                    duration: snap ? Duration.zero : _moveDuration,
+                    curve: Motion.standard,
+                    left: layout.slots[note.id]!.x,
+                    top: layout.slots[note.id]!.y,
+                    width: layout.columnWidth,
+                    child: MeasureSize(
+                      onChange: (size) =>
+                          _onHeightMeasured(note.id, size.height),
+                      child: _TileEntrance(
+                        animation: _entranceController,
+                        index: i,
                         child: RepaintBoundary(child: _buildTile(note, layout)),
                       ),
                     ),
-              ],
-            ),
+                  ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Fades and lifts a tile into place on first appearance. Every tile shares the
+/// masonry's one entrance controller; [index] offsets each tile's slice of it
+/// (capped) so they cascade in rather than popping together.
+class _TileEntrance extends StatelessWidget {
+  final Animation<double> animation;
+  final int index;
+  final Widget child;
+  const _TileEntrance({
+    required this.animation,
+    required this.index,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final start = math.min(index * 0.05, 0.5);
+    final end = math.min(start + 0.5, 1.0);
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final raw = ((animation.value - start) / (end - start)).clamp(0.0, 1.0);
+        final t = Motion.standard.transform(raw);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 8),
+            child: child,
           ),
         );
       },

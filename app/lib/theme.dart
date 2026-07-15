@@ -3,13 +3,19 @@ import 'package:flutter/material.dart';
 // Note colors live in SettingsStore (user-customizable palette); this file
 // only builds the app-wide themes.
 
-ThemeData buildTheme(Brightness brightness) {
+/// The app's default accent — Keep's amber. Users can override it in Settings;
+/// [SettingsStore] stores the choice and feeds it back in as [buildTheme]'s
+/// seed, so one color reseeds the whole Material scheme for both brightnesses.
+const Color kDefaultAccent = Color(0xFFFBBC04);
+
+ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final light = brightness == Brightness.light;
-  // Neutralize the seed's amber cast on surfaces — Keep pairs a yellow accent
-  // with plain gray/white neutrals.
+  // Neutralize the seed's cast on surfaces — Keep pairs a colored accent with
+  // plain gray/white neutrals, so we keep the surfaces neutral whatever the
+  // accent is and let the seed drive only `primary` and its companions.
   final scheme =
       ColorScheme.fromSeed(
-        seedColor: const Color(0xFFFBBC04),
+        seedColor: seed,
         brightness: brightness,
       ).copyWith(
         surface: light ? Colors.white : const Color(0xFF202124),
@@ -26,9 +32,10 @@ ThemeData buildTheme(Brightness brightness) {
             ? const Color(0xFFE9EBEE)
             : const Color(0xFF3C3D41),
       );
-  // A very light grey canvas so white note cards lift off the background.
-  // (Dark mode keeps its darker surface, where cards are already lighter.)
-  final canvas = light ? const Color(0xFFF4F5F7) : scheme.surface;
+  // A whisper-grey canvas so white note cards lift off the background. In dark
+  // mode the canvas sits a hair *above* the surface, so plain (surface-filled)
+  // cards read as distinct instead of blending into the background.
+  final canvas = light ? const Color(0xFFF8F9FA) : const Color(0xFF26272A);
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,

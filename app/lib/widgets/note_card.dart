@@ -8,13 +8,19 @@ import '../screens/editor_screen.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import 'transcribing_indicator.dart';
+import '../util/highlight.dart';
+import '../util/motion.dart';
 import '../util/platform.dart';
 
 /// A note in the grid. The whole tile is an [OpenContainer], so tapping it
 /// morphs the card into the editor (Keep's signature transition).
 class NoteTile extends StatefulWidget {
   final Note note;
-  const NoteTile({super.key, required this.note});
+
+  /// The active search query, used to highlight matches. Empty when not
+  /// searching.
+  final String query;
+  const NoteTile({super.key, required this.note, this.query = ''});
 
   @override
   State<NoteTile> createState() => _NoteTileState();
@@ -41,16 +47,18 @@ class _NoteTileState extends State<NoteTile> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+        duration: Motion.fast,
+        curve: Motion.standard,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
-            if (_hovered)
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
+            // A whisper of shadow at rest lifts the card off the grey canvas;
+            // it deepens on hover for a tactile response.
+            BoxShadow(
+              color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.05),
+              blurRadius: _hovered ? 14 : 4,
+              offset: Offset(0, _hovered ? 5 : 1),
+            ),
           ],
         ),
         child: OpenContainer<void>(
@@ -72,7 +80,11 @@ class _NoteTileState extends State<NoteTile> {
             borderRadius: BorderRadius.circular(12),
             onTap: () =>
                 openNoteEditor(context, openFullscreen: open, noteId: note.id),
-            child: _NoteCardContent(note: note, hovered: _hovered),
+            child: _NoteCardContent(
+              note: note,
+              hovered: _hovered,
+              query: widget.query,
+            ),
           ),
           openBuilder: (context, close) => EditorScreen(noteId: note.id),
         ),
@@ -84,7 +96,12 @@ class _NoteTileState extends State<NoteTile> {
 class _NoteCardContent extends StatelessWidget {
   final Note note;
   final bool hovered;
-  const _NoteCardContent({required this.note, required this.hovered});
+  final String query;
+  const _NoteCardContent({
+    required this.note,
+    required this.hovered,
+    this.query = '',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -142,8 +159,18 @@ class _NoteCardContent extends StatelessWidget {
                       Padding(
                         // Keep clear of the pin button.
                         padding: EdgeInsets.only(right: showPinButton ? 28 : 0),
-                        child: Text(
-                          note.title,
+                        child: Text.rich(
+                          TextSpan(
+                            children: highlightSpans(
+                              note.title,
+                              query,
+                              highlight: TextStyle(
+                                backgroundColor: scheme.primary.withValues(
+                                  alpha: 0.30,
+                                ),
+                              ),
+                            ),
+                          ),
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                             height: 1.3,
@@ -206,8 +233,18 @@ class _NoteCardContent extends StatelessWidget {
                         ),
                       )
                     else if (!note.isChecklist && note.content.isNotEmpty)
-                      Text(
-                        note.content,
+                      Text.rich(
+                        TextSpan(
+                          children: highlightSpans(
+                            note.content,
+                            query,
+                            highlight: TextStyle(
+                              backgroundColor: scheme.primary.withValues(
+                                alpha: 0.30,
+                              ),
+                            ),
+                          ),
+                        ),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.45,
                         ),
@@ -348,10 +385,8 @@ class _ChecklistRow extends StatelessWidget {
     final canToggle = !note.trashed && !isTouchPrimaryPlatform;
     return InkWell(
       onTap: canToggle
-          ? () => context.read<NotesStore>().toggleChecklistItem(
-              note.id,
-              item.id,
-            )
+          ? () =>
+                context.read<NotesStore>().toggleChecklistItem(note.id, item.id)
           : null,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
@@ -537,9 +572,9 @@ class _AudioPill extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               'Audio',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),

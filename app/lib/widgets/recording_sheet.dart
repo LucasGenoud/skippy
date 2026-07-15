@@ -55,7 +55,7 @@ class _RecordingSheetState extends State<RecordingSheet>
 
   Future<void> _begin() async {
     if (!audioRecordingSupported) {
-      setState(() => _error = 'Audio recording is only available on the web.');
+      setState(() => _error = 'Audio recording isn\'t supported on this device.');
       return;
     }
     try {
@@ -72,7 +72,7 @@ class _RecordingSheetState extends State<RecordingSheet>
       if (mounted) {
         setState(
           () => _error =
-              "Couldn't access the microphone. Check your browser's "
+              "Couldn't access the microphone. Check your microphone "
               'permissions and try again.',
         );
       }

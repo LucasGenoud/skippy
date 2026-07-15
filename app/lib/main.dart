@@ -91,8 +91,14 @@ class _StickyNotesAppState extends State<StickyNotesApp> {
           title: 'Sticky Notes',
           debugShowCheckedModeBanner: false,
           scaffoldMessengerKey: scaffoldMessengerKey,
-          theme: buildTheme(Brightness.light),
-          darkTheme: buildTheme(Brightness.dark),
+          theme: buildTheme(
+            Brightness.light,
+            seed: settings?.accentColor ?? kDefaultAccent,
+          ),
+          darkTheme: buildTheme(
+            Brightness.dark,
+            seed: settings?.accentColor ?? kDefaultAccent,
+          ),
           themeMode: settings?.themeMode ?? ThemeMode.system,
           home: Consumer<AuthStore>(
             builder: (context, auth, _) => AnimatedSwitcher(

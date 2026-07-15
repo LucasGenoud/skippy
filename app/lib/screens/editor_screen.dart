@@ -158,6 +158,37 @@ class _EditorScreenState extends State<EditorScreen> {
     _contentController.addListener(_onTextChanged);
     _findController.addListener(() => setState(() {}));
     _mirror = _currentSnapshot();
+    // A brand-new text/markdown note wants the body focused for immediate
+    // typing. But focusing on mount makes iOS raise the keyboard while the open
+    // transition (container morph / fade-scale modal) is still animating —
+    // the two animations fight and the layout resizes mid-open, which stutters.
+    // Wait for the route to finish opening, then focus.
+    if (widget.noteId == null && widget.kind != NoteKind.checklist) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _focusBodyAfterOpen(),
+      );
+    }
+  }
+
+  void _focusBodyAfterOpen() {
+    if (!mounted) return;
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.isCompleted) {
+      _contentFocus.requestFocus();
+      return;
+    }
+    void onStatus(AnimationStatus status) {
+      if (status != AnimationStatus.completed &&
+          status != AnimationStatus.dismissed) {
+        return;
+      }
+      animation.removeStatusListener(onStatus);
+      if (mounted && status == AnimationStatus.completed) {
+        _contentFocus.requestFocus();
+      }
+    }
+
+    animation.addStatusListener(onStatus);
   }
 
   @override
@@ -908,7 +939,9 @@ class _EditorScreenState extends State<EditorScreen> {
       readOnly: trashed,
       query: query,
       monospace: _kind == NoteKind.markdown,
-      autofocus: widget.noteId == null && widget.kind != NoteKind.checklist,
+      // Focus is requested after the open transition settles (see initState)
+      // so iOS doesn't raise the keyboard mid-animation.
+      autofocus: false,
     );
   }
 
