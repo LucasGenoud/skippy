@@ -285,7 +285,10 @@ impl SearchService {
         Self { embedder, index }
     }
 
-    fn note_text(record: &NoteRecord) -> String {
+    /// The searchable/embeddable plain text of a note: title, content, and
+    /// checklist item texts. Also reused as the note text shown to the LLM
+    /// for auto-labeling and chat context.
+    pub fn note_text(record: &NoteRecord) -> String {
         let items = record
             .items
             .iter()

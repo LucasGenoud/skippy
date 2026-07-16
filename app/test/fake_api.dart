@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:sticky_notes/api/api_client.dart';
+import 'package:sticky_notes/models/chat.dart';
 import 'package:sticky_notes/models/note.dart';
 
 /// In-memory [Api] for tests: mirrors the server's semantics closely enough
@@ -313,4 +314,33 @@ class FakeApi implements Api {
 
   @override
   Stream<void> changeEvents() => _events.stream;
+
+  /// Result of [testLlm]; tests flip this to exercise the failure path.
+  bool llmTestOk = true;
+
+  @override
+  Future<({bool ok, String? error})> testLlm({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+  }) => _run(
+    'testLlm',
+    () => (ok: llmTestOk, error: llmTestOk ? null : 'connection refused'),
+  );
+
+  /// Frames [chat] replays for a turn; tests override to script a chat.
+  List<ChatEvent> chatScript = const [
+    ChatSourcesEvent([]),
+    ChatDeltaEvent('Hello '),
+    ChatDeltaEvent('there.'),
+    ChatDoneEvent(),
+  ];
+
+  @override
+  Stream<ChatEvent> chat(String message, List<ChatMessage> history) {
+    log.add('chat:$message');
+    final fail = failWith;
+    if (fail != null) return Stream.error(fail);
+    return Stream.fromIterable(chatScript);
+  }
 }

@@ -1,14 +1,18 @@
+pub mod assist;
 pub mod auth;
 pub mod error;
 pub mod files;
 pub mod handlers;
+pub mod llm;
 pub mod models;
 pub mod search;
 pub mod store;
 pub mod transcribe;
 pub mod ws;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
@@ -28,11 +32,29 @@ pub struct AppState {
     pub search: Option<Arc<search::SearchService>>,
     /// Present when audio transcription (Whisper) is enabled.
     pub transcribe: Option<Arc<dyn transcribe::Transcriber>>,
+    /// Always present — LLM availability is per-user configuration (endpoint,
+    /// key, model in the user's settings document), not server wiring.
+    pub llm: Arc<dyn llm::Llm>,
+    /// note_id -> generation counter, coalescing auto-labeling triggers so a
+    /// burst of debounced autosaves costs one LLM call.
+    pub label_generations: Arc<Mutex<HashMap<String, u64>>>,
+    /// How long a labeling task waits for further edits before it fires.
+    /// Tests shrink this.
+    pub label_delay: Duration,
 }
 
 impl AppState {
     pub fn new(repo: Arc<dyn Repository>, files: FileStore) -> Self {
-        Self { repo, hub: Hub::default(), files, search: None, transcribe: None }
+        Self {
+            repo,
+            hub: Hub::default(),
+            files,
+            search: None,
+            transcribe: None,
+            llm: Arc::new(llm::OpenAiCompatLlm::default()),
+            label_generations: Arc::default(),
+            label_delay: Duration::from_secs(20),
+        }
     }
 
     pub fn with_search(mut self, service: Arc<search::SearchService>) -> Self {
@@ -42,6 +64,16 @@ impl AppState {
 
     pub fn with_transcription(mut self, service: Arc<dyn transcribe::Transcriber>) -> Self {
         self.transcribe = Some(service);
+        self
+    }
+
+    pub fn with_llm(mut self, service: Arc<dyn llm::Llm>) -> Self {
+        self.llm = service;
+        self
+    }
+
+    pub fn with_label_delay(mut self, delay: Duration) -> Self {
+        self.label_delay = delay;
         self
     }
 }
@@ -85,6 +117,8 @@ pub fn build_app(state: AppState) -> Router {
             "/labels/{id}",
             axum::routing::patch(handlers::update_label).delete(handlers::delete_label),
         )
+        .route("/llm/test", post(handlers::llm_test))
+        .route("/chat", get(handlers::chat_ws))
         .route("/ws", get(handlers::ws_handler))
         .with_state(state);
 

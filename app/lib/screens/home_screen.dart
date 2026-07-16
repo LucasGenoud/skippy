@@ -22,6 +22,7 @@ import '../state/auth_store.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/recording_sheet.dart';
 import '../widgets/skeleton.dart';
+import 'chat_screen.dart';
 import 'editor_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -615,6 +616,14 @@ class _TopBar extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Notes chat: only when the user configured an LLM (and the
+              // server can do the retrieval side).
+              if (context.watch<SettingsStore>().notesChatAvailable)
+                IconButton(
+                  icon: const Icon(Icons.forum_outlined),
+                  tooltip: 'Chat with your notes',
+                  onPressed: () => ChatScreen.open(context),
+                ),
               if (!isNarrow) ...[
                 const _SortButton(),
                 IconButton(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/api_client.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
@@ -69,6 +70,41 @@ class SettingsScreen extends StatelessWidget {
                 capable: settings.audioTranscriptionCapable,
                 value: settings.audioNotesEnabled,
                 onChanged: settings.setAudioNotesEnabled,
+              ),
+              const Divider(height: 32),
+              const _SectionHeader('AI'),
+              const _LlmConfigTile(),
+              SwitchListTile(
+                secondary: const Icon(Icons.label_outline),
+                title: const Text('Automatic labeling'),
+                subtitle: Text(
+                  settings.llmConfigured
+                      ? 'Apply your existing labels to new and edited notes'
+                      : 'Configure an AI provider first',
+                ),
+                value: settings.llmConfigured && settings.llmLabelingEnabled,
+                onChanged: settings.llmConfigured
+                    ? settings.setLlmLabelingEnabled
+                    : null,
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.forum_outlined),
+                title: const Text('Notes chat'),
+                subtitle: Text(
+                  !settings.semanticSearchCapable
+                      ? 'Requires semantic search on this server'
+                      : settings.llmConfigured
+                      ? 'Ask questions about your notes'
+                      : 'Configure an AI provider first',
+                ),
+                value:
+                    settings.llmConfigured &&
+                    settings.semanticSearchCapable &&
+                    settings.llmChatEnabled,
+                onChanged:
+                    settings.llmConfigured && settings.semanticSearchCapable
+                    ? settings.setLlmChatEnabled
+                    : null,
               ),
               const Divider(height: 32),
               const _SectionHeader('Date & time'),
@@ -178,6 +214,210 @@ class _FeatureToggle extends StatelessWidget {
       // Off and inert when the service isn't running.
       value: capable && value,
       onChanged: capable ? onChanged : null,
+    );
+  }
+}
+
+/// Summary row for the user's LLM endpoint; taps into the config dialog.
+/// Unlike [_FeatureToggle] there is no server capability — availability is
+/// purely whether the user has configured an endpoint and model.
+class _LlmConfigTile extends StatelessWidget {
+  const _LlmConfigTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsStore>();
+    final String summary;
+    if (settings.llmConfigured) {
+      final host = Uri.tryParse(settings.llmBaseUrl)?.host;
+      summary =
+          '${settings.llmModel} @ ${(host == null || host.isEmpty) ? settings.llmBaseUrl : host}';
+    } else {
+      summary = 'Not configured — works with Ollama or any OpenAI-compatible API';
+    }
+    return ListTile(
+      leading: const Icon(Icons.smart_toy_outlined),
+      title: const Text('AI provider'),
+      subtitle: Text(summary),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _LlmConfigDialog.show(context),
+    );
+  }
+}
+
+/// Endpoint / API key / model editor with a connection probe. Testing uses
+/// the current field values (not the saved settings), so the config can be
+/// validated before Save.
+class _LlmConfigDialog extends StatefulWidget {
+  const _LlmConfigDialog();
+
+  static Future<void> show(BuildContext context) {
+    final settings = context.read<SettingsStore>();
+    return showDialog<void>(
+      context: context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: settings,
+        child: const _LlmConfigDialog(),
+      ),
+    );
+  }
+
+  @override
+  State<_LlmConfigDialog> createState() => _LlmConfigDialogState();
+}
+
+class _LlmConfigDialogState extends State<_LlmConfigDialog> {
+  late final TextEditingController _url;
+  late final TextEditingController _key;
+  late final TextEditingController _model;
+  bool _testing = false;
+  ({bool ok, String? error})? _testResult;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<SettingsStore>();
+    _url = TextEditingController(text: settings.llmBaseUrl);
+    _key = TextEditingController(text: settings.llmApiKey);
+    _model = TextEditingController(text: settings.llmModel);
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _key.dispose();
+    _model.dispose();
+    super.dispose();
+  }
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    ({bool ok, String? error}) result;
+    try {
+      result = await context.read<SettingsStore>().api.testLlm(
+        baseUrl: _url.text.trim(),
+        apiKey: _key.text.trim(),
+        model: _model.text.trim(),
+      );
+    } on ApiException catch (e) {
+      result = (ok: false, error: e.serverMessage);
+    } catch (_) {
+      result = (ok: false, error: 'could not reach the server');
+    }
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _testResult = result;
+    });
+  }
+
+  void _save() {
+    context.read<SettingsStore>().setLlmConfig(
+      baseUrl: _url.text,
+      apiKey: _key.text,
+      model: _model.text,
+    );
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final result = _testResult;
+    return AlertDialog(
+      title: const Text('AI provider'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _url,
+              decoration: const InputDecoration(
+                labelText: 'Server URL',
+                hintText: 'http://localhost:11434/v1',
+                helperText:
+                    'OpenAI-compatible endpoint, including /v1 '
+                    '(Ollama, OpenAI, LM Studio, …)',
+                helperMaxLines: 2,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _key,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'API key',
+                helperText: 'Leave empty for Ollama',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _model,
+              decoration: const InputDecoration(
+                labelText: 'Model',
+                hintText: 'gpt-5-mini, llama3.1, …',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _testing ? null : _test,
+                  icon: _testing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bolt_outlined, size: 18),
+                  label: const Text('Test connection'),
+                ),
+                const SizedBox(width: 12),
+                if (result != null)
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(
+                          result.ok ? Icons.check_circle : Icons.error_outline,
+                          size: 18,
+                          color: result.ok ? scheme.primary : scheme.error,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            result.ok
+                                ? 'Connected'
+                                : (result.error ?? 'failed'),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: result.ok
+                                      ? scheme.onSurfaceVariant
+                                      : scheme.error,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
     );
   }
 }

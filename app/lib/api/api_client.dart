@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/chat.dart';
 import '../models/note.dart';
 
 class ApiException implements Exception {
@@ -99,6 +100,20 @@ abstract class Api {
 
   /// Server-push change events; emits whenever this user's notes change.
   Stream<void> changeEvents();
+
+  /// Probe an LLM configuration without saving it; powers the "Test
+  /// connection" button in Settings. A failed probe resolves normally with
+  /// `ok: false` and the reason.
+  Future<({bool ok, String? error})> testLlm({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+  });
+
+  /// One notes-chat turn: sends [message] with prior [history] and emits the
+  /// server's frames (sources, streamed deltas, then done/error). The stream
+  /// closes after the terminal event.
+  Stream<ChatEvent> chat(String message, List<ChatMessage> history);
 }
 
 class ApiClient implements Api {
@@ -487,6 +502,90 @@ class ApiClient implements Api {
     controller.onCancel = () {
       closed = true;
       reconnect?.cancel();
+      channel?.sink.close();
+    };
+    return controller.stream;
+  }
+
+  // -- LLM ---------------------------------------------------------------------
+
+  @override
+  Future<({bool ok, String? error})> testLlm({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+  }) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/llm/test'),
+        headers: _headers(),
+        body: jsonEncode({
+          'base_url': baseUrl,
+          'api_key': apiKey,
+          'model': model,
+        }),
+      ),
+    );
+    final map = (data as Map?) ?? const {};
+    return (ok: map['ok'] == true, error: map['error'] as String?);
+  }
+
+  @override
+  Stream<ChatEvent> chat(String message, List<ChatMessage> history) {
+    // One WebSocket per turn: the server answers a single request per
+    // connection, which keeps both ends free of reconnect bookkeeping. A
+    // turn's latency is dominated by the model anyway.
+    final controller = StreamController<ChatEvent>();
+    WebSocketChannel? channel;
+    var terminal = false;
+
+    void emit(ChatEvent event) {
+      if (controller.isClosed) return;
+      controller.add(event);
+      if (event is ChatDoneEvent || event is ChatErrorEvent) {
+        terminal = true;
+        channel?.sink.close();
+        controller.close();
+      }
+    }
+
+    controller.onListen = () {
+      final wsBase = baseUrl.replaceFirst('http', 'ws');
+      try {
+        channel = WebSocketChannel.connect(
+          Uri.parse('$wsBase/api/chat?token=$token'),
+        );
+        channel!.sink.add(
+          jsonEncode({
+            'message': message,
+            'history': [for (final m in history) m.toJson()],
+          }),
+        );
+        channel!.stream.listen(
+          (frame) {
+            try {
+              final decoded = jsonDecode(frame as String);
+              if (decoded is Map<String, dynamic>) {
+                final event = ChatEvent.fromJson(decoded);
+                if (event != null) emit(event);
+              }
+            } catch (_) {
+              // Ignore malformed frames; the terminal frame settles the turn.
+            }
+          },
+          onDone: () {
+            if (!terminal) emit(const ChatErrorEvent('connection lost'));
+          },
+          onError: (Object _) {
+            if (!terminal) emit(const ChatErrorEvent('connection lost'));
+          },
+        );
+      } catch (_) {
+        emit(const ChatErrorEvent('could not reach the server'));
+      }
+    };
+    controller.onCancel = () {
+      terminal = true;
       channel?.sink.close();
     };
     return controller.stream;

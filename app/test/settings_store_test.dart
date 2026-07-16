@@ -156,6 +156,55 @@ void main() {
     other.dispose();
   });
 
+  test('llm config persists, roundtrips, and gates availability', () async {
+    api.capabilities = (semanticSearch: true, audioTranscription: false);
+    await settings.load();
+
+    // Unconfigured: nothing available, whatever the toggles say.
+    expect(settings.llmConfigured, isFalse);
+    expect(settings.llmLabelingEnabled, isTrue); // toggles default on
+    expect(settings.llmChatEnabled, isTrue);
+    expect(settings.autoLabelingAvailable, isFalse);
+    expect(settings.notesChatAvailable, isFalse);
+
+    settings.setLlmConfig(
+      baseUrl: ' http://localhost:11434/v1 ',
+      apiKey: '',
+      model: ' llama3.1 ',
+    );
+    expect(settings.llmConfigured, isTrue);
+    expect(settings.autoLabelingAvailable, isTrue);
+    expect(settings.notesChatAvailable, isTrue);
+    settings.setLlmLabelingEnabled(false);
+    expect(settings.autoLabelingAvailable, isFalse);
+    await settleSave();
+
+    // The persisted keys are exactly the backend's contract, trimmed.
+    expect(api.settings['llm_base_url'], 'http://localhost:11434/v1');
+    expect(api.settings['llm_api_key'], '');
+    expect(api.settings['llm_model'], 'llama3.1');
+    expect(api.settings['llm_labeling'], isFalse);
+    expect(api.settings['llm_chat'], isTrue);
+
+    // Another device picks it all up.
+    final other = SettingsStore(api: api);
+    await other.load();
+    expect(other.llmConfigured, isTrue);
+    expect(other.llmModel, 'llama3.1');
+    expect(other.llmLabelingEnabled, isFalse);
+    expect(other.notesChatAvailable, isTrue);
+    other.dispose();
+
+    // No semantic search on the server: chat unavailable even when configured.
+    api.capabilities = (semanticSearch: false, audioTranscription: false);
+    final third = SettingsStore(api: api);
+    await third.load();
+    expect(third.llmConfigured, isTrue);
+    expect(third.notesChatAvailable, isFalse);
+    expect(third.autoLabelingAvailable, isFalse); // labeling was toggled off
+    third.dispose();
+  });
+
   test('date and time formats follow preferences', () {
     final dt = DateTime(2026, 7, 15, 18, 5);
     expect(settings.formatDate(dt), 'Jul 15, 2026');

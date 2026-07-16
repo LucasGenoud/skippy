@@ -153,6 +153,23 @@ class SettingsStore extends ChangeNotifier {
   bool get audioNotesAvailable =>
       audioTranscriptionCapable && audioNotesEnabled;
 
+  // LLM integration (OpenAI-compatible endpoint; Ollama works via its /v1
+  // API). Unlike the features above there is no server capability: each user
+  // brings their own endpoint/key/model, and the backend reads these same
+  // llm_* keys out of the settings document when labeling or chatting.
+  String llmBaseUrl = '';
+  String llmApiKey = '';
+  String llmModel = '';
+  bool llmLabelingEnabled = true;
+  bool llmChatEnabled = true;
+
+  bool get llmConfigured => llmBaseUrl.isNotEmpty && llmModel.isNotEmpty;
+  bool get autoLabelingAvailable => llmConfigured && llmLabelingEnabled;
+  // Chat retrieval runs on the server's embedder, so it additionally needs
+  // the semantic-search capability.
+  bool get notesChatAvailable =>
+      llmConfigured && llmChatEnabled && semanticSearchCapable;
+
   Timer? _saveDebounce;
   bool _savePending = false;
   int _customCounter = 0;
@@ -198,6 +215,11 @@ class SettingsStore extends ChangeNotifier {
     // server also advertises the capability).
     semanticSearchEnabled = json['semantic_search'] != false;
     audioNotesEnabled = json['audio_notes'] != false;
+    llmBaseUrl = ((json['llm_base_url'] as String?) ?? '').trim();
+    llmApiKey = ((json['llm_api_key'] as String?) ?? '').trim();
+    llmModel = ((json['llm_model'] as String?) ?? '').trim();
+    llmLabelingEnabled = json['llm_labeling'] != false;
+    llmChatEnabled = json['llm_chat'] != false;
     final rawPalette = json['palette'];
     if (rawPalette is List) {
       final parsed = [
@@ -221,6 +243,11 @@ class SettingsStore extends ChangeNotifier {
     'default_view': defaultListMode ? 'list' : 'grid',
     'semantic_search': semanticSearchEnabled,
     'audio_notes': audioNotesEnabled,
+    'llm_base_url': llmBaseUrl,
+    'llm_api_key': llmApiKey,
+    'llm_model': llmModel,
+    'llm_labeling': llmLabelingEnabled,
+    'llm_chat': llmChatEnabled,
     'palette': [for (final entry in palette) entry.toJson()],
   };
 
@@ -255,6 +282,19 @@ class SettingsStore extends ChangeNotifier {
       _mutate(() => semanticSearchEnabled = value);
   void setAudioNotesEnabled(bool value) =>
       _mutate(() => audioNotesEnabled = value);
+
+  void setLlmConfig({
+    required String baseUrl,
+    required String apiKey,
+    required String model,
+  }) => _mutate(() {
+    llmBaseUrl = baseUrl.trim();
+    llmApiKey = apiKey.trim();
+    llmModel = model.trim();
+  });
+  void setLlmLabelingEnabled(bool value) =>
+      _mutate(() => llmLabelingEnabled = value);
+  void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
 
   // -- palette ---------------------------------------------------------------
 

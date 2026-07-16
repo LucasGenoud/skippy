@@ -97,12 +97,13 @@ impl AppState {
     /// only runs Whisper, then stores the transcript (`done`) or marks
     /// `failed`, re-indexing for search on success. No-op when transcription
     /// is disabled.
-    pub fn transcribe_later(&self, note_id: &str, attachment_id: &str, filename: &str) {
+    pub fn transcribe_later(&self, note_id: &str, attachment_id: &str, filename: &str, user_id: &str) {
         let Some(transcriber) = self.transcribe.clone() else { return };
         let state = self.clone();
         let note_id = note_id.to_string();
         let attachment_id = attachment_id.to_string();
         let filename = filename.to_string();
+        let user_id = user_id.to_string();
         tokio::spawn(async move {
             let status_and_content = match state.files.read(&attachment_id).await {
                 Some(bytes) => match transcriber.transcribe(bytes, &filename).await {
@@ -118,9 +119,98 @@ impl AppState {
             let _ = state.repo.set_transcript(&note_id, status, content.as_deref()).await;
             if status == TRANSCRIPT_DONE {
                 state.index_note_later(&note_id);
+                state.label_note_later(&note_id, &user_id);
             }
             state.notify_note(&note_id).await;
         });
+    }
+
+    /// Auto-label a note in the background (fire and forget): ask the user's
+    /// configured LLM which of their EXISTING labels apply and add those —
+    /// add-only, never removes, never creates labels. No-op unless the user
+    /// has an LLM configured with labeling enabled.
+    ///
+    /// Debounced per note via a generation counter: each trigger bumps the
+    /// note's generation and the spawned task sleeps `label_delay` before
+    /// checking it's still the latest — so a burst of debounced autosaves
+    /// costs one LLM call. Keyed by note id alone: if two collaborators edit
+    /// within one window, only the last editor's task runs (with their own
+    /// labels), which is fine — the next edit re-triggers.
+    pub fn label_note_later(&self, note_id: &str, user_id: &str) {
+        let state = self.clone();
+        let note_id = note_id.to_string();
+        let user_id = user_id.to_string();
+        let generation = {
+            let mut map = state.label_generations.lock().unwrap();
+            let entry = map.entry(note_id.clone()).or_insert(0);
+            *entry += 1;
+            *entry
+        };
+        tokio::spawn(async move {
+            tokio::time::sleep(state.label_delay).await;
+            // Superseded by a newer edit: that trigger's task takes over.
+            if state.label_generations.lock().unwrap().get(&note_id) != Some(&generation) {
+                return;
+            }
+            state.run_auto_labeling(&note_id, &user_id).await;
+            // Bound map growth: clear the entry unless a newer trigger owns it.
+            let mut map = state.label_generations.lock().unwrap();
+            if map.get(&note_id) == Some(&generation) {
+                map.remove(&note_id);
+            }
+        });
+    }
+
+    async fn run_auto_labeling(&self, note_id: &str, user_id: &str) {
+        let settings = match self.repo.settings_for_user(user_id).await {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let llm_settings = crate::assist::parse_llm_settings(settings.as_deref());
+        let Some(cfg) = llm_settings.config else { return };
+        if !llm_settings.labeling {
+            return;
+        }
+        let Ok(Some(record)) = self.repo.note_record(note_id).await else { return };
+        if record.trashed {
+            return;
+        }
+        let text = crate::search::SearchService::note_text(&record);
+        if text.is_empty() {
+            return;
+        }
+        let Ok(labels) = self.repo.labels_for_user(user_id).await else { return };
+        if labels.is_empty() {
+            return;
+        }
+        let current = match self.repo.note_view(note_id, user_id).await {
+            Ok(Some(view)) => view.label_ids,
+            _ => return,
+        };
+        let names: Vec<String> = labels.iter().map(|l| l.name.clone()).collect();
+        let messages = crate::assist::labeling_messages(&names, &text);
+        let reply = match self.llm.complete(&cfg, messages).await {
+            Ok(reply) => reply,
+            Err(e) => {
+                eprintln!("auto-labeling failed for {note_id}: {e:#}");
+                return;
+            }
+        };
+        let chosen =
+            crate::assist::map_label_names(&crate::assist::parse_label_reply(&reply), &labels);
+        // Add-only union; skip the write (and the change nudge) when nothing new.
+        let mut union = current.clone();
+        for id in chosen {
+            if !union.contains(&id) {
+                union.push(id);
+            }
+        }
+        if union.len() == current.len() {
+            return;
+        }
+        if self.repo.set_note_labels(note_id, user_id, &union).await.is_ok() {
+            self.notify_note(note_id).await;
+        }
     }
 }
 
@@ -300,6 +390,7 @@ pub async fn create_note(
         state.repo.record_checked_items(&record.id, &pre_checked).await?;
     }
     state.index_note_later(&id);
+    state.label_note_later(&id, &user_id);
     state.notify_user(&user_id);
     let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
     Ok((StatusCode::CREATED, Json(view)))
@@ -378,6 +469,11 @@ pub async fn update_note(
         state.repo.set_note_labels(&id, &user_id, &label_ids).await?;
     }
     state.index_note_later(&id);
+    // Only content edits re-run auto-labeling; organizational patches
+    // (color/pin/position/labels themselves) never cost an LLM call.
+    if content_changed {
+        state.label_note_later(&id, &user_id);
+    }
     state.notify_note(&id).await;
     let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
     Ok(Json(view))
@@ -651,7 +747,7 @@ pub async fn upload_attachment(
             && attachment.mime.starts_with("audio/")
         {
             state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
-            state.transcribe_later(&id, &attachment.id, &attachment.filename);
+            state.transcribe_later(&id, &attachment.id, &attachment.filename, &user_id);
         }
         state.notify_note(&id).await;
         return Ok((StatusCode::CREATED, Json(attachment)));
@@ -678,7 +774,7 @@ pub async fn transcribe_note(
         .find(|a| a.mime.starts_with("audio/"))
         .ok_or_else(|| ApiError::BadRequest("note has no audio to transcribe".to_string()))?;
     state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
-    state.transcribe_later(&id, &clip.id, &clip.filename);
+    state.transcribe_later(&id, &clip.id, &clip.filename, &user_id);
     state.notify_note(&id).await;
     Ok(StatusCode::ACCEPTED)
 }
@@ -854,6 +950,209 @@ async fn ws_loop(socket: WebSocket, state: AppState, user_id: String) {
                 match incoming {
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Err(_)) => break,
+                    _ => {} // ignore pings/client chatter
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LLM: connection test + notes chat
+
+#[derive(Deserialize)]
+pub struct LlmTestRequest {
+    base_url: String,
+    #[serde(default)]
+    api_key: String,
+    model: String,
+}
+
+/// Probe an LLM configuration with a tiny completion. Powers the "Test
+/// connection" button in Settings; takes the config from the request body
+/// (not stored settings) so the user can test before saving. A failed probe
+/// is a *result* (`ok: false`), not an HTTP error.
+pub async fn llm_test(
+    State(state): State<AppState>,
+    AuthUser(_user_id): AuthUser,
+    Json(body): Json<LlmTestRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if body.base_url.trim().is_empty() || body.model.trim().is_empty() {
+        return Err(ApiError::BadRequest("base_url and model are required".to_string()));
+    }
+    let cfg = crate::llm::LlmConfig {
+        base_url: body.base_url.trim().to_string(),
+        api_key: body.api_key.trim().to_string(),
+        model: body.model.trim().to_string(),
+    };
+    let probe = state.llm.complete(&cfg, vec![crate::llm::ChatMessage::user("Say OK")]);
+    let result = match tokio::time::timeout(std::time::Duration::from_secs(20), probe).await {
+        Ok(Ok(_)) => serde_json::json!({"ok": true}),
+        Ok(Err(e)) => serde_json::json!({"ok": false, "error": format!("{e:#}")}),
+        Err(_) => serde_json::json!({"ok": false, "error": "timed out after 20s"}),
+    };
+    Ok(Json(result))
+}
+
+/// One chat turn from the client.
+#[derive(Deserialize)]
+struct ChatRequest {
+    message: String,
+    #[serde(default)]
+    history: Vec<ChatHistoryEntry>,
+}
+
+#[derive(Deserialize)]
+struct ChatHistoryEntry {
+    role: String,
+    content: String,
+}
+
+/// Notes chat over a WebSocket (a streaming response has to reach Flutter
+/// web, whose HTTP client can't stream bodies — the app already speaks
+/// token-in-query WS for change events). One request per connection:
+///
+/// ```text
+/// client → server:  {"message": "…", "history": [{"role","content"}, …]}
+/// server → client:  {"type":"sources","notes":[{"id","title"}, …]}
+///                   {"type":"delta","text":"…"}   (0..n)
+///                   {"type":"done"} | {"type":"error","message":"…"}
+/// ```
+pub async fn chat_ws(
+    State(state): State<AppState>,
+    Query(params): Query<WsParams>,
+    upgrade: WebSocketUpgrade,
+) -> ApiResult<Response> {
+    let user_id = state
+        .repo
+        .user_id_for_token(&params.token)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    Ok(upgrade.on_upgrade(move |socket| chat_loop(socket, state, user_id)))
+}
+
+async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
+    let (mut sink, mut stream) = socket.split();
+
+    // Terminal error helper: best-effort send, then the connection closes.
+    async fn send_error(sink: &mut (impl SinkExt<Message> + Unpin), message: &str) {
+        let frame = serde_json::json!({"type": "error", "message": message}).to_string();
+        let _ = sink.send(Message::text(frame)).await;
+    }
+
+    // First (and only) request frame, ignoring pings.
+    let request = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        while let Some(Ok(msg)) = stream.next().await {
+            if let Message::Text(text) = msg {
+                return Some(text);
+            }
+        }
+        None
+    })
+    .await;
+    let Ok(Some(text)) = request else {
+        send_error(&mut sink, "expected a chat request").await;
+        return;
+    };
+    let Ok(request) = serde_json::from_str::<ChatRequest>(&text) else {
+        send_error(&mut sink, "malformed chat request").await;
+        return;
+    };
+    let message = request.message.trim();
+    if message.is_empty() {
+        send_error(&mut sink, "empty message").await;
+        return;
+    }
+
+    // Preconditions: retrieval needs the server-side embedder, generation
+    // needs the user's own LLM config with chat enabled.
+    let Some(search) = state.search.clone() else {
+        send_error(&mut sink, "chat needs semantic search enabled on this server").await;
+        return;
+    };
+    let settings = state.repo.settings_for_user(&user_id).await.ok().flatten();
+    let llm_settings = crate::assist::parse_llm_settings(settings.as_deref());
+    let Some(cfg) = llm_settings.config.filter(|_| llm_settings.chat) else {
+        send_error(&mut sink, "configure an AI provider in Settings to use chat").await;
+        return;
+    };
+
+    // Retrieve: over-fetch because trashed notes linger in the vector index,
+    // then keep the best non-trashed hits.
+    let hits = match search.search(&user_id, message, crate::assist::CHAT_CONTEXT_NOTES * 2).await
+    {
+        Ok(hits) => hits,
+        Err(e) => {
+            eprintln!("chat retrieval failed for {user_id}: {e:#}");
+            send_error(&mut sink, "search failed").await;
+            return;
+        }
+    };
+    let mut notes: Vec<(String, String, String)> = Vec::new(); // (id, title, text)
+    for (note_id, _score) in hits {
+        if notes.len() >= crate::assist::CHAT_CONTEXT_NOTES {
+            break;
+        }
+        let Ok(Some(record)) = state.repo.note_record(&note_id).await else { continue };
+        if record.trashed {
+            continue;
+        }
+        let text = crate::search::SearchService::note_text(&record);
+        notes.push((record.id, record.title, text));
+    }
+
+    let source_list: Vec<serde_json::Value> = notes
+        .iter()
+        .map(|(id, title, _)| serde_json::json!({"id": id, "title": title}))
+        .collect();
+    let sources = serde_json::json!({"type": "sources", "notes": source_list});
+    if sink.send(Message::text(sources.to_string())).await.is_err() {
+        return;
+    }
+
+    let history: Vec<(String, String)> =
+        request.history.into_iter().map(|h| (h.role, h.content)).collect();
+    let prompt_notes: Vec<(String, String)> =
+        notes.iter().map(|(_, title, text)| (title.clone(), text.clone())).collect();
+    let messages = crate::assist::chat_messages(&prompt_notes, &history, message);
+
+    let mut tokens = match state.llm.stream(&cfg, messages).await {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            send_error(&mut sink, &format!("{e:#}")).await;
+            return;
+        }
+    };
+
+    // Forward deltas until the stream ends, errors, stalls, or the client
+    // leaves. Dropping `tokens` aborts the underlying HTTP request.
+    loop {
+        tokio::select! {
+            token = tokio::time::timeout(std::time::Duration::from_secs(120), tokens.next()) => {
+                match token {
+                    Err(_) => {
+                        send_error(&mut sink, "the model stopped responding").await;
+                        break;
+                    }
+                    Ok(None) => {
+                        let _ = sink.send(Message::text(r#"{"type":"done"}"#.to_string())).await;
+                        break;
+                    }
+                    Ok(Some(Ok(text))) => {
+                        let frame = serde_json::json!({"type": "delta", "text": text}).to_string();
+                        if sink.send(Message::text(frame)).await.is_err() {
+                            break; // client gone
+                        }
+                    }
+                    Ok(Some(Err(e))) => {
+                        send_error(&mut sink, &format!("{e:#}")).await;
+                        break;
+                    }
+                }
+            }
+            incoming = stream.next() => {
+                match incoming {
+                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     _ => {} // ignore pings/client chatter
                 }
             }
