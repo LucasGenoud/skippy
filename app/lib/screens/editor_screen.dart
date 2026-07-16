@@ -14,6 +14,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/snack.dart';
+import 'history_screen.dart';
 import '../widgets/animated_checklist.dart';
 import '../widgets/audio_player.dart';
 import '../widgets/color_picker.dart';
@@ -857,6 +858,9 @@ class _EditorScreenState extends State<EditorScreen> {
                         onCopy: trashed || note == null || note.isEmpty
                             ? null
                             : _copyNote,
+                        onHistory: note == null || note.isEmpty
+                            ? null
+                            : () => NoteHistoryScreen.open(context, note.id),
                         onConvert: trashed ? null : _convertKind,
                       ),
                     ],
@@ -1305,6 +1309,7 @@ class _BottomBar extends StatelessWidget {
   final VoidCallback? onRedo;
   final VoidCallback? onDelete;
   final VoidCallback? onCopy;
+  final VoidCallback? onHistory;
   final void Function(NoteKind target)? onConvert;
 
   const _BottomBar({
@@ -1322,6 +1327,7 @@ class _BottomBar extends StatelessWidget {
     this.onRedo,
     this.onDelete,
     this.onCopy,
+    this.onHistory,
     this.onConvert,
   });
 
@@ -1398,6 +1404,7 @@ class _BottomBar extends StatelessWidget {
             onSelected: (value) {
               if (value == 'delete') onDelete?.call();
               if (value == 'copy') onCopy?.call();
+              if (value == 'history') onHistory?.call();
               for (final target in NoteKind.values) {
                 if (value == 'convert:${target.name}') onConvert?.call(target);
               }
@@ -1411,6 +1418,11 @@ class _BottomBar extends StatelessWidget {
                     enabled: onConvert != null,
                     child: Text(_kindLabels[target]!),
                   ),
+              PopupMenuItem(
+                value: 'history',
+                enabled: onHistory != null,
+                child: const Text('Version history'),
+              ),
               PopupMenuItem(
                 value: 'copy',
                 enabled: onCopy != null,

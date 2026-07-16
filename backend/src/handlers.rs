@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Multipart, Path, Query, State, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
@@ -15,6 +17,37 @@ use crate::models::*;
 
 const CHANGED_MSG: &str = r#"{"type":"notes_changed"}"#;
 const TRASH_RETENTION_DAYS: i64 = 7;
+
+/// Edits to the same note by the same author within this window collapse into
+/// one history entry, so the timeline records editing *sessions* rather than
+/// every debounced autosave. A different editor, or a longer gap, opens a new
+/// version.
+const VERSION_SESSION_GAP_SECS: i64 = 120;
+
+/// Seconds elapsed since an RFC3339 timestamp. An unparseable stamp reads as
+/// "long ago" so it never suppresses a snapshot.
+fn seconds_since(ts: &str) -> i64 {
+    match chrono::DateTime::parse_from_rfc3339(ts) {
+        Ok(t) => (Utc::now() - t.with_timezone(&Utc)).num_seconds(),
+        Err(_) => i64::MAX,
+    }
+}
+
+/// Build a history snapshot of a record's current content, attributed to
+/// whoever last authored it (falling back to the owner for the first/legacy
+/// snapshot, which carries no editor).
+fn version_of(record: &NoteRecord) -> NoteVersion {
+    NoteVersion {
+        id: new_id(),
+        note_id: record.id.clone(),
+        kind: record.kind.clone(),
+        title: record.title.clone(),
+        content: record.content.clone(),
+        items: record.items.clone(),
+        edited_by: record.last_editor_id.clone().or_else(|| Some(record.owner_id.clone())),
+        created_at: record.updated_at.clone(),
+    }
+}
 
 fn now() -> String {
     Utc::now().to_rfc3339()
@@ -257,6 +290,8 @@ pub async fn create_note(
         transcript_status: TRANSCRIPT_NONE.to_string(),
         created_at: ts.clone(),
         updated_at: ts,
+        // Set on the first edit; until then there's nothing to attribute.
+        last_editor_id: None,
     };
     state.repo.insert_note(&record).await?;
     let pre_checked: Vec<String> =
@@ -301,6 +336,27 @@ pub async fn update_note(
     }
 
     let label_ids = body.label_ids.take();
+
+    // Version history: only content edits are versioned (color/pin/archive and
+    // friends are organizational, not "content you'd roll back"). Capture the
+    // pre-edit state as a snapshot when this edit opens a new session — a
+    // different author, or a gap since the last content edit. Same-author
+    // edits within the window coalesce, so history is one entry per sitting
+    // rather than one per debounced save. The first-ever edit always snapshots
+    // (last_editor_id is None), preserving how the note started.
+    let content_changed = body.kind.as_ref().is_some_and(|v| *v != record.kind)
+        || body.title.as_ref().is_some_and(|v| *v != record.title)
+        || body.content.as_ref().is_some_and(|v| *v != record.content)
+        || body.items.as_ref().is_some_and(|v| *v != record.items);
+    if content_changed {
+        let same_session = record.last_editor_id.as_deref() == Some(user_id.as_str())
+            && seconds_since(&record.updated_at) < VERSION_SESSION_GAP_SECS;
+        if !same_session {
+            state.repo.insert_note_version(&version_of(&record)).await?;
+        }
+        record.last_editor_id = Some(user_id.clone());
+    }
+
     body.apply_to(&mut record);
     record.updated_at = now();
     state.repo.update_note(&record).await?;
@@ -361,6 +417,80 @@ pub async fn reorder_notes(
     state.repo.reorder_for_user(&user_id, &body.ids).await?;
     state.notify_user(&user_id);
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Version history
+
+/// A note's edit history, newest first. Each entry carries the full content of
+/// that past state plus the resolved editor, so the client can preview and
+/// restore without a second round-trip.
+pub async fn list_note_versions(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Vec<serde_json::Value>>> {
+    require_participant(&state, &id, &user_id).await?;
+    let versions = state.repo.note_versions(&id).await?;
+    // Resolve author ids to public users, caching lookups (a note usually has
+    // one or two distinct editors across its whole history).
+    let mut users: HashMap<String, Option<UserPublic>> = HashMap::new();
+    let mut out = Vec::with_capacity(versions.len());
+    for v in versions {
+        let editor = match &v.edited_by {
+            Some(uid) => {
+                if !users.contains_key(uid) {
+                    let public = state.repo.user_by_id(uid).await?.map(|u| u.public());
+                    users.insert(uid.clone(), public);
+                }
+                users.get(uid).cloned().flatten()
+            }
+            None => None,
+        };
+        out.push(serde_json::json!({
+            "id": v.id,
+            "note_id": v.note_id,
+            "kind": v.kind,
+            "title": v.title,
+            "content": v.content,
+            "items": v.items,
+            "edited_by": editor,
+            "created_at": v.created_at,
+        }));
+    }
+    Ok(Json(out))
+}
+
+/// Roll a note's content back to a past version. The pre-restore state is
+/// checkpointed first, so a restore is itself reversible from the timeline.
+pub async fn restore_note_version(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((id, version_id)): Path<(String, String)>,
+) -> ApiResult<Json<NoteView>> {
+    let mut record = require_participant(&state, &id, &user_id).await?;
+    let version = state.repo.note_version(&id, &version_id).await?.ok_or(ApiError::NotFound)?;
+
+    // Nothing to do when the note already matches the target version.
+    let unchanged = record.kind == version.kind
+        && record.title == version.title
+        && record.content == version.content
+        && record.items == version.items;
+    if !unchanged {
+        state.repo.insert_note_version(&version_of(&record)).await?;
+        record.kind = version.kind;
+        record.title = version.title;
+        record.content = version.content;
+        record.items = version.items;
+        record.last_editor_id = Some(user_id.clone());
+        record.updated_at = now();
+        state.repo.update_note(&record).await?;
+        state.index_note_later(&id);
+        state.notify_note(&id).await;
+    }
+
+    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    Ok(Json(view))
 }
 
 // ---------------------------------------------------------------------------

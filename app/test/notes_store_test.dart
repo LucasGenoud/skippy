@@ -690,4 +690,70 @@ void main() {
       },
     );
   });
+
+  group('version history', () {
+    test('noteVersions flushes pending edits before reading history', () async {
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      api.versions['n1'] = [
+        NoteVersion(id: 'v1', noteId: 'n1', title: 'a', createdAt: DateTime.now()),
+      ];
+      await store.load();
+
+      // A still-debounced edit must reach the server first, or the timeline
+      // wouldn't reflect what the user just typed.
+      store.updateNoteContent('n1', title: 'b', content: '');
+      final versions = await store.noteVersions('n1');
+
+      expect(api.notes['n1']!.title, 'b');
+      final patchIdx = api.log.indexWhere((l) => l.startsWith('patchNote:n1'));
+      final fetchIdx = api.log.indexOf('fetchVersions:n1');
+      expect(patchIdx, isNonNegative);
+      expect(fetchIdx, greaterThan(patchIdx));
+      expect(versions.single.id, 'v1');
+    });
+
+    test('noteVersions materializes a draft before reading', () async {
+      final draft = store.createDraft();
+      store.updateNoteContent(draft.id, title: 'fresh', content: '');
+      api.versions[draft.id] = const [];
+
+      final versions = await store.noteVersions(draft.id);
+
+      expect(api.notes.containsKey(draft.id), isTrue);
+      expect(versions, isEmpty);
+      final createIdx =
+          api.log.indexWhere((l) => l.startsWith('createNote:${draft.id}'));
+      final fetchIdx = api.log.indexOf('fetchVersions:${draft.id}');
+      expect(createIdx, isNonNegative);
+      expect(fetchIdx, greaterThan(createIdx));
+    });
+
+    test('restore flushes edits, rolls content back, replaces local', () async {
+      api.notes['n1'] = serverNote('n1', title: 'current', content: 'now');
+      api.versions['n1'] = [
+        NoteVersion(
+          id: 'v1',
+          noteId: 'n1',
+          title: 'old',
+          content: 'then',
+          createdAt: DateTime.now(),
+        ),
+      ];
+      await store.load();
+
+      store.updateNoteContent('n1', title: 'edited', content: 'edited body');
+      await store.restoreNoteVersion('n1', 'v1');
+
+      // The pending edit lands before the restore, then content rolls back.
+      final patchIdx = api.log.indexWhere((l) => l.startsWith('patchNote:n1'));
+      final restoreIdx = api.log.indexOf('restoreVersion:n1:v1');
+      expect(patchIdx, isNonNegative);
+      expect(restoreIdx, greaterThan(patchIdx));
+
+      final note = store.noteById('n1')!;
+      expect(note.title, 'old');
+      expect(note.content, 'then');
+      expect(api.notes['n1']!.title, 'old');
+    });
+  });
 }

@@ -83,6 +83,10 @@ pub struct NoteRecord {
     pub transcript_status: String,
     pub created_at: String,
     pub updated_at: String,
+    /// Who last edited the note's content. Drives version-history coalescing
+    /// (edits by the same author in one sitting collapse to a single version)
+    /// and starts out `None` until the first edit. Not exposed on the wire.
+    pub last_editor_id: Option<String>,
 }
 
 /// A note as served to a specific user: includes that user's labels and the
@@ -135,6 +139,23 @@ impl NoteRecord {
             updated_at: self.updated_at.clone(),
         }
     }
+}
+
+/// A past state of a note's content, kept for the version-history timeline.
+/// Only content fields are versioned — organizational state (color, pin,
+/// archive, labels, position) is not "content you'd want to roll back".
+#[derive(Debug, Clone, Serialize)]
+pub struct NoteVersion {
+    pub id: String,
+    pub note_id: String,
+    pub kind: String,
+    pub title: String,
+    pub content: String,
+    pub items: Vec<ChecklistItem>,
+    /// User id that authored this state (`None` for the very first / legacy
+    /// snapshot, which the handler attributes to the owner).
+    pub edited_by: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -272,6 +272,54 @@ class Note {
   ];
 }
 
+/// A past state of a note's content from its edit history. Only content is
+/// versioned (title/body/checklist/kind) — never organizational state like
+/// color, pins, or labels.
+class NoteVersion {
+  final String id;
+  final String noteId;
+  final NoteKind kind;
+  final String title;
+  final String content;
+  final List<ChecklistItem> items;
+
+  /// Who authored this state; null for the note's original/legacy snapshot.
+  final UserRef? editedBy;
+  final DateTime createdAt;
+
+  const NoteVersion({
+    required this.id,
+    required this.noteId,
+    this.kind = NoteKind.text,
+    this.title = '',
+    this.content = '',
+    this.items = const [],
+    this.editedBy,
+    required this.createdAt,
+  });
+
+  bool get isChecklist => kind == NoteKind.checklist;
+
+  factory NoteVersion.fromJson(Map<String, dynamic> json) => NoteVersion(
+    id: json['id'] as String,
+    noteId: json['note_id'] as String? ?? '',
+    kind: NoteKind.fromWire(json['kind'] as String?),
+    title: json['title'] as String? ?? '',
+    content: json['content'] as String? ?? '',
+    items: ((json['items'] as List?) ?? const [])
+        .map((j) => ChecklistItem.fromJson(j as Map<String, dynamic>))
+        .toList(),
+    editedBy: json['edited_by'] == null
+        ? null
+        : UserRef.fromJson(json['edited_by'] as Map<String, dynamic>),
+    // Parsed the same way as Note.created_at/updated_at (no toLocal), so the
+    // timeline's timestamps line up with the note's own "Edited" stamp.
+    createdAt:
+        DateTime.tryParse(json['created_at'] as String? ?? '') ??
+        DateTime.now(),
+  );
+}
+
 class Label {
   final String id;
   final String name;

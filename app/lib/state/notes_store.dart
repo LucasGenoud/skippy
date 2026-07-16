@@ -749,6 +749,40 @@ class NotesStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
+  // Version history
+
+  /// Ensure the server has this note and every pending edit to it before an
+  /// await-based call that reads or mutates server-side state (history lives
+  /// on the server, so it must reflect edits still sitting in the local queue).
+  Future<void> _pushPending(String noteId) async {
+    final timer = _saveDebounce.remove(noteId);
+    timer?.cancel();
+    if (_drafts.contains(noteId)) {
+      _materializeIfNeeded(noteId);
+    } else if (timer != null) {
+      _enqueueContentPatch(noteId);
+    }
+    await _drainQueue();
+  }
+
+  /// A note's edit history, newest first. Flushes pending edits first so the
+  /// timeline includes what the user just typed. Throws [ApiException] on
+  /// server/network failure (the UI surfaces it).
+  Future<List<NoteVersion>> noteVersions(String id) async {
+    await _pushPending(id);
+    return api.fetchNoteVersions(id);
+  }
+
+  /// Roll a note back to a past version. The server checkpoints the current
+  /// state first (so this is reversible), and returns the updated note, which
+  /// replaces the local copy.
+  Future<void> restoreNoteVersion(String id, String versionId) async {
+    await _pushPending(id);
+    final updated = await api.restoreNoteVersion(id, versionId);
+    if (noteById(id) != null) _replace(updated);
+  }
+
+  // ---------------------------------------------------------------------
   // Attachments
 
   /// Await-based: the editor shows progress and needs the server-issued id.

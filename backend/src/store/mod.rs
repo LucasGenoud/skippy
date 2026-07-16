@@ -47,6 +47,19 @@ pub trait Repository: Send + Sync {
     async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<String>>;
     /// Every note id in the store (used for search reindexing at startup).
     async fn all_note_ids(&self) -> RepoResult<Vec<String>>;
+
+    // -- version history ----------------------------------------------------
+    /// Append a content snapshot to a note's history. Snapshots are permanent
+    /// and cascade-deleted only when the note itself is hard-deleted.
+    async fn insert_note_version(&self, version: &NoteVersion) -> RepoResult<()>;
+    /// A note's history, newest first.
+    async fn note_versions(&self, note_id: &str) -> RepoResult<Vec<NoteVersion>>;
+    /// One history entry, scoped to its note (so a stray id can't cross notes).
+    async fn note_version(
+        &self,
+        note_id: &str,
+        version_id: &str,
+    ) -> RepoResult<Option<NoteVersion>>;
     /// Set an audio note's transcription status, and (when `content` is
     /// `Some`) its transcript text. Server-owned — the transcription pipeline
     /// is the only writer. Bumps `updated_at` so viewers refetch.

@@ -63,6 +63,11 @@ pub fn build_app(state: AppState) -> Router {
                 .patch(handlers::update_note)
                 .delete(handlers::delete_note),
         )
+        .route("/notes/{id}/versions", get(handlers::list_note_versions))
+        .route(
+            "/notes/{id}/versions/{version_id}/restore",
+            post(handlers::restore_note_version),
+        )
         .route("/notes/{id}/collaborators", post(handlers::add_collaborator))
         .route(
             "/notes/{id}/collaborators/{user_id}",

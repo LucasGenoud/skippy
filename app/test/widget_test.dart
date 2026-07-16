@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:sticky_notes/models/note.dart';
 import 'package:sticky_notes/screens/editor_screen.dart';
+import 'package:sticky_notes/screens/history_screen.dart';
 import 'package:sticky_notes/screens/home_screen.dart';
 import 'package:sticky_notes/state/notes_store.dart';
 import 'package:sticky_notes/state/settings_store.dart';
@@ -717,5 +718,85 @@ void main() {
         await flushTimers(tester);
       },
     );
+  });
+
+  group('NoteHistoryScreen', () {
+    Widget historyHarness(NotesStore store) {
+      return MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => NoteHistoryScreen.open(context, 'n1'),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('lists versions, marks current, and restores', (tester) async {
+      api.notes['n1'] = serverNote('n1', title: 'Plan', content: 'v3 body');
+      api.versions['n1'] = [
+        NoteVersion(
+          id: 'v2',
+          noteId: 'n1',
+          title: 'Plan',
+          content: 'v2 body',
+          createdAt: DateTime(2026, 7, 15, 9),
+        ),
+        NoteVersion(
+          id: 'v1',
+          noteId: 'n1',
+          title: 'Plan',
+          content: 'v1 body',
+          createdAt: DateTime(2026, 7, 14, 8),
+        ),
+      ];
+      await store.load();
+      await tester.pumpWidget(historyHarness(store));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Current state sits on top; both past versions are listed with a
+      // Restore action each (the current card has none).
+      expect(find.text('Current'), findsOneWidget);
+      expect(find.text('v3 body'), findsOneWidget);
+      expect(find.text('v2 body'), findsOneWidget);
+      expect(find.text('v1 body'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Restore'), findsNWidgets(2));
+
+      // Restoring the oldest asks for confirmation, then rolls content back.
+      await tester.tap(find.widgetWithText(TextButton, 'Restore').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Restore this version?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Restore'));
+      await tester.pumpAndSettle();
+
+      expect(api.log, contains('restoreVersion:n1:v1'));
+      expect(store.noteById('n1')!.content, 'v1 body');
+    });
+
+    testWidgets('shows an empty state when there is no history', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Fresh');
+      api.versions['n1'] = const [];
+      await store.load();
+      await tester.pumpWidget(historyHarness(store));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Current'), findsOneWidget);
+      expect(find.textContaining('No earlier versions yet'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Restore'), findsNothing);
+    });
   });
 }

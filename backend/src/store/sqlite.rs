@@ -35,7 +35,18 @@ CREATE TABLE IF NOT EXISTS notes (
     transcript_status TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    trashed_at TEXT
+    trashed_at TEXT,
+    last_editor_id TEXT
+);
+CREATE TABLE IF NOT EXISTS note_versions (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'text',
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    items TEXT NOT NULL DEFAULT '[]',
+    edited_by TEXT,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS note_shares (
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -74,6 +85,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_id);
 CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);
+CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at);
 "#;
 
 pub struct SqliteRepository {
@@ -100,6 +112,7 @@ impl SqliteRepository {
             "ALTER TABLE attachments ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE attachments ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE notes ADD COLUMN transcript_status TEXT NOT NULL DEFAULT 'none'",
+            "ALTER TABLE notes ADD COLUMN last_editor_id TEXT",
         ] {
             let _ = sqlx::query(ddl).execute(&pool).await;
         }
@@ -146,6 +159,21 @@ fn record_from_row(row: &sqlx::sqlite::SqliteRow) -> NoteRecord {
         transcript_status: row.get("transcript_status"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
+        last_editor_id: row.get("last_editor_id"),
+    }
+}
+
+fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> NoteVersion {
+    let items_json: String = row.get("items");
+    NoteVersion {
+        id: row.get("id"),
+        note_id: row.get("note_id"),
+        kind: row.get("kind"),
+        title: row.get("title"),
+        content: row.get("content"),
+        items: serde_json::from_str(&items_json).unwrap_or_default(),
+        edited_by: row.get("edited_by"),
+        created_at: row.get("created_at"),
     }
 }
 
@@ -373,6 +401,7 @@ impl Repository for SqliteRepository {
         sqlx::query(
             "UPDATE notes SET kind = ?, title = ?, content = ?, items = ?, color = ?,
              pinned = ?, archived = ?, position = ?, reminder_at = ?, updated_at = ?,
+             last_editor_id = ?,
              trashed_at = CASE
                  WHEN ? AND trashed = 0 THEN ?
                  WHEN NOT ? THEN NULL
@@ -391,6 +420,7 @@ impl Repository for SqliteRepository {
         .bind(note.position)
         .bind(&note.reminder_at)
         .bind(&note.updated_at)
+        .bind(&note.last_editor_id)
         .bind(note.trashed as i64)
         .bind(now())
         .bind(note.trashed as i64)
@@ -453,6 +483,55 @@ impl Repository for SqliteRepository {
     async fn all_note_ids(&self) -> RepoResult<Vec<String>> {
         let rows = sqlx::query("SELECT id FROM notes").fetch_all(&self.pool).await?;
         Ok(rows.iter().map(|r| r.get("id")).collect())
+    }
+
+    // -- version history ----------------------------------------------------
+
+    async fn insert_note_version(&self, version: &NoteVersion) -> RepoResult<()> {
+        sqlx::query(
+            "INSERT INTO note_versions
+             (id, note_id, kind, title, content, items, edited_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&version.id)
+        .bind(&version.note_id)
+        .bind(&version.kind)
+        .bind(&version.title)
+        .bind(&version.content)
+        .bind(serde_json::to_string(&version.items)?)
+        .bind(&version.edited_by)
+        .bind(&version.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn note_versions(&self, note_id: &str) -> RepoResult<Vec<NoteVersion>> {
+        // rowid breaks ties for versions saved within the same second.
+        let rows = sqlx::query(
+            "SELECT id, note_id, kind, title, content, items, edited_by, created_at
+             FROM note_versions WHERE note_id = ? ORDER BY created_at DESC, rowid DESC",
+        )
+        .bind(note_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(version_from_row).collect())
+    }
+
+    async fn note_version(
+        &self,
+        note_id: &str,
+        version_id: &str,
+    ) -> RepoResult<Option<NoteVersion>> {
+        let row = sqlx::query(
+            "SELECT id, note_id, kind, title, content, items, edited_by, created_at
+             FROM note_versions WHERE id = ? AND note_id = ?",
+        )
+        .bind(version_id)
+        .bind(note_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.as_ref().map(version_from_row))
     }
 
     async fn set_transcript(

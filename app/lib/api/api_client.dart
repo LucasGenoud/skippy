@@ -49,6 +49,13 @@ abstract class Api {
   Future<void> deleteNote(String id);
   Future<void> reorderNotes(List<String> ids);
 
+  /// A note's edit history, newest first.
+  Future<List<NoteVersion>> fetchNoteVersions(String noteId);
+
+  /// Roll a note's content back to a past version; returns the updated note.
+  /// The server checkpoints the pre-restore state, so this is reversible.
+  Future<Note> restoreNoteVersion(String noteId, String versionId);
+
   /// Previously checked item texts, grouped per note id, most used first.
   /// Suggestions are scoped per note — one note's history never leaks into
   /// another's rows.
@@ -240,6 +247,32 @@ class ApiClient implements Api {
         body: jsonEncode({'ids': ids}),
       ),
     );
+  }
+
+  @override
+  Future<List<NoteVersion>> fetchNoteVersions(String noteId) async {
+    final data =
+        _decode(
+              await _client.get(
+                _uri('/notes/$noteId/versions'),
+                headers: _headers(),
+              ),
+            )
+            as List;
+    return data
+        .map((j) => NoteVersion.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<Note> restoreNoteVersion(String noteId, String versionId) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/notes/$noteId/versions/$versionId/restore'),
+        headers: _headers(),
+      ),
+    );
+    return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override

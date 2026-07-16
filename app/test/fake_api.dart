@@ -11,6 +11,9 @@ class FakeApi implements Api {
   final Map<String, Note> notes = {};
   final Map<String, Label> labels = {};
 
+  /// Edit history per note id, newest first (tests seed this directly).
+  final Map<String, List<NoteVersion>> versions = {};
+
   /// Checked-item history keyed by note id (per-note suggestions).
   Map<String, List<String>> history = {};
   Map<String, dynamic> settings = {};
@@ -135,6 +138,47 @@ class FakeApi implements Api {
             notes[ids[i]] = note.copyWith(position: (i + 1) * 1024.0);
           }
         }
+      });
+
+  @override
+  Future<List<NoteVersion>> fetchNoteVersions(String noteId) => _run(
+    'fetchVersions:$noteId',
+    () => List<NoteVersion>.from(versions[noteId] ?? const []),
+  );
+
+  @override
+  Future<Note> restoreNoteVersion(String noteId, String versionId) =>
+      _run('restoreVersion:$noteId:$versionId', () {
+        final note = notes[noteId];
+        if (note == null) throw ApiException(404, '{"error":"not found"}');
+        final list = versions[noteId] ?? const [];
+        final v = list.firstWhere(
+          (e) => e.id == versionId,
+          orElse: () => throw ApiException(404, '{"error":"not found"}'),
+        );
+        // Checkpoint the current state, then roll content back — mirrors the
+        // server so the store's optimistic replace is exercised faithfully.
+        versions[noteId] = [
+          NoteVersion(
+            id: 'chk-${list.length}',
+            noteId: noteId,
+            kind: note.kind,
+            title: note.title,
+            content: note.content,
+            items: note.items,
+            createdAt: DateTime.now(),
+          ),
+          ...list,
+        ];
+        final restored = note.copyWith(
+          kind: v.kind,
+          title: v.title,
+          content: v.content,
+          items: v.items,
+          updatedAt: DateTime.now(),
+        );
+        notes[noteId] = restored;
+        return restored;
       });
 
   @override
