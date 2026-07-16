@@ -17,6 +17,8 @@ import '../widgets/empty_state.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
+import '../screens/settings_screen.dart';
+import '../state/auth_store.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/recording_sheet.dart';
 import '../widgets/skeleton.dart';
@@ -33,9 +35,18 @@ class _HomeScreenState extends State<HomeScreen> {
   ViewSelection _selection = ViewSelection.notes;
   String _query = '';
   late bool _listMode = context.read<SettingsStore>().defaultListMode;
+  bool _isSidebarOpen = true;
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   final _scrollController = ScrollController();
+
+  void _toggleSidebar() {
+    if (MediaQuery.sizeOf(context).width < 600) {
+      Scaffold.of(context).openDrawer();
+    } else {
+      setState(() => _isSidebarOpen = !_isSidebarOpen);
+    }
+  }
 
   // Semantic search: ranked ids from the server, refreshed as you type.
   bool _semantic = false;
@@ -215,153 +226,173 @@ class _HomeScreenState extends State<HomeScreen> {
             // floatingActionButton slot) so a floating SnackBar sits at the
             // bottom instead of floating above this tall FAB column. Still in
             // the body, so the drawer scrim covers them like a normal FAB.
-            body: Stack(
+            body: Column(
               children: [
-                Positioned.fill(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = constraints.maxWidth;
-                      final horizontalPad = width >= 900 ? 32.0 : 16.0;
-                      final contentWidth = width - horizontalPad * 2;
-                      final gridMaxWidth = _listMode ? 600.0 : 1400.0;
-                      final effectiveWidth = contentWidth > gridMaxWidth
-                          ? gridMaxWidth
-                          : contentWidth;
-                      final columns = _listMode
-                          ? 1
-                          : (effectiveWidth / 250).floor().clamp(2, 5);
+                _TopBar(
+                  controller: _searchController,
+                  focusNode: _searchFocus,
+                  listMode: _listMode,
+                  semantic: _semantic,
+                  semanticAvailable: semanticAvailable,
+                  semanticBusy: _semanticBusy,
+                  onQuery: _onQueryChanged,
+                  onToggleSemantic: _toggleSemantic,
+                  onToggleLayout: () =>
+                      setState(() => _listMode = !_listMode),
+                  onToggleSidebar: _toggleSidebar,
+                ),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (MediaQuery.sizeOf(context).width >= 600)
+                        AppSidebar(
+                          isOpen: _isSidebarOpen,
+                          selection: _selection,
+                          onSelect: _selectView,
+                        ),
+                      Expanded(
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final width = constraints.maxWidth;
+                                  final horizontalPad = width >= 900 ? 32.0 : 16.0;
+                                  final contentWidth = width - horizontalPad * 2;
+                                  final gridMaxWidth = _listMode ? 600.0 : 1400.0;
+                                  final effectiveWidth = contentWidth > gridMaxWidth
+                                      ? gridMaxWidth
+                                      : contentWidth;
+                                  final columns = _listMode
+                                      ? 1
+                                      : (effectiveWidth / 250).floor().clamp(2, 5);
 
-                      return RefreshIndicator(
-                        onRefresh: store.load,
-                        edgeOffset: 80,
-                        child: CustomScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            SliverAppBar(
-                              floating: true,
-                              snap: true,
-                              toolbarHeight: 72,
-                              automaticallyImplyLeading: false,
-                              titleSpacing: horizontalPad,
-                              title: _SearchBar(
-                                controller: _searchController,
-                                focusNode: _searchFocus,
-                                listMode: _listMode,
-                                semantic: _semantic,
-                                semanticAvailable: semanticAvailable,
-                                semanticBusy: _semanticBusy,
-                                onQuery: _onQueryChanged,
-                                onToggleSemantic: _toggleSemantic,
-                                onToggleLayout: () =>
-                                    setState(() => _listMode = !_listMode),
+                                  return RefreshIndicator(
+                                    onRefresh: store.load,
+                                    edgeOffset: 16,
+                                    child: CustomScrollView(
+                                      controller: _scrollController,
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      slivers: [
+                                        const SliverToBoxAdapter(
+                                          child: SizedBox(height: 16),
+                                        ),
+                                        if (store.offline)
+                                          SliverToBoxAdapter(
+                                            child: _OfflineBanner(onRetry: store.retryNow),
+                                          ),
+                                        // Keep-style quick add: wide screens, main notes view only.
+                                        if (_selection == ViewSelection.notes &&
+                                            !searching &&
+                                            width >= 600)
+                                          SliverToBoxAdapter(
+                                            child: Center(
+                                              child: ConstrainedBox(
+                                                constraints: const BoxConstraints(
+                                                  maxWidth: 600,
+                                                ),
+                                                child: const Padding(
+                                                  padding: EdgeInsets.fromLTRB(
+                                                    16,
+                                                    4,
+                                                    16,
+                                                    24,
+                                                  ),
+                                                  child: QuickAddBar(),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_viewTitle(store).isNotEmpty)
+                                          SliverToBoxAdapter(
+                                            child: _ViewHeader(
+                                              title: _viewTitle(store),
+                                              isTrash: _selection.view == NoteView.trash,
+                                              hasTrashedNotes: sections.others.isNotEmpty,
+                                              onEmptyTrash: () => _confirmEmptyTrash(store),
+                                            ),
+                                          ),
+                                        if (store.loading)
+                                          SliverToBoxAdapter(
+                                            child: Center(
+                                              child: ConstrainedBox(
+                                                constraints: BoxConstraints(
+                                                  maxWidth: gridMaxWidth,
+                                                ),
+                                                child: Padding(
+                                                  padding: EdgeInsets.fromLTRB(
+                                                    horizontalPad,
+                                                    8,
+                                                    horizontalPad,
+                                                    0,
+                                                  ),
+                                                  child: NotesSkeleton(columns: columns),
+                                                ),
+                                              ),
+                                            ),
+                                          )
+                                        else if (sections.isEmpty)
+                                          SliverFillRemaining(
+                                            hasScrollBody: false,
+                                            child: EmptyState(
+                                              icon: searching
+                                                  ? Icons.search_off
+                                                  : _emptyIcon,
+                                              message: searching
+                                                  ? 'No matching notes'
+                                                  : _emptyMessage,
+                                            ),
+                                          )
+                                        else ...[
+                                          if (sections.pinned.isNotEmpty) ...[
+                                            _sectionLabel(context, 'Pinned', horizontalPad),
+                                            _grid(
+                                              store,
+                                              sections.pinned,
+                                              columns,
+                                              horizontalPad,
+                                              gridMaxWidth,
+                                              dragEnabled,
+                                              section: 'pinned',
+                                            ),
+                                            if (sections.others.isNotEmpty)
+                                              _sectionLabel(
+                                                context,
+                                                'Others',
+                                                horizontalPad,
+                                              ),
+                                          ],
+                                          _grid(
+                                            store,
+                                            sections.others,
+                                            columns,
+                                            horizontalPad,
+                                            gridMaxWidth,
+                                            dragEnabled,
+                                            section: 'others',
+                                          ),
+                                          const SliverToBoxAdapter(
+                                            child: SizedBox(height: 200),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                            if (store.offline)
-                              SliverToBoxAdapter(
-                                child: _OfflineBanner(onRetry: store.retryNow),
-                              ),
-                            // Keep-style quick add: wide screens, main notes view only.
-                            if (_selection == ViewSelection.notes &&
-                                !searching &&
-                                width >= 600)
-                              SliverToBoxAdapter(
-                                child: Center(
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 600,
-                                    ),
-                                    child: const Padding(
-                                      padding: EdgeInsets.fromLTRB(
-                                        16,
-                                        12,
-                                        16,
-                                        24,
-                                      ),
-                                      child: QuickAddBar(),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (_viewTitle(store).isNotEmpty)
-                              SliverToBoxAdapter(
-                                child: _ViewHeader(
-                                  title: _viewTitle(store),
-                                  isTrash: _selection.view == NoteView.trash,
-                                  hasTrashedNotes: sections.others.isNotEmpty,
-                                  onEmptyTrash: () => _confirmEmptyTrash(store),
-                                ),
-                              ),
-                            if (store.loading)
-                              SliverToBoxAdapter(
-                                child: Center(
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxWidth: gridMaxWidth,
-                                    ),
-                                    child: Padding(
-                                      padding: EdgeInsets.fromLTRB(
-                                        horizontalPad,
-                                        8,
-                                        horizontalPad,
-                                        0,
-                                      ),
-                                      child: NotesSkeleton(columns: columns),
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else if (sections.isEmpty)
-                              SliverFillRemaining(
-                                hasScrollBody: false,
-                                child: EmptyState(
-                                  icon: searching
-                                      ? Icons.search_off
-                                      : _emptyIcon,
-                                  message: searching
-                                      ? 'No matching notes'
-                                      : _emptyMessage,
-                                ),
-                              )
-                            else ...[
-                              if (sections.pinned.isNotEmpty) ...[
-                                _sectionLabel(context, 'Pinned', horizontalPad),
-                                _grid(
-                                  store,
-                                  sections.pinned,
-                                  columns,
-                                  horizontalPad,
-                                  gridMaxWidth,
-                                  dragEnabled,
-                                  section: 'pinned',
-                                ),
-                                if (sections.others.isNotEmpty)
-                                  _sectionLabel(
-                                    context,
-                                    'Others',
-                                    horizontalPad,
-                                  ),
-                              ],
-                              _grid(
-                                store,
-                                sections.others,
-                                columns,
-                                horizontalPad,
-                                gridMaxWidth,
-                                dragEnabled,
-                                section: 'others',
-                              ),
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 200),
-                              ),
-                            ],
+                            const Positioned(right: 16, bottom: 16, child: _NewNoteFabs()),
                           ],
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
-                const Positioned(right: 16, bottom: 16, child: _NewNoteFabs()),
               ],
             ),
           ),
@@ -439,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _SearchBar extends StatelessWidget {
+class _TopBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool listMode;
@@ -449,8 +480,9 @@ class _SearchBar extends StatelessWidget {
   final ValueChanged<String> onQuery;
   final VoidCallback onToggleSemantic;
   final VoidCallback onToggleLayout;
+  final VoidCallback onToggleSidebar;
 
-  const _SearchBar({
+  const _TopBar({
     required this.controller,
     required this.focusNode,
     required this.listMode,
@@ -460,105 +492,305 @@ class _SearchBar extends StatelessWidget {
     required this.onQuery,
     required this.onToggleSemantic,
     required this.onToggleLayout,
+    required this.onToggleSidebar,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final light = scheme.brightness == Brightness.light;
-    final isNarrow = MediaQuery.sizeOf(context).width < 480;
-    return Material(
-      // Sit the field above the grey canvas: white (light) / lighter surface
-      // (dark), with a hairline border so it always reads as an input.
-      color: light ? scheme.surface : scheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
-        side: BorderSide(color: scheme.outlineVariant),
-      ),
-      child: SizedBox(
-        height: 52,
-        child: Row(
-          children: [
-            const SizedBox(width: 4),
-            IconButton(
-              icon: const Icon(Icons.menu),
-              tooltip: 'Menu',
-              onPressed: () => Scaffold.of(context).openDrawer(),
+    final width = MediaQuery.sizeOf(context).width;
+    final isNarrow = width < 650;
+    final isSuperNarrow = width < 480;
+
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      color: scheme.surface,
+      child: Row(
+        children: [
+          // ── Left: Menu + Logo + App Name ──
+          IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Main menu',
+            onPressed: onToggleSidebar,
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.sticky_note_2_rounded,
+            color: scheme.primary,
+            size: 28,
+          ),
+          if (!isSuperNarrow) ...[
+            const SizedBox(width: 10),
+            Text(
+              'Sticky Notes',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                  ),
             ),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                onChanged: onQuery,
-                textInputAction: TextInputAction.search,
-                decoration: const InputDecoration(
-                  hintText: 'Search your notes',
-                  border: InputBorder.none,
-                  isCollapsed: true,
+          ],
+          const SizedBox(width: 16),
+
+          // ── Center: Search Bar ──
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Container(
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 14),
+                      Icon(
+                        Icons.search,
+                        color: scheme.onSurfaceVariant,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          onChanged: onQuery,
+                          textInputAction: TextInputAction.search,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                          decoration: InputDecoration(
+                            hintText: 'Search your notes',
+                            hintStyle:
+                                TextStyle(color: scheme.onSurfaceVariant),
+                            border: InputBorder.none,
+                            isCollapsed: true,
+                          ),
+                        ),
+                      ),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: controller,
+                        builder: (context, value, _) => value.text.isEmpty
+                            ? const SizedBox.shrink()
+                            : IconButton(
+                                icon: const Icon(Icons.close, size: 20),
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  controller.clear();
+                                  onQuery('');
+                                },
+                              ),
+                      ),
+                      if (semanticAvailable)
+                        semanticBusy
+                            ? const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14),
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : IconButton(
+                                icon: Icon(
+                                  Icons.auto_awesome,
+                                  size: 20,
+                                  color: semantic ? scheme.primary : null,
+                                ),
+                                tooltip: semantic
+                                    ? 'Semantic search on — results ranked by meaning'
+                                    : 'Search by meaning',
+                                onPressed: onToggleSemantic,
+                              ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: controller,
-              builder: (context, value, _) => value.text.isEmpty
-                  ? const SizedBox.shrink()
-                  : IconButton(
-                      icon: const Icon(Icons.close),
-                      tooltip: 'Clear search',
-                      onPressed: () {
-                        controller.clear();
-                        onQuery('');
-                      },
-                    ),
-            ),
-            if (semanticAvailable)
-              semanticBusy
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 16),
+
+          // ── Right: Quick Settings & User Avatar Circle ──
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!isNarrow) ...[
+                const _SortButton(),
+                IconButton(
+                  icon: Icon(
+                    listMode
+                        ? Icons.grid_view_outlined
+                        : Icons.view_agenda_outlined,
+                  ),
+                  tooltip: listMode ? 'Grid view' : 'List view',
+                  onPressed: onToggleLayout,
+                ),
+                IconButton(
+                  icon: Icon(
+                    Theme.of(context).brightness == Brightness.light
+                        ? Icons.dark_mode_outlined
+                        : Icons.light_mode_outlined,
+                  ),
+                  tooltip: Theme.of(context).brightness == Brightness.light
+                      ? 'Dark theme'
+                      : 'Light theme',
+                  onPressed: () => context.read<SettingsStore>().toggleTheme(
+                        Theme.of(context).brightness,
                       ),
-                    )
-                  : IconButton(
-                      icon: Icon(
-                        Icons.auto_awesome,
-                        color: semantic
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                      tooltip: semantic
-                          ? 'Semantic search on — results ranked by meaning'
-                          : 'Search by meaning',
-                      onPressed: onToggleSemantic,
-                    ),
-            const _SortButton(),
-            IconButton(
-              icon: Icon(
-                listMode
-                    ? Icons.grid_view_outlined
-                    : Icons.view_agenda_outlined,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: 'Settings',
+                  onPressed: () =>
+                      Navigator.of(context).push(SettingsScreen.route()),
+                ),
+              ] else ...[
+                const _SortButton(),
+                IconButton(
+                  icon: Icon(
+                    listMode
+                        ? Icons.grid_view_outlined
+                        : Icons.view_agenda_outlined,
+                  ),
+                  tooltip: listMode ? 'Grid view' : 'List view',
+                  onPressed: onToggleLayout,
+                ),
+              ],
+              const SizedBox(width: 6),
+              const _UserAvatarMenu(),
+              const SizedBox(width: 4),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserAvatarMenu extends StatelessWidget {
+  const _UserAvatarMenu();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthStore>();
+    final scheme = Theme.of(context).colorScheme;
+    final username = auth.user?.username ?? '';
+    final initial =
+        username.isNotEmpty ? username.substring(0, 1).toUpperCase() : '?';
+
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 48),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      tooltip: 'Google Account / User profile\n$username',
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          enabled: false,
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: scheme.primaryContainer,
+                foregroundColor: scheme.onPrimaryContainer,
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 16),
+                ),
               ),
-              tooltip: listMode ? 'Grid view' : 'List view',
-              onPressed: onToggleLayout,
-            ),
-            if (!isNarrow)
-              IconButton(
-                icon: Icon(
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      username,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    Text(
+                      auth.activeUrl,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'settings',
+          child: Row(
+            children: [
+              Icon(Icons.settings_outlined, size: 20, color: scheme.onSurface),
+              const SizedBox(width: 12),
+              const Text('Settings'),
+            ],
+          ),
+        ),
+        if (MediaQuery.sizeOf(context).width < 650) ...[
+          PopupMenuItem<String>(
+            value: 'theme',
+            child: Row(
+              children: [
+                Icon(
                   Theme.of(context).brightness == Brightness.light
                       ? Icons.dark_mode_outlined
                       : Icons.light_mode_outlined,
+                  size: 20,
+                  color: scheme.onSurface,
                 ),
-                tooltip: Theme.of(context).brightness == Brightness.light
-                    ? 'Dark theme'
-                    : 'Light theme',
-                onPressed: () => context.read<SettingsStore>().toggleTheme(
-                  Theme.of(context).brightness,
+                const SizedBox(width: 12),
+                Text(
+                  Theme.of(context).brightness == Brightness.light
+                      ? 'Dark theme'
+                      : 'Light theme',
                 ),
-              ),
-            const SizedBox(width: 4),
-          ],
+              ],
+            ),
+          ),
+        ],
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 20, color: scheme.error),
+              const SizedBox(width: 12),
+              Text('Sign out', style: TextStyle(color: scheme.error)),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (value) {
+        if (value == 'settings') {
+          Navigator.of(context).push(SettingsScreen.route());
+        } else if (value == 'theme') {
+          context
+              .read<SettingsStore>()
+              .toggleTheme(Theme.of(context).brightness);
+        } else if (value == 'logout') {
+          auth.signOut();
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: CircleAvatar(
+          radius: 18,
+          backgroundColor: scheme.primaryContainer,
+          foregroundColor: scheme.onPrimaryContainer,
+          child: Text(
+            initial,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          ),
         ),
       ),
     );

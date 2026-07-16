@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../screens/settings_screen.dart';
-import '../state/auth_store.dart';
 import '../state/notes_store.dart';
 import 'labels_sheet.dart';
 
@@ -15,7 +13,6 @@ class AppDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
-    final auth = context.watch<AuthStore>();
     final labels = store.labels;
 
     final destinations = <(ViewSelection, NavigationDrawerDestination)>[
@@ -109,10 +106,8 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
         for (var i = 2; i < destinations.length - 2; i++) destinations[i].$2,
-        // "Edit labels" sits with the label list but is an action, not a view.
         InkWell(
           onTap: () {
-            // The drawer's own context dies when it pops; use the navigator's.
             final navigator = Navigator.of(context);
             navigator.pop();
             EditLabelsDialog.show(navigator.context);
@@ -141,52 +136,192 @@ class AppDrawer extends StatelessWidget {
         ),
         destinations[destinations.length - 2].$2,
         destinations[destinations.length - 1].$2,
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 12, 28, 8),
-          child: Divider(height: 1),
-        ),
-        InkWell(
-          onTap: () {
-            final navigator = Navigator.of(context);
-            navigator.pop();
-            navigator.push(SettingsScreen.route());
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.settings_outlined,
-                  size: 22,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 14),
-                Text('Settings', style: Theme.of(context).textTheme.labelLarge),
-              ],
-            ),
-          ),
-        ),
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 28),
-          leading: CircleAvatar(
-            radius: 14,
-            child: Text(
-              (auth.user?.username ?? '?').substring(0, 1).toUpperCase(),
-              style: const TextStyle(fontSize: 13),
-            ),
-          ),
-          title: Text(auth.user?.username ?? ''),
-          trailing: IconButton(
-            icon: const Icon(Icons.logout, size: 20),
-            tooltip: 'Sign out',
-            onPressed: () {
-              Navigator.of(context).pop();
-              auth.signOut();
-            },
-          ),
-        ),
         const SizedBox(height: 16),
       ],
+    );
+  }
+}
+
+class AppSidebar extends StatelessWidget {
+  final bool isOpen;
+  final ViewSelection selection;
+  final ValueChanged<ViewSelection> onSelect;
+
+  const AppSidebar({
+    super.key,
+    required this.isOpen,
+    required this.selection,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<NotesStore>();
+    final labels = store.labels;
+    final scheme = Theme.of(context).colorScheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+      width: isOpen ? 268 : 72,
+      color: scheme.surface,
+      child: ClipRect(
+        child: ListView(
+          padding: const EdgeInsets.only(top: 12, bottom: 24),
+          children: [
+            _SidebarItem(
+              icon: Icons.lightbulb_outline,
+              selectedIcon: Icons.lightbulb,
+              label: 'Notes',
+              isSelected: selection == ViewSelection.notes,
+              isOpen: isOpen,
+              onTap: () => onSelect(ViewSelection.notes),
+            ),
+            _SidebarItem(
+              icon: Icons.notifications_outlined,
+              selectedIcon: Icons.notifications,
+              label: 'Reminders',
+              isSelected: selection == ViewSelection.reminders,
+              isOpen: isOpen,
+              onTap: () => onSelect(ViewSelection.reminders),
+            ),
+            if (labels.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(height: 1, indent: 16, endIndent: 16),
+              ),
+              if (isOpen)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
+                  child: Text(
+                    'LABELS',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          letterSpacing: 1.1,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              for (final label in labels)
+                _SidebarItem(
+                  icon: Icons.label_outline,
+                  selectedIcon: Icons.label,
+                  label: label.name,
+                  isSelected:
+                      selection == ViewSelection(NoteView.label, label.id),
+                  isOpen: isOpen,
+                  onTap: () =>
+                      onSelect(ViewSelection(NoteView.label, label.id)),
+                ),
+            ],
+            _SidebarItem(
+              icon: Icons.edit_outlined,
+              selectedIcon: Icons.edit,
+              label: labels.isEmpty ? 'Create labels' : 'Edit labels',
+              isSelected: false,
+              isOpen: isOpen,
+              onTap: () => EditLabelsDialog.show(context),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Divider(height: 1, indent: 16, endIndent: 16),
+            ),
+            _SidebarItem(
+              icon: Icons.archive_outlined,
+              selectedIcon: Icons.archive,
+              label: 'Archive',
+              isSelected: selection == ViewSelection.archive,
+              isOpen: isOpen,
+              onTap: () => onSelect(ViewSelection.archive),
+            ),
+            _SidebarItem(
+              icon: Icons.delete_outline,
+              selectedIcon: Icons.delete,
+              label: 'Trash',
+              isSelected: selection == ViewSelection.trash,
+              isOpen: isOpen,
+              onTap: () => onSelect(ViewSelection.trash),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool isSelected;
+  final bool isOpen;
+  final VoidCallback onTap;
+
+  const _SidebarItem({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.isSelected,
+    required this.isOpen,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: isOpen ? '' : label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        child: Material(
+          color: isSelected ? scheme.secondaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(24),
+            child: SizedBox(
+              height: 48,
+              child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                minWidth: 48,
+                maxWidth: 244,
+                maxHeight: 48,
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Icon(
+                        isSelected ? selectedIcon : icon,
+                        size: 24,
+                        color: isSelected
+                            ? scheme.onSecondaryContainer
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: isSelected
+                                  ? scheme.onSecondaryContainer
+                                  : scheme.onSurface,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
