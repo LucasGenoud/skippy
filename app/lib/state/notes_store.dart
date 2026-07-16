@@ -846,7 +846,9 @@ class NotesStore extends ChangeNotifier {
     _enqueue(PendingOp('deleteAttachment', id: attachmentId));
   }
 
-  String fileUrl(String attachmentId) => api.fileUrl(attachmentId);
+  /// Resolved, ready-to-load URL for an attachment (uses the server's signed,
+  /// time-limited URL so image/audio element loads stay authorized).
+  String fileUrl(Attachment attachment) => api.attachmentUrl(attachment);
 
   // ---------------------------------------------------------------------
   // Audio notes

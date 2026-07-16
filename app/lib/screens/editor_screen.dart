@@ -961,7 +961,7 @@ class _EditorScreenState extends State<EditorScreen> {
         if (clip != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: AudioPlayerBar(url: _store.fileUrl(clip.id)),
+            child: AudioPlayerBar(url: _store.fileUrl(clip)),
           ),
         if (note?.transcribing ?? false)
           const Padding(
@@ -1055,7 +1055,7 @@ class _EditorScreenState extends State<EditorScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: Image.network(
-                  _store.fileUrl(attachment.id),
+                  _store.fileUrl(attachment),
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stack) => Container(
                     height: 80,
@@ -1101,7 +1101,7 @@ class _EditorScreenState extends State<EditorScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: () => launchUrl(
-            Uri.parse(_store.fileUrl(attachment.id)),
+            Uri.parse(_store.fileUrl(attachment)),
             mode: LaunchMode.externalApplication,
           ),
           child: Padding(

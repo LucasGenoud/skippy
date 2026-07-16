@@ -68,11 +68,18 @@ class Attachment {
   final String filename;
   final int size;
 
+  /// Signed, time-limited URL path provided by the server
+  /// (`/api/files/{id}?exp=..&sig=..`). The client resolves it against the API
+  /// base to load the bytes; null only for a locally-built attachment that
+  /// hasn't round-tripped through the server yet.
+  final String? url;
+
   const Attachment({
     required this.id,
     required this.mime,
     this.filename = '',
     this.size = 0,
+    this.url,
   });
 
   bool get isImage => mime.startsWith('image/');
@@ -83,6 +90,7 @@ class Attachment {
     mime: json['mime'] as String? ?? '',
     filename: json['filename'] as String? ?? '',
     size: (json['size'] as num?)?.toInt() ?? 0,
+    url: json['url'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -90,6 +98,7 @@ class Attachment {
     'mime': mime,
     'filename': filename,
     'size': size,
+    if (url != null) 'url': url,
   };
 }
 

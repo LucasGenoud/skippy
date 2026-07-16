@@ -5,10 +5,31 @@ use sticky_notes_server::files::FileStore;
 use sticky_notes_server::search::{
     FastEmbedder, QdrantIndex, SearchService, SqliteVectorIndex, VectorIndex,
 };
+use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
 use sticky_notes_server::{AppState, build_app, handlers};
 use tower_http::services::{ServeDir, ServeFile};
+
+/// Load the persistent HMAC key used to sign file-access URLs, creating and
+/// storing one on first run. Persisting it means signed URLs stay valid across
+/// restarts (a per-process key would invalidate every outstanding URL on
+/// reboot).
+async fn load_file_secret(repo: &dyn Repository) -> anyhow::Result<Vec<u8>> {
+    if let Some(stored) = repo.meta_get("file_secret").await.map_err(|e| anyhow::anyhow!("{e:?}"))? {
+        if let Ok(bytes) = hex::decode(stored.trim()) {
+            if bytes.len() >= 32 {
+                return Ok(bytes);
+            }
+        }
+    }
+    let mut bytes = vec![0u8; 32];
+    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
+    repo.meta_set("file_secret", &hex::encode(&bytes))
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    Ok(bytes)
+}
 
 /// Semantic search wiring: local ONNX embeddings + either Qdrant (when
 /// STICKY_NOTES_QDRANT_URL is set) or the built-in SQLite vector index.
@@ -71,7 +92,8 @@ async fn main() -> anyhow::Result<()> {
     // Swap point: implement `Repository` for another database and change
     // this constructor.
     let repo = Arc::new(SqliteRepository::connect(&db_path).await?);
-    let mut state = AppState::new(repo, FileStore::new(&uploads));
+    let file_secret = load_file_secret(repo.as_ref()).await?;
+    let mut state = AppState::new(repo, FileStore::new(&uploads)).with_file_secret(file_secret);
     if let Some(service) = init_transcription().await {
         state = state.with_transcription(service);
     }

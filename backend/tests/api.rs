@@ -10,7 +10,6 @@ use tower::ServiceExt;
 use sticky_notes_server::files::FileStore;
 use async_trait::async_trait;
 use sticky_notes_server::search::{SearchService, SqliteVectorIndex, TextEmbedder};
-use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::Transcriber;
 use sticky_notes_server::{AppState, build_app};
@@ -18,10 +17,14 @@ use sticky_notes_server::{AppState, build_app};
 // ---------------------------------------------------------------------------
 // Harness
 
+/// Fixed signing key for the test app so tests can mint/forge file signatures
+/// deterministically (production uses a random, persisted secret).
+const TEST_FILE_SECRET: &[u8] = b"sticky-notes-test-file-signing-secret";
+
 async fn state() -> AppState {
     let repo = Arc::new(SqliteRepository::connect(":memory:").await.unwrap());
     let dir = std::env::temp_dir().join(format!("sticky-notes-test-{}", uuid::Uuid::new_v4()));
-    AppState::new(repo, FileStore::new(dir))
+    AppState::new(repo, FileStore::new(dir)).with_file_secret(TEST_FILE_SECRET.to_vec())
 }
 
 /// Deterministic bag-of-words embedder: shared tokens => similar vectors.
@@ -959,27 +962,86 @@ async fn attachment_upload_serve_delete() {
     let payload = b"fake-png-bytes".as_slice();
     let (status, attachment) = upload(&app, &token, note_id, "image/png", payload).await;
     assert_eq!(status, StatusCode::CREATED, "{attachment}");
-    let att_id = attachment["id"].as_str().unwrap();
+    let att_id = attachment["id"].as_str().unwrap().to_string();
+    // The upload response already carries a signed, ready-to-load URL.
+    let signed_url = attachment["url"].as_str().expect("signed url in upload response").to_string();
 
-    // Attachment appears on the note view.
+    // Attachment appears on the note view, also with a signed URL.
     let (_, view) = send(&app, "GET", &format!("/api/notes/{note_id}"), Some(&token), None).await;
     assert_eq!(view["attachments"][0]["id"], json!(att_id));
+    assert!(view["attachments"][0]["url"].as_str().unwrap().contains("sig="));
 
-    // File serves publicly with the right content type and bytes.
-    let request = Request::builder().uri(format!("/api/files/{att_id}")).body(Body::empty()).unwrap();
+    // The signed URL serves the bytes with the right content type.
+    let request = Request::builder().uri(&signed_url).body(Body::empty()).unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "private, max-age=3600");
     let served = response.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(served.as_ref(), payload);
 
-    // Delete removes row and file.
+    // The bare id (no signature) is rejected — the hole this fix closes.
+    let request = Request::builder().uri(format!("/api/files/{att_id}")).body(Body::empty()).unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    // Delete removes row and file; the still-valid signed URL now 404s.
     let (status, _) =
         send(&app, "DELETE", &format!("/api/attachments/{att_id}"), Some(&token), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let request = Request::builder().uri(format!("/api/files/{att_id}")).body(Body::empty()).unwrap();
+    let request = Request::builder().uri(&signed_url).body(Body::empty()).unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// The signature is the whole access-control story for files, so exercise the
+/// ways it can be wrong: absent, tampered, expired, or bound to another id.
+#[tokio::test]
+async fn file_urls_require_valid_signature() {
+    use sticky_notes_server::files::file_signature;
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"title": "n"})).await;
+    let note_id = note["id"].as_str().unwrap();
+    let (_, attachment) = upload(&app, &token, note_id, "image/png", b"bytes").await;
+    let att_id = attachment["id"].as_str().unwrap().to_string();
+
+    async fn status_of(app: &Router, uri: String) -> StatusCode {
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        app.clone().oneshot(request).await.unwrap().status()
+    }
+
+    // No signature.
+    assert_eq!(status_of(&app, format!("/api/files/{att_id}")).await, StatusCode::UNAUTHORIZED);
+
+    // Valid signature, future expiry -> served.
+    let future = chrono::Utc::now().timestamp() + 3600;
+    let good = file_signature(TEST_FILE_SECRET, &att_id, future);
+    assert_eq!(
+        status_of(&app, format!("/api/files/{att_id}?exp={future}&sig={good}")).await,
+        StatusCode::OK
+    );
+
+    // Extending the expiry breaks the signature (it covers exp).
+    assert_eq!(
+        status_of(&app, format!("/api/files/{att_id}?exp={}&sig={good}", future + 999_999)).await,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // Correctly signed but expired.
+    let past = chrono::Utc::now().timestamp() - 10;
+    let expired = file_signature(TEST_FILE_SECRET, &att_id, past);
+    assert_eq!(
+        status_of(&app, format!("/api/files/{att_id}?exp={past}&sig={expired}")).await,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // A signature minted for a different id doesn't transfer.
+    let other = file_signature(TEST_FILE_SECRET, "another-id", future);
+    assert_eq!(
+        status_of(&app, format!("/api/files/{att_id}?exp={future}&sig={other}")).await,
+        StatusCode::UNAUTHORIZED
+    );
 }
 
 #[tokio::test]
@@ -997,8 +1059,8 @@ async fn attachment_rules() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(attachment["filename"], "pic");
     assert_eq!(attachment["size"], 25);
-    let att_id = attachment["id"].as_str().unwrap();
-    let request = Request::builder().uri(format!("/api/files/{att_id}")).body(Body::empty()).unwrap();
+    let signed_url = attachment["url"].as_str().unwrap();
+    let request = Request::builder().uri(signed_url).body(Body::empty()).unwrap();
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let disposition = response.headers()[header::CONTENT_DISPOSITION].to_str().unwrap();
@@ -1695,4 +1757,118 @@ async fn llm_test_endpoint_probes_and_validates() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = send(&app, "POST", "/api/llm/test", None, Some(probe)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// Notes chat over WebSocket
+
+/// Drive one real /api/chat turn: spawn the app on a TCP port, connect with a
+/// WS client, send a request frame, and collect frames until done/error.
+async fn chat_turn(
+    state: AppState,
+    token: &str,
+    message: &str,
+    history: Value,
+) -> Vec<Value> {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message as WsMessage;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, build_app(state)).await.unwrap();
+    });
+
+    let url = format!("ws://{addr}/api/chat?token={token}");
+    let (mut ws, _) = tokio_tungstenite::connect_async(url).await.expect("ws connect");
+    ws.send(WsMessage::text(
+        json!({"message": message, "history": history}).to_string(),
+    ))
+    .await
+    .unwrap();
+
+    let mut frames = Vec::new();
+    while let Ok(Some(Ok(frame))) = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        ws.next(),
+    )
+    .await
+    {
+        let WsMessage::Text(text) = frame else { continue };
+        let value: Value = serde_json::from_str(&text).unwrap();
+        let kind = value["type"].as_str().unwrap_or_default().to_string();
+        frames.push(value);
+        if kind == "done" || kind == "error" {
+            break;
+        }
+    }
+    frames
+}
+
+/// A follow-up like "nice" carries no subject: embedded alone it ranks junk
+/// notes above the one the conversation is about. The retrieval query must
+/// blend the recent user turns so the topical note stays in the sources (and
+/// in the model's prompt).
+#[tokio::test]
+async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
+    let (llm, calls) = FakeLlm::new("Bread it is.");
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:").await.unwrap());
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+
+    // NOTE: the HashEmbedder tokenizes on whitespace only, so these strings
+    // deliberately avoid punctuation to share exact tokens with the queries.
+    create_note(
+        &app,
+        &token,
+        json!({"title": "Groceries", "content": "buy groceries bread milk potatoes"}),
+    )
+    .await;
+    // More decoys than the context window (6), every one sharing the
+    // follow-up's only token — embedding "nice" alone would rank all of them
+    // above the groceries note.
+    for i in 0..7 {
+        create_note(
+            &app,
+            &token,
+            json!({"title": format!("junk {i}"), "content": format!("nice thing {i}")}),
+        )
+        .await;
+    }
+    settle_index().await;
+
+    let frames = chat_turn(
+        state,
+        &token,
+        "nice",
+        json!([
+            {"role": "user", "content": "what groceries should I buy"},
+            {"role": "assistant", "content": "Bread, milk and potatoes."},
+        ]),
+    )
+    .await;
+
+    assert_eq!(frames.first().unwrap()["type"], "sources", "{frames:?}");
+    let sources = frames[0]["notes"].as_array().unwrap();
+    assert!(
+        sources.iter().any(|s| s["title"] == "Groceries"),
+        "groceries note must stay in the sources of a follow-up turn: {sources:?}"
+    );
+    // Streamed deltas concatenate to the model reply, then the turn closes.
+    let text: String = frames
+        .iter()
+        .filter(|f| f["type"] == "delta")
+        .map(|f| f["text"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(text, "Bread it is.");
+    assert_eq!(frames.last().unwrap()["type"], "done");
+    // And the note text made it into the model's prompt.
+    let calls = calls.lock().unwrap();
+    let system = &calls.last().unwrap().first().unwrap().content;
+    assert!(system.contains("bread milk potatoes"), "{system}");
 }

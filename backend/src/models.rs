@@ -62,6 +62,11 @@ pub struct Attachment {
     pub mime: String,
     pub filename: String,
     pub size: i64,
+    /// Signed, time-limited relative URL for fetching the bytes
+    /// (`/api/files/{id}?exp=..&sig=..`). Filled in by the handler layer when a
+    /// note is served; `None` in the storage layer, which knows no signing key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// A note as stored, without the per-viewer decorations.

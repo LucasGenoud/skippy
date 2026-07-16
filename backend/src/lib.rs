@@ -41,10 +41,18 @@ pub struct AppState {
     /// How long a labeling task waits for further edits before it fires.
     /// Tests shrink this.
     pub label_delay: Duration,
+    /// HMAC key for signing time-limited file-access URLs. Random per process
+    /// by default; `main` loads a persisted secret from the store via
+    /// [`AppState::with_file_secret`] so URLs survive restarts.
+    pub file_secret: Arc<Vec<u8>>,
 }
 
 impl AppState {
     pub fn new(repo: Arc<dyn Repository>, files: FileStore) -> Self {
+        // Random per-process fallback so file URLs are signed even before a
+        // persisted secret is loaded (and in tests, which never persist one).
+        let mut secret = vec![0u8; 32];
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut secret);
         Self {
             repo,
             hub: Hub::default(),
@@ -54,7 +62,14 @@ impl AppState {
             llm: Arc::new(llm::OpenAiCompatLlm::default()),
             label_generations: Arc::default(),
             label_delay: Duration::from_secs(20),
+            file_secret: Arc::new(secret),
         }
+    }
+
+    /// Use a persistent signing key so file URLs stay valid across restarts.
+    pub fn with_file_secret(mut self, secret: Vec<u8>) -> Self {
+        self.file_secret = Arc::new(secret);
+        self
     }
 
     pub fn with_search(mut self, service: Arc<search::SearchService>) -> Self {

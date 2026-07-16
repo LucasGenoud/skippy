@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../util/download.dart';
 import '../util/note_export.dart';
 import '../util/snack.dart';
+import '../widgets/shortcut_help.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -175,6 +176,14 @@ class SettingsScreen extends StatelessWidget {
               const Divider(height: 32),
               const _SectionHeader('Data'),
               const _ExportSection(),
+              const Divider(height: 32),
+              const _SectionHeader('Help'),
+              ListTile(
+                leading: const Icon(Icons.keyboard_outlined),
+                title: const Text('Keyboard shortcuts'),
+                subtitle: const Text('Also opens with ? on the notes screen'),
+                onTap: () => showShortcutHelp(context),
+              ),
             ],
           ),
         ),
@@ -233,7 +242,8 @@ class _LlmConfigTile extends StatelessWidget {
       summary =
           '${settings.llmModel} @ ${(host == null || host.isEmpty) ? settings.llmBaseUrl : host}';
     } else {
-      summary = 'Not configured — works with Ollama or any OpenAI-compatible API';
+      summary =
+          'Not configured — works with Ollama or any OpenAI-compatible API';
     }
     return ListTile(
       leading: const Icon(Icons.smart_toy_outlined),
@@ -745,9 +755,9 @@ class _ExportSection extends StatelessWidget {
             '${count == 1 ? 'note' : 'notes'} (archived included, trash '
             'excluded). JSON is a complete backup; Markdown and plain text '
             'are for reading and sharing.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),
         Padding(

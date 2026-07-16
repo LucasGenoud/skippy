@@ -82,6 +82,11 @@ abstract class Api {
   Future<void> deleteAttachment(String attachmentId);
   String fileUrl(String attachmentId);
 
+  /// Absolute, ready-to-load URL for an attachment. Prefers the server's
+  /// signed, time-limited URL (so plain `<img>`/`<audio>` loads stay
+  /// authorized); falls back to the bare path for older servers.
+  String attachmentUrl(Attachment attachment);
+
   // per-user settings (opaque JSON document, synced across devices)
   Future<Map<String, dynamic>> fetchSettings();
   Future<void> putSettings(Map<String, dynamic> settings);
@@ -409,6 +414,13 @@ class ApiClient implements Api {
 
   @override
   String fileUrl(String attachmentId) => '$baseUrl/api/files/$attachmentId';
+
+  @override
+  String attachmentUrl(Attachment attachment) {
+    final signed = attachment.url;
+    if (signed != null && signed.isNotEmpty) return '$baseUrl$signed';
+    return fileUrl(attachment.id);
+  }
 
   // -- settings -----------------------------------------------------------------
 

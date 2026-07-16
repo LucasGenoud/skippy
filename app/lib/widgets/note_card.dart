@@ -452,7 +452,7 @@ class _ImageStrip extends StatelessWidget {
             child: SizedBox(
               width: double.infinity,
               child: Image.network(
-                store.fileUrl(first.id),
+                store.fileUrl(first),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) => Container(
                   height: 60,

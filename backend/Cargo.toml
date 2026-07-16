@@ -28,8 +28,13 @@ futures = "0.3"
 fastembed = "5.17.2"
 qdrant-client = "1.18.0"
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls", "stream"] }
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 uuid = "1"
+# WS client for exercising the /api/chat websocket end to end.
+tokio-tungstenite = "0.26"

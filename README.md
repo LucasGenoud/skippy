@@ -42,6 +42,23 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 
 **Out of scope** (would need AI services / heavy platform APIs): drawings, audio recording, voice transcription, OCR. The schema (attachments table, note `kind` field) leaves room for them.
 
+## Keyboard shortcuts
+
+Web/desktop. Press **`?`** on the notes screen for the in-app cheat sheet (also in Settings → Help). Letter shortcuts never fire while you're typing in a text field — the keystroke goes into the field instead — and they match the *character* produced, so they work on any keyboard layout.
+
+| Keys | Where | Action |
+| --- | --- | --- |
+| `c` or `n` | Notes screen | New note |
+| `l` | Notes screen | New checklist |
+| `m` | Notes screen | New markdown note |
+| `/` or `Ctrl`/`⌘` `K` | Notes screen | Search |
+| `Esc` | Notes screen | Clear search |
+| `Ctrl`/`⌘` `G` | Notes screen | Toggle grid / list |
+| `?` | Notes screen | Shortcut help |
+| `Ctrl`/`⌘` `Z` · `Shift` + `Ctrl`/`⌘` `Z` | Editor | Undo · redo |
+| `Esc` | Editor (modal) | Close and save |
+| `Esc` | Quick add | Save and close |
+
 ## Architecture
 
 ```

@@ -64,6 +64,13 @@ void main() {
       child: MaterialApp(home: child),
     );
 
+    IconButton sendButton(WidgetTester tester) => tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.arrow_upward),
+        matching: find.byType(IconButton),
+      ),
+    );
+
     testWidgets('a turn streams deltas into one bubble with source chips', (
       tester,
     ) async {
@@ -83,11 +90,76 @@ void main() {
       expect(find.text('what do I need?'), findsOneWidget); // user bubble
       expect(find.text('You need milk.'), findsOneWidget); // merged deltas
       expect(find.text('Groceries'), findsOneWidget); // source chip
-      // Turn finished: the input is enabled again.
+      // Turn finished: sending unlocks again (the composer itself is never
+      // disabled).
+      expect(sendButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('the composer stays focused through a turn, ready for the '
+        'follow-up', (tester) async {
+      await tester.pumpWidget(harness(const ChatScreen()));
+      await tester.pump(); // autofocus lands
+
+      // First question, submitted with the keyboard like a real user.
+      await tester.enterText(find.byType(TextField), 'first question');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pumpAndSettle();
+      expect(find.text('Hello there.'), findsOneWidget); // default script
+
+      // The reported bug: disabling the field while the answer streamed tore
+      // down the platform text input, and (on Firefox) the composer never
+      // came back to life. The field must still own focus once the reply is
+      // done so the user can just keep typing.
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.enabled, isNot(false)); // never disabled, even mid-turn
+      expect(field.focusNode!.hasFocus, isTrue);
+
+      // And a second turn round-trips.
+      await tester.enterText(find.byType(TextField), 'second question');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pumpAndSettle();
+      expect(api.log.where((e) => e.startsWith('chat:')).length, 2);
+      expect(find.text('second question'), findsOneWidget);
+    });
+
+    testWidgets('new conversation clears the turns and the sent history', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness(const ChatScreen()));
+
+      // No conversation yet: nothing to clear.
+      final newConv = find.byTooltip('New conversation');
       expect(
-        tester.widget<TextField>(find.byType(TextField)).enabled,
-        isTrue,
+        tester
+            .widget<IconButton>(
+              find.ancestor(of: newConv, matching: find.byType(IconButton)),
+            )
+            .onPressed,
+        isNull,
       );
+
+      // Two turns build up history.
+      await tester.enterText(find.byType(TextField), 'first');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'second');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+      expect(api.lastChatHistory, hasLength(2)); // first turn's user+assistant
+
+      await tester.tap(newConv);
+      await tester.pumpAndSettle();
+
+      // Conversation gone, empty hint back.
+      expect(find.text('first'), findsNothing);
+      expect(find.textContaining('answers cite the notes'), findsOneWidget);
+
+      // The next turn starts from scratch.
+      await tester.enterText(find.byType(TextField), 'fresh start');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+      expect(api.lastChatHistory, isEmpty);
+      expect(find.text('fresh start'), findsOneWidget);
     });
 
     testWidgets('a server error before any text becomes an error bubble', (
@@ -107,8 +179,8 @@ void main() {
         find.text('configure an AI provider in Settings to use chat'),
         findsOneWidget,
       );
-      // Input recovers so the user can retry.
-      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+      // Sending recovers so the user can retry.
+      expect(sendButton(tester).onPressed, isNotNull);
     });
   });
 

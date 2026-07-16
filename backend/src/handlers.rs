@@ -69,6 +69,25 @@ impl AppState {
         self.hub.notify(std::slice::from_ref(&user_id.to_string()), CHANGED_MSG);
     }
 
+    /// Stamp each attachment with a signed, time-limited fetch URL. Applied to
+    /// every note view and upload response we serve, so clients load images and
+    /// audio with a plain URL while [`serve_file`] stays behind the signature.
+    fn sign_attachment(&self, attachment: &mut Attachment) {
+        attachment.url = Some(crate::files::signed_file_path(&self.file_secret, &attachment.id));
+    }
+
+    fn sign_view(&self, view: &mut NoteView) {
+        for attachment in view.attachments.iter_mut() {
+            self.sign_attachment(attachment);
+        }
+    }
+
+    fn sign_views(&self, views: &mut [NoteView]) {
+        for view in views.iter_mut() {
+            self.sign_view(view);
+        }
+    }
+
     /// Re-embed and index a note in the background (fire and forget); request
     /// latency never waits on the embedder.
     pub fn index_note_later(&self, note_id: &str) {
@@ -335,7 +354,9 @@ pub async fn list_notes(
     AuthUser(user_id): AuthUser,
 ) -> ApiResult<Json<Vec<NoteView>>> {
     purge_old_trash(&state).await?;
-    Ok(Json(state.repo.notes_for_user(&user_id).await?))
+    let mut views = state.repo.notes_for_user(&user_id).await?;
+    state.sign_views(&mut views);
+    Ok(Json(views))
 }
 
 pub async fn purge_old_trash(state: &AppState) -> ApiResult<()> {
@@ -392,7 +413,8 @@ pub async fn create_note(
     state.index_note_later(&id);
     state.label_note_later(&id, &user_id);
     state.notify_user(&user_id);
-    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
     Ok((StatusCode::CREATED, Json(view)))
 }
 
@@ -402,7 +424,8 @@ pub async fn get_note(
     Path(id): Path<String>,
 ) -> ApiResult<Json<NoteView>> {
     require_participant(&state, &id, &user_id).await?;
-    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
     Ok(Json(view))
 }
 
@@ -475,7 +498,8 @@ pub async fn update_note(
         state.label_note_later(&id, &user_id);
     }
     state.notify_note(&id).await;
-    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
     Ok(Json(view))
 }
 
@@ -585,7 +609,8 @@ pub async fn restore_note_version(
         state.notify_note(&id).await;
     }
 
-    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
     Ok(Json(view))
 }
 
@@ -613,7 +638,8 @@ pub async fn add_collaborator(
     state.repo.add_collaborator(&id, &target.id).await?;
     state.index_note_later(&id); // participants changed -> access filter changed
     state.notify_note(&id).await;
-    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
     Ok(Json(view))
 }
 
@@ -731,11 +757,12 @@ pub async fn upload_attachment(
             .bytes()
             .await
             .map_err(|e| ApiError::BadRequest(format!("upload failed: {e}")))?;
-        let attachment = Attachment {
+        let mut attachment = Attachment {
             id: new_id(),
             mime,
             filename,
             size: bytes.len() as i64,
+            url: None,
         };
         state.files.save(&attachment.id, &bytes).await?;
         state.repo.insert_attachment(&attachment, &id).await?;
@@ -750,6 +777,7 @@ pub async fn upload_attachment(
             state.transcribe_later(&id, &attachment.id, &attachment.filename, &user_id);
         }
         state.notify_note(&id).await;
+        state.sign_attachment(&mut attachment);
         return Ok((StatusCode::CREATED, Json(attachment)));
     }
     Err(ApiError::BadRequest("no file field in upload".to_string()))
@@ -802,8 +830,19 @@ pub async fn delete_attachment(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Serves attachment bytes. Unauthenticated by design: ids are unguessable
-/// UUIDs, which lets plain `<img>` tags work. Documented trade-off.
+/// Query carrying the signed, time-limited capability minted in note views.
+#[derive(Deserialize)]
+pub struct FileAccess {
+    exp: Option<i64>,
+    sig: Option<String>,
+}
+
+/// Serves attachment bytes, gated by a signed `?exp=..&sig=..` capability
+/// rather than a bearer token — so plain `<img>`/`<audio>` element loads work
+/// on web and mobile, while a stranger with just the id gets nothing. Only a
+/// note's participants are ever handed a signed URL (they are minted into
+/// access-checked note views), and the signature expires, so a leaked URL
+/// stops working. See [`crate::files::signed_file_path`].
 ///
 /// Only images render inline; everything else is forced to download with its
 /// original filename, so a user-uploaded HTML file can never execute in the
@@ -811,7 +850,14 @@ pub async fn delete_attachment(
 pub async fn serve_file(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    Query(access): Query<FileAccess>,
 ) -> ApiResult<Response> {
+    let (Some(exp), Some(sig)) = (access.exp, access.sig) else {
+        return Err(ApiError::Unauthorized);
+    };
+    if !crate::files::verify_file_access(&state.file_secret, &id, exp, &sig) {
+        return Err(ApiError::Unauthorized);
+    }
     let (_, attachment) =
         state.repo.attachment_info(&id).await?.ok_or(ApiError::NotFound)?;
     let bytes = state.files.read(&id).await.ok_or(ApiError::NotFound)?;
@@ -826,7 +872,9 @@ pub async fn serve_file(
             (header::CONTENT_TYPE, attachment.mime),
             (header::CONTENT_DISPOSITION, disposition),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
-            (header::CACHE_CONTROL, "public, max-age=31536000, immutable".to_string()),
+            // The URL is a per-user, expiring capability — never let a shared
+            // cache store it. `private` scopes caching to the user's own browser.
+            (header::CACHE_CONTROL, "private, max-age=3600".to_string()),
         ],
         bytes,
     )
@@ -1077,9 +1125,14 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         return;
     };
 
-    // Retrieve: over-fetch because trashed notes linger in the vector index,
-    // then keep the best non-trashed hits.
-    let hits = match search.search(&user_id, message, crate::assist::CHAT_CONTEXT_NOTES * 2).await
+    let history: Vec<(String, String)> =
+        request.history.into_iter().map(|h| (h.role, h.content)).collect();
+
+    // Retrieve: the query blends recent user turns so low-content follow-ups
+    // ("nice") keep the conversation's subject, and over-fetch because
+    // trashed notes linger in the vector index — keep the best non-trashed.
+    let query = crate::assist::retrieval_query(&history, message);
+    let hits = match search.search(&user_id, &query, crate::assist::CHAT_CONTEXT_NOTES * 2).await
     {
         Ok(hits) => hits,
         Err(e) => {
@@ -1110,8 +1163,6 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         return;
     }
 
-    let history: Vec<(String, String)> =
-        request.history.into_iter().map(|h| (h.role, h.content)).collect();
     let prompt_notes: Vec<(String, String)> =
         notes.iter().map(|(_, title, text)| (title.clone(), text.clone())).collect();
     let messages = crate::assist::chat_messages(&prompt_notes, &history, message);

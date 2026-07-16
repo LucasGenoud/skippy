@@ -273,6 +273,11 @@ class FakeApi implements Api {
   @override
   String fileUrl(String attachmentId) => 'http://fake.test/files/$attachmentId';
 
+  @override
+  String attachmentUrl(Attachment attachment) => attachment.url != null
+      ? 'http://fake.test${attachment.url}'
+      : fileUrl(attachment.id);
+
   /// Poor-man's semantic search: keyword containment ranked by match count.
   @override
   Future<List<String>> semanticSearch(
@@ -297,12 +302,11 @@ class FakeApi implements Api {
   fetchCapabilities() => _run('fetchCapabilities', () => capabilities);
 
   @override
-  Future<void> transcribeNote(String noteId) =>
-      _run('transcribe:$noteId', () {
-        if (!notes.containsKey(noteId)) {
-          throw ApiException(404, '{"error":"not found"}');
-        }
-      });
+  Future<void> transcribeNote(String noteId) => _run('transcribe:$noteId', () {
+    if (!notes.containsKey(noteId)) {
+      throw ApiException(404, '{"error":"not found"}');
+    }
+  });
 
   @override
   Future<Map<String, dynamic>> fetchSettings() =>
@@ -336,9 +340,13 @@ class FakeApi implements Api {
     ChatDoneEvent(),
   ];
 
+  /// History sent with the most recent [chat] call.
+  List<ChatMessage>? lastChatHistory;
+
   @override
   Stream<ChatEvent> chat(String message, List<ChatMessage> history) {
     log.add('chat:$message');
+    lastChatHistory = history;
     final fail = failWith;
     if (fail != null) return Stream.error(fail);
     return Stream.fromIterable(chatScript);

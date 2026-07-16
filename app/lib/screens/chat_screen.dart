@@ -38,7 +38,11 @@ class _Turn {
   String? error;
 
   _Turn.user(this.text) : role = 'user', sources = const [], streaming = false;
-  _Turn.pending() : role = 'assistant', text = '', sources = const [], streaming = true;
+  _Turn.pending()
+    : role = 'assistant',
+      text = '',
+      sources = const [],
+      streaming = true;
 }
 
 class _ChatScreenState extends State<ChatScreen> {
@@ -60,6 +64,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _send() {
+    // Submitting via the keyboard (TextInputAction.send) unfocuses the field
+    // by default, and the send button steals focus on click — take it back
+    // first so the user can just keep typing, whatever happens below.
+    _inputFocus.requestFocus();
     final message = _input.text.trim();
     if (message.isEmpty || _busy) return;
     // History = every completed turn before this one (errors excluded so a
@@ -82,7 +90,23 @@ class _ChatScreenState extends State<ChatScreen> {
           (event) => _handle(pending, event),
           onError: (Object _) =>
               _handle(pending, const ChatErrorEvent('connection lost')),
+          // The ApiClient always closes with done/error, but if a stream ever
+          // ends without one, don't leave the turn (and the send button)
+          // stuck streaming forever.
+          onDone: () {
+            if (pending.streaming) {
+              _handle(pending, const ChatErrorEvent('connection lost'));
+            }
+          },
         );
+  }
+
+  /// Start over: drop the conversation (it lives in memory only) and cancel
+  /// any in-flight reply. Whatever's typed in the composer survives.
+  void _newConversation() {
+    _sub?.cancel();
+    _sub = null;
+    setState(() => _turns.clear());
     _inputFocus.requestFocus();
   }
 
@@ -109,9 +133,9 @@ class _ChatScreenState extends State<ChatScreen> {
       noteId: id,
       // Narrow layouts get a plain fullscreen push (there's no enclosing
       // OpenContainer to morph from on this screen).
-      openFullscreen: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => EditorScreen(noteId: id)),
-      ),
+      openFullscreen: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => EditorScreen(noteId: id))),
     );
   }
 
@@ -119,7 +143,17 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Chat with your notes')),
+      appBar: AppBar(
+        title: const Text('Chat with your notes'),
+        actions: [
+          IconButton(
+            tooltip: 'New conversation',
+            onPressed: _turns.isEmpty ? null : _newConversation,
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
@@ -147,10 +181,15 @@ class _ChatScreenState extends State<ChatScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
+                        // Never disabled: disabling while the answer streams
+                        // tears down the engine's text editing element, and
+                        // (on Firefox) focus doesn't survive the re-enable —
+                        // the composer went dead after the first reply. The
+                        // user can type the follow-up during streaming; only
+                        // sending is gated on _busy.
                         child: TextField(
                           controller: _input,
                           focusNode: _inputFocus,
-                          enabled: !_busy,
                           autofocus: true,
                           minLines: 1,
                           maxLines: 4,
@@ -200,14 +239,18 @@ class _EmptyHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.forum_outlined, size: 48, color: scheme.onSurfaceVariant),
+            Icon(
+              Icons.forum_outlined,
+              size: 48,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(height: 12),
             Text(
               'Ask about your notes — answers cite the notes they came from.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -266,9 +309,9 @@ class _Bubble extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '— interrupted: ${turn.error}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.error,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.error),
             ),
           ],
         ],

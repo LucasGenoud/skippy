@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:sticky_notes/api/api_client.dart';
 import 'package:sticky_notes/models/note.dart';
 import 'package:sticky_notes/screens/editor_screen.dart';
+import 'package:sticky_notes/state/auth_store.dart';
 import 'package:sticky_notes/screens/history_screen.dart';
 import 'package:sticky_notes/screens/home_screen.dart';
 import 'package:sticky_notes/state/notes_store.dart';
@@ -28,6 +30,24 @@ Widget harness(NotesStore store, Widget child) {
     child: MaterialApp(home: Scaffold(body: child)),
   );
 }
+
+/// The full home screen, as the app builds it. The top bar's avatar menu
+/// watches an [AuthStore], which only supports the concrete [ApiClient]; a
+/// signed-out store over a dummy client renders fine and never talks to it.
+Widget homeApp(NotesStore store) => MultiProvider(
+  providers: [
+    ChangeNotifierProvider.value(value: store),
+    ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+    ChangeNotifierProvider(
+      create: (_) => AuthStore(api: ApiClient(baseUrl: 'http://unused')),
+    ),
+  ],
+  child: MaterialApp(
+    theme: buildTheme(Brightness.light),
+    scaffoldMessengerKey: scaffoldMessengerKey,
+    home: const HomeScreen(),
+  ),
+);
 
 /// Flush the store's debounce (400ms) so no timers leak out of the test.
 Future<void> flushTimers(WidgetTester tester) async {
@@ -675,18 +695,6 @@ void main() {
   });
 
   group('home screen layout', () {
-    Widget homeApp(NotesStore store) => MultiProvider(
-      providers: [
-        ChangeNotifierProvider.value(value: store),
-        ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
-      ],
-      child: MaterialApp(
-        theme: buildTheme(Brightness.light),
-        scaffoldMessengerKey: scaffoldMessengerKey,
-        home: const HomeScreen(),
-      ),
-    );
-
     testWidgets(
       'note FABs stay out of the Scaffold slot so snackbars hug the bottom',
       (tester) async {
@@ -718,6 +726,125 @@ void main() {
         await flushTimers(tester);
       },
     );
+  });
+
+  group('keyboard shortcuts', () {
+    // 1200px: comfortably in the wide layout (quick add + modal editor), and
+    // clear of the known _TopBar overflow at the default 800px test surface.
+    Future<void> pumpHome(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pump();
+    }
+
+    bool editingText() =>
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorStateOfType<EditableTextState>() !=
+        null;
+
+    testWidgets('n, l and m open the matching editor kind from idle', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape); // dismiss modal
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsNothing);
+
+      // Focus returns to the page after the modal closes, so the next
+      // shortcut works without clicking anywhere first.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+      await tester.pumpAndSettle();
+      expect(find.byType(AnimatedChecklist), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pumpAndSettle();
+      expect(find.byType(MarkdownToolbar), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+
+    testWidgets('letters typed into the quick add stay in the field', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      expect(editingText(), isTrue);
+
+      // The reported bug: pressing "n" while composing opened a new-note
+      // modal instead of typing an "n".
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pump();
+      expect(find.byType(EditorScreen), findsNothing);
+      expect(find.text('Close'), findsOneWidget); // composer still open
+
+      // Escape stays the quick add's own shortcut: save and collapse.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsNothing);
+      expect(find.byType(EditorScreen), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('/ focuses search; keys there type instead of firing', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.slash, character: '/');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.slash);
+      await tester.pump();
+      expect(editingText(), isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.pump();
+      expect(find.byType(EditorScreen), findsNothing);
+
+      // Escape clears the query and hands focus back to the page.
+      await tester.enterText(find.byType(TextField).first, 'zzz');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.text('zzz'), findsNothing);
+      expect(editingText(), isFalse);
+      await flushTimers(tester);
+    });
+
+    testWidgets('? opens the shortcut cheat sheet', (tester) async {
+      await pumpHome(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.slash, character: '?');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.slash);
+      await tester.pumpAndSettle();
+      expect(find.text('Keyboard shortcuts'), findsOneWidget);
+      expect(find.text('New checklist'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Keyboard shortcuts'), findsNothing);
+    });
+
+    testWidgets('Ctrl+G toggles the grid/list layout', (tester) async {
+      await pumpHome(tester);
+
+      expect(find.byTooltip('List view'), findsOneWidget); // grid active
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(find.byTooltip('Grid view'), findsOneWidget); // list active
+    });
   });
 
   group('NoteHistoryScreen', () {

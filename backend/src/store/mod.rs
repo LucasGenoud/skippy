@@ -109,4 +109,9 @@ pub trait Repository: Send + Sync {
     /// Opaque JSON blob owned by the client (theme, date format, palette…).
     async fn settings_for_user(&self, user_id: &str) -> RepoResult<Option<String>>;
     async fn put_settings(&self, user_id: &str, data: &str) -> RepoResult<()>;
+
+    // -- server metadata ----------------------------------------------------------
+    /// Small server-owned key/value store (e.g. the file-URL signing secret).
+    async fn meta_get(&self, key: &str) -> RepoResult<Option<String>>;
+    async fn meta_set(&self, key: &str, value: &str) -> RepoResult<()>;
 }

@@ -16,6 +16,10 @@ const CHAT_HISTORY_TURNS: usize = 12;
 const CHAT_MESSAGE_CHARS: usize = 4_000;
 /// How many retrieved notes make it into the chat prompt.
 pub const CHAT_CONTEXT_NOTES: usize = 6;
+/// How many recent user turns (including the new message) feed retrieval.
+const RETRIEVAL_QUERY_TURNS: usize = 3;
+/// Max chars each turn contributes to the retrieval query.
+const RETRIEVAL_TURN_CHARS: usize = 300;
 
 /// LLM-related keys parsed out of a user's settings document. The document is
 /// otherwise client-owned and opaque; these keys are the shared contract with
@@ -111,6 +115,29 @@ pub fn map_label_names(names: &[String], labels: &[Label]) -> Vec<String> {
     ids
 }
 
+/// The text embedded for retrieval on a chat turn. Low-content follow-ups
+/// ("nice", "why?") carry none of the conversation's subject, so embedding
+/// them alone surfaces junk — and the junk then replaces the notes the
+/// previous answer was grounded in, confusing the model. Blend the last few
+/// user turns (oldest first, new message last) so the topic sticks.
+pub fn retrieval_query(history: &[(String, String)], message: &str) -> String {
+    let mut turns: Vec<&str> = history
+        .iter()
+        .rev()
+        .filter(|(role, _)| role == "user")
+        .take(RETRIEVAL_QUERY_TURNS - 1)
+        .map(|(_, content)| content.as_str())
+        .collect();
+    turns.reverse();
+    turns.push(message);
+    turns
+        .into_iter()
+        .map(|t| cap(t.trim(), RETRIEVAL_TURN_CHARS))
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Build the RAG conversation: a system prompt embedding the retrieved notes,
 /// then the (capped) history and the new user message. History roles other
 /// than user/assistant are dropped.
@@ -119,10 +146,18 @@ pub fn chat_messages(
     history: &[(String, String)], // (role, content)
     message: &str,
 ) -> Vec<ChatMessage> {
+    // The notes are re-retrieved for every turn against a drifting query, so
+    // they must read as *possible* context, never as the whole collection —
+    // otherwise a follow-up whose retrieval surfaced different notes makes
+    // the model disavow its own previous (correctly grounded) answer.
     let mut context = String::from(
-        "You are an assistant for the user's personal sticky notes app. Answer \
-         the user's question using the notes below. If the notes don't contain \
-         the answer, say so plainly. Be concise.\n\nNotes:",
+        "You are an assistant for the user's personal sticky notes app. Below \
+         is a selection of their notes retrieved as possible context for the \
+         latest message; it is not their whole collection, and some notes may \
+         be irrelevant — silently ignore those. Answer using the relevant \
+         notes and the conversation so far; earlier answers stay valid even \
+         if the notes backing them are not shown this turn. If neither covers \
+         the question, say so plainly. Be concise.\n\nNotes:",
     );
     if notes.is_empty() {
         context.push_str("\n(none found)");
@@ -194,6 +229,40 @@ mod tests {
         let labels = [label("1", "Work"), label("2", "Recipes")];
         let names = ["work".into(), " RECIPES ".into(), "Nope".into(), "Work".into()];
         assert_eq!(map_label_names(&names, &labels), vec!["1", "2"]);
+    }
+
+    #[test]
+    fn retrieval_query_blends_recent_user_turns() {
+        let history = [
+            ("user".to_string(), "what should I buy?".to_string()),
+            ("assistant".to_string(), "Bread and milk.".to_string()),
+        ];
+        // The follow-up alone would embed to junk; the prior question rides
+        // along, oldest first.
+        assert_eq!(retrieval_query(&history, "nice"), "what should I buy?\nnice");
+    }
+
+    #[test]
+    fn retrieval_query_takes_only_the_last_user_turns() {
+        let history: Vec<(String, String)> = (0..5)
+            .flat_map(|i| {
+                [
+                    ("user".to_string(), format!("q{i}")),
+                    ("assistant".to_string(), format!("a{i}")),
+                ]
+            })
+            .collect();
+        // 3 turns total: the two most recent history questions + the message.
+        assert_eq!(retrieval_query(&history, "q5"), "q3\nq4\nq5");
+    }
+
+    #[test]
+    fn retrieval_query_caps_and_skips_empty() {
+        assert_eq!(retrieval_query(&[], "  hi  "), "hi");
+        let history = [("user".to_string(), "x".repeat(1_000))];
+        let query = retrieval_query(&history, "q");
+        assert_eq!(query.len(), 300 + 1 + 1); // capped turn + newline + "q"
+        assert_eq!(retrieval_query(&[("user".into(), "  ".into())], "q"), "q");
     }
 
     #[test]

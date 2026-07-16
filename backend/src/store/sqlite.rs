@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS user_settings (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_id);
 CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);
 CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at);
@@ -241,6 +245,7 @@ impl SqliteRepository {
                 mime: row.get("mime"),
                 filename: row.get("filename"),
                 size: row.get("size"),
+                url: None,
             });
         }
         // Owner usernames.
@@ -761,6 +766,7 @@ impl Repository for SqliteRepository {
                     mime: r.get("mime"),
                     filename: r.get("filename"),
                     size: r.get("size"),
+                    url: None,
                 },
             )
         }))
@@ -791,6 +797,28 @@ impl Repository for SqliteRepository {
         )
         .bind(user_id)
         .bind(data)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    // -- server metadata ----------------------------------------------------------
+
+    async fn meta_get(&self, key: &str) -> RepoResult<Option<String>> {
+        let row = sqlx::query("SELECT value FROM app_meta WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| r.get("value")))
+    }
+
+    async fn meta_set(&self, key: &str, value: &str) -> RepoResult<()> {
+        sqlx::query(
+            "INSERT INTO app_meta (key, value) VALUES (?, ?)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(key)
+        .bind(value)
         .execute(&self.pool)
         .await?;
         Ok(())
