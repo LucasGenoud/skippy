@@ -391,6 +391,18 @@ pub async fn create_note(
     AuthUser(user_id): AuthUser,
     Json(body): Json<CreateNote>,
 ) -> ApiResult<(StatusCode, Json<NoteView>)> {
+    let view = create_note_for_user(&state, &user_id, body).await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// Create a note for `user_id` and return its signed view. Shared by the HTTP
+/// handler and the chat write path so both run the same insert + indexing +
+/// auto-labeling + notify pipeline.
+pub async fn create_note_for_user(
+    state: &AppState,
+    user_id: &str,
+    body: CreateNote,
+) -> ApiResult<NoteView> {
     let kind = body.kind.unwrap_or_else(|| KIND_TEXT.to_string());
     validate_kind(&kind)?;
     validate_reminder(&body.reminder_at)?;
@@ -401,12 +413,12 @@ pub async fn create_note(
     let position = match body.position {
         Some(p) => p,
         // New notes go to the front of the grid.
-        None => state.repo.min_position_for_user(&user_id).await? - 1024.0,
+        None => state.repo.min_position_for_user(user_id).await? - 1024.0,
     };
     let ts = now();
     let record = NoteRecord {
         id: id.clone(),
-        owner_id: user_id.clone(),
+        owner_id: user_id.to_string(),
         kind,
         title: body.title,
         content: body.content,
@@ -431,11 +443,11 @@ pub async fn create_note(
         state.repo.record_checked_items(&record.id, &pre_checked).await?;
     }
     state.index_note_later(&id);
-    state.label_note_later(&id, &user_id);
-    state.notify_user(&user_id);
-    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.label_note_later(&id, user_id);
+    state.notify_user(user_id);
+    let mut view = state.repo.note_view(&id, user_id).await?.ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
-    Ok((StatusCode::CREATED, Json(view)))
+    Ok(view)
 }
 
 pub async fn get_note(
@@ -453,9 +465,21 @@ pub async fn update_note(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(id): Path<String>,
-    Json(mut body): Json<UpdateNote>,
+    Json(body): Json<UpdateNote>,
 ) -> ApiResult<Json<NoteView>> {
-    let mut record = require_participant(&state, &id, &user_id).await?;
+    Ok(Json(apply_note_update(&state, &user_id, &id, body).await?))
+}
+
+/// Apply a patch to a note as `user_id` and return its signed view. Shared by
+/// the HTTP handler and the chat append path, so both run the same version
+/// capture + checklist-history + indexing + labeling + notify pipeline.
+pub async fn apply_note_update(
+    state: &AppState,
+    user_id: &str,
+    id: &str,
+    mut body: UpdateNote,
+) -> ApiResult<NoteView> {
+    let mut record = require_participant(state, id, user_id).await?;
     let old_items = record.items.clone();
 
     // Trash lifecycle is the owner's call; everything else is shared editing.
@@ -488,12 +512,12 @@ pub async fn update_note(
         || body.content.as_ref().is_some_and(|v| *v != record.content)
         || body.items.as_ref().is_some_and(|v| *v != record.items);
     if content_changed {
-        let same_session = record.last_editor_id.as_deref() == Some(user_id.as_str())
+        let same_session = record.last_editor_id.as_deref() == Some(user_id)
             && seconds_since(&record.updated_at) < VERSION_SESSION_GAP_SECS;
         if !same_session {
             state.repo.insert_note_version(&version_of(&record)).await?;
         }
-        record.last_editor_id = Some(user_id.clone());
+        record.last_editor_id = Some(user_id.to_string());
     }
 
     body.apply_to(&mut record);
@@ -510,22 +534,22 @@ pub async fn update_note(
         .map(|item| item.text.clone())
         .collect();
     if !newly_checked.is_empty() {
-        state.repo.record_checked_items(&id, &newly_checked).await?;
+        state.repo.record_checked_items(id, &newly_checked).await?;
     }
 
     if let Some(label_ids) = label_ids {
-        state.repo.set_note_labels(&id, &user_id, &label_ids).await?;
+        state.repo.set_note_labels(id, user_id, &label_ids).await?;
     }
-    state.index_note_later(&id);
+    state.index_note_later(id);
     // Only content edits re-run auto-labeling; organizational patches
     // (color/pin/position/labels themselves) never cost an LLM call.
     if content_changed {
-        state.label_note_later(&id, &user_id);
+        state.label_note_later(id, user_id);
     }
-    state.notify_note(&id).await;
-    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.notify_note(id).await;
+    let mut view = state.repo.note_view(id, user_id).await?.ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
-    Ok(Json(view))
+    Ok(view)
 }
 
 pub async fn delete_note(
@@ -1128,6 +1152,9 @@ struct ChatHistoryEntry {
 /// ```text
 /// client → server:  {"message": "…", "history": [{"role","content"}, …]}
 /// server → client:  {"type":"sources","notes":[{"id","title"}, …]}
+///                   {"type":"created","action":"create"|"append","note":{"id","title"}}
+///                                                (0..1, only when the turn
+///                                                 created or appended a note)
 ///                   {"type":"delta","text":"…"}   (0..n)
 ///                   {"type":"done"} | {"type":"error","message":"…"}
 /// ```
@@ -1212,10 +1239,15 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         crate::assist::RouteDecision::Search(crate::assist::retrieval_query(&history, message))
     });
 
-    // Phase 2 — retrieve when routed to: over-fetch because trashed notes
-    // linger in the vector index, keep the best non-trashed hits.
+    // Phase 2 — retrieve when the turn needs notes. A Search reads them to
+    // answer; a Write reads them as candidates to add to. Over-fetch because
+    // trashed notes linger in the vector index; keep the best non-trashed hits.
     let mut notes: Vec<(String, String, String)> = Vec::new(); // (id, title, text)
-    if let crate::assist::RouteDecision::Search(query) = &decision {
+    let retrieval = match &decision {
+        crate::assist::RouteDecision::Search(q) | crate::assist::RouteDecision::Write(q) => Some(q),
+        crate::assist::RouteDecision::Direct => None,
+    };
+    if let Some(query) = retrieval {
         let hits = match search
             .search(&user_id, query, crate::assist::CHAT_CONTEXT_NOTES * 2)
             .await
@@ -1242,6 +1274,16 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         }
     }
 
+    // Phase 2b — write: turn a create/append request into one structured edit
+    // and apply it, streaming a confirmation. A failed or unusable plan falls
+    // through to answering over the retrieved notes, so a weak model can never
+    // silently drop the turn (or, worse, touch a note it shouldn't).
+    if matches!(decision, crate::assist::RouteDecision::Write(_))
+        && chat_write(&mut sink, &state, &user_id, &cfg, &notes, &history, message).await
+    {
+        return;
+    }
+
     let source_list: Vec<serde_json::Value> = notes
         .iter()
         .map(|(id, title, _)| serde_json::json!({"id": id, "title": title}))
@@ -1254,7 +1296,9 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     let prompt_notes: Vec<(String, String)> =
         notes.iter().map(|(_, title, text)| (title.clone(), text.clone())).collect();
     let messages = match &decision {
-        crate::assist::RouteDecision::Search(_) => {
+        // Write reaches here only when its plan was unusable: answer over the
+        // retrieved notes like an ordinary read turn rather than writing.
+        crate::assist::RouteDecision::Search(_) | crate::assist::RouteDecision::Write(_) => {
             crate::assist::chat_messages(&prompt_notes, &history, message)
         }
         crate::assist::RouteDecision::Direct => {
@@ -1304,4 +1348,170 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
             }
         }
     }
+}
+
+/// The chat write path: ask the model to turn the user's create/append request
+/// into one structured edit ([`assist::write_plan_messages`]), apply it through
+/// the shared create/update pipeline, and stream a `created` frame plus a short
+/// confirmation. Returns `true` when it fully handled the turn (a terminal
+/// frame was sent — success or a hard failure); `false` means the plan was
+/// unusable (timeout, unparseable, or a hallucinated append target) and the
+/// caller should fall through to answering over the retrieved notes rather than
+/// write something the user didn't ask for.
+///
+/// [`assist::write_plan_messages`]: crate::assist::write_plan_messages
+async fn chat_write<S>(
+    sink: &mut S,
+    state: &AppState,
+    user_id: &str,
+    cfg: &crate::llm::LlmConfig,
+    candidates: &[(String, String, String)], // (id, title, text)
+    history: &[(String, String)],
+    message: &str,
+) -> bool
+where
+    S: SinkExt<Message> + Unpin,
+{
+    async fn send<S: SinkExt<Message> + Unpin>(sink: &mut S, value: serde_json::Value) -> bool {
+        sink.send(Message::text(value.to_string())).await.is_ok()
+    }
+    // " \"Groceries\"" or "" for a blank title — folded into a sentence.
+    fn titled(title: &str) -> String {
+        let t = title.trim();
+        if t.is_empty() { String::new() } else { format!(" \"{t}\"") }
+    }
+    fn plural(n: usize) -> &'static str {
+        if n == 1 { "" } else { "s" }
+    }
+
+    // Plan the edit; a failed/timed-out planner falls through to answering.
+    let planner = crate::assist::write_plan_messages(candidates, history, message);
+    let reply = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        state.llm.complete(cfg, planner),
+    )
+    .await
+    {
+        Ok(Ok(reply)) => reply,
+        _ => return false,
+    };
+    let candidate_ids: Vec<String> = candidates.iter().map(|(id, _, _)| id.clone()).collect();
+    let Some(action) = crate::assist::parse_write_action(&reply, &candidate_ids) else {
+        return false;
+    };
+
+    // Apply the edit through the same pipeline the HTTP handlers use, so it
+    // gets indexing, auto-labeling, version history, and the WS refresh nudge.
+    let (action_label, view, confirmation) = match action {
+        crate::assist::WriteAction::Create { kind, title, content, items } => {
+            let is_checklist = kind == KIND_CHECKLIST;
+            let (content, item_structs) = if is_checklist {
+                let structs: Vec<ChecklistItem> = items
+                    .iter()
+                    .map(|text| ChecklistItem { id: new_id(), text: text.clone(), done: false })
+                    .collect();
+                (content, structs)
+            } else {
+                // A text note can't render checklist rows, so fold any items
+                // the model produced into the body — nothing is lost.
+                let mut body = content;
+                for item in &items {
+                    if !body.is_empty() {
+                        body.push('\n');
+                    }
+                    body.push_str(item);
+                }
+                (body, Vec::new())
+            };
+            let n = item_structs.len();
+            let body = CreateNote {
+                kind: Some(kind),
+                title,
+                content,
+                items: (!item_structs.is_empty()).then_some(item_structs),
+                ..Default::default()
+            };
+            let view = match create_note_for_user(state, user_id, body).await {
+                Ok(view) => view,
+                Err(_) => {
+                    send(sink, serde_json::json!({"type":"error","message":"could not create the note"})).await;
+                    return true;
+                }
+            };
+            let confirmation = if is_checklist {
+                format!("Created a checklist{} with {n} item{}.", titled(&view.note.title), plural(n))
+            } else {
+                format!("Created a note{}.", titled(&view.note.title))
+            };
+            ("create", view, confirmation)
+        }
+        crate::assist::WriteAction::Append { note_id, content, items } => {
+            let Ok(Some(record)) = state.repo.note_record(&note_id).await else {
+                return false; // vanished between retrieval and now
+            };
+            let is_checklist = record.kind == KIND_CHECKLIST;
+            let mut body = UpdateNote::default();
+            let mut added = 0usize;
+            if is_checklist && !items.is_empty() {
+                let mut merged = record.items.clone();
+                for text in &items {
+                    merged.push(ChecklistItem { id: new_id(), text: text.clone(), done: false });
+                }
+                added = items.len();
+                body.items = Some(merged);
+            }
+            // New prose (and, on a text note, any items) append to the body.
+            let mut extra = content;
+            if !is_checklist {
+                for text in &items {
+                    if !extra.is_empty() {
+                        extra.push('\n');
+                    }
+                    extra.push_str(text);
+                    added += 1;
+                }
+            }
+            if !extra.trim().is_empty() {
+                let mut merged = record.content.clone();
+                if !merged.is_empty() {
+                    merged.push('\n');
+                }
+                merged.push_str(&extra);
+                body.content = Some(merged);
+            }
+            if body.items.is_none() && body.content.is_none() {
+                return false; // nothing usable to add
+            }
+            let view = match apply_note_update(state, user_id, &note_id, body).await {
+                Ok(view) => view,
+                Err(_) => {
+                    send(sink, serde_json::json!({"type":"error","message":"could not update the note"})).await;
+                    return true;
+                }
+            };
+            let confirmation = if added > 0 {
+                format!("Added {added} item{} to{}.", plural(added), titled(&view.note.title))
+            } else {
+                format!("Updated{}.", titled(&view.note.title))
+            };
+            ("append", view, confirmation)
+        }
+    };
+
+    // A `created` frame carries the note so the client can offer a chip that
+    // opens it; the confirmation streams as ordinary delta text. Unknown frame
+    // types are ignored by older clients, so this is backwards-compatible.
+    let created = serde_json::json!({
+        "type": "created",
+        "action": action_label,
+        "note": {"id": view.note.id, "title": view.note.title},
+    });
+    if !send(sink, created).await {
+        return true; // client gone; turn is still "handled"
+    }
+    if !send(sink, serde_json::json!({"type": "delta", "text": confirmation})).await {
+        return true;
+    }
+    send(sink, serde_json::json!({"type": "done"})).await;
+    true
 }

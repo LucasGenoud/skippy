@@ -612,6 +612,47 @@ void main() {
       expect(find.text('3 found'), findsOneWidget);
       await flushTimers(tester);
     });
+
+    testWidgets('reminder time picker follows the 12/24-hour setting', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'q', content: 'body');
+      await store.load();
+      final settings = SettingsStore(api: api)..setUse24hTime(true);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider.value(value: settings),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: EditorScreen(noteId: 'n1')),
+          ),
+        ),
+      );
+
+      // 24h setting: the dial shows no AM/PM period selector, regardless of
+      // the ambient MediaQuery (which defaults to 12h in tests).
+      await tester.tap(find.byIcon(Icons.notification_add_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK')); // date picker
+      await tester.pumpAndSettle();
+      expect(find.text('Remind me at'), findsOneWidget);
+      expect(find.text('AM'), findsNothing);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      // Flipping to 12h brings the AM/PM selector back.
+      settings.setUse24hTime(false);
+      await tester.tap(find.byIcon(Icons.notification_add_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.text('AM'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
   });
 
   group('MarkdownToolbar', () {

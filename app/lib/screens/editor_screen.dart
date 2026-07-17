@@ -558,10 +558,16 @@ class _EditorScreenState extends State<EditorScreen> {
       helpText: 'Remind me on',
     );
     if (date == null || !mounted) return;
+    final use24h = context.read<SettingsStore>().use24hTime;
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
       helpText: 'Remind me at',
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(alwaysUse24HourFormat: use24h),
+        child: child!,
+      ),
     );
     if (time == null) return;
     _ensureNote();

@@ -128,6 +128,11 @@ pub enum RouteDecision {
     /// The turn needs no notes (thanks, greetings, follow-ups on what was
     /// already said) — answer from the conversation alone.
     Direct,
+    /// The user asked to create a new note or add to an existing one. The
+    /// string is a short topic query used to retrieve candidate notes to
+    /// append to (and it also grounds the create). Actually building the
+    /// note is a second, structured call ([`write_plan_messages`]).
+    Write(String),
 }
 
 /// Prompt asking the model to route a chat turn: decide whether answering
@@ -151,15 +156,19 @@ pub fn route_messages(history: &[(String, String)], message: &str) -> Vec<ChatMe
     vec![
         ChatMessage::system(
             "You route messages for an assistant over the user's personal \
-             sticky notes. Decide whether answering the LAST user message \
-             requires looking up their notes. Reply with ONLY a JSON object, \
-             no other text:\n\
-             {\"search\": \"<query>\"} — when notes are needed; write a short \
-             standalone search query for what to look up, resolving any \
-             references from the conversation.\n\
+             sticky notes. Decide what the LAST user message needs. Reply with \
+             ONLY a JSON object, no other text:\n\
+             {\"search\": \"<query>\"} — when answering needs their notes; \
+             write a short standalone search query for what to look up, \
+             resolving any references from the conversation.\n\
              {\"search\": null} — when the message needs no lookup (greetings, \
              thanks, chit-chat, or questions already answered in the \
-             conversation).",
+             conversation).\n\
+             {\"write\": \"<topic>\"} — when the user asks to CREATE a new note \
+             or ADD something to a note (\"make a list\", \"add milk to my \
+             groceries\", \"save this as a note\", \"note down …\"); set topic \
+             to a few words describing the note's subject so an existing note \
+             to add to can be found.",
         ),
         ChatMessage::user(conversation),
     ]
@@ -167,14 +176,22 @@ pub fn route_messages(history: &[(String, String)], message: &str) -> Vec<ChatMe
 
 /// Lenient parse of the routing reply: tolerates code fences and prose around
 /// the JSON object. `None` means unparseable — the caller should fall back to
-/// plain retrieval rather than trust the model had no need for notes. The
-/// `search` key must be PRESENT (a wrong-shape object is not a decision);
-/// `null` or a blank query means no lookup.
+/// plain retrieval rather than trust the model had no need for notes. A
+/// non-empty `write` string routes to the write path; otherwise the `search`
+/// key must be PRESENT (a wrong-shape object is not a decision), with `null`
+/// or a blank query meaning no lookup.
 pub fn parse_route_reply(reply: &str) -> Option<RouteDecision> {
     let start = reply.find('{')?;
     let end = reply.rfind('}').filter(|&e| e > start)?;
     let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
-    Some(match value.as_object()?.get("search")? {
+    let object = value.as_object()?;
+    // A write intent wins: the user asked to change their notes, not just read.
+    if let Some(serde_json::Value::String(topic)) = object.get("write") {
+        if !topic.trim().is_empty() {
+            return Some(RouteDecision::Write(topic.trim().to_string()));
+        }
+    }
+    Some(match object.get("search")? {
         serde_json::Value::Null => RouteDecision::Direct,
         serde_json::Value::String(query) => match query.trim() {
             "" => RouteDecision::Direct,
@@ -206,6 +223,117 @@ pub fn retrieval_query(history: &[(String, String)], message: &str) -> String {
         .filter(|t| !t.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Max checklist entries a single write turn may add (guards against a
+/// runaway model), and the per-entry length cap.
+const MAX_WRITE_ITEMS: usize = 50;
+const WRITE_ITEM_CHARS: usize = 200;
+/// Max text shown per candidate note in the write-planner prompt.
+const WRITE_CANDIDATE_CHARS: usize = 400;
+
+/// A concrete note edit the write planner resolved the user's request into.
+#[derive(Debug, PartialEq)]
+pub enum WriteAction {
+    /// Make a brand-new note. `kind` is always "text" or "checklist".
+    Create { kind: String, title: String, content: String, items: Vec<String> },
+    /// Add to an existing note; `note_id` is one of the retrieved candidates.
+    Append { note_id: String, content: String, items: Vec<String> },
+}
+
+/// Prompt asking the model to turn a create/append request into one structured
+/// edit. It sees the retrieved candidate notes (with ids) so it can choose to
+/// add to one of them, and the conversation so references resolve. Kept as a
+/// lenient JSON-reply prompt (like routing and labeling) so it needs no native
+/// tool-calling support.
+pub fn write_plan_messages(
+    candidates: &[(String, String, String)], // (id, title, text)
+    history: &[(String, String)],
+    message: &str,
+) -> Vec<ChatMessage> {
+    let mut context = String::from(
+        "You turn the user's request into a single change to their sticky \
+         notes. Reply with ONLY one JSON object, no other text.\n\
+         To create a new note:\n\
+         {\"action\":\"create\",\"kind\":\"text\"|\"checklist\",\"title\":\"…\",\
+         \"content\":\"…\",\"items\":[\"…\"]}\n\
+         Use \"checklist\" with an \"items\" array for a list of things (to-dos, \
+         shopping, steps); use \"text\" with \"content\" for prose. Keep the \
+         title short; it may be empty. Include only the fields you need.\n\
+         To add to an existing note listed below:\n\
+         {\"action\":\"append\",\"note_id\":\"<id from the list>\",\"content\":\"…\",\
+         \"items\":[\"…\"]}\n\
+         Only append when the user clearly means one of the existing notes; put \
+         new checklist entries in \"items\" and new prose in \"content\". If in \
+         doubt, create a new note instead.\n\n\
+         Existing notes you may add to:",
+    );
+    if candidates.is_empty() {
+        context.push_str("\n(none)");
+    }
+    for (id, title, text) in candidates {
+        let title = if title.trim().is_empty() { "Untitled" } else { title.trim() };
+        context.push_str(&format!(
+            "\n\n[id={id}] {title}\n{}",
+            cap(text, WRITE_CANDIDATE_CHARS)
+        ));
+    }
+    with_conversation(vec![ChatMessage::system(context)], history, message)
+}
+
+/// Collect a JSON value's `key` as a cleaned list of strings: trims, caps
+/// length, drops blanks, and limits the count. Non-array or non-string
+/// entries are ignored.
+fn string_list(value: &serde_json::Value, key: &str) -> Vec<String> {
+    value[key]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .map(|s| cap(s.trim(), WRITE_ITEM_CHARS).to_string())
+        .filter(|s| !s.is_empty())
+        .take(MAX_WRITE_ITEMS)
+        .collect()
+}
+
+/// Lenient parse of the write-planner reply into an executable action.
+/// `None` means the reply was unusable (unparseable, unknown action, an
+/// append to an unknown note, or an edit that adds nothing) — the caller then
+/// falls back to answering rather than writing something unintended.
+pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteAction> {
+    let start = reply.find('{')?;
+    let end = reply.rfind('}').filter(|&e| e > start)?;
+    let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
+    let content = value["content"].as_str().map(str::trim).unwrap_or_default().to_string();
+    let items = string_list(&value, "items");
+    match value["action"].as_str()?.trim() {
+        "create" => {
+            let kind = match value["kind"].as_str().map(str::trim) {
+                Some("checklist") => "checklist",
+                _ => "text",
+            }
+            .to_string();
+            let title =
+                value["title"].as_str().map(str::trim).unwrap_or_default().to_string();
+            // A checklist with no items but some content is fine; a wholly
+            // empty create is not worth a note.
+            if title.is_empty() && content.is_empty() && items.is_empty() {
+                return None;
+            }
+            Some(WriteAction::Create { kind, title, content, items })
+        }
+        "append" => {
+            let note_id = value["note_id"].as_str()?.trim().to_string();
+            if !valid_ids.iter().any(|id| id == &note_id) {
+                return None; // hallucinated target — don't touch a random note
+            }
+            if content.is_empty() && items.is_empty() {
+                return None;
+            }
+            Some(WriteAction::Append { note_id, content, items })
+        }
+        _ => None,
+    }
 }
 
 /// Render a note's body for the chat prompt (the title is printed by
@@ -427,6 +555,94 @@ mod tests {
         assert_eq!(parse_route_reply("I think we should search"), None);
         assert_eq!(parse_route_reply("{\"query\": \"wrong shape\"}"), None);
         assert_eq!(parse_route_reply("{broken json"), None);
+    }
+
+    #[test]
+    fn route_reply_write_variant() {
+        use RouteDecision::*;
+        assert_eq!(
+            parse_route_reply(r#"{"write": "groceries"}"#),
+            Some(Write("groceries".into()))
+        );
+        // A write intent wins even if a search key is also present.
+        assert_eq!(
+            parse_route_reply(r#"{"search": "x", "write": "shopping list"}"#),
+            Some(Write("shopping list".into()))
+        );
+        // A blank write falls through to the search decision.
+        assert_eq!(parse_route_reply(r#"{"write": "  ", "search": null}"#), Some(Direct));
+    }
+
+    #[test]
+    fn write_plan_messages_list_candidates_and_conversation() {
+        let candidates = [("abc".into(), "Groceries".into(), "- [ ] milk".into())];
+        let history = [("user".to_string(), "hi".to_string())];
+        let messages = write_plan_messages(&candidates, &history, "add bread");
+        assert_eq!(messages[0].role, "system");
+        assert!(messages[0].content.contains("[id=abc] Groceries"));
+        assert!(messages[0].content.contains("\"action\":\"append\""));
+        assert_eq!(messages.last().unwrap().content, "add bread");
+    }
+
+    #[test]
+    fn write_action_create_variants() {
+        use WriteAction::*;
+        assert_eq!(
+            parse_write_action(
+                r#"{"action":"create","kind":"checklist","title":"Groceries","items":["milk","eggs"]}"#,
+                &[],
+            ),
+            Some(Create {
+                kind: "checklist".into(),
+                title: "Groceries".into(),
+                content: String::new(),
+                items: vec!["milk".into(), "eggs".into()],
+            })
+        );
+        // Unknown kind clamps to text; fences and prose tolerated.
+        assert_eq!(
+            parse_write_action(
+                "```json\n{\"action\":\"create\",\"kind\":\"audio\",\"content\":\"remember this\"}\n```",
+                &[],
+            ),
+            Some(Create {
+                kind: "text".into(),
+                title: String::new(),
+                content: "remember this".into(),
+                items: vec![],
+            })
+        );
+        // A wholly empty create is rejected.
+        assert_eq!(parse_write_action(r#"{"action":"create"}"#, &[]), None);
+    }
+
+    #[test]
+    fn write_action_append_validates_target() {
+        use WriteAction::*;
+        let ids = ["abc".to_string()];
+        assert_eq!(
+            parse_write_action(
+                r#"{"action":"append","note_id":"abc","items":["bread"]}"#,
+                &ids,
+            ),
+            Some(Append {
+                note_id: "abc".into(),
+                content: String::new(),
+                items: vec!["bread".into()],
+            })
+        );
+        // Hallucinated target id -> no write.
+        assert_eq!(
+            parse_write_action(r#"{"action":"append","note_id":"zzz","items":["x"]}"#, &ids),
+            None
+        );
+        // Append that adds nothing -> no write.
+        assert_eq!(
+            parse_write_action(r#"{"action":"append","note_id":"abc"}"#, &ids),
+            None
+        );
+        assert_eq!(parse_write_action("not json", &ids), None);
+        assert_eq!(parse_write_action(r#"{"action":"delete"}"#, &ids), None);
     }
 
     #[test]

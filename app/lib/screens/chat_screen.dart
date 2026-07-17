@@ -36,6 +36,8 @@ class _Turn {
   List<ChatSource> sources;
   bool streaming;
   String? error;
+  // Set when the turn created or appended to a note (the chat write path).
+  ChatCreatedEvent? created;
 
   _Turn.user(this.text) : role = 'user', sources = const [], streaming = false;
   _Turn.pending()
@@ -116,6 +118,12 @@ class _ChatScreenState extends State<ChatScreen> {
       switch (event) {
         case ChatSourcesEvent(:final notes):
           turn.sources = notes;
+        case ChatCreatedEvent():
+          turn.created = event;
+          // Pull the new/updated note into the local store now so the grid
+          // reflects it and the chip can label it — the WS change nudge would
+          // do this too, a moment later.
+          context.read<NotesStore>().load();
         case ChatDeltaEvent(:final text):
           turn.text += text;
         case ChatDoneEvent():
@@ -246,7 +254,8 @@ class _EmptyHint extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Ask about your notes — answers cite the notes they came from.',
+              'Ask about your notes — answers cite the notes they came from. '
+              'You can also ask to create a note or add to one.',
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,
@@ -347,6 +356,23 @@ class _Bubble extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 560),
             child: bubble,
           ),
+          if (turn.created case final created?) ...[
+            const SizedBox(height: 8),
+            ActionChip(
+              avatar: Icon(
+                created.action == 'append'
+                    ? Icons.playlist_add
+                    : Icons.note_add_outlined,
+                size: 16,
+              ),
+              label: Text(
+                '${created.action == 'append' ? 'Updated' : 'Created'}: '
+                '${_chipLabel(created.note, store)}',
+                overflow: TextOverflow.ellipsis,
+              ),
+              onPressed: () => onOpenNote(created.note.id),
+            ),
+          ],
         ],
       ),
     );

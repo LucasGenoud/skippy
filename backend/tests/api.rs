@@ -2034,6 +2034,102 @@ async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
     assert!(system.contains("bread milk potatoes"), "{system}");
 }
 
+/// A turn routed to `{"write": …}` runs the planner, which returns a note to
+/// create — the server persists it and announces it with a `created` frame.
+/// A successful write makes exactly two model calls (route + plan) and no
+/// answer stream.
+#[tokio::test]
+async fn chat_write_creates_a_new_note() {
+    let (llm, calls) = FakeLlm::new_seq(&[
+        r#"{"write": "grocery list"}"#,
+        r#"{"action":"create","kind":"checklist","title":"Groceries","items":["bread","milk"]}"#,
+    ]);
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+
+    let frames =
+        chat_turn(state, &token, "make me a grocery list with bread and milk", json!([])).await;
+
+    // The `created` frame carries the new note; a confirmation streams after.
+    let created = frames.iter().find(|f| f["type"] == "created").expect("created frame");
+    assert_eq!(created["action"], "create");
+    assert_eq!(created["note"]["title"], "Groceries");
+    let confirmation: String = frames
+        .iter()
+        .filter(|f| f["type"] == "delta")
+        .map(|f| f["text"].as_str().unwrap_or_default())
+        .collect();
+    assert!(confirmation.contains("Groceries") && confirmation.contains("2 items"), "{confirmation}");
+    assert_eq!(frames.last().unwrap()["type"], "done");
+
+    // The note was actually persisted, with its items.
+    let notes = list_notes(&app, &token).await;
+    let note = notes.iter().find(|n| n["title"] == "Groceries").expect("note persisted");
+    assert_eq!(note["kind"], "checklist");
+    let items: Vec<&str> =
+        note["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
+    assert_eq!(items, ["bread", "milk"]);
+
+    // Route + plan only; no answer stream on a successful write.
+    assert_eq!(calls.lock().unwrap().len(), 2);
+}
+
+/// A write turn can add to an existing note: the planner picks a retrieved
+/// candidate by id and returns items to append, which the server merges onto
+/// the note's current items (the target id is validated against what was
+/// actually retrieved).
+#[tokio::test]
+async fn chat_write_appends_to_an_existing_note() {
+    let (llm, _calls) = FakeLlm::new_seq(&[
+        r#"{"write": "groceries"}"#,
+        r#"{"action":"append","note_id":"g1","items":["potatoes"]}"#,
+    ]);
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+
+    // Known id so the planner can target it; the shared token "groceries" lets
+    // retrieval surface it as a candidate (HashEmbedder: whitespace tokens).
+    create_note(
+        &app,
+        &token,
+        json!({
+            "id": "g1",
+            "kind": "checklist",
+            "title": "Groceries",
+            "content": "buy groceries bread milk",
+            "items": [{"id": "i1", "text": "bread", "done": false}],
+        }),
+    )
+    .await;
+    settle_index().await;
+
+    let frames = chat_turn(state, &token, "add potatoes to my groceries", json!([])).await;
+
+    let created = frames.iter().find(|f| f["type"] == "created").expect("created frame");
+    assert_eq!(created["action"], "append");
+    assert_eq!(created["note"]["id"], "g1");
+    assert_eq!(frames.last().unwrap()["type"], "done");
+
+    // The item was appended to the existing list, not replacing it.
+    let notes = list_notes(&app, &token).await;
+    let note = notes.iter().find(|n| n["id"] == "g1").expect("note still there");
+    let items: Vec<&str> =
+        note["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
+    assert_eq!(items, ["bread", "potatoes"]);
+}
+
 // ---------------------------------------------------------------------------
 // Reminder notifications
 

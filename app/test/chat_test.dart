@@ -34,6 +34,17 @@ void main() {
       final error = ChatEvent.fromJson({'type': 'error', 'message': 'boom'});
       expect((error as ChatErrorEvent).message, 'boom');
 
+      final created = ChatEvent.fromJson({
+        'type': 'created',
+        'action': 'append',
+        'note': {'id': 'n3', 'title': 'Groceries'},
+      });
+      expect(created, isA<ChatCreatedEvent>());
+      expect((created as ChatCreatedEvent).action, 'append');
+      expect(created.note.id, 'n3');
+      // A created frame without a note object is ignored, not a crash.
+      expect(ChatEvent.fromJson({'type': 'created'}), isNull);
+
       // Forward compatibility: unknown frames are skipped, not crashes.
       expect(ChatEvent.fromJson({'type': 'telemetry'}), isNull);
       expect(ChatEvent.fromJson({}), isNull);
@@ -93,6 +104,33 @@ void main() {
       // Turn finished: sending unlocks again (the composer itself is never
       // disabled).
       expect(sendButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('a write turn shows a chip that opens the created note', (
+      tester,
+    ) async {
+      api.chatScript = const [
+        ChatCreatedEvent(
+          action: 'create',
+          note: ChatSource(id: 'n9', title: 'Groceries'),
+        ),
+        ChatDeltaEvent('Created a checklist "Groceries" with 2 items.'),
+        ChatDoneEvent(),
+      ];
+      await tester.pumpWidget(harness(const ChatScreen()));
+
+      await tester.enterText(find.byType(TextField), 'make a grocery list');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+
+      // The confirmation text and a "Created: Groceries" chip both render.
+      expect(
+        find.text('Created a checklist "Groceries" with 2 items.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Created: Groceries'), findsOneWidget);
+      // The write turn also refreshes the local note store.
+      expect(api.log, contains('fetchNotes'));
     });
 
     testWidgets('the composer stays focused through a turn, ready for the '
