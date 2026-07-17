@@ -116,15 +116,23 @@ impl AppState {
     /// only runs Whisper, then stores the transcript (`done`) or marks
     /// `failed`, re-indexing for search on success. No-op when transcription
     /// is disabled.
-    pub fn transcribe_later(&self, note_id: &str, attachment_id: &str, filename: &str, user_id: &str) {
+    pub fn transcribe_later(
+        &self,
+        note_id: &str,
+        owner_id: &str,
+        attachment_id: &str,
+        filename: &str,
+        user_id: &str,
+    ) {
         let Some(transcriber) = self.transcribe.clone() else { return };
         let state = self.clone();
         let note_id = note_id.to_string();
+        let owner_id = owner_id.to_string();
         let attachment_id = attachment_id.to_string();
         let filename = filename.to_string();
         let user_id = user_id.to_string();
         tokio::spawn(async move {
-            let status_and_content = match state.files.read(&attachment_id).await {
+            let status_and_content = match state.files.read(&owner_id, &attachment_id).await {
                 Some(bytes) => match transcriber.transcribe(bytes, &filename).await {
                     Ok(text) => (TRANSCRIPT_DONE, Some(text)),
                     Err(e) => {
@@ -361,8 +369,19 @@ pub async fn list_notes(
 
 pub async fn purge_old_trash(state: &AppState) -> ApiResult<()> {
     let cutoff = (Utc::now() - chrono::Duration::days(TRASH_RETENTION_DAYS)).to_rfc3339();
-    for note_id in state.repo.purge_trash_before(&cutoff).await? {
-        state.unindex_note_later(&note_id);
+    purge_trash(state, &cutoff).await
+}
+
+/// Hard-delete trashed notes older than `cutoff`, cleaning up the state that
+/// lives outside their rows: attachment blobs and search-index entries.
+/// Public with an explicit cutoff so tests can purge without waiting out the
+/// retention window.
+pub async fn purge_trash(state: &AppState, cutoff: &str) -> ApiResult<()> {
+    for note in state.repo.purge_trash_before(cutoff).await? {
+        for attachment_id in &note.attachment_ids {
+            state.files.delete(&note.owner_id, attachment_id).await;
+        }
+        state.unindex_note_later(&note.note_id);
     }
     Ok(())
 }
@@ -528,7 +547,7 @@ pub async fn delete_note(
         .unwrap_or_default();
     state.repo.delete_note(&id).await?;
     for attachment in attachments {
-        state.files.delete(&attachment.id).await;
+        state.files.delete(&record.owner_id, &attachment.id).await;
     }
     state.unindex_note_later(&id);
     state.hub.notify(&participants, CHANGED_MSG);
@@ -770,7 +789,7 @@ pub async fn upload_attachment(
             size: bytes.len() as i64,
             url: None,
         };
-        state.files.save(&attachment.id, &bytes).await?;
+        state.files.save(&record.owner_id, &attachment.id, &bytes).await?;
         state.repo.insert_attachment(&attachment, &id).await?;
         // An audio clip dropped onto an audio note kicks off transcription:
         // mark pending now (synchronously, so any refetch sees it) and run
@@ -780,7 +799,7 @@ pub async fn upload_attachment(
             && attachment.mime.starts_with("audio/")
         {
             state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
-            state.transcribe_later(&id, &attachment.id, &attachment.filename, &user_id);
+            state.transcribe_later(&id, &record.owner_id, &attachment.id, &attachment.filename, &user_id);
         }
         state.notify_note(&id).await;
         state.sign_attachment(&mut attachment);
@@ -796,7 +815,7 @@ pub async fn transcribe_note(
     AuthUser(user_id): AuthUser,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    require_participant(&state, &id, &user_id).await?;
+    let record = require_participant(&state, &id, &user_id).await?;
     if state.transcribe.is_none() {
         return Err(ApiError::Unavailable("audio transcription is not enabled on this server"));
     }
@@ -808,7 +827,7 @@ pub async fn transcribe_note(
         .find(|a| a.mime.starts_with("audio/"))
         .ok_or_else(|| ApiError::BadRequest("note has no audio to transcribe".to_string()))?;
     state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
-    state.transcribe_later(&id, &clip.id, &clip.filename, &user_id);
+    state.transcribe_later(&id, &record.owner_id, &clip.id, &clip.filename, &user_id);
     state.notify_note(&id).await;
     Ok(StatusCode::ACCEPTED)
 }
@@ -829,9 +848,9 @@ pub async fn delete_attachment(
 ) -> ApiResult<StatusCode> {
     let (note_id, _info) =
         state.repo.attachment_info(&id).await?.ok_or(ApiError::NotFound)?;
-    require_participant(&state, &note_id, &user_id).await?;
+    let record = require_participant(&state, &note_id, &user_id).await?;
     state.repo.delete_attachment(&id).await?;
-    state.files.delete(&id).await;
+    state.files.delete(&record.owner_id, &id).await;
     state.notify_note(&note_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -864,9 +883,17 @@ pub async fn serve_file(
     if !crate::files::verify_file_access(&state.file_secret, &id, exp, &sig) {
         return Err(ApiError::Unauthorized);
     }
-    let (_, attachment) =
+    let (note_id, attachment) =
         state.repo.attachment_info(&id).await?.ok_or(ApiError::NotFound)?;
-    let bytes = state.files.read(&id).await.ok_or(ApiError::NotFound)?;
+    // The blob lives under the note owner's identity (its S3 bucket); the
+    // signature already proved access, this lookup just locates the bytes.
+    let owner_id = state
+        .repo
+        .note_record(&note_id)
+        .await?
+        .map(|record| record.owner_id)
+        .ok_or(ApiError::NotFound)?;
+    let bytes = state.files.read(&owner_id, &id).await.ok_or(ApiError::NotFound)?;
     let inline = attachment.mime.starts_with("image/");
     let disposition = if inline {
         "inline".to_string()

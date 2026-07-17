@@ -19,6 +19,15 @@ impl<E: Into<anyhow::Error>> From<E> for RepoError {
 
 pub type RepoResult<T> = Result<T, RepoError>;
 
+/// What `purge_trash_before` removed — enough for the caller to clean up the
+/// state that lives outside the rows (attachment blobs keyed by the owner,
+/// search-index entries).
+pub struct PurgedNote {
+    pub note_id: String,
+    pub owner_id: String,
+    pub attachment_ids: Vec<String>,
+}
+
 /// Storage boundary for the whole app. Handlers only talk to this trait, so
 /// swapping SQLite for Postgres (or anything else) means implementing this
 /// trait and changing one line of wiring in `main`.
@@ -44,7 +53,9 @@ pub trait Repository: Send + Sync {
     /// Renumber the given notes in order; silently skips notes the user
     /// cannot access.
     async fn reorder_for_user(&self, user_id: &str, ids: &[String]) -> RepoResult<()>;
-    async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<String>>;
+    /// Hard-delete trashed notes older than `cutoff`, returning what was
+    /// removed so blobs and index entries can be cleaned up too.
+    async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<PurgedNote>>;
     /// Every note id in the store (used for search reindexing at startup).
     async fn all_note_ids(&self) -> RepoResult<Vec<String>>;
 

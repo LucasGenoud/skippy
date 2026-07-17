@@ -1,10 +1,19 @@
-# One command for the whole backend stack (API + web app + Whisper):
+# One command for the whole backend stack (API + web app + Whisper + Garage):
 #   docker compose up -d          -> app at http://localhost:8787
+#
+# Attachment files live on disk (the app_data volume) by default. To store
+# them in the bundled Garage object store instead (one S3 bucket per user):
+#   STICKY_NOTES_STORAGE=s3 docker compose up -d
+# (or put STICKY_NOTES_STORAGE=s3 in a .env file next to this compose file).
+# Pick ONE backend per deployment — switching later doesn't migrate existing
+# blobs.
 #
 # For local development you can run just the supporting services and keep
 # `cargo run` on the host:
-#   docker compose up -d whisper
+#   docker compose up -d whisper garage
 #   STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
+# (add STICKY_NOTES_STORAGE=s3 STICKY_NOTES_S3_URL=http://localhost:3900 plus
+# the access/secret key below to develop against Garage.)
 services:
   server:
     build: .
@@ -12,6 +21,13 @@ services:
       - "8787:8787"
     environment:
       STICKY_NOTES_WHISPER_URL: http://whisper:9000
+      # File storage backend: "disk" (default) keeps blobs in app_data;
+      # "s3" stores them in the garage service, one bucket per user.
+      STICKY_NOTES_STORAGE: ${STICKY_NOTES_STORAGE:-disk}
+      STICKY_NOTES_S3_URL: http://garage:3900
+      STICKY_NOTES_S3_REGION: garage
+      STICKY_NOTES_S3_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      STICKY_NOTES_S3_SECRET_KEY: ${STICKY_NOTES_S3_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     volumes:
       - app_data:/data # SQLite DB + uploaded files
       - model_cache:/models # embedding model (downloaded on first start)
@@ -20,6 +36,10 @@ services:
       # container starts — otherwise the server probes a not-yet-ready Whisper
       # and disables transcription for the whole life of the process.
       whisper:
+        condition: service_healthy
+      # Harmless in disk mode (garage just idles); in s3 mode it guarantees
+      # the object store answers before the server takes its first upload.
+      garage:
         condition: service_healthy
     restart: unless-stopped
 
@@ -45,7 +65,43 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+  # S3-compatible object storage for attachments, used when
+  # STICKY_NOTES_STORAGE=s3. Fully self-bootstrapping: --single-node creates
+  # the cluster layout on first start, --default-bucket imports the access key
+  # from the GARAGE_DEFAULT_* variables — no manual `garage` CLI setup. The
+  # app then creates one bucket per user with that key on each user's first
+  # upload. CHANGE the three default secrets below (via .env or real env vars)
+  # for any deployment reachable by others.
+  garage:
+    image: dxflrs/garage:v2.3.0
+    command: [ "/garage", "server", "--single-node", "--default-bucket" ]
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210}
+      GARAGE_DEFAULT_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_SECRET_KEY: ${STICKY_NOTES_S3_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_DEFAULT_BUCKET: sticky-notes-default
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    ports:
+      # Localhost-only: the server container reaches garage over the compose
+      # network; these are just for host-side `cargo run` dev and debugging.
+      - "127.0.0.1:3900:3900" # S3 API
+      - "127.0.0.1:3903:3903" # admin API (GET /health)
+    # The image has no shell or curl; the garage CLI itself is the probe (it
+    # connects to the running daemon over local RPC and fails until it's up).
+    healthcheck:
+      test: [ "CMD", "/garage", "status" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
 volumes:
   app_data:
   model_cache:
   whisper_cache:
+  garage_meta:
+  garage_data:

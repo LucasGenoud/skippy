@@ -28,7 +28,9 @@ use crate::ws::Hub;
 pub struct AppState {
     pub repo: Arc<dyn Repository>,
     pub hub: Hub,
-    pub files: FileStore,
+    /// Attachment blob storage — local disk or S3, chosen in `main` from
+    /// `STICKY_NOTES_STORAGE`.
+    pub files: Arc<dyn FileStore>,
     /// Present when semantic search is enabled.
     pub search: Option<Arc<search::SearchService>>,
     /// Present when audio transcription (Whisper) is enabled.
@@ -54,7 +56,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(repo: Arc<dyn Repository>, files: FileStore) -> Self {
+    pub fn new(repo: Arc<dyn Repository>, files: Arc<dyn FileStore>) -> Self {
         // Random per-process fallback so file URLs are signed even before a
         // persisted secret is loaded (and in tests, which never persist one).
         let mut secret = vec![0u8; 32];

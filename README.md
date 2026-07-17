@@ -73,7 +73,7 @@ sticky_notes/
 │   │   ├── handlers.rs   HTTP + WebSocket handlers, permissions
 │   │   ├── auth.rs       argon2 hashing + bearer-token extractor
 │   │   ├── ws.rs         per-user change-event fan-out hub
-│   │   ├── files.rs      attachment blobs on disk
+│   │   ├── files.rs      attachment blobs: FileStore trait, disk + S3 backends
 │   │   └── models.rs     domain + payload types
 │   └── tests/api.rs    21 integration tests (in-memory SQLite)
 └── app/                Flutter
@@ -86,7 +86,7 @@ sticky_notes/
     └── test/           33 unit + widget tests (FakeApi)
 ```
 
-**Swappable storage.** All persistence goes through the `Repository` trait ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; to move to Postgres, implement the trait and change one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` (disk today, S3 tomorrow).
+**Swappable storage.** All persistence goes through the `Repository` trait ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; to move to Postgres, implement the trait and change one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` trait ([backend/src/files.rs](backend/src/files.rs)) with two backends: local disk (default) and any S3-compatible object store — one bucket per user, requests signed with a minimal built-in SigV4 (no AWS SDK). `STICKY_NOTES_STORAGE=disk|s3` picks the backend; the compose stack bundles [Garage](https://garagehq.deuxfleurs.fr/) for the S3 side.
 
 **Optimistic-first client.** Every action updates the UI immediately; writes flow through a serial queue that retries on network failure (a banner shows offline state). The network is never in the tap path — that's where the smoothness comes from.
 
@@ -97,10 +97,18 @@ sticky_notes/
 ### Docker (everything in one command)
 
 ```sh
-docker compose up -d        # builds web + server, starts Whisper → http://localhost:8787
+docker compose up -d        # builds web + server, starts Whisper + Garage → http://localhost:8787
 ```
 
 The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Semantic search is built into the server (sqlite-vec) and a self-hosted Whisper service backs audio-note transcription inside the stack.
+
+**Attachment storage** defaults to disk (the `app_data` volume). To keep attachments in the bundled [Garage](https://garagehq.deuxfleurs.fr/) object store instead — one S3 bucket per user, auto-created on first upload:
+
+```sh
+STICKY_NOTES_STORAGE=s3 docker compose up -d   # or set it in a .env file
+```
+
+Garage bootstraps itself (`--single-node --default-bucket`): no CLI setup, credentials come from the compose file — change the default `GARAGE_RPC_SECRET` / `STICKY_NOTES_S3_ACCESS_KEY` / `STICKY_NOTES_S3_SECRET_KEY` for anything beyond a LAN toy. Pick one backend per deployment: switching doesn't migrate already-uploaded blobs.
 
 ### Local development
 
@@ -117,6 +125,8 @@ STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
 Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service — enables audio-note transcription; feature is hidden when unset/unreachable), `STICKY_NOTES_TELEGRAM_API` (Telegram Bot API base, default `https://api.telegram.org` — for self-hosted bot-api servers or proxies). The embedding model (~80 MB) downloads to a local cache on first start.
+
+Attachment storage: `STICKY_NOTES_STORAGE` (`disk` default, or `s3`). With `s3`, set `STICKY_NOTES_S3_URL` (endpoint, e.g. `http://localhost:3900`), `STICKY_NOTES_S3_ACCESS_KEY`, `STICKY_NOTES_S3_SECRET_KEY`, and optionally `STICKY_NOTES_S3_REGION` (default `garage`) and `STICKY_NOTES_S3_BUCKET_PREFIX` (default `sticky-notes-`, bucket names are `{prefix}{user-id}`). The access key needs permission to create buckets (Garage's auto-provisioned default key has it). Works against any S3-compatible store; for dev: `docker compose up -d garage`, then run with the compose file's key pair.
 
 **Flutter app** — pick a device:
 

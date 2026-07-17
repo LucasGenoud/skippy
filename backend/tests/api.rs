@@ -7,7 +7,7 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use sticky_notes_server::files::FileStore;
+use sticky_notes_server::files::DiskStore;
 use async_trait::async_trait;
 use sticky_notes_server::search::{SearchService, SqliteVectorIndex, TextEmbedder};
 use sticky_notes_server::store::sqlite::SqliteRepository;
@@ -24,7 +24,7 @@ const TEST_FILE_SECRET: &[u8] = b"sticky-notes-test-file-signing-secret";
 async fn state() -> AppState {
     let repo = Arc::new(SqliteRepository::connect(":memory:").await.unwrap());
     let dir = std::env::temp_dir().join(format!("sticky-notes-test-{}", uuid::Uuid::new_v4()));
-    AppState::new(repo, FileStore::new(dir)).with_file_secret(TEST_FILE_SECRET.to_vec())
+    AppState::new(repo, Arc::new(DiskStore::new(dir))).with_file_secret(TEST_FILE_SECRET.to_vec())
 }
 
 /// Deterministic bag-of-words embedder: shared tokens => similar vectors.
@@ -449,7 +449,7 @@ async fn trash_and_purge() {
     // With a cutoff in the future the note is swept.
     let future = (chrono::Utc::now() + chrono::Duration::days(8)).to_rfc3339();
     let purged = app_state.repo.purge_trash_before(&future).await.unwrap();
-    assert_eq!(purged, vec![id.to_string()]);
+    assert_eq!(purged.iter().map(|p| p.note_id.as_str()).collect::<Vec<_>>(), vec![id]);
     assert_eq!(list_notes(&app, &token).await.len(), 0);
 
     // Restore path: trash then untrash clears trashed_at (no accidental purge).
@@ -462,6 +462,41 @@ async fn trash_and_purge() {
     }
     let purged = app_state.repo.purge_trash_before(&future).await.unwrap();
     assert!(purged.is_empty());
+}
+
+/// Purging trash must remove attachment blobs from the file store, exactly
+/// like deleting a note directly does — otherwise every attachment on a note
+/// that ages out of the trash leaks its bytes forever.
+#[tokio::test]
+async fn purging_trash_deletes_attachment_blobs() {
+    let app_state = state().await;
+    let app = build_app(app_state.clone());
+    let (token, user_id) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"title": "with file"})).await;
+    let id = note["id"].as_str().unwrap();
+    let (status, attachment) = upload(&app, &token, id, "image/png", b"pixels").await;
+    assert_eq!(status, StatusCode::CREATED);
+    let attachment_id = attachment["id"].as_str().unwrap();
+    assert!(app_state.files.read(&user_id, attachment_id).await.is_some());
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"trashed": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let future = (chrono::Utc::now() + chrono::Duration::days(8)).to_rfc3339();
+    assert!(sticky_notes_server::handlers::purge_trash(&app_state, &future).await.is_ok());
+
+    assert_eq!(list_notes(&app, &token).await.len(), 0);
+    assert!(
+        app_state.files.read(&user_id, attachment_id).await.is_none(),
+        "purging a trashed note must delete its blobs"
+    );
 }
 
 // ---------------------------------------------------------------------------

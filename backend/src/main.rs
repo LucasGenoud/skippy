@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use sticky_notes_server::files::FileStore;
+use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
 use sticky_notes_server::search::{EMBEDDING_DIM, FastEmbedder, SearchService, SqliteVectorIndex};
 use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
@@ -60,6 +60,42 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
     Some(Arc::new(SearchService::new(embedder, Arc::new(index))))
 }
 
+/// Attachment blob storage wiring, from STICKY_NOTES_STORAGE:
+/// - "disk" (default): flat files under STICKY_NOTES_UPLOADS.
+/// - "s3": one bucket per note owner in any S3-compatible store (the bundled
+///   docker-compose runs Garage). Unlike the optional services this is a hard
+///   requirement once selected, so missing config fails startup instead of
+///   degrading.
+fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
+    let storage = std::env::var("STICKY_NOTES_STORAGE").unwrap_or_default();
+    match storage.as_str() {
+        "" | "disk" => {
+            println!("file storage: local disk at {uploads}");
+            Ok(Arc::new(DiskStore::new(uploads)))
+        }
+        "s3" => {
+            let require = |key: &str| {
+                std::env::var(key)
+                    .map_err(|_| anyhow::anyhow!("STICKY_NOTES_STORAGE=s3 requires {key} to be set"))
+            };
+            let cfg = S3Config {
+                url: require("STICKY_NOTES_S3_URL")?,
+                region: std::env::var("STICKY_NOTES_S3_REGION").unwrap_or_else(|_| "garage".to_string()),
+                access_key: require("STICKY_NOTES_S3_ACCESS_KEY")?,
+                secret_key: require("STICKY_NOTES_S3_SECRET_KEY")?,
+                bucket_prefix: std::env::var("STICKY_NOTES_S3_BUCKET_PREFIX")
+                    .unwrap_or_else(|_| "sticky-notes-".to_string()),
+            };
+            println!(
+                "file storage: s3 at {} (one bucket per user, prefix {})",
+                cfg.url, cfg.bucket_prefix
+            );
+            Ok(Arc::new(S3Store::new(cfg)?))
+        }
+        other => anyhow::bail!("unknown STICKY_NOTES_STORAGE '{other}' (expected 'disk' or 's3')"),
+    }
+}
+
 /// Audio transcription wiring: a self-hosted Whisper service, enabled by
 /// STICKY_NOTES_WHISPER_URL. Unset or unreachable -> feature stays off.
 async fn init_transcription() -> Option<Arc<dyn Transcriber>> {
@@ -85,7 +121,8 @@ async fn main() -> anyhow::Result<()> {
     // this constructor.
     let repo = Arc::new(SqliteRepository::connect(&db_path).await?);
     let file_secret = load_file_secret(repo.as_ref()).await?;
-    let mut state = AppState::new(repo, FileStore::new(&uploads)).with_file_secret(file_secret);
+    let files = init_file_store(&uploads)?;
+    let mut state = AppState::new(repo, files).with_file_secret(file_secret);
     if let Some(service) = init_transcription().await {
         state = state.with_transcription(service);
     }

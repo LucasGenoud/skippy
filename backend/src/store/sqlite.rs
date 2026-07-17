@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
-use super::{RepoError, RepoResult, Repository};
+use super::{PurgedNote, RepoError, RepoResult, Repository};
 use crate::models::*;
 
 const SCHEMA: &str = r#"
@@ -482,15 +482,35 @@ impl Repository for SqliteRepository {
         Ok(())
     }
 
-    async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<String>> {
+    async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<PurgedNote>> {
+        // Snapshot attachment ids before the DELETE cascades them away — the
+        // caller still has to remove the blobs from the file store.
+        let mut tx = self.pool.begin().await?;
         let rows = sqlx::query(
-            "DELETE FROM notes WHERE trashed = 1 AND trashed_at IS NOT NULL AND trashed_at < ?
-             RETURNING id",
+            "SELECT id, owner_id FROM notes
+             WHERE trashed = 1 AND trashed_at IS NOT NULL AND trashed_at < ?",
         )
         .bind(cutoff)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await?;
-        Ok(rows.iter().map(|r| r.get("id")).collect())
+        let mut purged: Vec<PurgedNote> = rows
+            .iter()
+            .map(|r| PurgedNote {
+                note_id: r.get("id"),
+                owner_id: r.get("owner_id"),
+                attachment_ids: Vec::new(),
+            })
+            .collect();
+        for note in &mut purged {
+            let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
+                .bind(&note.note_id)
+                .fetch_all(&mut *tx)
+                .await?;
+            note.attachment_ids = attachments.iter().map(|r| r.get("id")).collect();
+            sqlx::query("DELETE FROM notes WHERE id = ?").bind(&note.note_id).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok(purged)
     }
 
     async fn all_note_ids(&self) -> RepoResult<Vec<String>> {

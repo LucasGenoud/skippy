@@ -1,0 +1,25 @@
+# Configuration for the bundled Garage object store — attachment storage when
+# STICKY_NOTES_STORAGE=s3 in docker-compose.yml. Bootstrap is automatic: the
+# container runs `garage server --single-node --default-bucket`, which
+# initializes the cluster layout on first start and imports the S3 access key
+# from the GARAGE_DEFAULT_* environment variables (set in docker-compose.yml,
+# where the RPC secret lives too). No manual `garage` CLI steps needed.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+# Single-node cluster: the node only ever talks RPC to itself.
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage"
+
+[admin]
+# Serves GET /health (no token configured — token-gated admin endpoints stay
+# disabled; the app only uses the S3 API).
+api_bind_addr = "[::]:3903"
