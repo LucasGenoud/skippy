@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS notes (
     trashed INTEGER NOT NULL DEFAULT 0,
     position REAL NOT NULL DEFAULT 0,
     reminder_at TEXT,
+    reminder_fired_at TEXT,
     transcript_status TEXT NOT NULL DEFAULT 'none',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -117,6 +118,10 @@ impl SqliteRepository {
             "ALTER TABLE attachments ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE notes ADD COLUMN transcript_status TEXT NOT NULL DEFAULT 'none'",
             "ALTER TABLE notes ADD COLUMN last_editor_id TEXT",
+            // Pre-existing reminders on migrated databases keep a NULL fired
+            // mark: any that are already past will fire once on the next
+            // sweep, which reads as catch-up rather than a bug.
+            "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
         ] {
             let _ = sqlx::query(ddl).execute(&pool).await;
         }
@@ -160,6 +165,7 @@ fn record_from_row(row: &sqlx::sqlite::SqliteRow) -> NoteRecord {
         trashed: row.get::<i64, _>("trashed") != 0,
         position: row.get("position"),
         reminder_at: row.get("reminder_at"),
+        reminder_fired_at: row.get("reminder_fired_at"),
         transcript_status: row.get("transcript_status"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -376,8 +382,8 @@ impl Repository for SqliteRepository {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO notes
              (id, owner_id, kind, title, content, items, color, pinned, archived, trashed,
-              position, reminder_at, created_at, updated_at, trashed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+              position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
         )
         .bind(&note.id)
         .bind(&note.owner_id)
@@ -391,6 +397,7 @@ impl Repository for SqliteRepository {
         .bind(note.trashed as i64)
         .bind(note.position)
         .bind(&note.reminder_at)
+        .bind(&note.reminder_fired_at)
         .bind(&note.created_at)
         .bind(&note.updated_at)
         .execute(&self.pool)
@@ -405,8 +412,8 @@ impl Repository for SqliteRepository {
         // trashed_at drives the 7-day purge; set it on the false->true edge.
         sqlx::query(
             "UPDATE notes SET kind = ?, title = ?, content = ?, items = ?, color = ?,
-             pinned = ?, archived = ?, position = ?, reminder_at = ?, updated_at = ?,
-             last_editor_id = ?,
+             pinned = ?, archived = ?, position = ?, reminder_at = ?, reminder_fired_at = ?,
+             updated_at = ?, last_editor_id = ?,
              trashed_at = CASE
                  WHEN ? AND trashed = 0 THEN ?
                  WHEN NOT ? THEN NULL
@@ -424,6 +431,7 @@ impl Repository for SqliteRepository {
         .bind(note.archived as i64)
         .bind(note.position)
         .bind(&note.reminder_at)
+        .bind(&note.reminder_fired_at)
         .bind(&note.updated_at)
         .bind(&note.last_editor_id)
         .bind(note.trashed as i64)
@@ -488,6 +496,31 @@ impl Repository for SqliteRepository {
     async fn all_note_ids(&self) -> RepoResult<Vec<String>> {
         let rows = sqlx::query("SELECT id FROM notes").fetch_all(&self.pool).await?;
         Ok(rows.iter().map(|r| r.get("id")).collect())
+    }
+
+    // -- reminders ------------------------------------------------------------
+
+    async fn due_reminders(&self, now: &str) -> RepoResult<Vec<NoteRecord>> {
+        // julianday() understands RFC3339 offsets, so "10:00+02:00" compares
+        // as the instant it names rather than as a string.
+        let rows = sqlx::query(
+            "SELECT * FROM notes
+             WHERE reminder_at IS NOT NULL AND reminder_fired_at IS NULL
+               AND trashed = 0 AND julianday(reminder_at) <= julianday(?)",
+        )
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(record_from_row).collect())
+    }
+
+    async fn mark_reminder_fired(&self, note_id: &str, fired_at: &str) -> RepoResult<()> {
+        sqlx::query("UPDATE notes SET reminder_fired_at = ? WHERE id = ?")
+            .bind(fired_at)
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     // -- version history ----------------------------------------------------

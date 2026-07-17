@@ -31,19 +31,22 @@ async fn state() -> AppState {
 /// Lets the search pipeline be tested without the real ONNX model.
 struct HashEmbedder;
 
+/// Dimension of HashEmbedder vectors; the vector index is created to match.
+const HASH_EMBED_DIMS: usize = 64;
+
 impl TextEmbedder for HashEmbedder {
     fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
         Ok(texts
             .into_iter()
             .map(|text| {
-                let mut v = vec![0f32; 64];
+                let mut v = vec![0f32; HASH_EMBED_DIMS];
                 for token in text.to_lowercase().split_whitespace() {
                     let mut hash: u64 = 1469598103934665603;
                     for b in token.bytes() {
                         hash ^= b as u64;
                         hash = hash.wrapping_mul(1099511628211);
                     }
-                    v[(hash % 64) as usize] += 1.0;
+                    v[(hash as usize) % HASH_EMBED_DIMS] += 1.0;
                 }
                 v
             })
@@ -52,7 +55,7 @@ impl TextEmbedder for HashEmbedder {
 }
 
 async fn state_with_search() -> AppState {
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:").await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
     state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -1454,17 +1457,29 @@ async fn deleting_a_note_purges_its_history() {
 
 use sticky_notes_server::llm::{ChatMessage, Llm, LlmConfig};
 
-/// Deterministic LLM: returns a fixed reply and records every request, so
-/// tests can assert on call counts and prompts without a model server.
+/// Deterministic LLM: replays scripted replies in order (the last one
+/// repeats) and records every request, so tests can assert on call counts
+/// and prompts without a model server.
 struct FakeLlm {
-    reply: String,
+    replies: std::sync::Mutex<Vec<String>>,
     calls: Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>,
 }
 
 impl FakeLlm {
     fn new(reply: &str) -> (Arc<Self>, Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>) {
+        Self::new_seq(&[reply])
+    }
+
+    /// One reply per successive call; chat turns make two (route, answer).
+    fn new_seq(replies: &[&str]) -> (Arc<Self>, Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>) {
         let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
-        (Arc::new(Self { reply: reply.to_string(), calls: calls.clone() }), calls)
+        (
+            Arc::new(Self {
+                replies: std::sync::Mutex::new(replies.iter().map(|r| r.to_string()).collect()),
+                calls: calls.clone(),
+            }),
+            calls,
+        )
     }
 }
 
@@ -1476,7 +1491,8 @@ impl Llm for FakeLlm {
         messages: Vec<ChatMessage>,
     ) -> anyhow::Result<String> {
         self.calls.lock().unwrap().push(messages);
-        Ok(self.reply.clone())
+        let mut replies = self.replies.lock().unwrap();
+        Ok(if replies.len() > 1 { replies.remove(0) } else { replies[0].clone() })
     }
 
     async fn stream(
@@ -1805,14 +1821,124 @@ async fn chat_turn(
     frames
 }
 
-/// A follow-up like "nice" carries no subject: embedded alone it ranks junk
-/// notes above the one the conversation is about. The retrieval query must
-/// blend the recent user turns so the topical note stays in the sources (and
-/// in the model's prompt).
+/// The model routes each turn first: `{"search": "<its own query>"}` looks
+/// notes up by what the conversation is ABOUT, regardless of how little the
+/// literal message says.
+#[tokio::test]
+async fn chat_route_model_query_drives_retrieval() {
+    let (llm, calls) =
+        FakeLlm::new_seq(&[r#"{"search": "buy groceries bread"}"#, "Bread it is."]);
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+
+    // Tokens shared with the MESSAGE point at junk; only the model-written
+    // query points at the groceries note (HashEmbedder: whitespace tokens).
+    // Half-checked checklist: the prompt must carry the per-item state.
+    create_note(
+        &app,
+        &token,
+        json!({
+            "kind": "checklist",
+            "title": "Groceries",
+            "content": "buy groceries",
+            "items": [
+                {"id": "i1", "text": "bread", "done": true},
+                {"id": "i2", "text": "milk", "done": false},
+                {"id": "i3", "text": "potatoes", "done": false},
+            ],
+        }),
+    )
+    .await;
+    for i in 0..7 {
+        create_note(
+            &app,
+            &token,
+            json!({"title": format!("junk {i}"), "content": format!("ok thing {i}")}),
+        )
+        .await;
+    }
+    settle_index().await;
+
+    let frames = chat_turn(state, &token, "ok", json!([])).await;
+
+    assert_eq!(frames.first().unwrap()["type"], "sources", "{frames:?}");
+    let sources = frames[0]["notes"].as_array().unwrap();
+    assert!(
+        sources.iter().any(|s| s["title"] == "Groceries"),
+        "the routed query must drive retrieval: {sources:?}"
+    );
+    assert_eq!(frames.last().unwrap()["type"], "done");
+    // Two model calls: the route, then the answer over the retrieved notes —
+    // with checklist state intact (checked bread vs pending milk).
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[0][0].content.contains(r#"{"search":"#), "route prompt first");
+    let answer_prompt = &calls[1][0].content;
+    assert!(answer_prompt.contains("- [x] bread"), "{answer_prompt}");
+    assert!(answer_prompt.contains("- [ ] milk"), "{answer_prompt}");
+    assert!(answer_prompt.contains("- [ ] potatoes"), "{answer_prompt}");
+}
+
+/// A turn routed to `{"search": null}` (thanks, chit-chat) answers from the
+/// conversation alone: no notes in the prompt and an empty sources frame, so
+/// the client shows no chips — and the model can't trip over irrelevant
+/// notes and disavow its previous answer.
+#[tokio::test]
+async fn chat_route_direct_skips_retrieval_and_sources() {
+    let (llm, calls) = FakeLlm::new_seq(&[r#"{"search": null}"#, "You're welcome!"]);
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+    create_note(&app, &token, json!({"title": "Groceries", "content": "bread"})).await;
+    settle_index().await;
+
+    let frames = chat_turn(
+        state,
+        &token,
+        "nice thank you",
+        json!([
+            {"role": "user", "content": "what should I buy"},
+            {"role": "assistant", "content": "Bread."},
+        ]),
+    )
+    .await;
+
+    // Empty sources frame -> no chips; then the streamed answer.
+    assert_eq!(frames.first().unwrap()["type"], "sources", "{frames:?}");
+    assert_eq!(frames[0]["notes"].as_array().unwrap().len(), 0, "{frames:?}");
+    let text: String = frames
+        .iter()
+        .filter(|f| f["type"] == "delta")
+        .map(|f| f["text"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(text, "You're welcome!");
+    assert_eq!(frames.last().unwrap()["type"], "done");
+    // The answer prompt is the no-lookup variant, with the history intact.
+    let calls = calls.lock().unwrap();
+    let answer = calls.last().unwrap();
+    assert!(answer[0].content.contains("no note lookup"), "{}", answer[0].content);
+    assert!(!answer[0].content.contains("Notes:"));
+    assert!(answer.iter().any(|m| m.content == "Bread."), "history preserved");
+}
+
+/// A route reply the parser can't read (prose, wrong shape) must fall back
+/// to plain retrieval — blending recent user turns so a low-content
+/// follow-up ("nice") still surfaces the note the conversation is about.
 #[tokio::test]
 async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
     let (llm, calls) = FakeLlm::new("Bread it is.");
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:").await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
     let state = state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -1871,4 +1997,314 @@ async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
     let calls = calls.lock().unwrap();
     let system = &calls.last().unwrap().first().unwrap().content;
     assert!(system.contains("bread milk potatoes"), "{system}");
+}
+
+// ---------------------------------------------------------------------------
+// Reminder notifications
+
+use sticky_notes_server::notify::{self, Connector, Notification};
+
+/// Everything the fake connectors delivered: (channel, destination, title, body).
+type SentLog = Arc<std::sync::Mutex<Vec<(String, String, String, String)>>>;
+
+/// A recording connector configured by a single settings key (the same keys
+/// the real ntfy/Telegram connectors use, so tests exercise the real
+/// settings-document contract with only the HTTP transport faked).
+struct FakeChannel {
+    name: &'static str,
+    key: &'static str,
+    log: SentLog,
+    fail: bool,
+}
+
+#[async_trait]
+impl Connector for FakeChannel {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn configured(&self, settings: &Value) -> bool {
+        settings[self.key].as_str().map(str::trim).is_some_and(|s| !s.is_empty())
+    }
+
+    async fn send(&self, settings: &Value, notification: &Notification) -> anyhow::Result<()> {
+        if self.fail {
+            anyhow::bail!("boom");
+        }
+        self.log.lock().unwrap().push((
+            self.name.to_string(),
+            settings[self.key].as_str().unwrap_or_default().to_string(),
+            notification.title.clone(),
+            notification.body.clone(),
+        ));
+        Ok(())
+    }
+}
+
+async fn state_with_notifiers() -> (AppState, SentLog) {
+    let log: SentLog = Arc::default();
+    let connectors: Vec<Arc<dyn Connector>> = vec![
+        Arc::new(FakeChannel { name: "ntfy", key: "ntfy_url", log: log.clone(), fail: false }),
+        Arc::new(FakeChannel {
+            name: "telegram",
+            key: "telegram_chat_id",
+            log: log.clone(),
+            fail: false,
+        }),
+    ];
+    (state().await.with_notifiers(connectors), log)
+}
+
+async fn put_settings(app: &Router, token: &str, doc: Value) {
+    let (status, _) = send(app, "PUT", "/api/settings", Some(token), Some(doc)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn due_reminders_fire_once_per_configured_participant() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/ada-notes"})).await;
+    put_settings(&app, &bob, json!({"telegram_chat_id": "4242"})).await;
+
+    let note = create_note(
+        &app,
+        &ada,
+        json!({
+            "title": "Water plants",
+            "content": "the ficus too",
+            "reminder_at": "2020-01-05T10:00:00Z",
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/collaborators"),
+        Some(&ada),
+        Some(json!({"username": "bob"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    notify::sweep_due_reminders(&state).await;
+    {
+        let mut sent = log.lock().unwrap();
+        sent.sort(); // participant order is not specified
+        assert_eq!(
+            *sent,
+            vec![
+                (
+                    "ntfy".to_string(),
+                    "https://ntfy.sh/ada-notes".to_string(),
+                    "Water plants".to_string(),
+                    "the ficus too".to_string()
+                ),
+                (
+                    "telegram".to_string(),
+                    "4242".to_string(),
+                    "Water plants".to_string(),
+                    "the ficus too".to_string()
+                ),
+            ]
+        );
+    }
+
+    // Fired means fired: the next sweep is quiet.
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn rescheduling_a_reminder_fires_again_but_content_edits_do_not() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
+
+    let note =
+        create_note(&app, &ada, json!({"title": "Call mom", "reminder_at": "2020-01-05T10:00:00Z"}))
+            .await;
+    let id = note["id"].as_str().unwrap();
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+
+    // A content edit leaves the fired mark alone.
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&ada),
+        Some(json!({"content": "and dad"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+
+    // Rescheduling (to another due time) clears it -> fires again.
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&ada),
+        Some(json!({"reminder_at": "2020-02-01T08:00:00Z"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 2);
+
+    // Clearing the reminder stops everything.
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&ada),
+        Some(json!({"reminder_at": null})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn reminders_skip_future_trashed_disabled_and_unconfigured() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(
+        &app,
+        &ada,
+        json!({"ntfy_url": "https://ntfy.sh/a", "reminder_notifications": false}),
+    )
+    .await;
+
+    // Future reminders wait; offsets compare as instants, not strings
+    // ("+10:00" sorts before "Z" as text but names a future moment here).
+    create_note(&app, &ada, json!({"title": "Future", "reminder_at": "2999-01-01T00:00:00+10:00"}))
+        .await;
+    // Trashed notes never fire.
+    let trashed =
+        create_note(&app, &ada, json!({"title": "Trashed", "reminder_at": "2020-01-05T10:00:00Z"}))
+            .await;
+    let trashed_id = trashed["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{trashed_id}"),
+        Some(&ada),
+        Some(json!({"trashed": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    // Due, but the user turned notifications off: consumed silently (a
+    // later opt-in must not replay old alarms).
+    create_note(&app, &ada, json!({"title": "Muted", "reminder_at": "2020-01-05T10:00:00Z"})).await;
+
+    notify::sweep_due_reminders(&state).await;
+    assert!(log.lock().unwrap().is_empty());
+
+    // Turning notifications back on doesn't resurrect the consumed reminder.
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
+    notify::sweep_due_reminders(&state).await;
+    assert!(log.lock().unwrap().is_empty());
+
+    // An offset timestamp that IS past (as an instant) fires despite sorting
+    // after "2020-..." UTC strings would suggest nothing; belt and braces for
+    // the julianday comparison.
+    create_note(&app, &ada, json!({"title": "Offset", "reminder_at": "2020-01-05T10:00:00+10:00"}))
+        .await;
+    notify::sweep_due_reminders(&state).await;
+    let sent = log.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].2, "Offset");
+}
+
+#[tokio::test]
+async fn checklist_reminders_list_only_pending_items() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
+
+    create_note(
+        &app,
+        &ada,
+        json!({
+            "kind": "checklist",
+            "title": "Groceries",
+            "items": [
+                {"id": "1", "text": "milk", "done": false},
+                {"id": "2", "text": "bread", "done": true},
+                {"id": "3", "text": "eggs", "done": false},
+            ],
+            "reminder_at": "2020-01-05T10:00:00Z",
+        }),
+    )
+    .await;
+    notify::sweep_due_reminders(&state).await;
+    let sent = log.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].3, "milk\neggs");
+}
+
+#[tokio::test]
+async fn notify_test_endpoint_sends_and_validates() {
+    let (ok_state, log) = state_with_notifiers().await;
+    let app = build_app(ok_state);
+    let (ada, _) = register(&app, "ada").await;
+
+    // Needs auth.
+    let (status, _) = send(&app, "POST", "/api/notify/test", None, Some(json!({}))).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Nothing configured in the probe body -> 400.
+    let (status, _) = send(&app, "POST", "/api/notify/test", Some(&ada), Some(json!({}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A configured channel gets a real test message; the body config is used
+    // as-is (nothing needs to be saved in settings first).
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/notify/test",
+        Some(&ada),
+        Some(json!({"ntfy_url": "https://ntfy.sh/probe"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"], json!(true));
+    {
+        let sent = log.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].0, "ntfy");
+        assert_eq!(sent[0].1, "https://ntfy.sh/probe");
+    }
+
+    // Failures are a result, not an HTTP error, and name the channel.
+    let log: SentLog = Arc::default();
+    let failing: Vec<Arc<dyn Connector>> = vec![Arc::new(FakeChannel {
+        name: "ntfy",
+        key: "ntfy_url",
+        log: log.clone(),
+        fail: true,
+    })];
+    let app = build_app(state().await.with_notifiers(failing));
+    let (ada, _) = register(&app, "ada").await;
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/notify/test",
+        Some(&ada),
+        Some(json!({"ntfy_url": "https://ntfy.sh/probe"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"], json!(false));
+    assert!(body["error"].as_str().unwrap().contains("ntfy: boom"), "{body}");
 }

@@ -1,10 +1,9 @@
-# One command for the whole backend stack (API + web app + vector DB + Whisper):
+# One command for the whole backend stack (API + web app + Whisper):
 #   docker compose up -d          -> app at http://localhost:8787
 #
 # For local development you can run just the supporting services and keep
 # `cargo run` on the host:
-#   docker compose up -d qdrant whisper
-#   STICKY_NOTES_QDRANT_URL=http://localhost:6334 \
+#   docker compose up -d whisper
 #   STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 services:
   server:
@@ -12,28 +11,16 @@ services:
     ports:
       - "8787:8787"
     environment:
-      STICKY_NOTES_QDRANT_URL: http://qdrant:6334
       STICKY_NOTES_WHISPER_URL: http://whisper:9000
     volumes:
-      - app_data:/data       # SQLite DB + uploaded files
-      - model_cache:/models  # embedding model (downloaded on first start)
+      - app_data:/data # SQLite DB + uploaded files
+      - model_cache:/models # embedding model (downloaded on first start)
     depends_on:
-      qdrant:
-        condition: service_started
       # Wait until Whisper's HTTP server actually answers, not just until its
       # container starts — otherwise the server probes a not-yet-ready Whisper
       # and disables transcription for the whole life of the process.
       whisper:
         condition: service_healthy
-    restart: unless-stopped
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333" # REST / dashboard
-      - "6334:6334" # gRPC (used by the backend)
-    volumes:
-      - qdrant_storage:/qdrant/storage
     restart: unless-stopped
 
   # Local speech-to-text for audio notes. ffmpeg-based, so it accepts the
@@ -43,7 +30,7 @@ services:
     ports:
       - "9000:9000" # exposed so a host `cargo run` can reach it in dev
     environment:
-      ASR_MODEL: base          # tiny | base | small | medium | large-v3
+      ASR_MODEL: base # tiny | base | small | medium | large-v3
       ASR_ENGINE: faster_whisper
     volumes:
       - whisper_cache:/root/.cache
@@ -51,7 +38,7 @@ services:
     # HTTP server isn't answering yet. This gate lets `server` wait for a real
     # response before it runs its one-shot reachability probe.
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:9000/docs"]
+      test: [ "CMD", "curl", "-fsS", "http://localhost:9000/docs" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -61,5 +48,4 @@ services:
 volumes:
   app_data:
   model_cache:
-  qdrant_storage:
   whisper_cache:

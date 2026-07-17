@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../models/notify_channels.dart';
 import '../theme.dart';
 
 /// One entry in the user's note-color palette.
@@ -170,6 +171,22 @@ class SettingsStore extends ChangeNotifier {
   bool get notesChatAvailable =>
       llmConfigured && llmChatEnabled && semanticSearchCapable;
 
+  // Reminder notifications (ntfy, Telegram, …). Like the LLM config there is
+  // no server capability: the channels in [kNotifyChannels] describe which
+  // settings keys each one needs, the backend's connectors read those same
+  // keys when a reminder comes due, and this map holds their values.
+  Map<String, String> notifyValues = {};
+  bool reminderNotificationsEnabled = true;
+
+  bool get notifyConfigured =>
+      kNotifyChannels.any((c) => c.configuredIn(notifyValues));
+
+  /// Display names of the channels that are fully configured.
+  List<String> get configuredNotifyChannels => [
+    for (final channel in kNotifyChannels)
+      if (channel.configuredIn(notifyValues)) channel.label,
+  ];
+
   Timer? _saveDebounce;
   bool _savePending = false;
   int _customCounter = 0;
@@ -220,6 +237,11 @@ class SettingsStore extends ChangeNotifier {
     llmModel = ((json['llm_model'] as String?) ?? '').trim();
     llmLabelingEnabled = json['llm_labeling'] != false;
     llmChatEnabled = json['llm_chat'] != false;
+    notifyValues = {
+      for (final key in kNotifyFieldKeys)
+        key: ((json[key] as String?) ?? '').trim(),
+    };
+    reminderNotificationsEnabled = json['reminder_notifications'] != false;
     final rawPalette = json['palette'];
     if (rawPalette is List) {
       final parsed = [
@@ -248,6 +270,10 @@ class SettingsStore extends ChangeNotifier {
     'llm_model': llmModel,
     'llm_labeling': llmLabelingEnabled,
     'llm_chat': llmChatEnabled,
+    // toJson rebuilds the whole settings document, so every notify key must
+    // appear here or a save from this device would erase it.
+    for (final key in kNotifyFieldKeys) key: notifyValues[key] ?? '',
+    'reminder_notifications': reminderNotificationsEnabled,
     'palette': [for (final entry in palette) entry.toJson()],
   };
 
@@ -295,6 +321,14 @@ class SettingsStore extends ChangeNotifier {
   void setLlmLabelingEnabled(bool value) =>
       _mutate(() => llmLabelingEnabled = value);
   void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
+
+  void setNotifyValues(Map<String, String> values) => _mutate(() {
+    notifyValues = {
+      for (final key in kNotifyFieldKeys) key: (values[key] ?? '').trim(),
+    };
+  });
+  void setReminderNotificationsEnabled(bool value) =>
+      _mutate(() => reminderNotificationsEnabled = value);
 
   // -- palette ---------------------------------------------------------------
 

@@ -726,6 +726,83 @@ void main() {
         await flushTimers(tester);
       },
     );
+
+    testWidgets('top bar and FABs respect device safe-area insets', (
+      tester,
+    ) async {
+      // iPhone-style insets: 50px status bar/notch, 34px home indicator
+      // (physical px at the test binding's 3.0 device pixel ratio).
+      tester.view.padding = const FakeViewPadding(top: 150, bottom: 102);
+      tester.view.viewPadding = const FakeViewPadding(top: 150, bottom: 102);
+      addTearDown(tester.view.reset);
+
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pump();
+
+      // The top bar's content starts below the notch…
+      final menuTop = tester.getTopLeft(find.byIcon(Icons.menu)).dy;
+      expect(
+        menuTop,
+        greaterThanOrEqualTo(50),
+        reason: 'top bar must sit below the status-bar inset',
+      );
+
+      // …and the note FABs sit above the home indicator.
+      final appHeight = tester.getSize(find.byType(MaterialApp)).height;
+      final fabBottom = tester.getRect(find.byIcon(Icons.add).last).bottom;
+      expect(
+        appHeight - fabBottom,
+        greaterThanOrEqualTo(34),
+        reason: 'FABs must stay above the home-indicator inset',
+      );
+    });
+
+    testWidgets('phone width collapses the top bar into one search pill', (
+      tester,
+    ) async {
+      // iPhone-sized logical viewport (402x874).
+      tester.view.physicalSize = const Size(1206, 2622);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pump();
+
+      // Branding and the sort icon leave the bar (drawer / avatar menu
+      // carry them); the essentials stay.
+      expect(find.text('Sticky Notes'), findsNothing);
+      expect(find.byIcon(Icons.swap_vert), findsNothing);
+      expect(find.byIcon(Icons.menu), findsOneWidget);
+      expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);
+      expect(find.byType(CircleAvatar), findsOneWidget);
+
+      // Typing swaps the trailing icons for the clear button.
+      await tester.enterText(find.byType(TextField).first, 'milk');
+      await tester.pump();
+      expect(find.byIcon(Icons.close), findsOneWidget);
+      expect(find.byIcon(Icons.view_agenda_outlined), findsNothing);
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+
+      // Sort now lives in the avatar menu, opening a bottom sheet.
+      await tester.tap(find.byType(CircleAvatar).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Sort by'), findsOneWidget);
+      await tester.tap(find.text('Sort by'));
+      await tester.pumpAndSettle();
+      expect(find.text('Recently edited'), findsOneWidget);
+      await tester.tap(find.text('Recently edited'));
+      await tester.pumpAndSettle();
+      expect(store.sortMode, SortMode.edited);
+
+      // The pill's menu button opens the drawer (via the scaffold key — the
+      // old Scaffold.of(context) lookup threw above the Scaffold).
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationDrawer), findsOneWidget);
+    });
   });
 
   group('keyboard shortcuts', () {

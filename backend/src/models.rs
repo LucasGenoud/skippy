@@ -84,6 +84,10 @@ pub struct NoteRecord {
     pub trashed: bool,
     pub position: f64,
     pub reminder_at: Option<String>,
+    /// When the reminder scheduler last delivered `reminder_at` (server-owned,
+    /// not on the wire). `None` means "not fired yet"; cleared whenever the
+    /// reminder is rescheduled so the new time fires again.
+    pub reminder_fired_at: Option<String>,
     /// Audio-note transcription state (`none`/`pending`/`done`/`failed`).
     pub transcript_status: String,
     pub created_at: String,

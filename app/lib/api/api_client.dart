@@ -115,6 +115,13 @@ abstract class Api {
     required String model,
   });
 
+  /// Probe a notification configuration by sending a real test message;
+  /// powers the "Send test" button in Settings. [config] carries the
+  /// connector keys exactly as they'd be saved (ntfy_url,
+  /// telegram_bot_token, …), so new channels need no API changes. Resolves
+  /// normally with `ok: false` and the reason on delivery failure.
+  Future<({bool ok, String? error})> testNotify(Map<String, String> config);
+
   /// One notes-chat turn: sends [message] with prior [history] and emits the
   /// server's frames (sources, streamed deltas, then done/error). The stream
   /// closes after the terminal event.
@@ -536,6 +543,21 @@ class ApiClient implements Api {
           'api_key': apiKey,
           'model': model,
         }),
+      ),
+    );
+    final map = (data as Map?) ?? const {};
+    return (ok: map['ok'] == true, error: map['error'] as String?);
+  }
+
+  @override
+  Future<({bool ok, String? error})> testNotify(
+    Map<String, String> config,
+  ) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/notify/test'),
+        headers: _headers(),
+        body: jsonEncode(config),
       ),
     );
     final map = (data as Map?) ?? const {};

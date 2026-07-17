@@ -48,6 +48,15 @@ pub trait Repository: Send + Sync {
     /// Every note id in the store (used for search reindexing at startup).
     async fn all_note_ids(&self) -> RepoResult<Vec<String>>;
 
+    // -- reminders ------------------------------------------------------------
+    /// Non-trashed notes whose reminder is due at or before `now` (RFC3339)
+    /// and hasn't fired yet. Timestamps are compared as instants, so offsets
+    /// other than UTC still come due at the right moment.
+    async fn due_reminders(&self, now: &str) -> RepoResult<Vec<NoteRecord>>;
+    /// Record that a note's current reminder was delivered, so the sweep
+    /// doesn't pick it up again. Rescheduling clears the mark (handler-side).
+    async fn mark_reminder_fired(&self, note_id: &str, fired_at: &str) -> RepoResult<()>;
+
     // -- version history ----------------------------------------------------
     /// Append a content snapshot to a note's history. Snapshots are permanent
     /// and cascade-deleted only when the note itself is hard-deleted.

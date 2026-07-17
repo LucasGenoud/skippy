@@ -1,12 +1,13 @@
 //! Semantic search: notes are embedded locally (no external AI services) and
-//! indexed in a vector store. Two interchangeable backends:
+//! indexed in a vector store.
 //!
-//! * [`SqliteVectorIndex`] — zero-infrastructure default; brute-force cosine
-//!   over the user's notes, which is instant at personal-notes scale.
-//! * [`QdrantIndex`] — real vector database, enabled by setting
-//!   `STICKY_NOTES_QDRANT_URL` (see docker-compose.yml).
+//! The only backend is [`SqliteVectorIndex`], a zero-infrastructure index
+//! built on the sqlite-vec extension (vec0 virtual table): KNN happens inside
+//! SQLite, one row per (note, participant) so visibility filtering is part of
+//! the query. [`VectorIndex`] stays a trait so another store can be swapped
+//! in later.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use async_trait::async_trait;
 use sqlx::Row;
@@ -68,56 +69,60 @@ pub trait VectorIndex: Send + Sync {
     ) -> anyhow::Result<Vec<(String, f32)>>;
 }
 
-// -- SQLite brute force -------------------------------------------------------
+// -- SQLite (sqlite-vec) --------------------------------------------------------
+
+/// Register sqlite-vec for every SQLite connection opened by this process.
+/// Idempotent (guarded by `Once`); must run before the pool below is created.
+fn register_sqlite_vec() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut libsqlite3_sys::sqlite3,
+                *mut *mut std::os::raw::c_char,
+                *const libsqlite3_sys::sqlite3_api_routines,
+            ) -> std::os::raw::c_int,
+        >(sqlite_vec::sqlite3_vec_init as *const ())));
+    });
+}
 
 pub struct SqliteVectorIndex {
     pool: sqlx::SqlitePool,
 }
 
 impl SqliteVectorIndex {
-    pub async fn connect(path: &str) -> anyhow::Result<Self> {
+    /// `dims` must match the embedder's output (see [`EMBEDDING_DIM`]); tests
+    /// pass the fake embedder's smaller dimension.
+    pub async fn connect(path: &str, dims: usize) -> anyhow::Result<Self> {
+        register_sqlite_vec();
         let options = SqliteConnectOptions::new().filename(path).create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(if path == ":memory:" { 1 } else { 3 })
             .connect_with(options)
             .await?;
-        sqlx::raw_sql(
-            "CREATE TABLE IF NOT EXISTS note_vectors (
-                 note_id TEXT PRIMARY KEY,
-                 participants TEXT NOT NULL,
-                 vector BLOB NOT NULL
-             )",
-        )
+        // Legacy table from the pre-sqlite-vec brute-force index; the startup
+        // reindex repopulates the vec0 table, so this is safe to drop.
+        sqlx::raw_sql("DROP TABLE IF EXISTS note_vectors").execute(&pool).await?;
+        // One row per (note, participant): the partition key makes per-user
+        // KNN search prune to that user's rows, and a note appears at most
+        // once per partition so results need no dedup.
+        sqlx::raw_sql(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS note_vec USING vec0(
+                 user_id TEXT PARTITION KEY,
+                 note_id TEXT,
+                 embedding FLOAT[{dims}] distance_metric=cosine
+             )"
+        ))
         .execute(&pool)
         .await?;
         Ok(Self { pool })
     }
 }
 
+/// sqlite-vec's compact vector format: little-endian f32s.
 fn vector_to_blob(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|v| v.to_le_bytes()).collect()
-}
-
-fn blob_to_vector(blob: &[u8]) -> Vec<f32> {
-    blob.chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect()
-}
-
-fn cosine(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return -1.0;
-    }
-    let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-    }
-    if na == 0.0 || nb == 0.0 {
-        return -1.0;
-    }
-    dot / (na.sqrt() * nb.sqrt())
 }
 
 #[async_trait]
@@ -128,21 +133,28 @@ impl VectorIndex for SqliteVectorIndex {
         participant_ids: &[String],
         vector: Vec<f32>,
     ) -> anyhow::Result<()> {
-        sqlx::query(
-            "INSERT INTO note_vectors (note_id, participants, vector) VALUES (?, ?, ?)
-             ON CONFLICT (note_id) DO UPDATE
-             SET participants = excluded.participants, vector = excluded.vector",
-        )
-        .bind(note_id)
-        .bind(serde_json::to_string(participant_ids)?)
-        .bind(vector_to_blob(&vector))
-        .execute(&self.pool)
-        .await?;
+        // vec0 has no upsert and participants may have changed; replace the
+        // note's rows wholesale.
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM note_vec WHERE note_id = ?")
+            .bind(note_id)
+            .execute(&mut *tx)
+            .await?;
+        let blob = vector_to_blob(&vector);
+        for user_id in participant_ids {
+            sqlx::query("INSERT INTO note_vec (user_id, note_id, embedding) VALUES (?, ?, ?)")
+                .bind(user_id)
+                .bind(note_id)
+                .bind(&blob)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
     async fn remove(&self, note_id: &str) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM note_vectors WHERE note_id = ?")
+        sqlx::query("DELETE FROM note_vec WHERE note_id = ?")
             .bind(note_id)
             .execute(&self.pool)
             .await?;
@@ -155,118 +167,22 @@ impl VectorIndex for SqliteVectorIndex {
         vector: Vec<f32>,
         limit: usize,
     ) -> anyhow::Result<Vec<(String, f32)>> {
-        let rows = sqlx::query("SELECT note_id, participants, vector FROM note_vectors")
-            .fetch_all(&self.pool)
-            .await?;
-        let mut scored: Vec<(String, f32)> = rows
+        let rows = sqlx::query(
+            "SELECT note_id, distance FROM note_vec
+             WHERE user_id = ? AND embedding MATCH ? AND k = ?
+             ORDER BY distance",
+        )
+        .bind(user_id)
+        .bind(vector_to_blob(&vector))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        // Cosine *distance* (0 = identical) -> similarity score, matching the
+        // trait's best-match-first, higher-is-better contract.
+        Ok(rows
             .iter()
-            .filter(|row| {
-                let participants: Vec<String> =
-                    serde_json::from_str(row.get("participants")).unwrap_or_default();
-                participants.iter().any(|p| p == user_id)
-            })
             .map(|row| {
-                let stored = blob_to_vector(row.get("vector"));
-                (row.get::<String, _>("note_id"), cosine(&vector, &stored))
-            })
-            .collect();
-        scored.sort_by(|a, b| b.1.total_cmp(&a.1));
-        scored.truncate(limit);
-        Ok(scored)
-    }
-}
-
-// -- Qdrant ---------------------------------------------------------------------
-
-pub struct QdrantIndex {
-    client: qdrant_client::Qdrant,
-    collection: String,
-}
-
-impl QdrantIndex {
-    /// Note ids are arbitrary strings; Qdrant point ids must be UUIDs, so we
-    /// derive a stable UUIDv5 per note and keep the real id in the payload.
-    fn point_id(note_id: &str) -> String {
-        uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, note_id.as_bytes()).to_string()
-    }
-
-    pub async fn connect(url: &str) -> anyhow::Result<Self> {
-        use qdrant_client::qdrant::{CreateCollectionBuilder, Distance, VectorParamsBuilder};
-        let client = qdrant_client::Qdrant::from_url(url).build()?;
-        let collection = "sticky_notes".to_string();
-        if !client.collection_exists(&collection).await? {
-            client
-                .create_collection(
-                    CreateCollectionBuilder::new(&collection).vectors_config(
-                        VectorParamsBuilder::new(EMBEDDING_DIM as u64, Distance::Cosine),
-                    ),
-                )
-                .await?;
-        }
-        Ok(Self { client, collection })
-    }
-}
-
-#[async_trait]
-impl VectorIndex for QdrantIndex {
-    async fn upsert(
-        &self,
-        note_id: &str,
-        participant_ids: &[String],
-        vector: Vec<f32>,
-    ) -> anyhow::Result<()> {
-        use qdrant_client::Payload;
-        use qdrant_client::qdrant::{PointStruct, UpsertPointsBuilder};
-        let payload = Payload::try_from(serde_json::json!({
-            "note_id": note_id,
-            "participants": participant_ids,
-        }))
-        .map_err(|e| anyhow::anyhow!("payload: {e}"))?;
-        let point = PointStruct::new(Self::point_id(note_id), vector, payload);
-        self.client
-            .upsert_points(UpsertPointsBuilder::new(&self.collection, vec![point]))
-            .await?;
-        Ok(())
-    }
-
-    async fn remove(&self, note_id: &str) -> anyhow::Result<()> {
-        use qdrant_client::qdrant::{DeletePointsBuilder, PointsIdsList};
-        self.client
-            .delete_points(
-                DeletePointsBuilder::new(&self.collection)
-                    .points(PointsIdsList {
-                        ids: vec![Self::point_id(note_id).into()],
-                    })
-                    .wait(true),
-            )
-            .await?;
-        Ok(())
-    }
-
-    async fn search(
-        &self,
-        user_id: &str,
-        vector: Vec<f32>,
-        limit: usize,
-    ) -> anyhow::Result<Vec<(String, f32)>> {
-        use qdrant_client::qdrant::{Condition, Filter, SearchPointsBuilder};
-        let response = self
-            .client
-            .search_points(
-                SearchPointsBuilder::new(&self.collection, vector, limit as u64)
-                    .filter(Filter::must([Condition::matches(
-                        "participants",
-                        user_id.to_string(),
-                    )]))
-                    .with_payload(true),
-            )
-            .await?;
-        Ok(response
-            .result
-            .into_iter()
-            .filter_map(|point| {
-                let note_id = point.payload.get("note_id")?.as_str()?.to_string();
-                Some((note_id, point.score))
+                (row.get::<String, _>("note_id"), 1.0 - row.get::<f64, _>("distance") as f32)
             })
             .collect())
     }

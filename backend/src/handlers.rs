@@ -398,6 +398,7 @@ pub async fn create_note(
         trashed: false,
         position,
         reminder_at: body.reminder_at,
+        reminder_fired_at: None,
         transcript_status: TRANSCRIPT_NONE.to_string(),
         created_at: ts.clone(),
         updated_at: ts,
@@ -447,6 +448,11 @@ pub async fn update_note(
     }
     if let Some(reminder) = &body.reminder_at {
         validate_reminder(reminder)?;
+        // A (re)scheduled reminder is a new alarm: clear the fired mark so
+        // the scheduler delivers the new time too.
+        if *reminder != record.reminder_at {
+            record.reminder_fired_at = None;
+        }
     }
 
     let label_ids = body.label_ids.take();
@@ -1042,6 +1048,38 @@ pub async fn llm_test(
     Ok(Json(result))
 }
 
+/// Probe a notification configuration by sending a real test message. Powers
+/// the "Send test notification" button in Settings; like [`llm_test`] it takes
+/// the config from the request body (a settings-shaped JSON fragment with the
+/// connector keys, e.g. `ntfy_url`), not stored settings, so the user can test
+/// before saving — and new connectors need no endpoint changes. A delivery
+/// failure is a *result* (`ok: false`), not an HTTP error.
+pub async fn notify_test(
+    State(state): State<AppState>,
+    AuthUser(_user_id): AuthUser,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !body.is_object() {
+        return Err(ApiError::BadRequest("expected a JSON object".to_string()));
+    }
+    if !state.notifiers.iter().any(|c| c.configured(&body)) {
+        return Err(ApiError::BadRequest(
+            "configure at least one notification channel".to_string(),
+        ));
+    }
+    let notification = crate::notify::Notification {
+        title: "Sticky Notes".to_string(),
+        body: "Test notification — reminders will arrive here.".to_string(),
+    };
+    let errors = crate::notify::send_configured(&state.notifiers, &body, &notification).await;
+    let result = if errors.is_empty() {
+        serde_json::json!({"ok": true})
+    } else {
+        serde_json::json!({"ok": false, "error": errors.join("; ")})
+    };
+    Ok(Json(result))
+}
+
 /// One chat turn from the client.
 #[derive(Deserialize)]
 struct ChatRequest {
@@ -1128,30 +1166,53 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     let history: Vec<(String, String)> =
         request.history.into_iter().map(|h| (h.role, h.content)).collect();
 
-    // Retrieve: the query blends recent user turns so low-content follow-ups
-    // ("nice") keep the conversation's subject, and over-fetch because
-    // trashed notes linger in the vector index — keep the best non-trashed.
-    let query = crate::assist::retrieval_query(&history, message);
-    let hits = match search.search(&user_id, &query, crate::assist::CHAT_CONTEXT_NOTES * 2).await
+    // Phase 1 — route: the model decides whether this turn needs notes at
+    // all and, if so, writes the search query itself (resolving references
+    // from the conversation, so "and the plants?" looks up plants and a bare
+    // "thanks" looks up nothing). A failed or unparseable routing call falls
+    // back to plain retrieval on a blend of recent user turns — a weak model
+    // can't make chat worse than ordinary RAG, only better.
+    let decision = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        state.llm.complete(&cfg, crate::assist::route_messages(&history, message)),
+    )
+    .await
     {
-        Ok(hits) => hits,
-        Err(e) => {
-            eprintln!("chat retrieval failed for {user_id}: {e:#}");
-            send_error(&mut sink, "search failed").await;
-            return;
-        }
-    };
+        Ok(Ok(reply)) => crate::assist::parse_route_reply(&reply),
+        _ => None,
+    }
+    .unwrap_or_else(|| {
+        crate::assist::RouteDecision::Search(crate::assist::retrieval_query(&history, message))
+    });
+
+    // Phase 2 — retrieve when routed to: over-fetch because trashed notes
+    // linger in the vector index, keep the best non-trashed hits.
     let mut notes: Vec<(String, String, String)> = Vec::new(); // (id, title, text)
-    for (note_id, _score) in hits {
-        if notes.len() >= crate::assist::CHAT_CONTEXT_NOTES {
-            break;
+    if let crate::assist::RouteDecision::Search(query) = &decision {
+        let hits = match search
+            .search(&user_id, query, crate::assist::CHAT_CONTEXT_NOTES * 2)
+            .await
+        {
+            Ok(hits) => hits,
+            Err(e) => {
+                eprintln!("chat retrieval failed for {user_id}: {e:#}");
+                send_error(&mut sink, "search failed").await;
+                return;
+            }
+        };
+        for (note_id, _score) in hits {
+            if notes.len() >= crate::assist::CHAT_CONTEXT_NOTES {
+                break;
+            }
+            let Ok(Some(record)) = state.repo.note_record(&note_id).await else { continue };
+            if record.trashed {
+                continue;
+            }
+            // Prompt rendering, not the embedding text: checklists keep
+            // their per-item checked state here.
+            let text = crate::assist::note_prompt_text(&record);
+            notes.push((record.id, record.title, text));
         }
-        let Ok(Some(record)) = state.repo.note_record(&note_id).await else { continue };
-        if record.trashed {
-            continue;
-        }
-        let text = crate::search::SearchService::note_text(&record);
-        notes.push((record.id, record.title, text));
     }
 
     let source_list: Vec<serde_json::Value> = notes
@@ -1165,7 +1226,14 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
 
     let prompt_notes: Vec<(String, String)> =
         notes.iter().map(|(_, title, text)| (title.clone(), text.clone())).collect();
-    let messages = crate::assist::chat_messages(&prompt_notes, &history, message);
+    let messages = match &decision {
+        crate::assist::RouteDecision::Search(_) => {
+            crate::assist::chat_messages(&prompt_notes, &history, message)
+        }
+        crate::assist::RouteDecision::Direct => {
+            crate::assist::chat_messages_direct(&history, message)
+        }
+    };
 
     let mut tokens = match state.llm.stream(&cfg, messages).await {
         Ok(tokens) => tokens,

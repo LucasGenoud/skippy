@@ -5,6 +5,7 @@ pub mod files;
 pub mod handlers;
 pub mod llm;
 pub mod models;
+pub mod notify;
 pub mod search;
 pub mod store;
 pub mod transcribe;
@@ -35,6 +36,11 @@ pub struct AppState {
     /// Always present — LLM availability is per-user configuration (endpoint,
     /// key, model in the user's settings document), not server wiring.
     pub llm: Arc<dyn llm::Llm>,
+    /// Notification connectors (ntfy, Telegram, …). Always present, like
+    /// `llm`: reminder channels are per-user configuration in the settings
+    /// document, and each connector reads its own keys there. Tests swap in
+    /// recording fakes via [`AppState::with_notifiers`].
+    pub notifiers: Arc<Vec<Arc<dyn notify::Connector>>>,
     /// note_id -> generation counter, coalescing auto-labeling triggers so a
     /// burst of debounced autosaves costs one LLM call.
     pub label_generations: Arc<Mutex<HashMap<String, u64>>>,
@@ -60,6 +66,7 @@ impl AppState {
             search: None,
             transcribe: None,
             llm: Arc::new(llm::OpenAiCompatLlm::default()),
+            notifiers: Arc::new(notify::default_connectors()),
             label_generations: Arc::default(),
             label_delay: Duration::from_secs(20),
             file_secret: Arc::new(secret),
@@ -84,6 +91,11 @@ impl AppState {
 
     pub fn with_llm(mut self, service: Arc<dyn llm::Llm>) -> Self {
         self.llm = service;
+        self
+    }
+
+    pub fn with_notifiers(mut self, connectors: Vec<Arc<dyn notify::Connector>>) -> Self {
+        self.notifiers = Arc::new(connectors);
         self
     }
 
@@ -133,6 +145,7 @@ pub fn build_app(state: AppState) -> Router {
             axum::routing::patch(handlers::update_label).delete(handlers::delete_label),
         )
         .route("/llm/test", post(handlers::llm_test))
+        .route("/notify/test", post(handlers::notify_test))
         .route("/chat", get(handlers::chat_ws))
         .route("/ws", get(handlers::ws_handler))
         .with_state(state);

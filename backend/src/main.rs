@@ -2,9 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use sticky_notes_server::files::FileStore;
-use sticky_notes_server::search::{
-    FastEmbedder, QdrantIndex, SearchService, SqliteVectorIndex, VectorIndex,
-};
+use sticky_notes_server::search::{EMBEDDING_DIM, FastEmbedder, SearchService, SqliteVectorIndex};
 use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
@@ -31,9 +29,9 @@ async fn load_file_secret(repo: &dyn Repository) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Semantic search wiring: local ONNX embeddings + either Qdrant (when
-/// STICKY_NOTES_QDRANT_URL is set) or the built-in SQLite vector index.
-/// Failures disable search gracefully — the rest of the app is unaffected.
+/// Semantic search wiring: local ONNX embeddings + the built-in sqlite-vec
+/// index. Failures disable search gracefully — the rest of the app is
+/// unaffected.
 async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
     if std::env::var("STICKY_NOTES_SEMANTIC").is_ok_and(|v| v == "off") {
         return None;
@@ -49,23 +47,17 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
             return None;
         }
     };
-    let index: Arc<dyn VectorIndex> = match std::env::var("STICKY_NOTES_QDRANT_URL") {
-        Ok(url) => match QdrantIndex::connect(&url).await {
-            Ok(qdrant) => {
-                println!("semantic search: qdrant at {url}");
-                Arc::new(qdrant)
-            }
-            Err(e) => {
-                eprintln!("qdrant unreachable ({e:#}); falling back to built-in index");
-                Arc::new(SqliteVectorIndex::connect(db_path).await.ok()?)
-            }
-        },
-        Err(_) => {
-            println!("semantic search: built-in index (set STICKY_NOTES_QDRANT_URL for qdrant)");
-            Arc::new(SqliteVectorIndex::connect(db_path).await.ok()?)
+    let index = match SqliteVectorIndex::connect(db_path, EMBEDDING_DIM).await {
+        Ok(index) => {
+            println!("semantic search: sqlite-vec index in {db_path}");
+            index
+        }
+        Err(e) => {
+            eprintln!("semantic search disabled (vector index unavailable): {e:#}");
+            return None;
         }
     };
-    Some(Arc::new(SearchService::new(embedder, index)))
+    Some(Arc::new(SearchService::new(embedder, Arc::new(index))))
 }
 
 /// Audio transcription wiring: a self-hosted Whisper service, enabled by
@@ -110,6 +102,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
     handlers::purge_old_trash(&state).await.ok();
+    // Due reminders push to each user's configured channels (ntfy, Telegram).
+    sticky_notes_server::notify::spawn_reminder_scheduler(state.clone());
 
     let mut app = build_app(state);
 

@@ -22,7 +22,7 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - Grid / single-column list toggle; responsive 1–5 columns from phone to desktop
 - **Sort by** custom order / recently edited / recently added / oldest
 - Library-wide instant search + **find-in-note** with match highlighting
-- **Semantic search** (✨ toggle in the search bar): notes are embedded locally with an ONNX model (all-MiniLM-L6-v2, no external AI services) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vector storage is swappable: built-in SQLite brute-force by default, **Qdrant** when `STICKY_NOTES_QDRANT_URL` is set.
+- **Semantic search** (✨ toggle in the search bar): notes are embedded locally with an ONNX model (all-MiniLM-L6-v2, no external AI services) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension — no separate vector database to run.
 - **Audio notes** (mic button, when transcription is enabled): record a voice clip in a focused overlay with a live level meter, then it's transcribed locally by a self-hosted **Whisper** service — no external AI. The clip stays playable in the note and the transcript is editable, searchable, and exportable text.
 - **Feature detection**: semantic search and audio notes each have a Settings toggle, and disappear entirely when their backing service isn't running (`GET /api/capabilities`).
 
@@ -32,7 +32,8 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
 
 **Reminders**
-- Time-based reminders per note, shown as chips (overdue = struck through) and collected in a drawer "Reminders" view. Local to the app — no calendar integration.
+- Time-based reminders per note, shown as chips (overdue = struck through) and collected in a drawer "Reminders" view. No calendar integration.
+- **Push notifications via [ntfy](https://ntfy.sh) and/or Telegram** (Settings → Notifications): each user brings their own ntfy topic URL and/or Telegram bot token + chat id — no server-side setup. A background sweep (every 30 s) delivers due reminders to every participant of the note with a configured channel, exactly once per scheduled time (rescheduling re-arms it); checklist reminders list only the still-pending items. A "Send test" button delivers a real probe notification before you save. Channels are pluggable — a new one is a single `Connector` impl on the backend plus a spec entry in the app.
 
 **Collaboration**
 - User accounts (username + password, argon2-hashed, token sessions)
@@ -96,10 +97,10 @@ sticky_notes/
 ### Docker (everything in one command)
 
 ```sh
-docker compose up -d        # builds web + server, starts Qdrant + Whisper → http://localhost:8787
+docker compose up -d        # builds web + server, starts Whisper → http://localhost:8787
 ```
 
-The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Qdrant backs semantic search and a self-hosted Whisper service backs audio-note transcription inside the stack.
+The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Semantic search is built into the server (sqlite-vec) and a self-hosted Whisper service backs audio-note transcription inside the stack.
 
 ### Local development
 
@@ -109,14 +110,13 @@ Prereqs: Rust (1.85+), Flutter (3.22+).
 
 ```sh
 cd backend
-cargo run                                              # built-in vector index
-# or with Qdrant + Whisper:
-docker compose up -d qdrant whisper
-STICKY_NOTES_QDRANT_URL=http://localhost:6334 \
+cargo run
+# or with Whisper for audio-note transcription:
+docker compose up -d whisper
 STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
-Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_QDRANT_URL` (optional vector DB), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service — enables audio-note transcription; feature is hidden when unset/unreachable). The embedding model (~80 MB) downloads to a local cache on first start.
+Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service — enables audio-note transcription; feature is hidden when unset/unreachable), `STICKY_NOTES_TELEGRAM_API` (Telegram Bot API base, default `https://api.telegram.org` — for self-hosted bot-api servers or proxies). The embedding model (~80 MB) downloads to a local cache on first start.
 
 **Flutter app** — pick a device:
 
@@ -204,6 +204,7 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `POST /notes/{id}/transcribe` | Re-run Whisper on an audio note's clip (retry; 503 when disabled) |
 | `GET /capabilities` | Which optional services are on: `{semantic_search, audio_transcription}` (unauthenticated) |
 | `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
+| `POST /notify/test` | Send a test notification through the channels in the body (`ntfy_url`, `telegram_bot_token`, …) — `{ok, error?}` |
 | `GET /ws?token=…` | WebSocket: `{"type":"notes_changed"}` pushes (notes *and* settings) |
 
 ## Design notes & trade-offs

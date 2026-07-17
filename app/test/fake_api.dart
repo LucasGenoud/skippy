@@ -332,6 +332,19 @@ class FakeApi implements Api {
     () => (ok: llmTestOk, error: llmTestOk ? null : 'connection refused'),
   );
 
+  /// Result of [testNotify]; tests flip this to exercise the failure path.
+  bool notifyTestOk = true;
+
+  /// Config sent with the most recent [testNotify] call.
+  Map<String, String>? lastNotifyTestConfig;
+
+  @override
+  Future<({bool ok, String? error})> testNotify(Map<String, String> config) =>
+      _run('testNotify', () {
+        lastNotifyTestConfig = Map<String, String>.from(config);
+        return (ok: notifyTestOk, error: notifyTestOk ? null : 'ntfy: boom');
+      });
+
   /// Frames [chat] replays for a turn; tests override to script a chat.
   List<ChatEvent> chatScript = const [
     ChatSourcesEvent([]),
