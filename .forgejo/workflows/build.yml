@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: homeserver-runner # 
+    runs-on:  dcbad98f-8e06-4d8a-bcbf-11f10eb7bb73
     steps:
       - uses: actions/checkout@v4
 
