@@ -164,6 +164,15 @@ class SettingsStore extends ChangeNotifier {
   bool llmLabelingEnabled = true;
   bool llmChatEnabled = true;
 
+  // Settings keys the self-hoster pinned via server env vars (backend
+  // `config.rs`). A present key is locked in the UI and its value is
+  // authoritative; secret keys carry no value. Fetched from
+  // /api/managed-settings, not persisted. See [_applyManaged].
+  Map<String, ManagedSetting> managed = {};
+
+  /// Is this settings-document key server-managed (and thus locked)?
+  bool isManaged(String key) => managed.containsKey(key);
+
   bool get llmConfigured => llmBaseUrl.isNotEmpty && llmModel.isNotEmpty;
   bool get autoLabelingAvailable => llmConfigured && llmLabelingEnabled;
   // Chat retrieval runs on the server's embedder, so it additionally needs
@@ -203,6 +212,12 @@ class SettingsStore extends ChangeNotifier {
     } catch (_) {
       // Unreachable: leave capabilities as they were (default off).
     }
+    // Server-managed overrides are independent of the pending local save too.
+    try {
+      managed = await api.fetchManagedSettings();
+    } catch (_) {
+      // Unreachable: leave as-is (default: nothing managed).
+    }
     // Never clobber local edits that haven't reached the server yet.
     if (!_savePending) {
       try {
@@ -211,8 +226,34 @@ class SettingsStore extends ChangeNotifier {
         // Offline: defaults (or last applied values) stay in effect.
       }
     }
+    // Managed values win over whatever the user's document carried.
+    _applyManaged();
     loaded = true;
     notifyListeners();
+  }
+
+  /// Overlay the server-managed values onto the local fields, so the UI shows
+  /// (and the store reports as "configured") what the server will actually use.
+  /// Secret keys are blanked — the server never sends their value, and the
+  /// client must never hold it.
+  void _applyManaged() {
+    String? text(String key) {
+      final m = managed[key];
+      if (m == null) return null;
+      return m.secret ? '' : (m.value as String? ?? '');
+    }
+
+    bool? flag(String key) {
+      final m = managed[key];
+      if (m == null || m.value is! bool) return null;
+      return m.value as bool;
+    }
+
+    llmBaseUrl = text('llm_base_url') ?? llmBaseUrl;
+    llmApiKey = text('llm_api_key') ?? llmApiKey;
+    llmModel = text('llm_model') ?? llmModel;
+    llmLabelingEnabled = flag('llm_labeling') ?? llmLabelingEnabled;
+    llmChatEnabled = flag('llm_chat') ?? llmChatEnabled;
   }
 
   void _applyJson(Map<String, dynamic> json) {

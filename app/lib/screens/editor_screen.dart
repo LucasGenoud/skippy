@@ -1,5 +1,4 @@
 import 'package:animations/animations.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -10,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../state/editor_history.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
@@ -18,6 +18,9 @@ import 'history_screen.dart';
 import '../widgets/animated_checklist.dart';
 import '../widgets/audio_player.dart';
 import '../widgets/color_picker.dart';
+import '../widgets/editor/attachment_tiles.dart';
+import '../widgets/editor/editor_bottom_bar.dart';
+import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/markdown_toolbar.dart';
@@ -100,30 +103,8 @@ Future<void> openNoteEditor(
   );
 }
 
-/// One undo/redo step: the note's editable content at a point in time.
-class _Snapshot {
-  final NoteKind kind;
-  final String title;
-  final String content;
-  final List<ChecklistItem> items;
-
-  const _Snapshot({
-    required this.kind,
-    required this.title,
-    required this.content,
-    required this.items,
-  });
-
-  bool sameAs(_Snapshot other) =>
-      kind == other.kind &&
-      title == other.title &&
-      content == other.content &&
-      listEquals(items, other.items);
-}
-
 class _EditorScreenState extends State<EditorScreen> {
   static const _uuid = Uuid();
-  static const _burstGap = Duration(milliseconds: 800);
 
   late final NotesStore _store;
   late final TextEditingController _titleController;
@@ -138,11 +119,8 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _uploading = false;
   bool _previewMarkdown = false;
 
-  // Undo/redo session history.
-  final List<_Snapshot> _undoStack = [];
-  final List<_Snapshot> _redoStack = [];
-  late _Snapshot _mirror;
-  DateTime _lastEdit = DateTime.fromMillisecondsSinceEpoch(0);
+  // Undo/redo session history (see EditorHistory for the grouping rules).
+  late final EditorHistory _history;
   bool _restoring = false;
 
   Note? get _note => _noteId == null ? null : _store.noteById(_noteId!);
@@ -158,7 +136,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
     _findController.addListener(() => setState(() {}));
-    _mirror = _currentSnapshot();
+    _history = EditorHistory(_currentSnapshot());
     // A brand-new text/markdown note wants the body focused for immediate
     // typing. But focusing on mount makes iOS raise the keyboard while the open
     // transition (container morph / fade-scale modal) is still animating —
@@ -255,17 +233,17 @@ class _EditorScreenState extends State<EditorScreen> {
   // -------------------------------------------------------------------
   // Undo / redo
 
-  _Snapshot _currentSnapshot() {
+  EditorSnapshot _currentSnapshot() {
     final note = _note;
     if (note != null) {
-      return _Snapshot(
+      return EditorSnapshot(
         kind: note.kind,
         title: note.title,
         content: note.content,
         items: List<ChecklistItem>.from(note.items),
       );
     }
-    return _Snapshot(
+    return EditorSnapshot(
       kind: widget.kind,
       title: _titleController.text,
       content: _contentController.text,
@@ -277,31 +255,20 @@ class _EditorScreenState extends State<EditorScreen> {
   /// ops (check, add, remove, reorder, convert) always start a new step.
   void _afterChange({bool discrete = false}) {
     if (_restoring) return;
-    final current = _currentSnapshot();
-    if (current.sameAs(_mirror)) return;
-    final now = DateTime.now();
-    if (discrete || now.difference(_lastEdit) > _burstGap) {
-      _undoStack.add(_mirror);
-      if (_undoStack.length > 100) _undoStack.removeAt(0);
-      _redoStack.clear();
-    }
-    _lastEdit = now;
-    _mirror = current;
+    _history.record(_currentSnapshot(), discrete: discrete);
   }
 
   void _undo() {
-    if (_undoStack.isEmpty) return;
-    _redoStack.add(_currentSnapshot());
-    _applySnapshot(_undoStack.removeLast());
+    final snapshot = _history.undo(_currentSnapshot());
+    if (snapshot != null) _applySnapshot(snapshot);
   }
 
   void _redo() {
-    if (_redoStack.isEmpty) return;
-    _undoStack.add(_currentSnapshot());
-    _applySnapshot(_redoStack.removeLast());
+    final snapshot = _history.redo(_currentSnapshot());
+    if (snapshot != null) _applySnapshot(snapshot);
   }
 
-  void _applySnapshot(_Snapshot snapshot) {
+  void _applySnapshot(EditorSnapshot snapshot) {
     _restoring = true;
     FocusManager.instance.primaryFocus?.unfocus();
     _titleController.text = snapshot.title;
@@ -320,8 +287,7 @@ class _EditorScreenState extends State<EditorScreen> {
         items: snapshot.items,
       );
     }
-    _mirror = snapshot;
-    _lastEdit = DateTime.fromMillisecondsSinceEpoch(0);
+    _history.resetTo(snapshot);
     _restoring = false;
     setState(() {});
   }
@@ -834,7 +800,7 @@ class _EditorScreenState extends State<EditorScreen> {
                         ),
                       if (_uploading)
                         const LinearProgressIndicator(minHeight: 2),
-                      _BottomBar(
+                      EditorBottomBar(
                         trashed: trashed,
                         isOwner: isOwner,
                         kind: _kind,
@@ -855,8 +821,8 @@ class _EditorScreenState extends State<EditorScreen> {
                         onImage: trashed || _uploading ? null : _pickImage,
                         onAttach: trashed || _uploading ? null : _pickFile,
                         onShare: trashed ? null : _openShare,
-                        onUndo: trashed || _undoStack.isEmpty ? null : _undo,
-                        onRedo: trashed || _redoStack.isEmpty ? null : _redo,
+                        onUndo: trashed || !_history.canUndo ? null : _undo,
+                        onRedo: trashed || !_history.canRedo ? null : _redo,
                         onDelete:
                             trashed || note == null || note.isEmpty || !isOwner
                             ? null
@@ -943,7 +909,7 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       );
     }
-    return _HighlightedTextField(
+    return HighlightedTextField(
       controller: _contentController,
       focusNode: _contentFocus,
       readOnly: trashed,
@@ -984,7 +950,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     : () => _store.retranscribe(_noteId!),
               ),
             ),
-          _HighlightedTextField(
+          HighlightedTextField(
             controller: _contentController,
             focusNode: _contentFocus,
             readOnly: trashed,
@@ -1038,412 +1004,28 @@ class _EditorScreenState extends State<EditorScreen> {
   /// download tile below them.
   List<Widget> _buildAttachments(Note? note) {
     if (note == null || note.attachments.isEmpty) return const [];
+    VoidCallback? remove(Attachment attachment) => note.trashed
+        ? null
+        : () {
+            _store.removeAttachment(note.id, attachment.id);
+            setState(() {});
+          };
     return [
       for (final attachment in note.attachments.where((a) => a.isImage))
-        _imageAttachment(note, attachment),
+        ImageAttachmentTile(
+          url: _store.fileUrl(attachment),
+          onRemove: remove(attachment),
+        ),
       // Audio clips are played by the audio-note body, not listed as files.
       for (final attachment in note.attachments.where(
         (a) => !a.isImage && !a.isAudio,
       ))
-        _fileAttachment(note, attachment),
+        FileAttachmentTile(
+          attachment: attachment,
+          url: _store.fileUrl(attachment),
+          onRemove: remove(attachment),
+        ),
     ];
   }
-
-  Widget _imageAttachment(Note note, Attachment attachment) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 320),
-              child: SizedBox(
-                width: double.infinity,
-                child: Image.network(
-                  _store.fileUrl(attachment),
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stack) => Container(
-                    height: 80,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    child: const Icon(Icons.broken_image_outlined),
-                  ),
-                ),
-              ),
-            ),
-            if (!note.trashed)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    color: Colors.white,
-                    tooltip: 'Remove image',
-                    onPressed: () {
-                      _store.removeAttachment(note.id, attachment.id);
-                      setState(() {});
-                    },
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _fileAttachment(Note note, Attachment attachment) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => launchUrl(
-            Uri.parse(_store.fileUrl(attachment)),
-            mode: LaunchMode.externalApplication,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.insert_drive_file_outlined,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        attachment.filename.isEmpty
-                            ? 'file'
-                            : attachment.filename,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      Text(
-                        formatBytes(attachment.size),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.download_outlined,
-                  size: 18,
-                  color: scheme.onSurfaceVariant,
-                ),
-                if (!note.trashed)
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    color: scheme.onSurfaceVariant,
-                    tooltip: 'Remove file',
-                    onPressed: () {
-                      _store.removeAttachment(note.id, attachment.id);
-                      setState(() {});
-                    },
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-/// Content field with find-in-note highlighting: matching substrings get a
-/// tinted background while the search bar is open.
-class _HighlightedTextField extends StatefulWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final bool readOnly;
-  final bool autofocus;
-  final bool monospace;
-  final String query;
-
-  const _HighlightedTextField({
-    required this.controller,
-    required this.focusNode,
-    required this.readOnly,
-    required this.query,
-    this.autofocus = false,
-    this.monospace = false,
-  });
-
-  @override
-  State<_HighlightedTextField> createState() => _HighlightedTextFieldState();
-}
-
-class _HighlightedTextFieldState extends State<_HighlightedTextField> {
-  _HighlightingController? _highlighting;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final style = theme.textTheme.bodyLarge?.copyWith(
-      height: 1.5,
-      fontFamily: widget.monospace ? 'monospace' : null,
-      fontSize: widget.monospace ? 14 : null,
-    );
-
-    if (widget.query.isEmpty) {
-      _highlighting = null;
-      return TextField(
-        controller: widget.controller,
-        focusNode: widget.focusNode,
-        readOnly: widget.readOnly,
-        enabled: !widget.readOnly,
-        maxLines: null,
-        minLines: 6,
-        autofocus: widget.autofocus,
-        style: style,
-        decoration: const InputDecoration(
-          hintText: 'Note',
-          border: InputBorder.none,
-        ),
-      );
-    }
-
-    // While searching, render through a proxy controller that shares the
-    // real controller's value but paints highlights.
-    _highlighting ??= _HighlightingController(widget.controller);
-    _highlighting!.query = widget.query;
-    return TextField(
-      controller: _highlighting,
-      readOnly: true, // editing pauses while the find bar is open
-      maxLines: null,
-      minLines: 6,
-      style: style,
-      decoration: const InputDecoration(
-        hintText: 'Note',
-        border: InputBorder.none,
-      ),
-    );
-  }
-}
-
-class _HighlightingController extends TextEditingController {
-  final TextEditingController source;
-  String _query = '';
-
-  _HighlightingController(this.source) : super(text: source.text) {
-    source.addListener(_sync);
-  }
-
-  void _sync() => value = source.value;
-
-  set query(String q) {
-    if (q == _query) return;
-    _query = q;
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    source.removeListener(_sync);
-    super.dispose();
-  }
-
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    final q = _query.toLowerCase();
-    if (q.isEmpty || text.isEmpty) {
-      return TextSpan(text: text, style: style);
-    }
-    final scheme = Theme.of(context).colorScheme;
-    final highlight =
-        style?.copyWith(
-          backgroundColor: scheme.tertiaryContainer,
-          color: scheme.onTertiaryContainer,
-        ) ??
-        TextStyle(backgroundColor: scheme.tertiaryContainer);
-    final spans = <TextSpan>[];
-    final lower = text.toLowerCase();
-    var start = 0;
-    while (true) {
-      final index = lower.indexOf(q, start);
-      if (index < 0) {
-        spans.add(TextSpan(text: text.substring(start)));
-        break;
-      }
-      if (index > start) {
-        spans.add(TextSpan(text: text.substring(start, index)));
-      }
-      spans.add(
-        TextSpan(
-          text: text.substring(index, index + q.length),
-          style: highlight,
-        ),
-      );
-      start = index + q.length;
-      if (start >= text.length) break;
-    }
-    return TextSpan(style: style, children: spans);
-  }
-}
-
-class _BottomBar extends StatelessWidget {
-  final bool trashed;
-  final bool isOwner;
-  final NoteKind kind;
-  final String editedStamp;
-  final VoidCallback? onPalette;
-  final VoidCallback? onLabels;
-  final VoidCallback? onReminder;
-  final VoidCallback? onImage;
-  final VoidCallback? onAttach;
-  final VoidCallback? onShare;
-  final VoidCallback? onUndo;
-  final VoidCallback? onRedo;
-  final VoidCallback? onDelete;
-  final VoidCallback? onCopy;
-  final VoidCallback? onHistory;
-  final void Function(NoteKind target)? onConvert;
-
-  const _BottomBar({
-    required this.trashed,
-    required this.isOwner,
-    required this.kind,
-    required this.editedStamp,
-    this.onPalette,
-    this.onLabels,
-    this.onReminder,
-    this.onImage,
-    this.onAttach,
-    this.onShare,
-    this.onUndo,
-    this.onRedo,
-    this.onDelete,
-    this.onCopy,
-    this.onHistory,
-    this.onConvert,
-  });
-
-  static const _kindLabels = {
-    NoteKind.text: 'Convert to text note',
-    NoteKind.checklist: 'Convert to checklist',
-    NoteKind.markdown: 'Convert to markdown note',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.palette_outlined),
-            tooltip: 'Note color',
-            onPressed: onPalette,
-          ),
-          IconButton(
-            icon: const Icon(Icons.label_outline),
-            tooltip: 'Labels',
-            onPressed: onLabels,
-          ),
-          IconButton(
-            icon: const Icon(Icons.notification_add_outlined),
-            tooltip: 'Remind me',
-            onPressed: onReminder,
-          ),
-          IconButton(
-            icon: const Icon(Icons.image_outlined),
-            tooltip: 'Add image',
-            onPressed: onImage,
-          ),
-          IconButton(
-            icon: const Icon(Icons.attach_file),
-            tooltip: 'Attach file',
-            onPressed: onAttach,
-          ),
-          IconButton(
-            icon: const Icon(Icons.person_add_alt_outlined),
-            tooltip: 'Collaborators',
-            onPressed: onShare,
-          ),
-          // Takes the whole middle band (not a third of it, the way two
-          // Spacers flanking a Flexible would) so the stamp isn't needlessly
-          // truncated to "Edit…".
-          Expanded(
-            child: Center(
-              child: Text(
-                editedStamp,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.undo),
-            tooltip: 'Undo',
-            onPressed: onUndo,
-          ),
-          IconButton(
-            icon: const Icon(Icons.redo),
-            tooltip: 'Redo',
-            onPressed: onRedo,
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'More',
-            onSelected: (value) {
-              if (value == 'delete') onDelete?.call();
-              if (value == 'copy') onCopy?.call();
-              if (value == 'history') onHistory?.call();
-              for (final target in NoteKind.values) {
-                if (value == 'convert:${target.name}') onConvert?.call(target);
-              }
-            },
-            itemBuilder: (context) => [
-              // Audio notes come from a recording, never a conversion target.
-              for (final target in NoteKind.values)
-                if (target != kind && target != NoteKind.audio)
-                  PopupMenuItem(
-                    value: 'convert:${target.name}',
-                    enabled: onConvert != null,
-                    child: Text(_kindLabels[target]!),
-                  ),
-              PopupMenuItem(
-                value: 'history',
-                enabled: onHistory != null,
-                child: const Text('Version history'),
-              ),
-              PopupMenuItem(
-                value: 'copy',
-                enabled: onCopy != null,
-                child: const Text('Make a copy'),
-              ),
-              if (isOwner)
-                PopupMenuItem(
-                  value: 'delete',
-                  enabled: onDelete != null,
-                  child: const Text('Delete'),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}

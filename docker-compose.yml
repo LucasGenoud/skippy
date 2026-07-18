@@ -17,8 +17,14 @@
 services:
   server:
     build: .
+    # On the homeserver, `docker compose pull server` fetches this instead of
+    # building locally, and Watchtower watches this tag for new pushes.
+    image: forgejo.genoud.dev/lucasgenoud/skippy:latest
     ports:
       - "8787:8787"
+    labels:
+      # Only containers with this label are auto-updated by Watchtower.
+      com.centurylinklabs.watchtower.enable: "true"
     environment:
       STICKY_NOTES_WHISPER_URL: http://whisper:9000
       # File storage backend: "disk" (default) keeps blobs in app_data;
@@ -97,6 +103,20 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+    restart: unless-stopped
+
+  # Pulls new images from the Forgejo registry and restarts the labelled
+  # containers (just `server`). Polls every 5 min; --label-enable means it only
+  # touches containers opted in via the watchtower.enable label above, so it
+  # never tries to "update" whisper/garage. Registry auth comes from
+  # ~/.docker/config.json (run `docker login forgejo.genoud.dev` once on the
+  # host). Remove this service if you'd rather deploy by hand.
+  watchtower:
+    image: containrrr/watchtower:latest
+    command: --label-enable --cleanup --interval 300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.docker/config.json:/config.json:ro
     restart: unless-stopped
 
 volumes:

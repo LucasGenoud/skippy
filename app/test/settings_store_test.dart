@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sticky_notes/api/api_client.dart';
 import 'package:sticky_notes/state/settings_store.dart';
 import 'package:sticky_notes/theme.dart';
 
@@ -203,6 +204,49 @@ void main() {
     expect(third.notesChatAvailable, isFalse);
     expect(third.autoLabelingAvailable, isFalse); // labeling was toggled off
     third.dispose();
+  });
+
+  test('server-managed keys override, lock, and hide secrets', () async {
+    // The user's own doc carries a stale endpoint + key; the server pins its
+    // own base URL + model + a secret key, and forces chat off.
+    api.settings = {
+      'llm_base_url': 'http://user/v1',
+      'llm_api_key': 'sk-user',
+      'llm_model': 'user-model',
+    };
+    api.managedSettings = {
+      'llm_base_url': const ManagedSetting(secret: false, value: 'http://managed/v1'),
+      'llm_api_key': const ManagedSetting(secret: true),
+      'llm_model': const ManagedSetting(secret: false, value: 'managed-model'),
+      'llm_chat': const ManagedSetting(secret: false, value: false),
+    };
+    await settings.load();
+
+    // Managed values win over the user's document.
+    expect(settings.llmBaseUrl, 'http://managed/v1');
+    expect(settings.llmModel, 'managed-model');
+    // Secret is never held client-side, even though the user doc had one.
+    expect(settings.llmApiKey, '');
+    // Managed toggle reflected; the unmanaged one keeps its default.
+    expect(settings.llmChatEnabled, isFalse);
+    expect(settings.llmLabelingEnabled, isTrue);
+
+    // Locked keys report as managed; untouched ones don't.
+    expect(settings.isManaged('llm_base_url'), isTrue);
+    expect(settings.isManaged('llm_api_key'), isTrue);
+    expect(settings.isManaged('llm_chat'), isTrue);
+    expect(settings.isManaged('llm_labeling'), isFalse);
+
+    // Still counts as configured (managed base+model populate the fields).
+    expect(settings.llmConfigured, isTrue);
+  });
+
+  test('no managed settings leaves everything user-editable', () async {
+    api.settings = {'llm_base_url': 'http://user/v1', 'llm_model': 'm'};
+    await settings.load();
+    expect(settings.managed, isEmpty);
+    expect(settings.isManaged('llm_base_url'), isFalse);
+    expect(settings.llmBaseUrl, 'http://user/v1');
   });
 
   test('date and time formats follow preferences', () {

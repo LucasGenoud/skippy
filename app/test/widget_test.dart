@@ -17,6 +17,7 @@ import 'package:sticky_notes/widgets/markdown_toolbar.dart';
 import 'package:sticky_notes/widgets/masonry.dart';
 import 'package:sticky_notes/widgets/note_card.dart';
 import 'package:sticky_notes/widgets/quick_add_bar.dart';
+import 'package:sticky_notes/widgets/skeleton.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
@@ -843,6 +844,63 @@ void main() {
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
       expect(find.byType(NavigationDrawer), findsOneWidget);
+    });
+  });
+
+  group('semantic search', () {
+    // A home harness whose SettingsStore reports semantic search as available,
+    // so the ✨ toggle appears and the meaning-ranked path is reachable.
+    Widget semanticHome(NotesStore store) {
+      final settings = SettingsStore(api: store.api)
+        ..semanticSearchCapable = true;
+      addTearDown(settings.dispose);
+      return MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider.value(value: settings),
+          ChangeNotifierProvider(
+            create: (_) => AuthStore(api: ApiClient(baseUrl: 'http://unused')),
+          ),
+        ],
+        child: MaterialApp(
+          theme: buildTheme(Brightness.light),
+          scaffoldMessengerKey: scaffoldMessengerKey,
+          home: const HomeScreen(),
+        ),
+      );
+    }
+
+    testWidgets('shows a loading skeleton until ranked results arrive', (
+      tester,
+    ) async {
+      // Wide surface: clear of the known _TopBar overflow at 800px.
+      tester.view.physicalSize = const Size(2400, 1800);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+
+      api.notes['a'] = serverNote('a', title: 'milk and bread');
+      await store.load();
+      await tester.pumpWidget(semanticHome(store));
+      await tester.pump();
+      expect(find.byType(NotesSkeleton), findsNothing); // idle: real notes
+
+      // Turn semantic search on with a query in the box.
+      await tester.enterText(find.byType(TextField).first, 'milk');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.auto_awesome));
+      await tester.pump(); // busy is set synchronously on schedule
+
+      // Loading is visible immediately: skeleton in the body, spinner in the
+      // bar — before the debounce/fetch even runs.
+      expect(find.byType(NotesSkeleton), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsWidgets);
+
+      // Debounce (350ms) + fetch resolve: results replace the skeleton.
+      await tester.pumpAndSettle();
+      expect(find.byType(NotesSkeleton), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('milk and bread'), findsOneWidget);
+      expect(api.log, contains('semanticSearch:milk'));
     });
   });
 

@@ -128,6 +128,8 @@ Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NO
 
 Attachment storage: `STICKY_NOTES_STORAGE` (`disk` default, or `s3`). With `s3`, set `STICKY_NOTES_S3_URL` (endpoint, e.g. `http://localhost:3900`), `STICKY_NOTES_S3_ACCESS_KEY`, `STICKY_NOTES_S3_SECRET_KEY`, and optionally `STICKY_NOTES_S3_REGION` (default `garage`) and `STICKY_NOTES_S3_BUCKET_PREFIX` (default `sticky-notes-`, bucket names are `{prefix}{user-id}`). The access key needs permission to create buckets (Garage's auto-provisioned default key has it). Works against any S3-compatible store; for dev: `docker compose up -d garage`, then run with the compose file's key pair.
 
+Server-managed LLM config (optional): the LLM integration is normally per-user (each account sets its own endpoint/key/model in Settings). A self-hoster can instead **pin** any of these from the environment — `STICKY_NOTES_LLM_BASE_URL`, `STICKY_NOTES_LLM_API_KEY`, `STICKY_NOTES_LLM_MODEL`, `STICKY_NOTES_LLM_LABELING` (`true`/`false`), `STICKY_NOTES_LLM_CHAT` (`true`/`false`). A set value overrides the user's copy and **locks** that field in Settings (shown as "Managed by the server"), so you can point everyone at one provider without exposing the key. Overrides are per-field — pin the endpoint + model and still let users bring their own key, or the reverse. The API key is a **secret**: it drives the server but its value is never sent to the app.
+
 **Flutter app** — pick a device:
 
 ```sh

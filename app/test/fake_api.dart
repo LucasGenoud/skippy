@@ -26,6 +26,10 @@ class FakeApi implements Api {
     audioTranscription: false,
   );
 
+  /// Server-managed settings returned by [fetchManagedSettings]; empty means
+  /// nothing is env-pinned. Tests populate it to exercise field locking.
+  Map<String, ManagedSetting> managedSettings = {};
+
   /// When set, every call throws it (network-down simulation).
   Exception? failWith;
 
@@ -300,6 +304,10 @@ class FakeApi implements Api {
   @override
   Future<({bool semanticSearch, bool audioTranscription})>
   fetchCapabilities() => _run('fetchCapabilities', () => capabilities);
+
+  @override
+  Future<Map<String, ManagedSetting>> fetchManagedSettings() =>
+      _run('fetchManagedSettings', () => managedSettings);
 
   @override
   Future<void> transcribeNote(String noteId) => _run('transcribe:$noteId', () {

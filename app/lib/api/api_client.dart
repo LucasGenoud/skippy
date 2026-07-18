@@ -29,6 +29,20 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
+/// A settings key the server pinned via an env var (see backend `config.rs`).
+/// The field is locked in the UI; [value] carries the effective value for
+/// non-secret keys and is `null` for secrets (the server never sends those).
+class ManagedSetting {
+  final bool secret;
+  final Object? value;
+  const ManagedSetting({required this.secret, this.value});
+
+  factory ManagedSetting.fromJson(Map<String, dynamic> json) => ManagedSetting(
+    secret: json['secret'] == true,
+    value: json['value'],
+  );
+}
+
 /// Everything the stores need from the backend. Tests swap in a fake.
 abstract class Api {
   // auth
@@ -98,6 +112,11 @@ abstract class Api {
   /// Which optional, service-backed features this server has enabled. Drives
   /// whether the audio recorder and semantic-search toggle appear at all.
   Future<({bool semanticSearch, bool audioTranscription})> fetchCapabilities();
+
+  /// Which settings keys the self-hoster pinned via env vars. Keyed by the
+  /// settings-document key (e.g. `llm_base_url`); a present key locks that
+  /// field in the UI. Secret keys carry no value.
+  Future<Map<String, ManagedSetting>> fetchManagedSettings();
 
   /// Ask the server to (re)transcribe an audio note's clip. Used to retry a
   /// failed transcription.
@@ -474,6 +493,18 @@ class ApiClient implements Api {
       semanticSearch: map['semantic_search'] == true,
       audioTranscription: map['audio_transcription'] == true,
     );
+  }
+
+  @override
+  Future<Map<String, ManagedSetting>> fetchManagedSettings() async {
+    final data = _decode(await _client.get(_uri('/managed-settings'), headers: _headers()));
+    final map = (data as Map?) ?? const {};
+    return {
+      for (final entry in map.entries)
+        if (entry.value is Map)
+          entry.key as String:
+              ManagedSetting.fromJson((entry.value as Map).cast<String, dynamic>()),
+    };
   }
 
   @override

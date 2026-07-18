@@ -1,0 +1,25 @@
+# Builds the full-stack image and pushes it to the Forgejo container registry.
+# The homeserver deploys itself: a Watchtower container there polls the registry
+# and restarts `server` whenever a new :latest appears. See docs/DEPLOY.md.
+name: build-image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # lets you trigger a rebuild by hand from the Forgejo UI
+
+jobs:
+  build:
+    runs-on: docker # must match a label your Forgejo runner registered with
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the Forgejo registry
+        run: docker login forgejo.genoud.dev -u "${{ secrets.REGISTRY_USER }}" -p "${{ secrets.REGISTRY_TOKEN }}"
+
+      - name: Build and push
+        run: |
+          IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
+          docker build -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" .
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"

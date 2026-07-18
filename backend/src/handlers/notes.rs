@@ -1,0 +1,266 @@
+//! Note CRUD, reordering, and trash purging. The create/update pipelines are
+//! exposed as plain-argument helpers ([`create_note_for_user`],
+//! [`apply_note_update`]) so the chat write path runs the exact same
+//! indexing + labeling + history + notify flow as the HTTP handlers.
+
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::Json;
+use chrono::Utc;
+
+use crate::AppState;
+use crate::auth::AuthUser;
+use crate::error::{ApiError, ApiResult};
+use crate::models::*;
+
+use super::versions::{seconds_since, version_of, VERSION_SESSION_GAP_SECS};
+use super::{new_id, now, require_participant, CHANGED_MSG};
+
+const TRASH_RETENTION_DAYS: i64 = 7;
+
+pub(super) fn validate_kind(kind: &str) -> ApiResult<()> {
+    if kind == KIND_TEXT || kind == KIND_CHECKLIST || kind == KIND_MARKDOWN || kind == KIND_AUDIO {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(format!("unknown note kind '{kind}'")))
+    }
+}
+
+fn validate_reminder(value: &Option<String>) -> ApiResult<()> {
+    if let Some(v) = value {
+        chrono::DateTime::parse_from_rfc3339(v)
+            .map_err(|_| ApiError::BadRequest("reminder_at must be RFC3339".to_string()))?;
+    }
+    Ok(())
+}
+
+pub async fn list_notes(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+) -> ApiResult<Json<Vec<NoteView>>> {
+    purge_old_trash(&state).await?;
+    let mut views = state.repo.notes_for_user(&user_id).await?;
+    state.sign_views(&mut views);
+    Ok(Json(views))
+}
+
+pub async fn purge_old_trash(state: &AppState) -> ApiResult<()> {
+    let cutoff = (Utc::now() - chrono::Duration::days(TRASH_RETENTION_DAYS)).to_rfc3339();
+    purge_trash(state, &cutoff).await
+}
+
+/// Hard-delete trashed notes older than `cutoff`, cleaning up the state that
+/// lives outside their rows: attachment blobs and search-index entries.
+/// Public with an explicit cutoff so tests can purge without waiting out the
+/// retention window.
+pub async fn purge_trash(state: &AppState, cutoff: &str) -> ApiResult<()> {
+    for note in state.repo.purge_trash_before(cutoff).await? {
+        for attachment_id in &note.attachment_ids {
+            state.files.delete(&note.owner_id, attachment_id).await;
+        }
+        state.unindex_note_later(&note.note_id);
+    }
+    Ok(())
+}
+
+pub async fn create_note(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Json(body): Json<CreateNote>,
+) -> ApiResult<(StatusCode, Json<NoteView>)> {
+    let view = create_note_for_user(&state, &user_id, body).await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// Create a note for `user_id` and return its signed view. Shared by the HTTP
+/// handler and the chat write path so both run the same insert + indexing +
+/// auto-labeling + notify pipeline.
+pub async fn create_note_for_user(
+    state: &AppState,
+    user_id: &str,
+    body: CreateNote,
+) -> ApiResult<NoteView> {
+    let kind = body.kind.unwrap_or_else(|| KIND_TEXT.to_string());
+    validate_kind(&kind)?;
+    validate_reminder(&body.reminder_at)?;
+    let id = match body.id {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => new_id(),
+    };
+    let position = match body.position {
+        Some(p) => p,
+        // New notes go to the front of the grid.
+        None => state.repo.min_position_for_user(user_id).await? - 1024.0,
+    };
+    let ts = now();
+    let record = NoteRecord {
+        id: id.clone(),
+        owner_id: user_id.to_string(),
+        kind,
+        title: body.title,
+        content: body.content,
+        items: body.items.unwrap_or_default(),
+        color: body.color.unwrap_or_else(|| "default".to_string()),
+        pinned: body.pinned.unwrap_or(false),
+        archived: false,
+        trashed: false,
+        position,
+        reminder_at: body.reminder_at,
+        reminder_fired_at: None,
+        transcript_status: TRANSCRIPT_NONE.to_string(),
+        created_at: ts.clone(),
+        updated_at: ts,
+        // Set on the first edit; until then there's nothing to attribute.
+        last_editor_id: None,
+    };
+    state.repo.insert_note(&record).await?;
+    let pre_checked: Vec<String> =
+        record.items.iter().filter(|i| i.done).map(|i| i.text.clone()).collect();
+    if !pre_checked.is_empty() {
+        state.repo.record_checked_items(&record.id, &pre_checked).await?;
+    }
+    state.index_note_later(&id);
+    state.label_note_later(&id, user_id);
+    state.notify_user(user_id);
+    let mut view = state.repo.note_view(&id, user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
+    Ok(view)
+}
+
+pub async fn get_note(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<Json<NoteView>> {
+    require_participant(&state, &id, &user_id).await?;
+    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
+    Ok(Json(view))
+}
+
+pub async fn update_note(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateNote>,
+) -> ApiResult<Json<NoteView>> {
+    Ok(Json(apply_note_update(&state, &user_id, &id, body).await?))
+}
+
+/// Apply a patch to a note as `user_id` and return its signed view. Shared by
+/// the HTTP handler and the chat append path, so both run the same version
+/// capture + checklist-history + indexing + labeling + notify pipeline.
+pub async fn apply_note_update(
+    state: &AppState,
+    user_id: &str,
+    id: &str,
+    mut body: UpdateNote,
+) -> ApiResult<NoteView> {
+    let mut record = require_participant(state, id, user_id).await?;
+    let old_items = record.items.clone();
+
+    // Trash lifecycle is the owner's call; everything else is shared editing.
+    if body.trashed.is_some() && record.owner_id != user_id {
+        return Err(ApiError::Forbidden("only the owner can trash or restore a note"));
+    }
+    if let Some(kind) = &body.kind {
+        validate_kind(kind)?;
+    }
+    if let Some(reminder) = &body.reminder_at {
+        validate_reminder(reminder)?;
+        // A (re)scheduled reminder is a new alarm: clear the fired mark so
+        // the scheduler delivers the new time too.
+        if *reminder != record.reminder_at {
+            record.reminder_fired_at = None;
+        }
+    }
+
+    let label_ids = body.label_ids.take();
+
+    // Version history: only content edits are versioned (color/pin/archive and
+    // friends are organizational, not "content you'd roll back"). Capture the
+    // pre-edit state as a snapshot when this edit opens a new session — a
+    // different author, or a gap since the last content edit. Same-author
+    // edits within the window coalesce, so history is one entry per sitting
+    // rather than one per debounced save. The first-ever edit always snapshots
+    // (last_editor_id is None), preserving how the note started.
+    let content_changed = body.kind.as_ref().is_some_and(|v| *v != record.kind)
+        || body.title.as_ref().is_some_and(|v| *v != record.title)
+        || body.content.as_ref().is_some_and(|v| *v != record.content)
+        || body.items.as_ref().is_some_and(|v| *v != record.items);
+    if content_changed {
+        let same_session = record.last_editor_id.as_deref() == Some(user_id)
+            && seconds_since(&record.updated_at) < VERSION_SESSION_GAP_SECS;
+        if !same_session {
+            state.repo.insert_note_version(&version_of(&record)).await?;
+        }
+        record.last_editor_id = Some(user_id.to_string());
+    }
+
+    body.apply_to(&mut record);
+    record.updated_at = now();
+    state.repo.update_note(&record).await?;
+
+    // Items checked off in this patch feed this note's suggestion dictionary
+    // ("Milk" checked today autocompletes on next week's list) — scoped per
+    // note, so suggestions never leak across notes.
+    let newly_checked: Vec<String> = record
+        .items
+        .iter()
+        .filter(|item| item.done && !old_items.iter().any(|o| o.id == item.id && o.done))
+        .map(|item| item.text.clone())
+        .collect();
+    if !newly_checked.is_empty() {
+        state.repo.record_checked_items(id, &newly_checked).await?;
+    }
+
+    if let Some(label_ids) = label_ids {
+        state.repo.set_note_labels(id, user_id, &label_ids).await?;
+    }
+    state.index_note_later(id);
+    // Only content edits re-run auto-labeling; organizational patches
+    // (color/pin/position/labels themselves) never cost an LLM call.
+    if content_changed {
+        state.label_note_later(id, user_id);
+    }
+    state.notify_note(id).await;
+    let mut view = state.repo.note_view(id, user_id).await?.ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
+    Ok(view)
+}
+
+pub async fn delete_note(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    let record = require_participant(&state, &id, &user_id).await?;
+    if record.owner_id != user_id {
+        return Err(ApiError::Forbidden("only the owner can delete a note"));
+    }
+    // Snapshot the roster and blobs before rows cascade away.
+    let participants = state.repo.participant_ids(&id).await?;
+    let attachments = state
+        .repo
+        .note_view(&id, &user_id)
+        .await?
+        .map(|v| v.attachments)
+        .unwrap_or_default();
+    state.repo.delete_note(&id).await?;
+    for attachment in attachments {
+        state.files.delete(&record.owner_id, &attachment.id).await;
+    }
+    state.unindex_note_later(&id);
+    state.hub.notify(&participants, CHANGED_MSG);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn reorder_notes(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Json(body): Json<ReorderRequest>,
+) -> ApiResult<StatusCode> {
+    state.repo.reorder_for_user(&user_id, &body.ids).await?;
+    state.notify_user(&user_id);
+    Ok(StatusCode::NO_CONTENT)
+}
