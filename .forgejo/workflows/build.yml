@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: docker # must match a label your Forgejo runner registered with
+    runs-on: homeserver-runner # 
     steps:
       - uses: actions/checkout@v4
 
