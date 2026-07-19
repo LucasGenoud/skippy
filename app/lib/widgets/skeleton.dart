@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 
 import '../util/motion.dart';
 
@@ -72,7 +73,7 @@ class _NotesSkeletonState extends State<NotesSkeleton>
                               scheme.surfaceContainer,
                               reduce ? 0.5 : _pulse.value,
                             ),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(kRadius),
                           ),
                         ),
                       ),

@@ -49,6 +49,34 @@ class EditorBottomBar extends StatelessWidget {
     NoteKind.markdown: 'Convert to markdown note',
   };
 
+  static const _kindIcons = {
+    NoteKind.text: Icons.notes_outlined,
+    NoteKind.checklist: Icons.checklist,
+    NoteKind.markdown: Icons.data_object,
+  };
+
+  /// A menu row with a leading icon so the overflow menu scans at a glance.
+  /// [color] tints both icon and label (used to flag the destructive Delete).
+  static PopupMenuItem<String> _menuItem({
+    required String value,
+    required IconData icon,
+    required String label,
+    required bool enabled,
+    Color? color,
+  }) {
+    return PopupMenuItem(
+      value: value,
+      enabled: enabled,
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 12),
+          Text(label, style: color == null ? null : TextStyle(color: color)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -125,26 +153,32 @@ class EditorBottomBar extends StatelessWidget {
               // Audio notes come from a recording, never a conversion target.
               for (final target in NoteKind.values)
                 if (target != kind && target != NoteKind.audio)
-                  PopupMenuItem(
+                  _menuItem(
                     value: 'convert:${target.name}',
+                    icon: _kindIcons[target]!,
+                    label: _kindLabels[target]!,
                     enabled: onConvert != null,
-                    child: Text(_kindLabels[target]!),
                   ),
-              PopupMenuItem(
+              const PopupMenuDivider(),
+              _menuItem(
                 value: 'history',
+                icon: Icons.history,
+                label: 'Version history',
                 enabled: onHistory != null,
-                child: const Text('Version history'),
               ),
-              PopupMenuItem(
+              _menuItem(
                 value: 'copy',
+                icon: Icons.copy_all_outlined,
+                label: 'Make a copy',
                 enabled: onCopy != null,
-                child: const Text('Make a copy'),
               ),
               if (isOwner)
-                PopupMenuItem(
+                _menuItem(
                   value: 'delete',
+                  icon: Icons.delete_outline,
+                  label: 'Delete',
                   enabled: onDelete != null,
-                  child: const Text('Delete'),
+                  color: scheme.error,
                 ),
             ],
           ),

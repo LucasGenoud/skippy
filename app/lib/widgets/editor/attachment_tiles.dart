@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/note.dart';
@@ -24,7 +25,7 @@ class ImageAttachmentTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(kRadius),
         child: Stack(
           children: [
             ConstrainedBox(
@@ -101,9 +102,9 @@ class FileAttachmentTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(kRadius),
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(kRadius),
           onTap: () =>
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
           child: Padding(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../state/notes_store.dart';
@@ -274,11 +275,11 @@ class _SidebarItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         child: Material(
           color: isSelected ? scheme.secondaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(kRadius),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(kRadius),
             child: SizedBox(
               height: 48,
               child: OverflowBox(

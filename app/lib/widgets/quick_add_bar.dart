@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -176,7 +177,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
           elevation: 2,
           shadowColor: Colors.black.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(kRadius),
             side: BorderSide(color: scheme.outlineVariant),
           ),
           child: AnimatedSize(
@@ -201,7 +202,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
         );
 
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(kRadius),
       onTap: () => _expand(NoteKind.text),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),

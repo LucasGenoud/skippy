@@ -1,6 +1,7 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 
@@ -58,7 +59,7 @@ class _NoteTileState extends State<NoteTile> {
         duration: Motion.fast,
         curve: Motion.standard,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(kRadius),
           boxShadow: [
             // A whisper of shadow at rest lifts the card off the grey canvas;
             // it deepens on hover for a tactile response.
@@ -78,14 +79,14 @@ class _NoteTileState extends State<NoteTile> {
           middleColor: fill ?? scheme.surface,
           openColor: fill ?? scheme.surface,
           closedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(kRadius),
             side: BorderSide(color: borderColor),
           ),
           // Tap handling is ours: wide layouts open a centered modal
           // instead of letting the container expand fullscreen.
           tappable: false,
           closedBuilder: (context, open) => InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(kRadius),
             onTap: () =>
                 openNoteEditor(context, openFullscreen: open, noteId: note.id),
             // The pin overlay is the only hover-dependent piece, and it sits
@@ -302,10 +303,10 @@ class _NoteCardContent extends StatelessWidget {
               images: images,
               store: store,
               borderRadius: BorderRadius.vertical(
-                top: hasTextBlock ? Radius.zero : const Radius.circular(12),
+                top: hasTextBlock ? Radius.zero : kRadiusCorner,
                 bottom: hasFooter || firstLinkUrl != null
                     ? Radius.zero
-                    : const Radius.circular(12),
+                    : kRadiusCorner,
               ),
             ),
           ),
@@ -351,7 +352,7 @@ class _NoteCardContent extends StatelessWidget {
             url: firstLinkUrl,
             topDivider: true,
             borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(12),
+              bottom: kRadiusCorner,
             ),
           ),
       ],
@@ -469,7 +470,7 @@ class _ChecklistRow extends StatelessWidget {
                       item.id,
                     )
                   : null,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(kRadius),
               child: Icon(
                 item.done
                     ? Icons.check_box_outlined
@@ -562,7 +563,7 @@ class _ImageStrip extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(kRadius),
                 ),
                 child: Text(
                   '+$extra',
@@ -592,7 +593,7 @@ class _ReminderChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(kRadius),
         color: scheme.onSurface.withValues(alpha: 0.08),
       ),
       child: Row(
@@ -629,7 +630,7 @@ class _FileChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       constraints: const BoxConstraints(maxWidth: 140),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(kRadius),
         color: scheme.onSurface.withValues(alpha: 0.08),
       ),
       child: Row(
@@ -666,7 +667,7 @@ class _AudioPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(kRadius),
           color: scheme.onSurface.withValues(alpha: 0.06),
         ),
         child: Row(
@@ -697,7 +698,7 @@ class _LabelChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(kRadius),
         border: Border.all(
           color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
         ),

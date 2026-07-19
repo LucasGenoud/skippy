@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note.dart';
@@ -235,7 +236,7 @@ class _VersionCard extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: scheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(999),
+                      borderRadius: BorderRadius.circular(kRadius),
                     ),
                     child: Text(
                       'Current',

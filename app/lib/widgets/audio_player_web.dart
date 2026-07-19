@@ -1,6 +1,7 @@
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:web/web.dart' as web;
 
 /// Compact inline player for an audio attachment: a play/pause button, a
@@ -81,7 +82,7 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(kRadius),
       ),
       child: Row(
         children: [

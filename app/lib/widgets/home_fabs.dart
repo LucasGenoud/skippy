@@ -1,5 +1,6 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note.dart';
@@ -37,12 +38,12 @@ class NewNoteFabs extends StatelessWidget {
           middleColor: scheme.surface,
           openColor: scheme.surface,
           closedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(size >= 56 ? 16 : 12),
+            borderRadius: BorderRadius.circular(kRadius),
           ),
           tappable: false,
           closedBuilder: (context, open) => InkWell(
             customBorder: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(size >= 56 ? 16 : 12),
+              borderRadius: BorderRadius.circular(kRadius),
             ),
             onTap: () =>
                 openNoteEditor(context, openFullscreen: open, kind: kind),
@@ -117,7 +118,7 @@ class _AudioNoteFab extends StatelessWidget {
         color: scheme.surfaceContainerHigh,
         elevation: 4,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
         child: InkWell(
           onTap: () => _record(context),
           child: SizedBox(

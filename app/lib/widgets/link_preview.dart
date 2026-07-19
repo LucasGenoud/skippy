@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../models/link_preview.dart';
@@ -23,7 +24,7 @@ class LinkPreviewCard extends StatelessWidget {
     super.key,
     required this.url,
     this.onOpen,
-    this.borderRadius = const BorderRadius.all(Radius.circular(10)),
+    this.borderRadius = const BorderRadius.all(kRadiusCorner),
     this.topDivider = false,
   });
 

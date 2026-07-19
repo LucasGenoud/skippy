@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:just_audio/just_audio.dart';
 
 /// Compact inline player for an audio attachment on native platforms, backed by
@@ -119,7 +120,7 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: scheme.errorContainer,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(kRadius),
         ),
         child: Row(
           children: [
@@ -141,7 +142,7 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(kRadius),
       ),
       child: Row(
         children: [

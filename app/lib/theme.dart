@@ -8,6 +8,22 @@ import 'package:flutter/material.dart';
 /// seed, so one color reseeds the whole Material scheme for both brightnesses.
 const Color kDefaultAccent = Color(0xFFFBBC04);
 
+/// App-wide corner radius. The design favors near-square corners rather than
+/// the pill/circular shapes Material defaults to — every piece of chrome
+/// (cards, inputs, buttons, menus, dialogs, chips) rounds to this so the look
+/// stays consistent. Change it here to retune the whole app.
+const double kRadius = 4;
+
+/// [kRadius] as a [Radius]/[BorderRadius] for the many hand-rolled containers
+/// that can't read a shape from the theme.
+const Radius kRadiusCorner = Radius.circular(kRadius);
+const BorderRadius kBorderRadius = BorderRadius.all(kRadiusCorner);
+
+/// A [RoundedRectangleBorder] at [kRadius], for widgets whose `shape` we set.
+const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
+  borderRadius: kBorderRadius,
+);
+
 ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final light = brightness == Brightness.light;
   // Neutralize the seed's cast on surfaces — Keep pairs a colored accent with
@@ -51,6 +67,51 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     drawerTheme: base.drawerTheme.copyWith(
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
+    ),
+    // Near-square corners everywhere the theme reaches. Hand-rolled containers
+    // in individual widgets use [kBorderRadius]/[kRoundedShape] to match.
+    cardTheme: base.cardTheme.copyWith(shape: kRoundedShape),
+    dialogTheme: base.dialogTheme.copyWith(shape: kRoundedShape),
+    popupMenuTheme: base.popupMenuTheme.copyWith(shape: kRoundedShape),
+    menuTheme: const MenuThemeData(
+      style: MenuStyle(
+        shape: WidgetStatePropertyAll(kRoundedShape),
+      ),
+    ),
+    bottomSheetTheme: base.bottomSheetTheme.copyWith(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: kRadiusCorner),
+      ),
+    ),
+    // NOTE: no inputDecorationTheme border override on purpose. Flutter's
+    // OutlineInputBorder already defaults to a 4px radius, so the fields that
+    // opt into an outline (login, chat, settings) are boxy by default. Forcing
+    // per-state borders here would also override the many `InputBorder.none`
+    // fields (editor title/body, search, quick-add) and draw boxes they never
+    // wanted.
+    filledButtonTheme: const FilledButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
+    ),
+    elevatedButtonTheme: const ElevatedButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
+    ),
+    outlinedButtonTheme: const OutlinedButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
+    ),
+    textButtonTheme: const TextButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
+    ),
+    chipTheme: base.chipTheme.copyWith(shape: kRoundedShape),
+    // SegmentedButton defaults to a stadium (pill) shape — square it off.
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(
+          kRoundedShape.copyWith(side: BorderSide(color: scheme.outline)),
+        ),
+      ),
+    ),
+    floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
+      shape: kRoundedShape,
     ),
     snackBarTheme: base.snackBarTheme.copyWith(
       behavior: SnackBarBehavior.floating,

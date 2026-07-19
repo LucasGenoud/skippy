@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
@@ -240,7 +241,7 @@ class _ShadeEditorState extends State<_ShadeEditor> {
               height: 36,
               decoration: BoxDecoration(
                 color: widget.color,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(kRadius),
                 border: Border.all(color: scheme.outlineVariant),
               ),
             ),

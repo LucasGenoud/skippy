@@ -1,5 +1,6 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:image_picker/image_picker.dart';
@@ -102,7 +103,7 @@ Future<void> openNoteEditor(
           maxHeight: MediaQuery.sizeOf(context).height * 0.85,
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(kRadius),
           child: EditorScreen(noteId: noteId, kind: kind, modal: true),
         ),
       ),

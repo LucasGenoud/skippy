@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -116,19 +117,10 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // ── Brand ─────────────────────────────────────────────
-                Container(
-                  height: 72,
-                  width: 72,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Icon(
-                    Icons.sticky_note_2_rounded,
-                    size: 40,
-                    color: scheme.onPrimaryContainer,
-                  ),
+                Icon(
+                  Icons.sticky_note_2_rounded,
+                  size: 56,
+                  color: scheme.primary,
                 ),
                 const SizedBox(height: 20),
                 Text(
@@ -154,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: scheme.surface,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(kRadius),
                     border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: AutofillGroup(
@@ -323,7 +315,7 @@ class _ErrorBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(kRadius),
       ),
       child: Row(
         children: [

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../theme.dart';
 
 import 'audio_recorder.dart';
 
@@ -137,7 +138,7 @@ class _RecordingSheetState extends State<RecordingSheet>
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         decoration: BoxDecoration(
           color: scheme.surface,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(kRadius),
         ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),

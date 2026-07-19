@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/chat_screen.dart';
@@ -75,7 +76,7 @@ class HomeTopBar extends StatelessWidget {
                   height: 46,
                   decoration: BoxDecoration(
                     color: scheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(kRadius),
                   ),
                   child: Row(
                     children: [
@@ -217,7 +218,7 @@ class HomeTopBar extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(kRadius),
         ),
         child: Row(
           children: [
@@ -311,7 +312,7 @@ class _UserAvatarMenu extends StatelessWidget {
 
     return PopupMenuButton<String>(
       offset: const Offset(0, 48),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
       tooltip: 'Google Account / User profile\n$username',
       itemBuilder: (context) => [
         PopupMenuItem<String>(

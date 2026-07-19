@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:web/web.dart' as web;
 
 import '../models/dropped_file.dart';
@@ -209,7 +210,7 @@ class _FileDropAreaState extends State<FileDropArea> {
                 alignment: Alignment.center,
                 child: Material(
                   color: scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(kRadius),
                   elevation: 6,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(

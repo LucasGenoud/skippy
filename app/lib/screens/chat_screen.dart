@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat.dart';
@@ -230,7 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             hintText: 'Ask about your notes…',
                             filled: true,
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
+                              borderRadius: BorderRadius.circular(kRadius),
                               borderSide: BorderSide.none,
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -325,7 +326,7 @@ class _Bubble extends StatelessWidget {
             : failedEmpty
             ? scheme.errorContainer
             : scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(kRadius),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
