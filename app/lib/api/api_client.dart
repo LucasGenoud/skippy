@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat.dart';
 import '../models/link_preview.dart';
 import '../models/note.dart';
+import '../util/runtime_config.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -153,11 +154,15 @@ abstract class Api {
 }
 
 class ApiClient implements Api {
-  /// Resolution order: --dart-define=API_BASE, then same-origin when the app
-  /// is served by the Rust binary itself, then the local dev default.
+  /// Resolution order: --dart-define=API_BASE (compile-time), then the URL the
+  /// server injected into the page (STICKY_NOTES_PUBLIC_URL env var), then
+  /// same-origin when the app is served by the Rust binary itself, then the
+  /// local dev default.
   static String defaultBaseUrl() {
     const fromEnv = String.fromEnvironment('API_BASE');
     if (fromEnv.isNotEmpty) return fromEnv;
+    final injected = runtimeApiBase();
+    if (injected != null && injected.isNotEmpty) return injected;
     if (kIsWeb && Uri.base.port == 8787) return Uri.base.origin;
     return 'http://localhost:8787';
   }

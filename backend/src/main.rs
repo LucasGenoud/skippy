@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
@@ -27,6 +27,90 @@ async fn load_file_secret(repo: &dyn Repository) -> anyhow::Result<Vec<u8>> {
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     Ok(bytes)
+}
+
+/// Resolve the index.html to serve as the SPA fallback. When
+/// STICKY_NOTES_PUBLIC_URL is set, inject it as `window.stickyNotesApiBase`
+/// into a runtime copy so the web app targets that backend without a rebuild;
+/// otherwise serve the original file untouched.
+fn serve_index_path(web_dir: &str) -> PathBuf {
+    let index = Path::new(web_dir).join("index.html");
+    let url = match std::env::var("STICKY_NOTES_PUBLIC_URL") {
+        Ok(u) if !u.trim().is_empty() => u.trim().trim_end_matches('/').to_string(),
+        _ => return index,
+    };
+    let html = match std::fs::read_to_string(&index) {
+        Ok(h) => h,
+        Err(_) => return index,
+    };
+    let injected = inject_api_base(&html, &url);
+    // Namespace the temp copy by a hash of the URL so two instances on one host
+    // (different STICKY_NOTES_PUBLIC_URL) can't clobber each other's file.
+    let tag = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        url.hash(&mut h);
+        h.finish()
+    };
+    let out = std::env::temp_dir().join(format!("sticky-notes-index-{tag:x}.html"));
+    match std::fs::write(&out, injected) {
+        Ok(()) => {
+            println!("web app default backend URL pinned to {url}");
+            out
+        }
+        Err(_) => index,
+    }
+}
+
+/// Insert `window.stickyNotesApiBase = "<url>"` into an index.html, just before
+/// the first `</head>`. The URL is JSON-encoded so an operator-supplied value
+/// can't break out of the `<script>`. If there's no `</head>` (unexpected), the
+/// snippet is prepended so the global is still defined before the app boots.
+fn inject_api_base(html: &str, url: &str) -> String {
+    let literal = serde_json::to_string(url)
+        .unwrap_or_else(|_| "\"\"".to_string())
+        // Inside a <script>, the HTML parser still scans for `</script>` etc.
+        // regardless of JS string context; escape the HTML-significant chars to
+        // their \uXXXX forms (valid JS, invisible to the HTML tokenizer).
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026");
+    let snippet = format!("<script>window.stickyNotesApiBase={literal};</script>");
+    if html.contains("</head>") {
+        html.replacen("</head>", &format!("{snippet}\n</head>"), 1)
+    } else {
+        format!("{snippet}\n{html}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inject_api_base;
+
+    #[test]
+    fn injects_before_head_close() {
+        let out = inject_api_base("<html><head><title>x</title></head><body></body></html>", "https://notes.example.com");
+        assert!(out.contains(r#"window.stickyNotesApiBase="https://notes.example.com";"#));
+        // Placed inside <head>, before the app's own scripts run.
+        let script = out.find("stickyNotesApiBase").unwrap();
+        assert!(script < out.find("</head>").unwrap());
+    }
+
+    #[test]
+    fn escapes_url_so_it_cannot_break_out_of_the_script() {
+        let out = inject_api_base("<head></head>", r#"https://x/"</script><script>alert(1)"#);
+        // No literal </script> can appear in the injected value — it's \u-escaped.
+        let value_end = out.find(";</script>").unwrap();
+        assert!(!out[..value_end].contains("</script>"));
+        assert!(out.contains("\\u003c"));
+    }
+
+    #[test]
+    fn falls_back_when_no_head() {
+        let out = inject_api_base("<body>app</body>", "http://localhost:8787");
+        assert!(out.starts_with("<script>window.stickyNotesApiBase="));
+        assert!(out.contains("<body>app</body>"));
+    }
 }
 
 /// Semantic search wiring: local ONNX embeddings + the built-in sqlite-vec
@@ -149,8 +233,19 @@ async fn main() -> anyhow::Result<()> {
     // If the Flutter web build exists, serve it so the whole app runs off one binary.
     let web_dir = std::env::var("STICKY_NOTES_WEB").unwrap_or_else(|_| "../app/build/web".to_string());
     if Path::new(&web_dir).join("index.html").exists() {
-        let index = Path::new(&web_dir).join("index.html");
-        app = app.fallback_service(ServeDir::new(&web_dir).fallback(ServeFile::new(index)));
+        // A self-hoster can pin the backend URL browsers should use via
+        // STICKY_NOTES_PUBLIC_URL (e.g. behind a reverse proxy on :443). We
+        // stamp it into a runtime copy of index.html as `window.stickyNotesApiBase`
+        // so the app reads it without a rebuild; unset ⇒ serve the file as-is
+        // and the app falls back to same-origin.
+        let index = serve_index_path(&web_dir);
+        // append_index_html_on_directories(false) so `/` misses ServeDir and
+        // hits the fallback too, guaranteeing the injected copy is served.
+        app = app.fallback_service(
+            ServeDir::new(&web_dir)
+                .append_index_html_on_directories(false)
+                .fallback(ServeFile::new(index)),
+        );
         println!("serving web app from {web_dir}");
     }
 

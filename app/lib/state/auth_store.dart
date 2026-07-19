@@ -151,6 +151,14 @@ class AuthStore extends ChangeNotifier {
     }
   }
 
+  /// Clear the last auth error (e.g. when switching between sign-in and
+  /// create-account so a stale message doesn't linger).
+  void clearError() {
+    if (error == null) return;
+    error = null;
+    notifyListeners();
+  }
+
   Future<bool> signIn(String username, String password) =>
       _authenticate(() => api.login(username, password));
 

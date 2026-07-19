@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../state/auth_store.dart';
@@ -13,14 +14,32 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  final _passwordFocus = FocusNode();
+  final _confirmFocus = FocusNode();
   bool _creating = false;
   bool _obscure = true;
+
+  /// Local validation error for the confirm-password field (create mode).
+  String? _confirmError;
 
   @override
   void dispose() {
     _username.dispose();
     _password.dispose();
+    _confirm.dispose();
+    _passwordFocus.dispose();
+    _confirmFocus.dispose();
     super.dispose();
+  }
+
+  void _setMode(bool creating) {
+    if (creating == _creating) return;
+    setState(() {
+      _creating = creating;
+      _confirmError = null;
+    });
+    context.read<AuthStore>().clearError();
   }
 
   Future<void> _submit() async {
@@ -28,6 +47,14 @@ class _LoginScreenState extends State<LoginScreen> {
     final username = _username.text.trim();
     final password = _password.text;
     if (username.isEmpty || password.isEmpty) return;
+    if (_creating && password != _confirm.text) {
+      setState(() => _confirmError = "Passwords don't match");
+      _confirmFocus.requestFocus();
+      return;
+    }
+    setState(() => _confirmError = null);
+    // Let the platform password manager offer to save these credentials.
+    TextInput.finishAutofillContext();
     if (_creating) {
       await auth.registerAccount(username, password);
     } else {
@@ -75,42 +102,199 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthStore>();
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final creating = _creating;
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
+            constraints: const BoxConstraints(maxWidth: 400),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  Icons.sticky_note_2_rounded,
-                  size: 64,
-                  color: scheme.primary,
+                // ── Brand ─────────────────────────────────────────────
+                Container(
+                  height: 72,
+                  width: 72,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Icon(
+                    Icons.sticky_note_2_rounded,
+                    size: 40,
+                    color: scheme.onPrimaryContainer,
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Text(
                   'Sticky Notes',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _creating
+                  creating
                       ? 'Create an account to start taking notes'
-                      : 'Sign in to your notes',
+                      : 'Welcome back — sign in to your notes',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(height: 24),
+                // ── Card ──────────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: AutofillGroup(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Mode switch — makes Sign in vs Create explicit.
+                        SegmentedButton<bool>(
+                          segments: const [
+                            ButtonSegment(
+                              value: false,
+                              label: Text('Sign in'),
+                              icon: Icon(Icons.login_outlined),
+                            ),
+                            ButtonSegment(
+                              value: true,
+                              label: Text('Create account'),
+                              icon: Icon(Icons.person_add_alt_1_outlined),
+                            ),
+                          ],
+                          selected: {creating},
+                          onSelectionChanged: auth.busy
+                              ? null
+                              : (s) => _setMode(s.first),
+                          showSelectedIcon: false,
+                          style: ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _username,
+                          autofocus: true,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: [
+                            creating
+                                ? AutofillHints.newUsername
+                                : AutofillHints.username,
+                          ],
+                          onSubmitted: (_) => _passwordFocus.requestFocus(),
+                          decoration: const InputDecoration(
+                            labelText: 'Username',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _password,
+                          focusNode: _passwordFocus,
+                          obscureText: _obscure,
+                          textInputAction: creating
+                              ? TextInputAction.next
+                              : TextInputAction.done,
+                          autofillHints: [
+                            creating
+                                ? AutofillHints.newPassword
+                                : AutofillHints.password,
+                          ],
+                          onSubmitted: (_) => creating
+                              ? _confirmFocus.requestFocus()
+                              : _submit(),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              tooltip: _obscure ? 'Show' : 'Hide',
+                              icon: Icon(
+                                _obscure
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _obscure = !_obscure),
+                            ),
+                          ),
+                        ),
+                        // Confirm password — only when creating an account.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          alignment: Alignment.topCenter,
+                          child: creating
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 16),
+                                  child: TextField(
+                                    controller: _confirm,
+                                    focusNode: _confirmFocus,
+                                    obscureText: _obscure,
+                                    textInputAction: TextInputAction.done,
+                                    autofillHints: const [
+                                      AutofillHints.newPassword,
+                                    ],
+                                    onSubmitted: (_) => _submit(),
+                                    decoration: InputDecoration(
+                                      labelText: 'Confirm password',
+                                      border: const OutlineInputBorder(),
+                                      prefixIcon:
+                                          const Icon(Icons.lock_outline),
+                                      errorText: _confirmError,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        if (auth.error != null) ...[
+                          const SizedBox(height: 16),
+                          _ErrorBanner(message: auth.error!),
+                        ],
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: auth.busy ? null : _submit,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          icon: auth.busy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Icon(
+                                  creating
+                                      ? Icons.person_add_alt_1_outlined
+                                      : Icons.login_outlined,
+                                ),
+                          label: Text(
+                            creating ? 'Create account' : 'Sign in',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
-                // ── Backend URL selector ────────────────────────────
+                // ── Backend URL selector ──────────────────────────────
                 _BackendUrlSelector(
                   activeUrl: auth.activeUrl,
                   savedUrls: auth.savedUrls,
@@ -118,75 +302,40 @@ class _LoginScreenState extends State<LoginScreen> {
                   onAdd: _showAddUrlDialog,
                   onRemove: (url) => auth.removeUrl(url),
                 ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _username,
-                  autofocus: true,
-                  textInputAction: TextInputAction.next,
-                  autofillHints: const [AutofillHints.username],
-                  decoration: const InputDecoration(
-                    labelText: 'Username',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _password,
-                  obscureText: _obscure,
-                  autofillHints: const [AutofillHints.password],
-                  onSubmitted: (_) => _submit(),
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscure
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                      ),
-                      onPressed: () => setState(() => _obscure = !_obscure),
-                    ),
-                  ),
-                ),
-                if (auth.error != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    auth.error!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.error),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: auth.busy ? null : _submit,
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  child: auth.busy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(_creating ? 'Create account' : 'Sign in'),
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: auth.busy
-                      ? null
-                      : () => setState(() => _creating = !_creating),
-                  child: Text(
-                    _creating
-                        ? 'Have an account? Sign in'
-                        : 'New here? Create an account',
-                  ),
-                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A soft error banner shown above the submit button.
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  const _ErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }
