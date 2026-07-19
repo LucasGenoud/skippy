@@ -16,4 +16,5 @@ mod notify;
 mod search;
 mod settings;
 mod sharing;
+mod unfurl;
 mod versions;

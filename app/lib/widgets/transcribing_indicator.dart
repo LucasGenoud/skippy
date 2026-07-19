@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import '../util/motion.dart';
 
 /// Animated "Transcribing…" placeholder for an audio note whose Whisper
 /// transcript is still being produced: a bouncing equalizer next to shimmering
@@ -20,8 +23,28 @@ class _TranscribingIndicatorState extends State<TranscribingIndicator>
     duration: const Duration(milliseconds: 1400),
   )..repeat();
 
+  /// Transcription normally takes seconds. A note stuck in `pending` (say,
+  /// the Whisper service died mid-job) must not keep the frame pipeline
+  /// running forever on a grid card — that's pure battery drain.
+  Timer? _animationCap;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationCap = Timer(const Duration(minutes: 2), () {
+      if (mounted) _controller.stop();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (Motion.reduced(context)) _controller.stop();
+  }
+
   @override
   void dispose() {
+    _animationCap?.cancel();
     _controller.dispose();
     super.dispose();
   }

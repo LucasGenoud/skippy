@@ -5,6 +5,7 @@ import 'api/api_client.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'state/auth_store.dart';
+import 'state/link_preview_cache.dart';
 import 'state/local_cache.dart';
 import 'state/notes_store.dart';
 import 'state/settings_store.dart';
@@ -25,6 +26,10 @@ class StickyNotesApp extends StatefulWidget {
 class _StickyNotesAppState extends State<StickyNotesApp> {
   late final ApiClient _api = ApiClient();
   late final AuthStore _auth = AuthStore(api: _api);
+
+  /// Shared session cache for link-preview unfurls (not user-scoped; the API
+  /// client carries the bearer token). Lives for the app's lifetime.
+  late final LinkPreviewCache _linkPreviews = LinkPreviewCache(api: _api);
 
   /// Live above the MaterialApp so that pushed routes (editor, dialogs) can
   /// read them; created per signed-in user, torn down on sign-out.
@@ -82,6 +87,7 @@ class _StickyNotesAppState extends State<StickyNotesApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: _auth),
+        Provider<LinkPreviewCache>.value(value: _linkPreviews),
         if (store != null) ChangeNotifierProvider.value(value: store),
         if (settings != null) ChangeNotifierProvider.value(value: settings),
       ],

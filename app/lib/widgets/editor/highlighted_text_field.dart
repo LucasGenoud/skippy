@@ -1,9 +1,81 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-/// Content field with find-in-note highlighting: matching substrings get a
-/// tinted background while the search bar is open.
-class HighlightedTextField extends StatefulWidget {
-  final TextEditingController controller;
+import '../../util/linkify.dart';
+
+/// The editor's body controller. On top of plain editing it does two things in
+/// [buildTextSpan]: styles URLs as blue underlined links with a long-press
+/// recognizer that opens them, and tints find-in-note matches when [query] is
+/// set. Folding both into the real editing controller keeps the field fully
+/// editable (a normal tap still places the caret) — a proxy read-only overlay
+/// isn't needed.
+class LinkifyingController extends TextEditingController {
+  final void Function(String url) onOpenUrl;
+  final Map<String, LongPressGestureRecognizer> _recognizers = {};
+  String _query = '';
+
+  LinkifyingController({super.text, required this.onOpenUrl});
+
+  /// Find-in-note query; matches get highlighted on the next repaint. Does
+  /// NOT notify listeners: it's set from [HighlightedTextField.build], and the
+  /// enclosing field always rebuilds (the find bar setState drives it) so
+  /// [buildTextSpan] re-runs with the new query. Notifying here instead would
+  /// fire the editor's text listener mid-build (query is not a text change).
+  set query(String q) => _query = q;
+
+  @override
+  void dispose() {
+    for (final r in _recognizers.values) {
+      r.dispose();
+    }
+    _recognizers.clear();
+    super.dispose();
+  }
+
+  GestureRecognizer _recognizerFor(UrlMatch match) {
+    return _recognizers.putIfAbsent(match.url, LongPressGestureRecognizer.new)
+      ..onLongPress = () => onOpenUrl(match.url);
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final linkStyle = (style ?? const TextStyle()).copyWith(
+      color: scheme.primary,
+      decoration: TextDecoration.underline,
+      decorationColor: scheme.primary,
+    );
+    final highlight = (style ?? const TextStyle()).copyWith(
+      backgroundColor: scheme.tertiaryContainer,
+      color: scheme.onTertiaryContainer,
+    );
+
+    // Drop recognizers for URLs no longer in the text.
+    final live = findUrls(text).map((u) => u.url).toSet();
+    for (final gone in _recognizers.keys.where((k) => !live.contains(k)).toList()) {
+      _recognizers.remove(gone)!.dispose();
+    }
+
+    final spans = buildLinkedSpans(
+      text: text,
+      query: _query,
+      linkStyle: linkStyle,
+      highlight: _query.isEmpty ? null : highlight,
+      recognizerFor: _recognizerFor,
+    );
+    return TextSpan(style: style, children: spans);
+  }
+}
+
+/// Editor body field backed by a [LinkifyingController]: renders links and
+/// find-in-note highlights. Editing pauses (read-only) while the find bar is
+/// open, matching the old behavior.
+class HighlightedTextField extends StatelessWidget {
+  final LinkifyingController controller;
   final FocusNode focusNode;
   final bool readOnly;
   final bool autofocus;
@@ -21,117 +93,29 @@ class HighlightedTextField extends StatefulWidget {
   });
 
   @override
-  State<HighlightedTextField> createState() => _HighlightedTextFieldState();
-}
-
-class _HighlightedTextFieldState extends State<HighlightedTextField> {
-  _HighlightingController? _highlighting;
-
-  @override
   Widget build(BuildContext context) {
+    controller.query = query;
+    final finding = query.isNotEmpty;
     final theme = Theme.of(context);
     final style = theme.textTheme.bodyLarge?.copyWith(
       height: 1.5,
-      fontFamily: widget.monospace ? 'monospace' : null,
-      fontSize: widget.monospace ? 14 : null,
+      fontFamily: monospace ? 'monospace' : null,
+      fontSize: monospace ? 14 : null,
     );
-
-    if (widget.query.isEmpty) {
-      _highlighting = null;
-      return TextField(
-        controller: widget.controller,
-        focusNode: widget.focusNode,
-        readOnly: widget.readOnly,
-        enabled: !widget.readOnly,
-        maxLines: null,
-        minLines: 6,
-        autofocus: widget.autofocus,
-        style: style,
-        decoration: const InputDecoration(
-          hintText: 'Note',
-          border: InputBorder.none,
-        ),
-      );
-    }
-
-    // While searching, render through a proxy controller that shares the
-    // real controller's value but paints highlights.
-    _highlighting ??= _HighlightingController(widget.controller);
-    _highlighting!.query = widget.query;
     return TextField(
-      controller: _highlighting,
-      readOnly: true, // editing pauses while the find bar is open
+      controller: controller,
+      focusNode: focusNode,
+      // Editing pauses while the find bar is open, and stays off in Trash.
+      readOnly: readOnly || finding,
+      enabled: !readOnly,
       maxLines: null,
       minLines: 6,
+      autofocus: autofocus,
       style: style,
       decoration: const InputDecoration(
         hintText: 'Note',
         border: InputBorder.none,
       ),
     );
-  }
-}
-
-class _HighlightingController extends TextEditingController {
-  final TextEditingController source;
-  String _query = '';
-
-  _HighlightingController(this.source) : super(text: source.text) {
-    source.addListener(_sync);
-  }
-
-  void _sync() => value = source.value;
-
-  set query(String q) {
-    if (q == _query) return;
-    _query = q;
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    source.removeListener(_sync);
-    super.dispose();
-  }
-
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    final q = _query.toLowerCase();
-    if (q.isEmpty || text.isEmpty) {
-      return TextSpan(text: text, style: style);
-    }
-    final scheme = Theme.of(context).colorScheme;
-    final highlight =
-        style?.copyWith(
-          backgroundColor: scheme.tertiaryContainer,
-          color: scheme.onTertiaryContainer,
-        ) ??
-        TextStyle(backgroundColor: scheme.tertiaryContainer);
-    final spans = <TextSpan>[];
-    final lower = text.toLowerCase();
-    var start = 0;
-    while (true) {
-      final index = lower.indexOf(q, start);
-      if (index < 0) {
-        spans.add(TextSpan(text: text.substring(start)));
-        break;
-      }
-      if (index > start) {
-        spans.add(TextSpan(text: text.substring(start, index)));
-      }
-      spans.add(
-        TextSpan(
-          text: text.substring(index, index + q.length),
-          style: highlight,
-        ),
-      );
-      start = index + q.length;
-      if (start >= text.length) break;
-    }
-    return TextSpan(style: style, children: spans);
   }
 }

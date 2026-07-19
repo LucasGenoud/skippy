@@ -7,6 +7,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat.dart';
+import '../models/link_preview.dart';
 import '../models/note.dart';
 
 class ApiException implements Exception {
@@ -121,6 +122,10 @@ abstract class Api {
   /// Ask the server to (re)transcribe an audio note's clip. Used to retry a
   /// failed transcription.
   Future<void> transcribeNote(String noteId);
+
+  /// Fetch link-preview metadata (Open Graph / HTML) for [url]. Returns null
+  /// when the server rejects the URL (invalid/blocked) or the fetch fails.
+  Future<LinkPreview?> unfurl(String url);
 
   /// Server-push change events; emits whenever this user's notes change.
   Stream<void> changeEvents();
@@ -476,6 +481,19 @@ class ApiClient implements Api {
     ).replace(queryParameters: {'q': query, 'limit': '$limit'});
     final data = _decode(await _client.get(uri, headers: _headers())) as List;
     return [for (final hit in data) (hit as Map)['note_id'] as String];
+  }
+
+  @override
+  Future<LinkPreview?> unfurl(String url) async {
+    final uri = _uri('/unfurl').replace(queryParameters: {'url': url});
+    try {
+      final data = _decode(await _client.get(uri, headers: _headers()));
+      if (data is! Map<String, dynamic>) return null;
+      return LinkPreview.fromJson(data);
+    } on ApiException {
+      // Invalid/blocked URL (400) or auth/transient error — no preview.
+      return null;
+    }
   }
 
   // -- capabilities & transcription --------------------------------------------

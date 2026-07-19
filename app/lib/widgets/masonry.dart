@@ -119,21 +119,15 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     } else {
       // Keep the in-progress drag order; just add/remove what changed.
       final incoming = ids.toSet();
+      final existing = _orderIds.toSet();
       _orderIds = [
         for (final id in _orderIds)
           if (incoming.contains(id)) id,
         for (final id in ids)
-          if (!_orderIds.contains(id)) id,
+          if (!existing.contains(id)) id,
       ];
     }
     _heights.removeWhere((id, _) => !ids.contains(id));
-  }
-
-  Note? _noteById(String id) {
-    for (final n in widget.notes) {
-      if (n.id == id) return n;
-    }
-    return null;
   }
 
   _Layout _computeLayout(double maxWidth) {
@@ -359,6 +353,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
           _snapFrame = true;
         }
         final layout = _computeLayout(width);
+        final notesById = {for (final n in widget.notes) n.id: n};
         final snap = _snapFrame;
         // Re-arm the glide animation for the frames that follow this one.
         if (snap) {
@@ -386,7 +381,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
             clipBehavior: Clip.none,
             children: [
               for (var i = 0; i < _orderIds.length; i++)
-                if (_noteById(_orderIds[i]) case final Note note)
+                if (notesById[_orderIds[i]] case final Note note)
                   AnimatedPositioned(
                     key: ValueKey(note.id),
                     duration: snap ? Duration.zero : _moveDuration,

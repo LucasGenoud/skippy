@@ -214,10 +214,29 @@ class NotesStore extends ChangeNotifier {
     };
   }
 
-  /// Coalesced, one-writer-at-a-time persistence. Uses a microtask (not a
-  /// timer) so it runs promptly after each change without leaking test timers.
+  /// Rate-limited persistence for plain state changes: encoding the whole
+  /// corpus (and, on web, a synchronous localStorage write) on every notify
+  /// is the single biggest UI-thread cost during typing and animations, so
+  /// cap it at one write per second. A skipped write is never lost for
+  /// long: anything durable (an edit, a toggle, a reorder) enqueues a
+  /// server op within 400ms, and queue changes persist immediately via
+  /// [_persistNow]; only server-refetch snapshots can stay stale, and those
+  /// are refetched on the next launch anyway.
+  DateTime _lastPersist = DateTime.fromMillisecondsSinceEpoch(0);
+
   void _persistSoon() {
+    if (DateTime.now().difference(_lastPersist) < const Duration(seconds: 1)) {
+      return;
+    }
+    _persistNow();
+  }
+
+  /// Coalesced, one-writer-at-a-time persistence. Uses a microtask (not a
+  /// timer) so it runs promptly after each change without leaking test
+  /// timers.
+  void _persistNow() {
     if (!_hydrated) return;
+    _lastPersist = DateTime.now();
     _persistDirty = true;
     if (_persisting) return;
     _persisting = true;
@@ -945,7 +964,7 @@ class NotesStore extends ChangeNotifier {
 
   void _enqueue(PendingOp op) {
     _queue.add(op);
-    _persistSoon();
+    _persistNow();
     _flush();
   }
 
@@ -968,7 +987,7 @@ class NotesStore extends ChangeNotifier {
       try {
         await _run(op);
         _queue.removeAt(0);
-        _persistSoon();
+        _persistNow();
         if (offline) {
           offline = false;
           notifyListeners();
@@ -979,7 +998,7 @@ class NotesStore extends ChangeNotifier {
         if (e.statusCode >= 400 && e.statusCode < 500) {
           debugPrint('dropping rejected op: $e');
           _queue.removeAt(0);
-          _persistSoon();
+          _persistNow();
           continue;
         }
         _scheduleRetry();
@@ -1051,6 +1070,7 @@ class NotesStore extends ChangeNotifier {
     _syncReloadDebounce?.cancel();
     _syncSub?.cancel();
     _onlineSub?.cancel();
+    _notifyThrottle?.cancel();
     for (final t in _saveDebounce.values) {
       t.cancel();
     }

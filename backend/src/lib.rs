@@ -10,6 +10,7 @@ pub mod notify;
 pub mod search;
 pub mod store;
 pub mod transcribe;
+pub mod unfurl;
 pub mod ws;
 
 use std::collections::HashMap;
@@ -58,6 +59,10 @@ pub struct AppState {
     /// per-user copy in the settings document and lock the field in the app.
     /// Empty by default (nothing managed); `main` fills it from the env.
     pub managed: Arc<config::ManagedSettings>,
+    /// In-memory cache of link-preview unfurls, keyed by URL. Time-limited so
+    /// stale metadata eventually refreshes; not persisted (re-fetched after a
+    /// restart). See [`handlers::unfurl`].
+    pub unfurl_cache: Arc<Mutex<HashMap<String, (unfurl::LinkPreview, std::time::Instant)>>>,
 }
 
 impl AppState {
@@ -78,6 +83,7 @@ impl AppState {
             label_delay: Duration::from_secs(20),
             file_secret: Arc::new(secret),
             managed: Arc::new(config::ManagedSettings::default()),
+            unfurl_cache: Arc::default(),
         }
     }
 
@@ -153,6 +159,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/checklist-history", get(handlers::checklist_history))
         .route("/settings", get(handlers::get_settings).put(handlers::put_settings))
         .route("/search", get(handlers::semantic_search))
+        .route("/unfurl", get(handlers::unfurl))
         .route("/labels", get(handlers::list_labels).post(handlers::create_label))
         .route(
             "/labels/{id}",

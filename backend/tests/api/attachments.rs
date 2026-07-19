@@ -44,6 +44,62 @@ async fn attachment_upload_serve_delete() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
+/// Audio (and any media) must be range-servable so iOS AVPlayer / `just_audio`
+/// can stream and seek it — the plain-200 server used to make mobile playback
+/// fail. Verify `Accept-Ranges`, a `206` slice, inline disposition, and `416`.
+#[tokio::test]
+async fn audio_files_serve_byte_ranges() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"kind": "audio"})).await;
+    let note_id = note["id"].as_str().unwrap();
+
+    let payload = b"0123456789".as_slice();
+    let (status, attachment) = upload(&app, &token, note_id, "audio/mp4", payload).await;
+    assert_eq!(status, StatusCode::CREATED, "{attachment}");
+    let signed_url = attachment["url"].as_str().unwrap().to_string();
+
+    // A full GET advertises range support and renders inline (not download).
+    let request = Request::builder().uri(&signed_url).body(Body::empty()).unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+    assert_eq!(response.headers()[header::CONTENT_DISPOSITION], "inline");
+
+    // A byte range returns 206 with just those bytes and a Content-Range.
+    let request = Request::builder()
+        .uri(&signed_url)
+        .header(header::RANGE, "bytes=2-5")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    let served = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(served.as_ref(), b"2345");
+
+    // An open-ended range clamps to the end of the file.
+    let request = Request::builder()
+        .uri(&signed_url)
+        .header(header::RANGE, "bytes=7-")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    let served = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(served.as_ref(), b"789");
+
+    // A range past the end is unsatisfiable.
+    let request = Request::builder()
+        .uri(&signed_url)
+        .header(header::RANGE, "bytes=100-200")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+}
+
 /// The signature is the whole access-control story for files, so exercise the
 /// ways it can be wrong: absent, tampered, expired, or bound to another id.
 #[tokio::test]

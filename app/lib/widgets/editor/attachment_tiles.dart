@@ -2,15 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/note.dart';
+import '../../util/attachment_image.dart';
 import '../../util/mime.dart';
 
 /// An inline image attachment in the editor, with a hover remove button.
 /// A null [onRemove] (trashed note) hides the button.
 class ImageAttachmentTile extends StatelessWidget {
+  final Attachment attachment;
   final String url;
   final VoidCallback? onRemove;
 
-  const ImageAttachmentTile({super.key, required this.url, this.onRemove});
+  const ImageAttachmentTile({
+    super.key,
+    required this.attachment,
+    required this.url,
+    this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,16 +31,30 @@ class ImageAttachmentTile extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 320),
               child: SizedBox(
                 width: double.infinity,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stack) => Container(
-                    height: 80,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    child: const Icon(Icons.broken_image_outlined),
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Decode at (bucketed) display size — see the note card's
+                    // image strip for the rationale.
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    final width = constraints.maxWidth.isFinite
+                        ? constraints.maxWidth * dpr
+                        : 1360.0;
+                    return Image(
+                      image: ResizeImage.resizeIfNeeded(
+                        ((width / 320).ceil() * 320).clamp(320, 2048).toInt(),
+                        null,
+                        AttachmentImage(attachmentId: attachment.id, url: url),
+                      ),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => Container(
+                        height: 80,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.broken_image_outlined),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -83,10 +104,8 @@ class FileAttachmentTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: () => launchUrl(
-            Uri.parse(url),
-            mode: LaunchMode.externalApplication,
-          ),
+          onTap: () =>
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(

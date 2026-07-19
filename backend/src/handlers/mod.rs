@@ -13,6 +13,7 @@ mod probes;
 mod search;
 mod settings;
 mod sharing;
+mod unfurl;
 mod versions;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
@@ -28,6 +29,7 @@ pub use probes::{llm_test, notify_test};
 pub use search::semantic_search;
 pub use settings::{get_settings, put_settings};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
+pub use unfurl::unfurl;
 pub use versions::{list_note_versions, restore_note_version};
 
 use axum::extract::State;

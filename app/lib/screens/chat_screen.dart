@@ -57,6 +57,30 @@ class _ChatScreenState extends State<ChatScreen> {
   bool get _busy => _turns.isNotEmpty && _turns.last.streaming;
 
   @override
+  void initState() {
+    super.initState();
+    // Focusing the composer right away brings the soft keyboard up while the
+    // page is still sliding in, which stutters the open animation. Wait for
+    // the route transition to settle, then focus.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation == null || animation.isCompleted) {
+        _inputFocus.requestFocus();
+        return;
+      }
+      void onStatus(AnimationStatus status) {
+        if (status == AnimationStatus.completed) {
+          animation.removeStatusListener(onStatus);
+          if (mounted) _inputFocus.requestFocus();
+        }
+      }
+
+      animation.addStatusListener(onStatus);
+    });
+  }
+
+  @override
   void dispose() {
     _sub?.cancel();
     _input.dispose();
@@ -198,7 +222,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: TextField(
                           controller: _input,
                           focusNode: _inputFocus,
-                          autofocus: true,
                           minLines: 1,
                           maxLines: 4,
                           textInputAction: TextInputAction.send,

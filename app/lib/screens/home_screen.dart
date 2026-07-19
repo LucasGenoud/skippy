@@ -76,8 +76,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Semantic search: ranked ids from the server, refreshed as you type.
-  bool _semantic = false;
+  // Semantic search: ranked ids from the server, refreshed as you type. The
+  // on/off preference is persisted in settings so it survives an app restart.
+  bool get _semantic => context.read<SettingsStore>().semanticRanking;
   bool _semanticAvailable = true;
   List<String>? _semanticIds;
   bool _semanticBusy = false;
@@ -100,7 +101,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _toggleSemantic() {
-    setState(() => _semantic = !_semantic);
+    final settings = context.read<SettingsStore>();
+    settings.setSemanticRanking(!settings.semanticRanking);
     _scheduleSemantic();
   }
 
@@ -128,7 +130,6 @@ class _HomeScreenState extends State<HomeScreen> {
         if (e.statusCode == 503) {
           setState(() {
             _semanticAvailable = false;
-            _semantic = false;
             _semanticIds = null;
           });
           showAppSnack('Semantic search is not enabled on this server');

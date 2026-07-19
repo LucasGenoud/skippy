@@ -8,8 +8,12 @@ import '../models/note.dart';
 import '../screens/editor_screen.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import 'link_preview.dart';
+import 'linked_text.dart';
 import 'transcribing_indicator.dart';
+import '../util/attachment_image.dart';
 import '../util/highlight.dart';
+import '../util/linkify.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
 
@@ -33,10 +37,13 @@ class _NoteTileState extends State<NoteTile> {
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
-    final scheme = Theme.of(context).colorScheme;
-    final fill = context.watch<SettingsStore>().resolveColor(
-      note.color,
-      Theme.of(context).brightness,
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final brightness = theme.brightness;
+    // select, not watch: the tile only re-renders when its own resolved
+    // fill changes, instead of on every settings notification.
+    final fill = context.select<SettingsStore, Color?>(
+      (s) => s.resolveColor(note.color, brightness),
     );
     final borderColor = fill == null
         ? scheme.outlineVariant
@@ -81,10 +88,14 @@ class _NoteTileState extends State<NoteTile> {
             borderRadius: BorderRadius.circular(12),
             onTap: () =>
                 openNoteEditor(context, openFullscreen: open, noteId: note.id),
-            child: _NoteCardContent(
-              note: note,
-              hovered: _hovered,
-              query: widget.query,
+            // The pin overlay is the only hover-dependent piece, and it sits
+            // outside _NoteCardContent so hover flips never rebuild the card
+            // body (markdown parse, image resolve).
+            child: Stack(
+              children: [
+                _NoteCardContent(note: note, query: widget.query),
+                _PinButton(note: note, hovered: _hovered),
+              ],
             ),
           ),
           openBuilder: (context, close) => EditorScreen(noteId: note.id),
@@ -96,25 +107,32 @@ class _NoteTileState extends State<NoteTile> {
 
 class _NoteCardContent extends StatelessWidget {
   final Note note;
-  final bool hovered;
   final String query;
-  const _NoteCardContent({
-    required this.note,
-    required this.hovered,
-    this.query = '',
-  });
+  const _NoteCardContent({required this.note, this.query = ''});
 
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
+    // read for URL building; select for the one store-derived value (label
+    // names) so the card body doesn't rebuild on every store notification.
+    final store = context.read<NotesStore>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final labels = [
-      for (final id in note.labelIds)
-        if (store.labelById(id) case final Label label) label.name,
-    ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    // Joined with an unprintable separator (label names may contain spaces)
+    // because select needs a value with a meaningful == — a freshly built
+    // List never equals the previous one.
+    final joinedLabels = context.select<NotesStore, String>(
+      (s) =>
+          ([
+            for (final id in note.labelIds)
+              if (s.labelById(id) case final Label label) label.name,
+          ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()))).join(
+            '\u0000',
+          ),
+    );
+    final labels = joinedLabels.isEmpty
+        ? const <String>[]
+        : joinedLabels.split('\u0000');
 
-    final showPinButton = !note.trashed && (hovered || note.pinned);
     final visibleItems = note.items
         .where((i) => i.text.trim().isNotEmpty)
         .toList();
@@ -128,6 +146,10 @@ class _NoteCardContent extends StatelessWidget {
         .where((a) => !a.isImage && !a.isAudio)
         .toList();
 
+    // A single rich preview for the note's first link (grid space is tight).
+    final linkMatches = findUrls('${note.title}\n${note.content}');
+    final firstLinkUrl = linkMatches.isEmpty ? null : linkMatches.first.url;
+
     final hasTextBlock =
         note.title.isNotEmpty ||
         note.isAudio ||
@@ -140,224 +162,198 @@ class _NoteCardContent extends StatelessWidget {
         files.isNotEmpty ||
         note.isShared;
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (hasTextBlock)
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  16,
-                  16,
-                  images.isNotEmpty || hasFooter ? 0 : 16,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (note.title.isNotEmpty)
-                      Padding(
-                        // Keep clear of the pin button.
-                        padding: EdgeInsets.only(right: showPinButton ? 28 : 0),
-                        child: Text.rich(
-                          TextSpan(
-                            children: highlightSpans(
-                              note.title,
-                              query,
-                              highlight: TextStyle(
-                                backgroundColor: scheme.primary.withValues(
-                                  alpha: 0.30,
-                                ),
-                              ),
+        if (hasTextBlock)
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              images.isNotEmpty || hasFooter
+                  ? 0
+                  : (firstLinkUrl != null ? 12 : 16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (note.title.isNotEmpty)
+                  Padding(
+                    // Always reserve room for the pin button (it appears
+                    // on hover): tying this to hover made titles reflow
+                    // under the cursor.
+                    padding: EdgeInsets.only(right: note.trashed ? 0 : 28),
+                    child: Text.rich(
+                      TextSpan(
+                        children: highlightSpans(
+                          note.title,
+                          query,
+                          highlight: TextStyle(
+                            backgroundColor: scheme.primary.withValues(
+                              alpha: 0.30,
                             ),
                           ),
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            height: 1.3,
-                          ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    if (note.title.isNotEmpty &&
-                        (note.content.isNotEmpty || previewItems.isNotEmpty))
-                      const SizedBox(height: 8),
-                    if (note.isAudio) ...[
-                      if (note.title.isNotEmpty) const SizedBox(height: 8),
-                      const _AudioPill(),
-                      if (note.transcribing)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 10),
-                          child: TranscribingIndicator(compact: true),
-                        )
-                      else if (note.transcriptFailed)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 10),
-                          child: TranscriptFailed(compact: true),
-                        )
-                      else if (note.content.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            note.content,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              height: 1.45,
-                            ),
-                            maxLines: 6,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ] else if (note.kind == NoteKind.markdown &&
-                        note.content.isNotEmpty)
-                      // Rendered markdown preview, clipped like long text.
-                      // The never-scrollable scroll view absorbs the
-                      // unbounded height so tall content clips without a
-                      // layout overflow.
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 220),
-                        child: ClipRect(
-                          child: IgnorePointer(
-                            child: SingleChildScrollView(
-                              physics: const NeverScrollableScrollPhysics(),
-                              child: MarkdownBody(
-                                data: note.content,
-                                styleSheet: MarkdownStyleSheet.fromTheme(theme)
-                                    .copyWith(
-                                      p: theme.textTheme.bodyMedium?.copyWith(
-                                        height: 1.45,
-                                      ),
-                                    ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    else if (!note.isChecklist && note.content.isNotEmpty)
-                      Text.rich(
-                        TextSpan(
-                          children: highlightSpans(
-                            note.content,
-                            query,
-                            highlight: TextStyle(
-                              backgroundColor: scheme.primary.withValues(
-                                alpha: 0.30,
-                              ),
-                            ),
-                          ),
-                        ),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (note.title.isNotEmpty &&
+                    (note.content.isNotEmpty || previewItems.isNotEmpty))
+                  const SizedBox(height: 8),
+                if (note.isAudio) ...[
+                  if (note.title.isNotEmpty) const SizedBox(height: 8),
+                  const _AudioPill(),
+                  if (note.transcribing)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: TranscribingIndicator(compact: true),
+                    )
+                  else if (note.transcriptFailed)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: TranscriptFailed(compact: true),
+                    )
+                  else if (note.content.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: LinkedText(
+                        text: note.content,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.45,
                         ),
-                        maxLines: 10,
+                        maxLines: 6,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    if (note.isChecklist) ...[
-                      for (final item in previewItems)
-                        _ChecklistRow(note: note, item: item),
-                      if (unchecked.length > previewItems.length)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 28, top: 2),
-                          child: Text(
-                            '+ ${unchecked.length - previewItems.length} more',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      if (checked.isNotEmpty)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            top: unchecked.isEmpty ? 0 : 6,
-                          ),
-                          child: Text(
-                            '${checked.length} checked ${checked.length == 1 ? 'item' : 'items'}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                    ],
-                    if (note.isEmpty)
-                      Text(
-                        'Empty note',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                    ),
+                ] else if (note.kind == NoteKind.markdown &&
+                    note.content.isNotEmpty)
+                  // Rendered markdown preview, clipped like long text.
+                  // The never-scrollable scroll view absorbs the
+                  // unbounded height so tall content clips without a
+                  // layout overflow.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: ClipRect(
+                      child: IgnorePointer(
+                        child: SingleChildScrollView(
+                          physics: const NeverScrollableScrollPhysics(),
+                          child: _MarkdownPreview(content: note.content),
                         ),
                       ),
-                  ],
-                ),
-              ),
-            // Images sit under the text (full bleed), chips under the images.
-            if (images.isNotEmpty)
-              Padding(
-                padding: EdgeInsets.only(top: hasTextBlock ? 12 : 0),
-                child: _ImageStrip(
-                  images: images,
-                  store: store,
-                  borderRadius: BorderRadius.vertical(
-                    top: hasTextBlock ? Radius.zero : const Radius.circular(12),
-                    bottom: hasFooter ? Radius.zero : const Radius.circular(12),
+                    ),
+                  )
+                else if (!note.isChecklist && note.content.isNotEmpty)
+                  LinkedText(
+                    text: note.content,
+                    query: query,
+                    highlight: TextStyle(
+                      backgroundColor: scheme.primary.withValues(alpha: 0.30),
+                    ),
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+                    maxLines: 10,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ),
-            if (hasFooter)
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  hasTextBlock || images.isNotEmpty ? 12 : 16,
-                  16,
-                  16,
-                ),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (note.reminderAt != null)
-                      _ReminderChip(reminderAt: note.reminderAt!),
-                    for (final file in files.take(2)) _FileChip(file: file),
-                    if (files.length > 2)
-                      _LabelChip(name: '+${files.length - 2} files'),
-                    for (final name in labels.take(3)) _LabelChip(name: name),
-                    if (labels.length > 3)
-                      _LabelChip(name: '+${labels.length - 3}'),
-                    if (note.isShared)
-                      Tooltip(
-                        message: _sharedTooltip(note),
-                        child: Icon(
-                          Icons.people_alt_outlined,
-                          size: 16,
+                if (note.isChecklist) ...[
+                  for (final item in previewItems)
+                    _ChecklistRow(note: note, item: item),
+                  if (unchecked.length > previewItems.length)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28, top: 2),
+                      child: Text(
+                        '+ ${unchecked.length - previewItems.length} more',
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-        // Pin control: revealed on hover (web/desktop), always shown when
-        // pinned so its state is visible at a glance.
-        Positioned(
-          top: 4,
-          right: 4,
-          child: AnimatedOpacity(
-            opacity: showPinButton ? 1 : 0,
-            duration: const Duration(milliseconds: 120),
-            child: IgnorePointer(
-              ignoring: !showPinButton,
-              child: IconButton(
-                icon: Icon(
-                  note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                  size: 20,
-                ),
-                color: scheme.onSurfaceVariant,
-                tooltip: note.pinned ? 'Unpin note' : 'Pin note',
-                onPressed: () => store.togglePin(note.id),
+                    ),
+                  if (checked.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: unchecked.isEmpty ? 0 : 6),
+                      child: Text(
+                        '${checked.length} checked ${checked.length == 1 ? 'item' : 'items'}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+                if (note.isEmpty)
+                  Text(
+                    'Empty note',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        // Images sit under the text (full bleed), chips under the images.
+        if (images.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: hasTextBlock ? 12 : 0),
+            child: _ImageStrip(
+              images: images,
+              store: store,
+              borderRadius: BorderRadius.vertical(
+                top: hasTextBlock ? Radius.zero : const Radius.circular(12),
+                bottom: hasFooter || firstLinkUrl != null
+                    ? Radius.zero
+                    : const Radius.circular(12),
               ),
             ),
           ),
-        ),
+        if (hasFooter)
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              hasTextBlock || images.isNotEmpty ? 12 : 16,
+              16,
+              firstLinkUrl != null ? 12 : 16,
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (note.reminderAt != null)
+                  _ReminderChip(reminderAt: note.reminderAt!),
+                for (final file in files.take(2)) _FileChip(file: file),
+                if (files.length > 2)
+                  _LabelChip(name: '+${files.length - 2} files'),
+                for (final name in labels.take(3)) _LabelChip(name: name),
+                if (labels.length > 3)
+                  _LabelChip(name: '+${labels.length - 3}'),
+                if (note.isShared)
+                  Tooltip(
+                    message: _sharedTooltip(note),
+                    child: Icon(
+                      Icons.people_alt_outlined,
+                      size: 16,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        // The link preview is a full-bleed strip attached to the bottom of the
+        // card — a continuation of the note square, not a card floating inside
+        // it. Bottom corners follow the card; a hairline divides it from the
+        // note body above.
+        if (firstLinkUrl != null)
+          LinkPreviewCard(
+            url: firstLinkUrl,
+            topDivider: true,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(12),
+            ),
+          ),
       ],
     );
   }
@@ -368,6 +364,78 @@ class _NoteCardContent extends StatelessWidget {
       ...note.collaborators.map((c) => c.username),
     ];
     return 'Shared with ${names.join(', ')}';
+  }
+}
+
+/// Pin control overlaying the card's top-right corner: revealed on hover
+/// (web/desktop), always shown when pinned so its state is visible at a
+/// glance. Lives beside — not inside — [_NoteCardContent] so hover flips
+/// only touch this small overlay, never the card body.
+class _PinButton extends StatelessWidget {
+  final Note note;
+  final bool hovered;
+  const _PinButton({required this.note, required this.hovered});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final show = !note.trashed && (hovered || note.pinned);
+    return Positioned(
+      top: 4,
+      right: 4,
+      child: AnimatedOpacity(
+        opacity: show ? 1 : 0,
+        duration: const Duration(milliseconds: 120),
+        child: IgnorePointer(
+          ignoring: !show,
+          child: IconButton(
+            icon: Icon(
+              note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+              size: 20,
+            ),
+            color: scheme.onSurfaceVariant,
+            tooltip: note.pinned ? 'Unpin note' : 'Pin note',
+            onPressed: () => context.read<NotesStore>().togglePin(note.id),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Markdown parses its whole AST inside MarkdownBody.build — far too heavy
+/// to re-run every time the grid rebuilds. Returning the previously built
+/// instance when content and theme are unchanged makes Flutter skip the
+/// subtree entirely (identical widget == no rebuild).
+class _MarkdownPreview extends StatefulWidget {
+  final String content;
+  const _MarkdownPreview({required this.content});
+
+  @override
+  State<_MarkdownPreview> createState() => _MarkdownPreviewState();
+}
+
+class _MarkdownPreviewState extends State<_MarkdownPreview> {
+  Widget? _built;
+  String? _builtContent;
+  ThemeData? _builtTheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_built == null ||
+        _builtContent != widget.content ||
+        _builtTheme != theme) {
+      _builtContent = widget.content;
+      _builtTheme = theme;
+      _built = MarkdownBody(
+        data: widget.content,
+        styleSheet: MarkdownStyleSheet.fromTheme(
+          theme,
+        ).copyWith(p: theme.textTheme.bodyMedium?.copyWith(height: 1.45)),
+      );
+    }
+    return _built!;
   }
 }
 
@@ -396,9 +464,10 @@ class _ChecklistRow extends StatelessWidget {
             height: 18,
             child: InkWell(
               onTap: canToggle
-                  ? () => context
-                      .read<NotesStore>()
-                      .toggleChecklistItem(note.id, item.id)
+                  ? () => context.read<NotesStore>().toggleChecklistItem(
+                      note.id,
+                      item.id,
+                    )
                   : null,
               borderRadius: BorderRadius.circular(4),
               child: Icon(
@@ -451,14 +520,37 @@ class _ImageStrip extends StatelessWidget {
             constraints: const BoxConstraints(maxHeight: 160),
             child: SizedBox(
               width: double.infinity,
-              child: Image.network(
-                store.fileUrl(first),
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stack) => Container(
-                  height: 60,
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image_outlined),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Decode at display size, not the photo's full resolution —
+                  // a multi-megapixel decode per card janks grid scrolling.
+                  // Bucketed so the cache key stays stable while the column
+                  // width drifts during a window resize.
+                  final dpr = MediaQuery.devicePixelRatioOf(context);
+                  final width = constraints.maxWidth.isFinite
+                      ? constraints.maxWidth * dpr
+                      : 600.0;
+                  return Image(
+                    // Cache key = attachment id, so the hourly signed-URL
+                    // rotation doesn't refetch every visible image.
+                    image: ResizeImage.resizeIfNeeded(
+                      ((width / 160).ceil() * 160).clamp(160, 1280).toInt(),
+                      null,
+                      AttachmentImage(
+                        attachmentId: first.id,
+                        url: store.fileUrl(first),
+                      ),
+                    ),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => Container(
+                      height: 60,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      child: const Icon(Icons.broken_image_outlined),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -492,7 +584,11 @@ class _ReminderChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final past = reminderAt.isBefore(DateTime.now());
-    final label = context.watch<SettingsStore>().reminderLabel(reminderAt);
+    // select: re-render only when the formatted label itself changes (date
+    // or clock format edits), not on every settings notification.
+    final label = context.select<SettingsStore, String>(
+      (s) => s.reminderLabel(reminderAt),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(

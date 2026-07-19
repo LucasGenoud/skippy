@@ -820,13 +820,24 @@ void main() {
       expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);
       expect(find.byType(CircleAvatar), findsOneWidget);
 
-      // Typing swaps the trailing icons for the clear button.
+      // Focusing the field collapses the trailing shortcuts (layout/avatar)
+      // into search mode — even before anything is typed.
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      expect(find.byIcon(Icons.view_agenda_outlined), findsNothing);
+      expect(find.byType(CircleAvatar), findsNothing);
+
+      // Typing then shows the clear button.
       await tester.enterText(find.byType(TextField).first, 'milk');
       await tester.pump();
       expect(find.byIcon(Icons.close), findsOneWidget);
-      expect(find.byIcon(Icons.view_agenda_outlined), findsNothing);
       await tester.tap(find.byIcon(Icons.close));
       await tester.pump();
+
+      // Dropping focus brings the shortcuts back.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);
 
       // Sort now lives in the avatar menu, opening a bottom sheet.
       await tester.tap(find.byType(CircleAvatar).first);

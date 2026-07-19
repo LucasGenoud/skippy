@@ -12,6 +12,7 @@ import '../models/note.dart';
 import '../state/editor_history.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/linkify.dart';
 import '../util/mime.dart';
 import '../util/snack.dart';
 import 'history_screen.dart';
@@ -23,6 +24,7 @@ import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
+import '../widgets/link_preview.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/transcribing_indicator.dart';
@@ -76,6 +78,11 @@ Future<void> openNoteEditor(
   String? noteId,
   NoteKind kind = NoteKind.text,
 }) {
+  // Drop focus from whatever field held it (search bar, quick-add, chat
+  // composer). Without this the enclosing FocusScope remembers that field
+  // and hands focus straight back when the editor pops — resummoning the
+  // soft keyboard right as the note closes.
+  FocusManager.instance.primaryFocus?.unfocus();
   if (!wantsModalEditor(context)) {
     openFullscreen();
     return Future<void>.value();
@@ -108,7 +115,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   late final NotesStore _store;
   late final TextEditingController _titleController;
-  late final TextEditingController _contentController;
+  late final LinkifyingController _contentController;
   final _findController = TextEditingController();
   final _titleFocus = FocusNode();
   final _contentFocus = FocusNode();
@@ -132,7 +139,10 @@ class _EditorScreenState extends State<EditorScreen> {
     _noteId = widget.noteId;
     final note = _note;
     _titleController = TextEditingController(text: note?.title ?? '');
-    _contentController = TextEditingController(text: note?.content ?? '');
+    _contentController = LinkifyingController(
+      text: note?.content ?? '',
+      onOpenUrl: launchLinkUrl,
+    );
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
     _findController.addListener(() => setState(() {}));
@@ -225,6 +235,9 @@ class _EditorScreenState extends State<EditorScreen> {
       _noteId!,
       title: title,
       content: _kind != NoteKind.checklist ? content : null,
+      // Typing must never rebuild the whole grid behind the editor on every
+      // keystroke; the store throttles the notification instead.
+      urgent: false,
     );
     _afterChange();
     setState(() {});
@@ -299,7 +312,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _setItems(List<ChecklistItem> items, {bool discrete = true}) {
     _ensureNote();
-    _store.updateNoteContent(_noteId!, items: items);
+    // Discrete ops (check, add, remove, reorder) show on the grid instantly;
+    // row typing rides the same keystroke throttle as the text fields.
+    _store.updateNoteContent(_noteId!, items: items, urgent: discrete);
     _afterChange(discrete: discrete);
     setState(() {});
   }
@@ -530,8 +545,7 @@ class _EditorScreenState extends State<EditorScreen> {
       initialTime: TimeOfDay.fromDateTime(initial),
       helpText: 'Remind me at',
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context)
-            .copyWith(alwaysUse24HourFormat: use24h),
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
         child: child!,
       ),
     );
@@ -708,134 +722,156 @@ class _EditorScreenState extends State<EditorScreen> {
         if (_store.labelById(id) case final Label label) label,
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-    return FileDropArea(
-      hint: 'Drop files to attach',
-      onFiles: _addDroppedFiles,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        color: bg,
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-                _undo,
-            const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
-            const SingleActivator(
-              LogicalKeyboardKey.keyZ,
-              control: true,
-              shift: true,
-            ): _redo,
-            const SingleActivator(
-              LogicalKeyboardKey.keyZ,
-              meta: true,
-              shift: true,
-            ): _redo,
-            const SingleActivator(LogicalKeyboardKey.keyY, control: true):
-                _redo,
-          },
-          child: _editorShell(
-            note: note,
-            body: SafeArea(
-              // heightFactor 1 makes the modal hug its content instead of
-              // stretching to the dialog's max height; fullscreen keeps the
-              // usual fill (the column is max-size there anyway).
-              child: Align(
-                alignment: Alignment.topCenter,
-                heightFactor: widget.modal ? 1.0 : null,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  child: Column(
-                    // Modal: shrink to the note's content (the dialog grows
-                    // with the note, like Keep's web editor) instead of
-                    // filling the screen.
-                    mainAxisSize: widget.modal
-                        ? MainAxisSize.min
-                        : MainAxisSize.max,
-                    children: [
-                      Flexible(
-                        fit: widget.modal ? FlexFit.loose : FlexFit.tight,
-                        child: GestureDetector(
-                          onTap: trashed
-                              ? () => showAppSnack(
-                                  "Can't edit in Trash — restore the note first",
-                                )
-                              : null,
-                          child: ListView(
-                            shrinkWrap: widget.modal,
-                            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                            children: [
-                              TextField(
-                                controller: _titleController,
-                                focusNode: _titleFocus,
-                                readOnly: trashed,
-                                enabled: !trashed,
-                                maxLines: null,
-                                textInputAction: TextInputAction.next,
-                                style: Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                                decoration: const InputDecoration(
-                                  hintText: 'Title',
-                                  border: InputBorder.none,
+    return PopScope(
+      // Release the keyboard the instant the close starts (close button,
+      // system back, swipe-back, modal barrier tap) instead of when the
+      // route finishes disposing — otherwise it lingers through the whole
+      // closing animation and can stay stuck up.
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) FocusManager.instance.primaryFocus?.unfocus();
+      },
+      child: FileDropArea(
+        hint: 'Drop files to attach',
+        onFiles: _addDroppedFiles,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          color: bg,
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+                  _undo,
+              const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
+              const SingleActivator(
+                LogicalKeyboardKey.keyZ,
+                control: true,
+                shift: true,
+              ): _redo,
+              const SingleActivator(
+                LogicalKeyboardKey.keyZ,
+                meta: true,
+                shift: true,
+              ): _redo,
+              const SingleActivator(LogicalKeyboardKey.keyY, control: true):
+                  _redo,
+            },
+            child: _editorShell(
+              note: note,
+              body: SafeArea(
+                // heightFactor 1 makes the modal hug its content instead of
+                // stretching to the dialog's max height; fullscreen keeps the
+                // usual fill (the column is max-size there anyway).
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  heightFactor: widget.modal ? 1.0 : null,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: Column(
+                      // Modal: shrink to the note's content (the dialog grows
+                      // with the note, like Keep's web editor) instead of
+                      // filling the screen.
+                      mainAxisSize: widget.modal
+                          ? MainAxisSize.min
+                          : MainAxisSize.max,
+                      children: [
+                        Flexible(
+                          fit: widget.modal ? FlexFit.loose : FlexFit.tight,
+                          child: GestureDetector(
+                            onTap: trashed
+                                ? () => showAppSnack(
+                                    "Can't edit in Trash — restore the note first",
+                                  )
+                                : null,
+                            child: ListView(
+                              shrinkWrap: widget.modal,
+                              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                              children: [
+                                TextField(
+                                  controller: _titleController,
+                                  focusNode: _titleFocus,
+                                  readOnly: trashed,
+                                  enabled: !trashed,
+                                  maxLines: null,
+                                  textInputAction: TextInputAction.next,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                  decoration: const InputDecoration(
+                                    hintText: 'Title',
+                                    border: InputBorder.none,
+                                  ),
                                 ),
-                              ),
-                              _contentEditor(trashed: trashed, query: query),
-                              // Images sit directly under the text; other
-                              // files follow as download tiles.
-                              ..._buildAttachments(note),
-                              if (note != null &&
-                                  (note.reminderAt != null ||
-                                      labels.isNotEmpty))
-                                _metaChips(note, settings, labels),
-                            ],
+                                _contentEditor(trashed: trashed, query: query),
+                                // Images sit directly under the text; other
+                                // files follow as download tiles.
+                                ..._buildAttachments(note),
+                                // Rich preview cards for any links in the note.
+                                if (note != null && _linkText(note).isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: LinkPreviewList(
+                                      text: _linkText(note),
+                                    ),
+                                  ),
+                                if (note != null &&
+                                    (note.reminderAt != null ||
+                                        labels.isNotEmpty))
+                                  _metaChips(note, settings, labels),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      // Formatting accessory bar while editing markdown.
-                      if (_kind == NoteKind.markdown &&
-                          !_previewMarkdown &&
-                          !_finding &&
-                          !trashed)
-                        MarkdownToolbar(
-                          controller: _contentController,
-                          focusNode: _contentFocus,
+                        // Formatting accessory bar while editing markdown.
+                        if (_kind == NoteKind.markdown &&
+                            !_previewMarkdown &&
+                            !_finding &&
+                            !trashed)
+                          MarkdownToolbar(
+                            controller: _contentController,
+                            focusNode: _contentFocus,
+                          ),
+                        if (_uploading)
+                          const LinearProgressIndicator(minHeight: 2),
+                        EditorBottomBar(
+                          trashed: trashed,
+                          isOwner: isOwner,
+                          kind: _kind,
+                          editedStamp: note == null
+                              ? ''
+                              : 'Edited ${settings.editedLabel(note.updatedAt)}',
+                          onPalette: trashed
+                              ? null
+                              : () => ColorPickerSheet.show(
+                                  context,
+                                  selected: () => _note?.color ?? 'default',
+                                  onSelect: _setColor,
+                                ),
+                          onLabels: trashed || note == null || note.isEmpty
+                              ? null
+                              : () => LabelsSheet.show(context, note.id),
+                          onReminder: trashed ? null : _editReminder,
+                          onImage: trashed || _uploading ? null : _pickImage,
+                          onAttach: trashed || _uploading ? null : _pickFile,
+                          onShare: trashed ? null : _openShare,
+                          onUndo: trashed || !_history.canUndo ? null : _undo,
+                          onRedo: trashed || !_history.canRedo ? null : _redo,
+                          onDelete:
+                              trashed ||
+                                  note == null ||
+                                  note.isEmpty ||
+                                  !isOwner
+                              ? null
+                              : _deleteAndClose,
+                          onCopy: trashed || note == null || note.isEmpty
+                              ? null
+                              : _copyNote,
+                          onHistory: note == null || note.isEmpty
+                              ? null
+                              : () => NoteHistoryScreen.open(context, note.id),
+                          onConvert: trashed ? null : _convertKind,
                         ),
-                      if (_uploading)
-                        const LinearProgressIndicator(minHeight: 2),
-                      EditorBottomBar(
-                        trashed: trashed,
-                        isOwner: isOwner,
-                        kind: _kind,
-                        editedStamp: note == null
-                            ? ''
-                            : 'Edited ${settings.editedLabel(note.updatedAt)}',
-                        onPalette: trashed
-                            ? null
-                            : () => ColorPickerSheet.show(
-                                context,
-                                selected: () => _note?.color ?? 'default',
-                                onSelect: _setColor,
-                              ),
-                        onLabels: trashed || note == null || note.isEmpty
-                            ? null
-                            : () => LabelsSheet.show(context, note.id),
-                        onReminder: trashed ? null : _editReminder,
-                        onImage: trashed || _uploading ? null : _pickImage,
-                        onAttach: trashed || _uploading ? null : _pickFile,
-                        onShare: trashed ? null : _openShare,
-                        onUndo: trashed || !_history.canUndo ? null : _undo,
-                        onRedo: trashed || !_history.canRedo ? null : _redo,
-                        onDelete:
-                            trashed || note == null || note.isEmpty || !isOwner
-                            ? null
-                            : _deleteAndClose,
-                        onCopy: trashed || note == null || note.isEmpty
-                            ? null
-                            : _copyNote,
-                        onHistory: note == null || note.isEmpty
-                            ? null
-                            : () => NoteHistoryScreen.open(context, note.id),
-                        onConvert: trashed ? null : _convertKind,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1000,6 +1036,13 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  /// The note's title + body, but only when it actually contains a URL — an
+  /// empty string otherwise so the preview strip is skipped entirely.
+  String _linkText(Note note) {
+    final combined = '${note.title}\n${note.content}';
+    return findUrls(combined).isEmpty ? '' : combined;
+  }
+
   /// Images render inline, in upload order; every other file becomes a
   /// download tile below them.
   List<Widget> _buildAttachments(Note? note) {
@@ -1013,6 +1056,7 @@ class _EditorScreenState extends State<EditorScreen> {
     return [
       for (final attachment in note.attachments.where((a) => a.isImage))
         ImageAttachmentTile(
+          attachment: attachment,
           url: _store.fileUrl(attachment),
           onRemove: remove(attachment),
         ),
@@ -1028,4 +1072,3 @@ class _EditorScreenState extends State<EditorScreen> {
     ];
   }
 }
-

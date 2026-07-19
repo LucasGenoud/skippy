@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
@@ -149,6 +150,12 @@ class SettingsStore extends ChangeNotifier {
   bool semanticSearchEnabled = true;
   bool audioNotesEnabled = true;
 
+  // Whether the in-search "rank by meaning" (✨) toggle is on. Unlike the
+  // feature toggle above this is the user's live search-mode preference, and
+  // it's persisted so it survives closing the app. Defaults off (keyword
+  // search) to match the plain-search-first behavior.
+  bool semanticRanking = false;
+
   bool get semanticSearchAvailable =>
       semanticSearchCapable && semanticSearchEnabled;
   bool get audioNotesAvailable =>
@@ -202,7 +209,21 @@ class SettingsStore extends ChangeNotifier {
 
   SettingsStore({required this.api});
 
+  /// Everything listeners can observe, serialized. [load] uses it to skip
+  /// the notification when a refetch changed nothing: load() runs after
+  /// every WS change nudge — including the echo of our own edits — and an
+  /// unconditional notify would rebuild MaterialApp (fresh themes) and
+  /// every note card each time.
+  String _fingerprint() => jsonEncode({
+    'doc': toJson(),
+    'caps': [semanticSearchCapable, audioTranscriptionCapable],
+    'managed': {
+      for (final e in managed.entries) e.key: [e.value.secret, e.value.value],
+    },
+  });
+
   Future<void> load() async {
+    final before = loaded ? _fingerprint() : null;
     // Server capabilities are independent of the (debounced) settings save, so
     // refresh them even while a local edit is still pending.
     try {
@@ -229,7 +250,7 @@ class SettingsStore extends ChangeNotifier {
     // Managed values win over whatever the user's document carried.
     _applyManaged();
     loaded = true;
-    notifyListeners();
+    if (before == null || _fingerprint() != before) notifyListeners();
   }
 
   /// Overlay the server-managed values onto the local fields, so the UI shows
@@ -272,6 +293,7 @@ class SettingsStore extends ChangeNotifier {
     // Feature toggles default ON when absent (they only take effect when the
     // server also advertises the capability).
     semanticSearchEnabled = json['semantic_search'] != false;
+    semanticRanking = json['semantic_ranking'] == true;
     audioNotesEnabled = json['audio_notes'] != false;
     llmBaseUrl = ((json['llm_base_url'] as String?) ?? '').trim();
     llmApiKey = ((json['llm_api_key'] as String?) ?? '').trim();
@@ -305,6 +327,7 @@ class SettingsStore extends ChangeNotifier {
     'time_format': use24hTime ? '24h' : '12h',
     'default_view': defaultListMode ? 'list' : 'grid',
     'semantic_search': semanticSearchEnabled,
+    'semantic_ranking': semanticRanking,
     'audio_notes': audioNotesEnabled,
     'llm_base_url': llmBaseUrl,
     'llm_api_key': llmApiKey,
@@ -347,6 +370,7 @@ class SettingsStore extends ChangeNotifier {
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
   void setSemanticSearchEnabled(bool value) =>
       _mutate(() => semanticSearchEnabled = value);
+  void setSemanticRanking(bool value) => _mutate(() => semanticRanking = value);
   void setAudioNotesEnabled(bool value) =>
       _mutate(() => audioNotesEnabled = value);
 

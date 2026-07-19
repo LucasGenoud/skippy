@@ -20,14 +20,29 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
   bool _playing = false;
   double _position = 0;
   double _duration = 0;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _subs.add(
-      _player.positionStream.listen((p) {
+      // Not positionStream: that emits as often as every 16ms, rebuilding
+      // the bar at 60Hz while playing. A fixed 200ms period (the
+      // createPositionStream default) is plenty for a seek bar.
+      _player.createPositionStream().listen((p) {
         if (mounted) setState(() => _position = p.inMilliseconds / 1000);
       }),
+    );
+    // Surface playback-pipeline errors (they otherwise vanish) so a failing
+    // load/decode is visible on-device instead of a dead play button.
+    _subs.add(
+      _player.playbackEventStream.listen(
+        (_) {},
+        onError: (Object e, StackTrace st) {
+          debugPrint('AudioPlayerBar playback error: $e');
+          if (mounted) setState(() => _error = '$e');
+        },
+      ),
     );
     _subs.add(
       _player.durationStream.listen((d) {
@@ -47,9 +62,18 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
         }
       }),
     );
-    // Load the (public) file URL; swallow load errors so the bar stays inert
-    // rather than throwing into the widget tree.
-    _player.setUrl(widget.url).catchError((_) => null);
+    // Load the (public) file URL. Report load failures in the bar rather than
+    // failing silently — a silent inert bar is exactly the mobile bug we hit.
+    _player
+        .setUrl(widget.url)
+        .then((_) {
+          if (mounted) setState(() => _error = null);
+        })
+        .catchError((Object e) {
+          debugPrint('AudioPlayerBar setUrl error: $e');
+          if (mounted) setState(() => _error = '$e');
+          return null;
+        });
   }
 
   @override
@@ -90,6 +114,29 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
     final scheme = Theme.of(context).colorScheme;
     final max = _duration > 0 ? _duration : 1.0;
     final value = _position.clamp(0.0, max);
+    if (_error != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Audio failed: $_error',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

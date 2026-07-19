@@ -241,21 +241,26 @@ class HomeTopBar extends StatelessWidget {
                 ),
               ),
             ),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: controller,
-              builder: (context, value, _) {
-                if (value.text.isNotEmpty) {
+            ListenableBuilder(
+              listenable: Listenable.merge([controller, focusNode]),
+              builder: (context, _) {
+                final searching = controller.text.isNotEmpty;
+                // Once the field is focused (or already holds a query), the
+                // pill is in "search mode": show only the clear + semantic
+                // controls, not the chat/layout/avatar shortcuts.
+                if (focusNode.hasFocus || searching) {
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 20),
-                        tooltip: 'Clear search',
-                        onPressed: () {
-                          controller.clear();
-                          onQuery('');
-                        },
-                      ),
+                      if (searching)
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          tooltip: 'Clear search',
+                          onPressed: () {
+                            controller.clear();
+                            onQuery('');
+                          },
+                        ),
                       if (semanticAvailable) _semanticControl(scheme),
                       const SizedBox(width: 4),
                     ],

@@ -7,7 +7,10 @@ WORKDIR /src
 COPY app/pubspec.yaml app/pubspec.lock ./
 RUN flutter pub get
 COPY app/ ./
-RUN flutter build web --release
+# --wasm ships a WebAssembly (skwasm) build alongside a plain JS fallback;
+# the loader picks at runtime, so browsers without WasmGC still work. The
+# wasm renderer noticeably smooths animation-heavy screens like the grid.
+RUN flutter build web --wasm --release
 
 # --- 2. Rust server ----------------------------------------------------------
 # trixie: the prebuilt ONNX runtime (ort) needs libstdc++ from GCC 13+.

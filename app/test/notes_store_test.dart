@@ -676,13 +676,20 @@ void main() {
         await s.load();
 
         s.updateNoteContent('n1', content: 'typed, then reloaded');
-        // Let the persist microtask run, but NOT the 400ms save debounce.
+        // Trigger an immediate (queue-driven) cache write while the 400ms
+        // content debounce is still pending; the mid-debounce edit must be
+        // folded into the persisted doc. (State-only writes are batched on
+        // a 1s timer now, so a bare delay would not persist anything yet.)
+        s.setColor('n1', 'teal');
         await Future<void>.delayed(const Duration(milliseconds: 50));
 
         final doc = await cache.read('u-me');
         final queue = (doc!['queue'] as List).cast<Map<String, dynamic>>();
         final patch = queue.firstWhere(
-          (op) => op['kind'] == 'patch' && op['id'] == 'n1',
+          (op) =>
+              op['kind'] == 'patch' &&
+              op['id'] == 'n1' &&
+              (op['data'] as Map).containsKey('content'),
           orElse: () => <String, dynamic>{},
         );
         expect((patch['data'] as Map?)?['content'], 'typed, then reloaded');
@@ -695,7 +702,12 @@ void main() {
     test('noteVersions flushes pending edits before reading history', () async {
       api.notes['n1'] = serverNote('n1', title: 'a');
       api.versions['n1'] = [
-        NoteVersion(id: 'v1', noteId: 'n1', title: 'a', createdAt: DateTime.now()),
+        NoteVersion(
+          id: 'v1',
+          noteId: 'n1',
+          title: 'a',
+          createdAt: DateTime.now(),
+        ),
       ];
       await store.load();
 
@@ -721,8 +733,9 @@ void main() {
 
       expect(api.notes.containsKey(draft.id), isTrue);
       expect(versions, isEmpty);
-      final createIdx =
-          api.log.indexWhere((l) => l.startsWith('createNote:${draft.id}'));
+      final createIdx = api.log.indexWhere(
+        (l) => l.startsWith('createNote:${draft.id}'),
+      );
       final fetchIdx = api.log.indexOf('fetchVersions:${draft.id}');
       expect(createIdx, isNonNegative);
       expect(fetchIdx, greaterThan(createIdx));

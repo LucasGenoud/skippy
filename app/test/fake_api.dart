@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:sticky_notes/api/api_client.dart';
 import 'package:sticky_notes/models/chat.dart';
+import 'package:sticky_notes/models/link_preview.dart';
 import 'package:sticky_notes/models/note.dart';
 
 /// In-memory [Api] for tests: mirrors the server's semantics closely enough
@@ -29,6 +30,10 @@ class FakeApi implements Api {
   /// Server-managed settings returned by [fetchManagedSettings]; empty means
   /// nothing is env-pinned. Tests populate it to exercise field locking.
   Map<String, ManagedSetting> managedSettings = {};
+
+  /// Canned link-preview responses keyed by URL, returned by [unfurl]. Tests
+  /// populate it; unknown URLs unfurl to null (no card).
+  Map<String, LinkPreview> previews = {};
 
   /// When set, every call throws it (network-down simulation).
   Exception? failWith;
@@ -300,6 +305,10 @@ class FakeApi implements Api {
     scored.sort((a, b) => b.$2.compareTo(a.$2));
     return [for (final s in scored.take(limit)) s.$1];
   });
+
+  @override
+  Future<LinkPreview?> unfurl(String url) =>
+      _run('unfurl:$url', () => previews[url]);
 
   @override
   Future<({bool semanticSearch, bool audioTranscription})>
