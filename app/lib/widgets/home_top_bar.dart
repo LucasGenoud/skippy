@@ -8,6 +8,7 @@ import '../screens/settings_screen.dart';
 import '../state/auth_store.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/motion.dart';
 
 /// The home screen's top bar: menu + branding, the search pill (with clear
 /// and semantic-search controls), and the quick-settings icons + avatar menu.
@@ -73,12 +74,9 @@ class HomeTopBar extends StatelessWidget {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 720),
-                child: Container(
+                child: _SearchPill(
+                  focusNode: focusNode,
                   height: 46,
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(kRadius),
-                  ),
                   child: Row(
                     children: [
                       const SizedBox(width: 14),
@@ -107,16 +105,18 @@ class HomeTopBar extends StatelessWidget {
                       ),
                       ValueListenableBuilder<TextEditingValue>(
                         valueListenable: controller,
-                        builder: (context, value, _) => value.text.isEmpty
-                            ? const SizedBox.shrink()
-                            : IconButton(
-                                icon: const Icon(Icons.close, size: 20),
-                                tooltip: 'Clear search',
-                                onPressed: () {
-                                  controller.clear();
-                                  onQuery('');
-                                },
-                              ),
+                        builder: (context, value, _) => _fadeScale(
+                          child: value.text.isEmpty
+                              ? const SizedBox.shrink()
+                              : IconButton(
+                                  icon: const Icon(Icons.close, size: 20),
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    controller.clear();
+                                    onQuery('');
+                                  },
+                                ),
+                        ),
                       ),
                       if (semanticAvailable) _semanticControl(scheme),
                     ],
@@ -150,10 +150,21 @@ class HomeTopBar extends StatelessWidget {
                 onPressed: onToggleLayout,
               ),
               IconButton(
-                icon: Icon(
-                  Theme.of(context).brightness == Brightness.light
-                      ? Icons.dark_mode_outlined
-                      : Icons.light_mode_outlined,
+                // The sun/moon rotates in as the theme flips — a nod to the
+                // day/night metaphor without slowing the switch down.
+                icon: AnimatedSwitcher(
+                  duration: Motion.base,
+                  switchInCurve: Motion.standard,
+                  transitionBuilder: (child, animation) => RotationTransition(
+                    turns: Tween<double>(begin: 0.85, end: 1).animate(animation),
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  child: Icon(
+                    Theme.of(context).brightness == Brightness.light
+                        ? Icons.dark_mode_outlined
+                        : Icons.light_mode_outlined,
+                    key: ValueKey(Theme.of(context).brightness),
+                  ),
                 ),
                 tooltip: Theme.of(context).brightness == Brightness.light
                     ? 'Dark theme'
@@ -179,28 +190,31 @@ class HomeTopBar extends StatelessWidget {
   }
 
   /// The in-pill semantic-search control: a spinner while a search is in
-  /// flight, otherwise the ✨ toggle.
+  /// flight, otherwise the ✨ toggle. The two cross-fade instead of popping.
   Widget _semanticControl(ColorScheme scheme) {
-    if (semanticBusy) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 14),
-        child: SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    return IconButton(
-      icon: Icon(
-        Icons.auto_awesome,
-        size: 20,
-        color: semantic ? scheme.primary : null,
-      ),
-      tooltip: semantic
-          ? 'Semantic search on — results ranked by meaning'
-          : 'Search by meaning',
-      onPressed: onToggleSemantic,
+    return _fadeScale(
+      child: semanticBusy
+          ? const Padding(
+              key: ValueKey('busy'),
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : IconButton(
+              key: const ValueKey('toggle'),
+              icon: Icon(
+                Icons.auto_awesome,
+                size: 20,
+                color: semantic ? scheme.primary : null,
+              ),
+              tooltip: semantic
+                  ? 'Semantic search on — results ranked by meaning'
+                  : 'Search by meaning',
+              onPressed: onToggleSemantic,
+            ),
     );
   }
 
@@ -216,11 +230,8 @@ class HomeTopBar extends StatelessWidget {
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       color: scheme.surface,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(kRadius),
-        ),
+      child: _SearchPill(
+        focusNode: focusNode,
         child: Row(
           children: [
             IconButton(
@@ -249,9 +260,12 @@ class HomeTopBar extends StatelessWidget {
                 final searching = controller.text.isNotEmpty;
                 // Once the field is focused (or already holds a query), the
                 // pill is in "search mode": show only the clear + semantic
-                // controls, not the chat/layout/avatar shortcuts.
+                // controls, not the chat/layout/avatar shortcuts. The two
+                // control sets cross-fade rather than hard-swapping.
+                final Widget controls;
                 if (focusNode.hasFocus || searching) {
-                  return Row(
+                  controls = Row(
+                    key: const ValueKey('search-mode'),
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (searching)
@@ -267,34 +281,99 @@ class HomeTopBar extends StatelessWidget {
                       const SizedBox(width: 4),
                     ],
                   );
-                }
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (chatAvailable)
+                } else {
+                  controls = Row(
+                    key: const ValueKey('idle-mode'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (chatAvailable)
+                        IconButton(
+                          icon: const Icon(Icons.forum_outlined),
+                          tooltip: 'Chat with your notes',
+                          onPressed: () => ChatScreen.open(context),
+                        ),
                       IconButton(
-                        icon: const Icon(Icons.forum_outlined),
-                        tooltip: 'Chat with your notes',
-                        onPressed: () => ChatScreen.open(context),
+                        icon: Icon(
+                          listMode
+                              ? Icons.grid_view_outlined
+                              : Icons.view_agenda_outlined,
+                        ),
+                        tooltip: listMode ? 'Grid view' : 'List view',
+                        onPressed: onToggleLayout,
                       ),
-                    IconButton(
-                      icon: Icon(
-                        listMode
-                            ? Icons.grid_view_outlined
-                            : Icons.view_agenda_outlined,
-                      ),
-                      tooltip: listMode ? 'Grid view' : 'List view',
-                      onPressed: onToggleLayout,
-                    ),
-                    const _UserAvatarMenu(),
-                    const SizedBox(width: 6),
-                  ],
-                );
+                      const _UserAvatarMenu(),
+                      const SizedBox(width: 6),
+                    ],
+                  );
+                }
+                return _fadeScale(child: controls);
               },
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Fade + scale between two states of a small control; the standard
+/// transition for icons that appear, disappear, or swap inside the bar.
+Widget _fadeScale({required Widget child}) {
+  return AnimatedSwitcher(
+    duration: Motion.fast,
+    switchInCurve: Curves.easeOut,
+    switchOutCurve: Curves.easeIn,
+    transitionBuilder: (child, animation) => FadeTransition(
+      opacity: animation,
+      child: ScaleTransition(scale: animation, child: child),
+    ),
+    child: child,
+  );
+}
+
+/// The search pill's chrome. At rest it sits flush in the bar; when the field
+/// gains focus it lifts — surface fill plus a soft shadow — so the active
+/// search state is unmistakable (Keep's focused-search treatment).
+class _SearchPill extends StatelessWidget {
+  final FocusNode focusNode;
+  final double? height;
+  final Widget child;
+  const _SearchPill({required this.focusNode, this.height, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final light = Theme.of(context).brightness == Brightness.light;
+    return ListenableBuilder(
+      listenable: focusNode,
+      builder: (context, child) {
+        final focused = focusNode.hasFocus;
+        return AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.standard,
+          height: height,
+          decoration: BoxDecoration(
+            // In light mode the lifted pill goes white-on-white with the bar,
+            // so the shadow does the separating; dark mode lifts by lightness.
+            color: focused
+                ? (light ? scheme.surface : scheme.surfaceContainerHighest)
+                : scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(kRadius),
+            border: Border.all(
+              color: focused ? scheme.outlineVariant : Colors.transparent,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: focused ? 0.10 : 0),
+                blurRadius: focused ? 10 : 0,
+                offset: Offset(0, focused ? 2 : 0),
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
+      child: child,
     );
   }
 }

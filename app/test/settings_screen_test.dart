@@ -82,4 +82,23 @@ void main() {
       expect(field.enabled, isTrue, reason: '$label should be editable');
     }
   });
+
+  testWidgets('grid density control renders and updates the store', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    final settings = await pumpSettings(tester, api);
+    expect(settings.gridDensity, GridDensity.comfortable);
+
+    // All three presets are offered and the current one is described.
+    for (final density in GridDensity.values) {
+      expect(find.text(density.label), findsOneWidget);
+    }
+    expect(find.text(GridDensity.comfortable.blurb), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Compact'));
+    await tester.tap(find.text('Compact'));
+    await tester.pumpAndSettle();
+    expect(settings.gridDensity, GridDensity.compact);
+  });
 }

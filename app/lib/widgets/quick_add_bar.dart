@@ -184,7 +184,27 @@ class _QuickAddBarState extends State<QuickAddBar> {
           child: AnimatedSize(
             duration: const Duration(milliseconds: 150),
             alignment: Alignment.topCenter,
-            child: _expanded ? _buildComposer(context) : _buildBar(context),
+            // Cross-fade bar <-> composer while the size animates, so the
+            // expansion reads as one motion instead of a hard content swap.
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.topCenter,
+                children: [...previousChildren, ?currentChild],
+              ),
+              child: _expanded
+                  ? KeyedSubtree(
+                      key: const ValueKey('composer'),
+                      child: _buildComposer(context),
+                    )
+                  : KeyedSubtree(
+                      key: const ValueKey('bar'),
+                      child: _buildBar(context),
+                    ),
+            ),
           ),
         ),
       ),

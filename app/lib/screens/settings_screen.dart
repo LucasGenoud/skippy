@@ -53,6 +53,26 @@ class SettingsScreen extends StatelessWidget {
                 value: settings.defaultListMode,
                 onChanged: settings.setDefaultListMode,
               ),
+              ListTile(
+                leading: const Icon(Icons.grid_view_outlined),
+                title: const Text('Grid density'),
+                subtitle: Text(settings.gridDensity.blurb),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: SegmentedButton<GridDensity>(
+                  segments: [
+                    for (final density in GridDensity.values)
+                      ButtonSegment(
+                        value: density,
+                        label: Text(density.label),
+                      ),
+                  ],
+                  selected: {settings.gridDensity},
+                  onSelectionChanged: (s) => settings.setGridDensity(s.first),
+                  showSelectedIcon: false,
+                ),
+              ),
               const Divider(height: 32),
               const _SectionHeader('Features'),
               _FeatureToggle(

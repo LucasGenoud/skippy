@@ -390,9 +390,19 @@ class _PinButton extends StatelessWidget {
         child: IgnorePointer(
           ignoring: !show,
           child: IconButton(
-            icon: Icon(
-              note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-              size: 20,
+            // A little scale-pop when the pin state flips, so the action
+            // reads as tactile rather than an instant glyph swap.
+            icon: AnimatedSwitcher(
+              duration: Motion.fast,
+              switchInCurve: Curves.easeOutBack,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) =>
+                  ScaleTransition(scale: animation, child: child),
+              child: Icon(
+                note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                key: ValueKey(note.pinned),
+                size: 20,
+              ),
             ),
             color: scheme.onSurfaceVariant,
             tooltip: note.pinned ? 'Unpin note' : 'Pin note',
@@ -471,25 +481,45 @@ class _ChecklistRow extends StatelessWidget {
                     )
                   : null,
               borderRadius: BorderRadius.circular(kRadius),
-              child: Icon(
-                item.done
-                    ? Icons.check_box_outlined
-                    : Icons.check_box_outline_blank,
-                size: 18,
-                color: scheme.onSurfaceVariant,
+              // Checking an item pops the box and fades the text toward its
+              // done color, instead of both flipping on the same frame.
+              child: AnimatedSwitcher(
+                duration: Motion.fast,
+                switchInCurve: Curves.easeOutBack,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) =>
+                    ScaleTransition(scale: animation, child: child),
+                child: Icon(
+                  item.done
+                      ? Icons.check_box_outlined
+                      : Icons.check_box_outline_blank,
+                  key: ValueKey(item.done),
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              item.text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                height: 1.35,
-                decoration: item.done ? TextDecoration.lineThrough : null,
-                color: item.done ? scheme.onSurfaceVariant : null,
+            child: AnimatedDefaultTextStyle(
+              duration: Motion.fast,
+              curve: Motion.standard,
+              style:
+                  (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
+                      .copyWith(
+                        height: 1.35,
+                        decoration: item.done
+                            ? TextDecoration.lineThrough
+                            : null,
+                        color: item.done
+                            ? scheme.onSurfaceVariant
+                            : scheme.onSurface,
+                      ),
+              child: Text(
+                item.text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),

@@ -823,9 +823,11 @@ void main() {
       expect(find.byType(CircleAvatar), findsOneWidget);
 
       // Focusing the field collapses the trailing shortcuts (layout/avatar)
-      // into search mode — even before anything is typed.
+      // into search mode — even before anything is typed. Settle first: the
+      // two control sets cross-fade, so the outgoing icons linger a few
+      // frames.
       await tester.tap(find.byType(TextField).first);
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.byIcon(Icons.view_agenda_outlined), findsNothing);
       expect(find.byType(CircleAvatar), findsNothing);
 
@@ -838,7 +840,7 @@ void main() {
 
       // Dropping focus brings the shortcuts back.
       FocusManager.instance.primaryFocus?.unfocus();
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);
 
       // Sort now lives in the avatar menu, opening a bottom sheet.

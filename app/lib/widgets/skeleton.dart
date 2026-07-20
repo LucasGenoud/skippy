@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../theme.dart';
 
@@ -35,8 +37,8 @@ class _NotesSkeletonState extends State<NotesSkeleton>
     super.initState();
     _pulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat(reverse: true);
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
   }
 
   @override
@@ -68,10 +70,22 @@ class _NotesSkeletonState extends State<NotesSkeleton>
                         builder: (context, _) => Container(
                           height: _heights[i],
                           decoration: BoxDecoration(
+                            // Each tile pulses slightly out of phase with its
+                            // neighbors, so the shimmer sweeps across the grid
+                            // instead of blinking in unison.
                             color: Color.lerp(
                               scheme.surfaceContainerHighest,
                               scheme.surfaceContainer,
-                              reduce ? 0.5 : _pulse.value,
+                              reduce
+                                  ? 0.5
+                                  : 0.5 -
+                                        0.5 *
+                                            math.cos(
+                                              2 *
+                                                  math.pi *
+                                                  ((_pulse.value - i * 0.12) %
+                                                      1.0),
+                                            ),
                             ),
                             borderRadius: BorderRadius.circular(kRadius),
                           ),

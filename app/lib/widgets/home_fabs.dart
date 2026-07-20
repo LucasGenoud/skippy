@@ -7,6 +7,7 @@ import '../models/note.dart';
 import '../screens/editor_screen.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 import 'recording_sheet.dart';
 
@@ -30,31 +31,33 @@ class NewNoteFabs extends StatelessWidget {
     }) {
       return Tooltip(
         message: tooltip,
-        child: OpenContainer<void>(
-          transitionDuration: const Duration(milliseconds: 320),
-          transitionType: ContainerTransitionType.fade,
-          closedElevation: 4,
-          closedColor: color,
-          middleColor: scheme.surface,
-          openColor: scheme.surface,
-          closedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(kRadius),
-          ),
-          tappable: false,
-          closedBuilder: (context, open) => InkWell(
-            customBorder: RoundedRectangleBorder(
+        child: _HoverLift(
+          child: OpenContainer<void>(
+            transitionDuration: const Duration(milliseconds: 320),
+            transitionType: ContainerTransitionType.fade,
+            closedElevation: 4,
+            closedColor: color,
+            middleColor: scheme.surface,
+            openColor: scheme.surface,
+            closedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kRadius),
             ),
-            onTap: () =>
-                openNoteEditor(context, openFullscreen: open, kind: kind),
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: Icon(icon, size: size / 2, color: onColor),
+            tappable: false,
+            closedBuilder: (context, open) => InkWell(
+              customBorder: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(kRadius),
+              ),
+              onTap: () =>
+                  openNoteEditor(context, openFullscreen: open, kind: kind),
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: Icon(icon, size: size / 2, color: onColor),
+              ),
             ),
+            openBuilder: (context, close) =>
+                EditorScreen(noteId: null, kind: kind),
           ),
-          openBuilder: (context, close) =>
-              EditorScreen(noteId: null, kind: kind),
         ),
       );
     }
@@ -114,23 +117,55 @@ class _AudioNoteFab extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: 'New audio note',
-      child: Material(
-        color: scheme.surfaceContainerHigh,
-        elevation: 4,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
-        child: InkWell(
-          onTap: () => _record(context),
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              Icons.mic_none,
-              size: 22,
-              color: scheme.onSurfaceVariant,
+      child: _HoverLift(
+        child: Material(
+          color: scheme.surfaceContainerHigh,
+          elevation: 4,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(kRadius),
+          ),
+          child: InkWell(
+            onTap: () => _record(context),
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(
+                Icons.mic_none,
+                size: 22,
+                color: scheme.onSurfaceVariant,
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Subtle hover feedback for the note-creation FABs: the button scales up a
+/// touch under the pointer. Pointer-only by nature — touch never hovers.
+class _HoverLift extends StatefulWidget {
+  final Widget child;
+  const _HoverLift({required this.child});
+
+  @override
+  State<_HoverLift> createState() => _HoverLiftState();
+}
+
+class _HoverLiftState extends State<_HoverLift> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedScale(
+        scale: _hovered ? 1.06 : 1.0,
+        duration: Motion.fast,
+        curve: Motion.standard,
+        child: widget.child,
       ),
     );
   }

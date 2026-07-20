@@ -24,6 +24,7 @@ void main() {
     expect(settings.themeMode, ThemeMode.system);
     expect(settings.dateFormat, AppDateFormat.monthFirst);
     expect(settings.use24hTime, isFalse);
+    expect(settings.gridDensity, GridDensity.comfortable);
     expect(settings.palette.length, kDefaultPalette.length);
     await settings.load();
     expect(settings.loaded, isTrue);
@@ -36,6 +37,7 @@ void main() {
     settings.setDateFormat(AppDateFormat.numericEU);
     settings.setUse24hTime(true);
     settings.setDefaultListMode(true);
+    settings.setGridDensity(GridDensity.compact);
     settings.addPaletteColor(
       'Lava',
       const Color(0xFFFF5722),
@@ -47,6 +49,7 @@ void main() {
     expect(api.settings['date_format'], 'numericEU');
     expect(api.settings['time_format'], '24h');
     expect(api.settings['default_view'], 'list');
+    expect(api.settings['grid_density'], 'compact');
     expect(
       (api.settings['palette'] as List).length,
       kDefaultPalette.length + 1,
@@ -59,6 +62,7 @@ void main() {
     expect(other.dateFormat, AppDateFormat.numericEU);
     expect(other.use24hTime, isTrue);
     expect(other.defaultListMode, isTrue);
+    expect(other.gridDensity, GridDensity.compact);
     expect(other.palette.last.name, 'Lava');
     expect(other.palette.last.light, const Color(0xFFFF5722));
     other.dispose();

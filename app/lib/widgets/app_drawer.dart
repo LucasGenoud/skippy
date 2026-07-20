@@ -188,17 +188,30 @@ class AppSidebar extends StatelessWidget {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Divider(height: 1, indent: 16, endIndent: 16),
               ),
-              if (isOpen)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
-                  child: Text(
-                    'LABELS',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          letterSpacing: 1.1,
-                          color: scheme.onSurfaceVariant,
-                        ),
+              // Constant-height slot: the header fades with the rail's
+              // width animation instead of vanishing and jumping the
+              // label items up.
+              SizedBox(
+                height: 28,
+                child: AnimatedOpacity(
+                  opacity: isOpen ? 1 : 0,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOutCubic,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
+                    child: Text(
+                      'LABELS',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            letterSpacing: 1.1,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
                   ),
                 ),
+              ),
               for (final label in labels)
                 _SidebarItem(
                   icon: Icons.label_outline,

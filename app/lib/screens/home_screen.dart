@@ -11,6 +11,7 @@ import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/empty_state.dart';
@@ -373,18 +374,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                             : 16.0;
                                         final contentWidth =
                                             width - horizontalPad * 2;
+                                        final density = settings.gridDensity;
                                         final gridMaxWidth = _listMode
                                             ? 600.0
-                                            : 1400.0;
+                                            : density.maxGridWidth;
                                         final effectiveWidth =
                                             contentWidth > gridMaxWidth
                                             ? gridMaxWidth
                                             : contentWidth;
                                         final columns = _listMode
                                             ? 1
-                                            : (effectiveWidth / 250)
+                                            : (effectiveWidth /
+                                                      density.targetWidth)
                                                   .floor()
-                                                  .clamp(2, 5);
+                                                  .clamp(2, density.maxColumns);
 
                                         return RefreshIndicator(
                                           onRefresh: store.load,
@@ -397,12 +400,30 @@ class _HomeScreenState extends State<HomeScreen> {
                                               const SliverToBoxAdapter(
                                                 child: SizedBox(height: 16),
                                               ),
-                                              if (store.offline)
-                                                SliverToBoxAdapter(
-                                                  child: _OfflineBanner(
-                                                    onRetry: store.retryNow,
+                                              // Always present so going on/off
+                                              // line grows/shrinks the banner
+                                              // smoothly instead of jolting
+                                              // the grid below it.
+                                              SliverToBoxAdapter(
+                                                child: AnimatedSize(
+                                                  duration: Motion.base,
+                                                  curve: Motion.emphasized,
+                                                  alignment:
+                                                      Alignment.topCenter,
+                                                  child: AnimatedSwitcher(
+                                                    duration: Motion.base,
+                                                    child: store.offline
+                                                        ? _OfflineBanner(
+                                                            onRetry:
+                                                                store.retryNow,
+                                                          )
+                                                        : const SizedBox(
+                                                            width: double
+                                                                .infinity,
+                                                          ),
                                                   ),
                                                 ),
+                                              ),
                                               // Keep-style quick add: wide screens, main notes view only.
                                               if (_selection ==
                                                       ViewSelection.notes &&

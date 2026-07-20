@@ -126,6 +126,49 @@ enum AppDateFormat {
   const AppDateFormat(this.example);
 }
 
+/// How tightly the note grid packs cards. Each preset drives the auto-column
+/// layout in the home grid: [targetWidth] is the ideal card width the layout
+/// aims for, [maxColumns] caps how many fit, and [maxGridWidth] caps how wide
+/// the whole grid may grow (so it can spread across a large desktop display, or
+/// stay comfortably narrow). Comfortable reproduces the app's original layout,
+/// so upgrading users see no change until they pick another preset.
+enum GridDensity {
+  compact(
+    label: 'Compact',
+    blurb: 'More, smaller cards — fills wide screens',
+    targetWidth: 200,
+    maxColumns: 8,
+    maxGridWidth: 2400,
+  ),
+  comfortable(
+    label: 'Comfortable',
+    blurb: 'The default balance',
+    targetWidth: 250,
+    maxColumns: 5,
+    maxGridWidth: 1400,
+  ),
+  spacious(
+    label: 'Spacious',
+    blurb: 'Fewer, larger cards',
+    targetWidth: 320,
+    maxColumns: 4,
+    maxGridWidth: 1600,
+  );
+
+  final String label;
+  final String blurb;
+  final double targetWidth;
+  final int maxColumns;
+  final double maxGridWidth;
+  const GridDensity({
+    required this.label,
+    required this.blurb,
+    required this.targetWidth,
+    required this.maxColumns,
+    required this.maxGridWidth,
+  });
+}
+
 /// Per-user preferences, synced to the server as an opaque JSON document so
 /// they follow the user across devices. All reads are safe against missing
 /// or malformed fields (unknown values fall back to defaults).
@@ -137,6 +180,7 @@ class SettingsStore extends ChangeNotifier {
   AppDateFormat dateFormat = AppDateFormat.monthFirst;
   bool use24hTime = false;
   bool defaultListMode = false;
+  GridDensity gridDensity = GridDensity.comfortable;
   List<PaletteEntry> palette = List.of(kDefaultPalette);
   bool loaded = false;
 
@@ -290,6 +334,9 @@ class SettingsStore extends ChangeNotifier {
         AppDateFormat.monthFirst;
     use24hTime = json['time_format'] == '24h';
     defaultListMode = json['default_view'] == 'list';
+    gridDensity =
+        GridDensity.values.asNameMap()[json['grid_density']] ??
+        GridDensity.comfortable;
     // Feature toggles default ON when absent (they only take effect when the
     // server also advertises the capability).
     semanticSearchEnabled = json['semantic_search'] != false;
@@ -326,6 +373,7 @@ class SettingsStore extends ChangeNotifier {
     'date_format': dateFormat.name,
     'time_format': use24hTime ? '24h' : '12h',
     'default_view': defaultListMode ? 'list' : 'grid',
+    'grid_density': gridDensity.name,
     'semantic_search': semanticSearchEnabled,
     'semantic_ranking': semanticRanking,
     'audio_notes': audioNotesEnabled,
@@ -368,6 +416,8 @@ class SettingsStore extends ChangeNotifier {
       _mutate(() => dateFormat = format);
   void setUse24hTime(bool value) => _mutate(() => use24hTime = value);
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
+  void setGridDensity(GridDensity value) =>
+      _mutate(() => gridDensity = value);
   void setSemanticSearchEnabled(bool value) =>
       _mutate(() => semanticSearchEnabled = value);
   void setSemanticRanking(bool value) => _mutate(() => semanticRanking = value);

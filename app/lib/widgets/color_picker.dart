@@ -123,15 +123,29 @@ class _ColorDot extends StatelessWidget {
               width: selected ? 2.5 : 1,
             ),
           ),
-          child: fill == null && !selected
-              ? Icon(
-                  Icons.format_color_reset_outlined,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                )
-              : selected
-              ? Icon(Icons.check, size: 22, color: scheme.primary)
-              : null,
+          // The check pops in with a small overshoot when a color is picked.
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            switchInCurve: Curves.easeOutBack,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) =>
+                ScaleTransition(scale: animation, child: child),
+            child: fill == null && !selected
+                ? Icon(
+                    Icons.format_color_reset_outlined,
+                    key: const ValueKey('reset'),
+                    size: 20,
+                    color: scheme.onSurfaceVariant,
+                  )
+                : selected
+                ? Icon(
+                    Icons.check,
+                    key: const ValueKey('check'),
+                    size: 22,
+                    color: scheme.primary,
+                  )
+                : const SizedBox.shrink(key: ValueKey('none')),
+          ),
         ),
       ),
     );
