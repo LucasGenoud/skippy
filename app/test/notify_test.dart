@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:sticky_notes/models/notify_channels.dart';
-import 'package:sticky_notes/screens/settings_screen.dart';
-import 'package:sticky_notes/state/notes_store.dart';
-import 'package:sticky_notes/state/settings_store.dart';
+import 'package:skippy/models/notify_channels.dart';
+import 'package:skippy/screens/settings_screen.dart';
+import 'package:skippy/state/notes_store.dart';
+import 'package:skippy/state/settings_store.dart';
 
 import 'fake_api.dart';
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticky_notes/util/linkify.dart';
+import 'package:skippy/util/linkify.dart';
 
 void main() {
   group('findUrls', () {

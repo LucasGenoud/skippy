@@ -18,3 +18,19 @@ void downloadTextFile(String filename, String content, String mime) {
   anchor.remove();
   web.URL.revokeObjectURL(url);
 }
+
+/// Fetch [url] and save the bytes as [filename]. Going through a Blob (rather
+/// than pointing an `<a download>` straight at the URL) makes the download work
+/// even when the file is served inline or from a different origin.
+Future<void> downloadUrl(String url, String filename) async {
+  final response = await web.window.fetch(url.toJS).toDart;
+  final blob = await response.blob().toDart;
+  final objectUrl = web.URL.createObjectURL(blob);
+  final anchor = web.HTMLAnchorElement()
+    ..href = objectUrl
+    ..download = filename;
+  web.document.body!.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  web.URL.revokeObjectURL(objectUrl);
+}

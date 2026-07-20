@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticky_notes/util/highlight.dart';
+import 'package:skippy/util/highlight.dart';
 
 void main() {
   const hl = TextStyle(decoration: TextDecoration.underline); // marker style

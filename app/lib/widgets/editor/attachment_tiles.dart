@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/note.dart';
 import '../../util/attachment_image.dart';
+import '../../util/download.dart';
 import '../../util/mime.dart';
 
 /// An inline image attachment in the editor, with a hover remove button.
@@ -59,22 +60,70 @@ class ImageAttachmentTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (onRemove != null)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    color: Colors.white,
-                    tooltip: 'Remove image',
-                    onPressed: onRemove,
-                  ),
+            // A single square-cornered overlay bar (matching the app's [kRadius]
+            // chrome) grouping the image actions, rather than floating circles.
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Material(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: kBorderRadius,
+                clipBehavior: Clip.antiAlias,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _OverlayAction(
+                      icon: Icons.download_outlined,
+                      tooltip: 'Download image',
+                      onPressed: () => downloadUrl(
+                        url,
+                        attachment.filename.isEmpty
+                            ? 'image'
+                            : attachment.filename,
+                      ),
+                    ),
+                    if (onRemove != null)
+                      _OverlayAction(
+                        icon: Icons.close,
+                        tooltip: 'Remove image',
+                        onPressed: onRemove!,
+                      ),
+                  ],
                 ),
               ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact icon button for the image overlay bar: white glyph, transparent
+/// fill (the bar behind it supplies the scrim) with a subtle hover/press wash.
+class _OverlayAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _OverlayAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        hoverColor: Colors.white.withValues(alpha: 0.12),
+        splashColor: Colors.white.withValues(alpha: 0.18),
+        highlightColor: Colors.white.withValues(alpha: 0.08),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 18, color: Colors.white),
         ),
       ),
     );

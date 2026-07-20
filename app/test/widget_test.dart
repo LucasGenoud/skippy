@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:sticky_notes/api/api_client.dart';
-import 'package:sticky_notes/models/note.dart';
-import 'package:sticky_notes/screens/editor_screen.dart';
-import 'package:sticky_notes/state/auth_store.dart';
-import 'package:sticky_notes/screens/history_screen.dart';
-import 'package:sticky_notes/screens/home_screen.dart';
-import 'package:sticky_notes/state/notes_store.dart';
-import 'package:sticky_notes/state/settings_store.dart';
-import 'package:sticky_notes/theme.dart';
-import 'package:sticky_notes/util/snack.dart';
-import 'package:sticky_notes/widgets/animated_checklist.dart';
-import 'package:sticky_notes/widgets/markdown_toolbar.dart';
-import 'package:sticky_notes/widgets/masonry.dart';
-import 'package:sticky_notes/widgets/note_card.dart';
-import 'package:sticky_notes/widgets/quick_add_bar.dart';
-import 'package:sticky_notes/widgets/skeleton.dart';
+import 'package:skippy/api/api_client.dart';
+import 'package:skippy/models/note.dart';
+import 'package:skippy/screens/editor_screen.dart';
+import 'package:skippy/state/auth_store.dart';
+import 'package:skippy/screens/history_screen.dart';
+import 'package:skippy/screens/home_screen.dart';
+import 'package:skippy/state/notes_store.dart';
+import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/theme.dart';
+import 'package:skippy/util/snack.dart';
+import 'package:skippy/widgets/animated_checklist.dart';
+import 'package:skippy/widgets/markdown_toolbar.dart';
+import 'package:skippy/widgets/masonry.dart';
+import 'package:skippy/widgets/note_card.dart';
+import 'package:skippy/widgets/quick_add_bar.dart';
+import 'package:skippy/widgets/skeleton.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
@@ -279,18 +279,18 @@ void main() {
       expect(find.byType(AnimatedChecklist), findsOneWidget);
       expect(find.byType(EditorScreen), findsNothing);
 
+      // Typing in the add field materializes a real item on the first
+      // keystroke, then the field clears itself for the next one.
       await tester.enterText(
         find.widgetWithText(TextField, 'List item'),
         'Milk',
       );
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'List item'),
         'Eggs',
       );
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
@@ -376,16 +376,18 @@ void main() {
       expect(find.text('Milk'), findsOneWidget);
       expect(find.text('Eggs'), findsOneWidget);
 
-      // Typing narrows the suggestions.
+      // Typing materializes a real row on the first keystroke and hands focus
+      // to it; its popup keeps narrowing the suggestions.
       await tester.enterText(
         find.widgetWithText(TextField, 'List item'),
         'alm',
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(store.noteById('n1')!.items.map((i) => i.text), ['alm']);
       expect(find.text('Almond milk'), findsOneWidget);
       expect(find.text('Eggs'), findsNothing);
 
-      // Tapping a suggestion adds the item.
+      // Tapping a suggestion fills the row it was typed on.
       await tester.tap(find.text('Almond milk'));
       await tester.pump();
       final note = store.noteById('n1')!;
@@ -814,7 +816,7 @@ void main() {
 
       // Branding and the sort icon leave the bar (drawer / avatar menu
       // carry them); the essentials stay.
-      expect(find.text('Sticky Notes'), findsNothing);
+      expect(find.text('Skippy'), findsNothing);
       expect(find.byIcon(Icons.swap_vert), findsNothing);
       expect(find.byIcon(Icons.menu), findsOneWidget);
       expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);

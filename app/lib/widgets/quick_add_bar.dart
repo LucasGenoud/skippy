@@ -112,10 +112,11 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   void _setItems(List<ChecklistItem> items) => setState(() => _items = items);
 
-  void _addItem(String text) => _setItems([
-    ..._items,
-    ChecklistItem(id: _uuid.v4(), text: text.trim()),
-  ]);
+  String _addItem(String text) {
+    final item = ChecklistItem(id: _uuid.v4(), text: text.trim());
+    _setItems([..._items, item]);
+    return item.id;
+  }
 
   void _updateItem(String id, String text) => _setItems([
     for (final i in _items) i.id == id ? i.copyWith(text: text) : i,

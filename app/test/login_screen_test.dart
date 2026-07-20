@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:sticky_notes/api/api_client.dart';
-import 'package:sticky_notes/screens/login_screen.dart';
-import 'package:sticky_notes/state/auth_store.dart';
-import 'package:sticky_notes/theme.dart';
+import 'package:skippy/api/api_client.dart';
+import 'package:skippy/screens/login_screen.dart';
+import 'package:skippy/state/auth_store.dart';
+import 'package:skippy/theme.dart';
 
 Widget loginApp() => ChangeNotifierProvider(
   create: (_) => AuthStore(api: ApiClient(baseUrl: 'http://unused')),

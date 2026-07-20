@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import 'app_logo.dart';
 import 'package:provider/provider.dart';
 
 import '../state/notes_store.dart';
@@ -73,15 +74,11 @@ class AppDrawer extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(28, 20, 16, 12),
           child: Row(
             children: [
-              Icon(
-                Icons.sticky_note_2_rounded,
-                color: Theme.of(context).colorScheme.primary,
-                size: 28,
-              ),
+              const AppLogo(size: 30),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Sticky Notes',
+                  'Skippy',
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),

@@ -1,4 +1,4 @@
-package com.lucasgenoud.sticky_notes
+package com.lucasgenoud.skippy
 
 import io.flutter.embedding.android.FlutterActivity
 

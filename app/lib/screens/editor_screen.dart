@@ -320,8 +320,10 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() {});
   }
 
-  void _addItem(String text) {
-    _setItems([..._items, ChecklistItem(id: _uuid.v4(), text: text.trim())]);
+  String _addItem(String text) {
+    final item = ChecklistItem(id: _uuid.v4(), text: text.trim());
+    _setItems([..._items, item]);
+    return item.id;
   }
 
   void _updateItemText(String itemId, String text) {

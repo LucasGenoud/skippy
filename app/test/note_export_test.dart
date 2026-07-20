@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticky_notes/models/note.dart';
-import 'package:sticky_notes/util/note_export.dart';
+import 'package:skippy/models/note.dart';
+import 'package:skippy/util/note_export.dart';
 
 void main() {
   final now = DateTime.utc(2026, 7, 13, 9, 30);
@@ -34,9 +34,9 @@ void main() {
   test('filename is timestamped with the right extension', () {
     expect(
       exportFilename(ExportFormat.markdown, now),
-      'sticky-notes-2026-07-13.md',
+      'skippy-2026-07-13.md',
     );
-    expect(exportFilename(ExportFormat.json, now), 'sticky-notes-2026-07-13.json');
+    expect(exportFilename(ExportFormat.json, now), 'skippy-2026-07-13.json');
   });
 
   test('JSON export round-trips content, items, and label names', () {
@@ -74,7 +74,7 @@ void main() {
       labels: labels,
       now: now,
     );
-    expect(md, contains('# Sticky Notes export'));
+    expect(md, contains('# Skippy export'));
     expect(md, contains('_Exported 2026-07-13 · 2 notes_'));
     expect(md, contains('## Trip ideas'));
     expect(md, contains('`travel`'));

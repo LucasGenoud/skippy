@@ -1,11 +1,11 @@
 {
-    "name": "sticky_notes",
-    "short_name": "sticky_notes",
+    "name": "Skippy",
+    "short_name": "Skippy",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#f6c344",
+    "description": "A Google Keep style notes app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -724,6 +724,18 @@ class NotesStore extends ChangeNotifier {
     return false;
   }
 
+  /// The app is heading to background: the OS may suspend (or kill) us at
+  /// any moment, so stop waiting on debounce timers — enqueue what they were
+  /// holding (which persists the queue and starts pushing it) and snapshot
+  /// the rest of the state while we still can.
+  void flushForBackground() {
+    for (final id in _saveDebounce.keys.toList()) {
+      _saveDebounce.remove(id)?.cancel();
+      _enqueueContentPatch(id);
+    }
+    _persistNow();
+  }
+
   // ---------------------------------------------------------------------
   // Sharing
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import 'app_logo.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/chat_screen.dart';
@@ -56,10 +57,10 @@ class HomeTopBar extends StatelessWidget {
             onPressed: onToggleSidebar,
           ),
           const SizedBox(width: 4),
-          Icon(Icons.sticky_note_2_rounded, color: scheme.primary, size: 28),
+          const AppLogo(size: 30),
           const SizedBox(width: 10),
           Text(
-            'Sticky Notes',
+            'Skippy',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w600,
               letterSpacing: -0.3,

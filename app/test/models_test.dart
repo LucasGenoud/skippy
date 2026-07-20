@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticky_notes/models/note.dart';
+import 'package:skippy/models/note.dart';
 
 void main() {
   test('Note.fromJson parses the full server shape', () {

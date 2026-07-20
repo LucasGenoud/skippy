@@ -15,11 +15,11 @@ enum ExportFormat {
 }
 
 /// A timestamped, filesystem-safe download name, e.g.
-/// `sticky-notes-2026-07-13.md`.
+/// `skippy-2026-07-13.md`.
 String exportFilename(ExportFormat format, [DateTime? now]) {
   final d = now ?? DateTime.now();
   String two(int v) => v.toString().padLeft(2, '0');
-  return 'sticky-notes-${d.year}-${two(d.month)}-${two(d.day)}.${format.extension}';
+  return 'skippy-${d.year}-${two(d.month)}-${two(d.day)}.${format.extension}';
 }
 
 /// Render [notes] into a single [format] document. [labels] resolves the
@@ -71,7 +71,7 @@ String _toJson(List<Note> notes, Map<String, String> names, DateTime now) {
 }
 
 String _toMarkdown(List<Note> notes, Map<String, String> names, DateTime now) {
-  final buf = StringBuffer('# Sticky Notes export\n\n');
+  final buf = StringBuffer('# Skippy export\n\n');
   String two(int v) => v.toString().padLeft(2, '0');
   buf.writeln(
     '_Exported ${now.year}-${two(now.month)}-${two(now.day)} · '

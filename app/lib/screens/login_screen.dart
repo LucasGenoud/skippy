@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../widgets/app_logo.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -106,195 +107,214 @@ class _LoginScreenState extends State<LoginScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final creating = _creating;
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── Brand ─────────────────────────────────────────────
-                Icon(
-                  Icons.sticky_note_2_rounded,
-                  size: 56,
-                  color: scheme.primary,
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Sticky Notes',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  creating
-                      ? 'Create an account to start taking notes'
-                      : 'Welcome back — sign in to your notes',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // ── Card ──────────────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: scheme.surface,
-                    borderRadius: BorderRadius.circular(kRadius),
-                    border: Border.all(color: scheme.outlineVariant),
-                  ),
-                  child: AutofillGroup(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Mode switch — makes Sign in vs Create explicit.
-                        SegmentedButton<bool>(
-                          segments: const [
-                            ButtonSegment(
-                              value: false,
-                              label: Text('Sign in'),
-                              icon: Icon(Icons.login_outlined),
-                            ),
-                            ButtonSegment(
-                              value: true,
-                              label: Text('Create account'),
-                              icon: Icon(Icons.person_add_alt_1_outlined),
-                            ),
-                          ],
-                          selected: {creating},
-                          onSelectionChanged: auth.busy
-                              ? null
-                              : (s) => _setMode(s.first),
-                          showSelectedIcon: false,
-                          style: ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        TextField(
-                          controller: _username,
-                          autofocus: true,
-                          textInputAction: TextInputAction.next,
-                          autofillHints: [
-                            creating
-                                ? AutofillHints.newUsername
-                                : AutofillHints.username,
-                          ],
-                          onSubmitted: (_) => _passwordFocus.requestFocus(),
-                          decoration: const InputDecoration(
-                            labelText: 'Username',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextField(
-                          controller: _password,
-                          focusNode: _passwordFocus,
-                          obscureText: _obscure,
-                          textInputAction: creating
-                              ? TextInputAction.next
-                              : TextInputAction.done,
-                          autofillHints: [
-                            creating
-                                ? AutofillHints.newPassword
-                                : AutofillHints.password,
-                          ],
-                          onSubmitted: (_) => creating
-                              ? _confirmFocus.requestFocus()
-                              : _submit(),
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            border: const OutlineInputBorder(),
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            suffixIcon: IconButton(
-                              tooltip: _obscure ? 'Show' : 'Hide',
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                            ),
-                          ),
-                        ),
-                        // Confirm password — only when creating an account.
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOut,
-                          alignment: Alignment.topCenter,
-                          child: creating
-                              ? Padding(
-                                  padding: const EdgeInsets.only(top: 16),
-                                  child: TextField(
-                                    controller: _confirm,
-                                    focusNode: _confirmFocus,
-                                    obscureText: _obscure,
-                                    textInputAction: TextInputAction.done,
-                                    autofillHints: const [
-                                      AutofillHints.newPassword,
-                                    ],
-                                    onSubmitted: (_) => _submit(),
-                                    decoration: InputDecoration(
-                                      labelText: 'Confirm password',
-                                      border: const OutlineInputBorder(),
-                                      prefixIcon:
-                                          const Icon(Icons.lock_outline),
-                                      errorText: _confirmError,
-                                    ),
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        if (auth.error != null) ...[
-                          const SizedBox(height: 16),
-                          _ErrorBanner(message: auth.error!),
-                        ],
-                        const SizedBox(height: 24),
-                        FilledButton.icon(
-                          onPressed: auth.busy ? null : _submit,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          icon: auth.busy
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Icon(
-                                  creating
-                                      ? Icons.person_add_alt_1_outlined
-                                      : Icons.login_outlined,
-                                ),
-                          label: Text(
-                            creating ? 'Create account' : 'Sign in',
-                          ),
-                        ),
-                      ],
+    // This screen has no AppBar, so nothing sets the status-bar icon colour on
+    // its own — without this, iOS drew the notch clock/network glyphs in a shade
+    // that vanished against the light background. Derive it from the theme so
+    // the icons stay legible in both light and dark.
+    final overlayStyle =
+        (theme.brightness == Brightness.dark
+                ? SystemUiOverlayStyle.light
+                : SystemUiOverlayStyle.dark)
+            .copyWith(statusBarColor: Colors.transparent);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ── Brand ─────────────────────────────────────────────
+                    const AppLogo(size: 72),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Skippy',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Text(
+                      creating
+                          ? 'Create an account to start taking notes'
+                          : 'Welcome back — sign in to your notes',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // ── Card ──────────────────────────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: scheme.surface,
+                        borderRadius: BorderRadius.circular(kRadius),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: AutofillGroup(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Mode switch — makes Sign in vs Create explicit.
+                            SegmentedButton<bool>(
+                              // No leading icons: on narrow phone widths the icon
+                              // stole enough room that "Create account" wrapped to
+                              // two lines. The labels alone read clearly.
+                              segments: const [
+                                ButtonSegment(
+                                  value: false,
+                                  label: Text('Sign in'),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  label: Text(
+                                    'Create account',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.fade,
+                                  ),
+                                ),
+                              ],
+                              selected: {creating},
+                              onSelectionChanged: auth.busy
+                                  ? null
+                                  : (s) => _setMode(s.first),
+                              showSelectedIcon: false,
+                              style: ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            TextField(
+                              controller: _username,
+                              autofocus: true,
+                              textInputAction: TextInputAction.next,
+                              autofillHints: [
+                                creating
+                                    ? AutofillHints.newUsername
+                                    : AutofillHints.username,
+                              ],
+                              onSubmitted: (_) => _passwordFocus.requestFocus(),
+                              decoration: const InputDecoration(
+                                labelText: 'Username',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _password,
+                              focusNode: _passwordFocus,
+                              obscureText: _obscure,
+                              textInputAction: creating
+                                  ? TextInputAction.next
+                                  : TextInputAction.done,
+                              autofillHints: [
+                                creating
+                                    ? AutofillHints.newPassword
+                                    : AutofillHints.password,
+                              ],
+                              onSubmitted: (_) => creating
+                                  ? _confirmFocus.requestFocus()
+                                  : _submit(),
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  tooltip: _obscure ? 'Show' : 'Hide',
+                                  icon: Icon(
+                                    _obscure
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscure = !_obscure),
+                                ),
+                              ),
+                            ),
+                            // Confirm password — only when creating an account.
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              alignment: Alignment.topCenter,
+                              child: creating
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(top: 16),
+                                      child: TextField(
+                                        controller: _confirm,
+                                        focusNode: _confirmFocus,
+                                        obscureText: _obscure,
+                                        textInputAction: TextInputAction.done,
+                                        autofillHints: const [
+                                          AutofillHints.newPassword,
+                                        ],
+                                        onSubmitted: (_) => _submit(),
+                                        decoration: InputDecoration(
+                                          labelText: 'Confirm password',
+                                          border: const OutlineInputBorder(),
+                                          prefixIcon: const Icon(
+                                            Icons.lock_outline,
+                                          ),
+                                          errorText: _confirmError,
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            if (auth.error != null) ...[
+                              const SizedBox(height: 16),
+                              _ErrorBanner(message: auth.error!),
+                            ],
+                            const SizedBox(height: 24),
+                            FilledButton.icon(
+                              onPressed: auth.busy ? null : _submit,
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                              ),
+                              icon: auth.busy
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Icon(
+                                      creating
+                                          ? Icons.person_add_alt_1_outlined
+                                          : Icons.login_outlined,
+                                    ),
+                              label: Text(
+                                creating ? 'Create account' : 'Sign in',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // ── Backend URL selector ──────────────────────────────
+                    _BackendUrlSelector(
+                      activeUrl: auth.activeUrl,
+                      savedUrls: auth.savedUrls,
+                      onSelected: (url) => auth.setActiveUrl(url),
+                      onAdd: _showAddUrlDialog,
+                      onRemove: (url) => auth.removeUrl(url),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                // ── Backend URL selector ──────────────────────────────
-                _BackendUrlSelector(
-                  activeUrl: auth.activeUrl,
-                  savedUrls: auth.savedUrls,
-                  onSelected: (url) => auth.setActiveUrl(url),
-                  onAdd: _showAddUrlDialog,
-                  onRemove: (url) => auth.removeUrl(url),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -414,24 +434,18 @@ class _BackendUrlSelector extends StatelessWidget {
               child: Text(
                 _displayUrl(url),
                 style: TextStyle(
-                  fontWeight:
-                      url == activeUrl ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight: url == activeUrl
+                      ? FontWeight.w600
+                      : FontWeight.normal,
                 ),
               ),
             ),
           ),
           const Divider(height: 1),
           MenuItemButton(
-            leadingIcon: Icon(
-              Icons.add,
-              size: 18,
-              color: scheme.primary,
-            ),
+            leadingIcon: Icon(Icons.add, size: 18, color: scheme.primary),
             onPressed: onAdd,
-            child: Text(
-              'Add server…',
-              style: TextStyle(color: scheme.primary),
-            ),
+            child: Text('Add server…', style: TextStyle(color: scheme.primary)),
           ),
         ],
       ),

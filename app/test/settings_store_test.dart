@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticky_notes/api/api_client.dart';
-import 'package:sticky_notes/state/settings_store.dart';
-import 'package:sticky_notes/theme.dart';
+import 'package:skippy/api/api_client.dart';
+import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/theme.dart';
 
 import 'fake_api.dart';
 

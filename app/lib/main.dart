@@ -11,19 +11,20 @@ import 'state/notes_store.dart';
 import 'state/settings_store.dart';
 import 'theme.dart';
 import 'util/snack.dart';
+import 'widgets/background_guard.dart';
 
 void main() {
-  runApp(const StickyNotesApp());
+  runApp(const SkippyApp());
 }
 
-class StickyNotesApp extends StatefulWidget {
-  const StickyNotesApp({super.key});
+class SkippyApp extends StatefulWidget {
+  const SkippyApp({super.key});
 
   @override
-  State<StickyNotesApp> createState() => _StickyNotesAppState();
+  State<SkippyApp> createState() => _SkippyAppState();
 }
 
-class _StickyNotesAppState extends State<StickyNotesApp> {
+class _SkippyAppState extends State<SkippyApp> {
   late final ApiClient _api = ApiClient();
   late final AuthStore _auth = AuthStore(api: _api);
 
@@ -91,36 +92,39 @@ class _StickyNotesAppState extends State<StickyNotesApp> {
         if (store != null) ChangeNotifierProvider.value(value: store),
         if (settings != null) ChangeNotifierProvider.value(value: settings),
       ],
-      child: ListenableBuilder(
-        listenable: Listenable.merge([?settings]),
-        builder: (context, _) => MaterialApp(
-          title: 'Sticky Notes',
-          debugShowCheckedModeBanner: false,
-          scaffoldMessengerKey: scaffoldMessengerKey,
-          theme: buildTheme(
-            Brightness.light,
-            seed: settings?.accentColor ?? kDefaultAccent,
-          ),
-          darkTheme: buildTheme(
-            Brightness.dark,
-            seed: settings?.accentColor ?? kDefaultAccent,
-          ),
-          themeMode: settings?.themeMode ?? ThemeMode.system,
-          home: Consumer<AuthStore>(
-            builder: (context, auth, _) => AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: switch (auth.status) {
-                AuthStatus.restoring => const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                ),
-                AuthStatus.signedOut => const LoginScreen(),
-                AuthStatus.signedIn =>
-                  store == null
-                      ? const Scaffold(
-                          body: Center(child: CircularProgressIndicator()),
-                        )
-                      : HomeScreen(key: ValueKey(store.currentUserId)),
-              },
+      child: BackgroundGuard(
+        onBackground: () => _store?.flushForBackground(),
+        child: ListenableBuilder(
+          listenable: Listenable.merge([?settings]),
+          builder: (context, _) => MaterialApp(
+            title: 'Skippy',
+            debugShowCheckedModeBanner: false,
+            scaffoldMessengerKey: scaffoldMessengerKey,
+            theme: buildTheme(
+              Brightness.light,
+              seed: settings?.accentColor ?? kDefaultAccent,
+            ),
+            darkTheme: buildTheme(
+              Brightness.dark,
+              seed: settings?.accentColor ?? kDefaultAccent,
+            ),
+            themeMode: settings?.themeMode ?? ThemeMode.system,
+            home: Consumer<AuthStore>(
+              builder: (context, auth, _) => AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: switch (auth.status) {
+                  AuthStatus.restoring => const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  ),
+                  AuthStatus.signedOut => const LoginScreen(),
+                  AuthStatus.signedIn =>
+                    store == null
+                        ? const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          )
+                        : HomeScreen(key: ValueKey(store.currentUserId)),
+                },
+              ),
             ),
           ),
         ),

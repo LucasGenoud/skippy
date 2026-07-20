@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sticky_notes/api/api_client.dart';
-import 'package:sticky_notes/models/dropped_file.dart';
-import 'package:sticky_notes/models/note.dart';
-import 'package:sticky_notes/state/local_cache.dart';
-import 'package:sticky_notes/state/notes_store.dart';
+import 'package:skippy/api/api_client.dart';
+import 'package:skippy/models/dropped_file.dart';
+import 'package:skippy/models/note.dart';
+import 'package:skippy/state/local_cache.dart';
+import 'package:skippy/state/notes_store.dart';
 
 import 'fake_api.dart';
 
@@ -693,6 +693,31 @@ void main() {
           orElse: () => <String, dynamic>{},
         );
         expect((patch['data'] as Map?)?['content'], 'typed, then reloaded');
+        s.dispose();
+      },
+    );
+
+    test(
+      'flushForBackground pushes a mid-debounce edit without the 400ms wait',
+      () async {
+        final cache = MemoryLocalCache();
+        api.notes['n1'] = serverNote('n1', title: 'a');
+        final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+        await s.load();
+
+        s.updateNoteContent('n1', content: 'typed, then backgrounded');
+        // The OS is about to suspend us: the debounced patch must reach the
+        // server (and the cache) immediately, not after the timer fires.
+        s.flushForBackground();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(api.notes['n1']!.content, 'typed, then backgrounded');
+        final doc = await cache.read('u-me');
+        final cached = (doc!['notes'] as List).cast<Map<String, dynamic>>();
+        expect(
+          cached.singleWhere((n) => n['id'] == 'n1')['content'],
+          'typed, then backgrounded',
+        );
         s.dispose();
       },
     );

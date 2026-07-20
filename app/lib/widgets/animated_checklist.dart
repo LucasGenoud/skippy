@@ -25,7 +25,10 @@ class AnimatedChecklist extends StatefulWidget {
   final void Function(String itemId) onToggle;
   final void Function(String itemId, String text) onItemTextChanged;
   final void Function(String itemId) onRemove;
-  final void Function(String text) onAdd;
+
+  /// Creates a new item at the end of the list and returns its id, so the
+  /// add field can hand focus straight to the real row it just spawned.
+  final String Function(String text) onAdd;
   final void Function(List<ChecklistItem> newItems) onReorderItems;
 
   /// Enter in a row inserts a fresh empty row right below it (Keep behavior);
@@ -89,6 +92,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   String? _draggingId;
   String? _hoveredId;
   String? _pendingFocusId;
+
+  /// A row just materialized by typing in the add field: it keeps its "typed"
+  /// state when focus lands so its suggestion popup shows without a keystroke.
+  String? _typeCreatedId;
   double _dragY = 0;
   bool _snapFrame = true;
   bool _showChecked = true;
@@ -162,7 +169,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final handles = _handles.putIfAbsent(item.id, () {
       final h = _RowHandles(item.text);
       h.focusNode.addListener(() {
-        if (h.focusNode.hasFocus) h.typedSinceFocus = false;
+        if (h.focusNode.hasFocus) {
+          h.typedSinceFocus = item.id == _typeCreatedId;
+          if (item.id == _typeCreatedId) _typeCreatedId = null;
+        }
         _onAnyFocusChange();
       });
       return h;
@@ -195,11 +205,15 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   void _applyPendingFocus() {
     final id = _pendingFocusId;
     if (id == null) return;
-    final node = id == _kNewRowId ? _newRow.focusNode : _handles[id]?.focusNode;
-    if (node != null) {
+    final handles = id == _kNewRowId ? _newRow : _handles[id];
+    if (handles != null) {
       _pendingFocusId = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) node.requestFocus();
+        if (!mounted) return;
+        handles.focusNode.requestFocus();
+        // Land the caret at the end so continuing to type appends.
+        final len = handles.controller.text.length;
+        handles.controller.selection = TextSelection.collapsed(offset: len);
       });
     } else {
       // The row's handles are created later in this build pass; retry.
@@ -637,12 +651,27 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   border: InputBorder.none,
                   isDense: true,
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (text) {
+                  if (text.trim().isEmpty) {
+                    setState(() {});
+                    return;
+                  }
+                  // The first keystroke turns the add field into a real item,
+                  // so typing always lands on an actual element (nothing is
+                  // lost if focus leaves) and it shows on the grid instantly.
+                  // Focus hands off to that row to continue the word there.
+                  final newId = widget.onAdd(text);
+                  _newRow.controller.clear();
+                  _typeCreatedId = newId;
+                  _pendingFocusId = newId;
+                  setState(() {});
+                },
                 onSubmitted: (text) {
                   if (text.trim().isEmpty) return;
-                  widget.onAdd(text);
+                  final newId = widget.onAdd(text);
                   _newRow.controller.clear();
-                  _newRow.focusNode.requestFocus();
+                  _pendingFocusId = newId;
+                  setState(() {});
                 },
               ),
             ),

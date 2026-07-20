@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:sticky_notes/api/api_client.dart';
-import 'package:sticky_notes/models/chat.dart';
-import 'package:sticky_notes/models/link_preview.dart';
-import 'package:sticky_notes/models/note.dart';
+import 'package:skippy/api/api_client.dart';
+import 'package:skippy/models/chat.dart';
+import 'package:skippy/models/link_preview.dart';
+import 'package:skippy/models/note.dart';
 
 /// In-memory [Api] for tests: mirrors the server's semantics closely enough
 /// to exercise the store (patch merging, label sets, history), with failure

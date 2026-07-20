@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:sticky_notes/models/link_preview.dart';
-import 'package:sticky_notes/state/link_preview_cache.dart';
-import 'package:sticky_notes/widgets/link_preview.dart';
-import 'package:sticky_notes/widgets/linked_text.dart';
+import 'package:skippy/models/link_preview.dart';
+import 'package:skippy/state/link_preview_cache.dart';
+import 'package:skippy/widgets/link_preview.dart';
+import 'package:skippy/widgets/linked_text.dart';
 
 import 'fake_api.dart';
 
