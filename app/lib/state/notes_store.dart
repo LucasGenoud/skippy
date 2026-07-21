@@ -874,6 +874,19 @@ class NotesStore extends ChangeNotifier {
     return note.id;
   }
 
+  /// Content shared into the app (a link, some text) → one text note.
+  /// Materializes immediately via [updateNoteContent] (which pushes the draft
+  /// to the server). Returns the note id, or null when there was nothing to
+  /// save (the empty draft is discarded rather than left as a phantom note).
+  Future<String?> createTextNote(String content, {String title = ''}) async {
+    final body = content.trim();
+    final heading = title.trim();
+    if (body.isEmpty && heading.isEmpty) return null;
+    final note = createDraft();
+    updateNoteContent(note.id, title: heading, content: body);
+    return note.id;
+  }
+
   void removeAttachment(String noteId, String attachmentId) {
     final note = noteById(noteId);
     if (note == null) return;

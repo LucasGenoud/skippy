@@ -468,6 +468,38 @@ void main() {
     });
   });
 
+  group('createTextNote (shared text/links)', () {
+    test('shared text becomes one persisted text note', () async {
+      final id = await store.createTextNote('https://example.com');
+      expect(id, isNotNull);
+
+      final note = store.noteById(id!)!;
+      expect(note.kind, NoteKind.text);
+      expect(note.content, 'https://example.com');
+      // Persisted server-side, not left as a phantom draft.
+      expect(api.notes[id]!.content, 'https://example.com');
+    });
+
+    test('a title rides along when provided', () async {
+      final id = await store.createTextNote('body', title: 'Heading');
+      final note = store.noteById(id!)!;
+      expect(note.title, 'Heading');
+      expect(note.content, 'body');
+    });
+
+    test('blank content creates nothing', () async {
+      final id = await store.createTextNote('   \n  ');
+      expect(id, isNull);
+      await settle();
+      // No draft left behind, no server call.
+      expect(
+        store.notesFor(ViewSelection.notes, '').others.where((n) => n.isEmpty),
+        isEmpty,
+      );
+      expect(api.notes, isEmpty);
+    });
+  });
+
   group('audio notes', () {
     test(
       'createAudioNote makes an audio note that starts transcribing',

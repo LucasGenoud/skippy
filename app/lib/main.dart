@@ -9,6 +9,7 @@ import 'state/link_preview_cache.dart';
 import 'state/local_cache.dart';
 import 'state/notes_store.dart';
 import 'state/settings_store.dart';
+import 'state/share_intake.dart';
 import 'theme.dart';
 import 'util/motion.dart';
 import 'util/snack.dart';
@@ -33,6 +34,14 @@ class _SkippyAppState extends State<SkippyApp> {
   /// client carries the bearer token). Lives for the app's lifetime.
   late final LinkPreviewCache _linkPreviews = LinkPreviewCache(api: _api);
 
+  /// Receives content shared into the app from the OS share sheet (mobile) and
+  /// creates a note for it. Long-lived so a share that arrives before sign-in
+  /// queues and replays once the store exists; inert on web.
+  late final ShareIntake _shareIntake = ShareIntake(
+    showMessage: (msg) =>
+        showAppSnack(msg, icon: Icons.note_add_outlined),
+  );
+
   /// Live above the MaterialApp so that pushed routes (editor, dialogs) can
   /// read them; created per signed-in user, torn down on sign-out.
   NotesStore? _store;
@@ -43,6 +52,7 @@ class _SkippyAppState extends State<SkippyApp> {
     super.initState();
     _auth.addListener(_onAuthChanged);
     _auth.loadSavedUrls().then((_) => _auth.restore());
+    _shareIntake.start();
   }
 
   void _onAuthChanged() {
@@ -63,12 +73,14 @@ class _SkippyAppState extends State<SkippyApp> {
             )
             ..load()
             ..startSync();
+      _shareIntake.setStore(_store);
       setState(() {});
     } else if (!signedIn && _store != null) {
       _store!.dispose();
       _settings?.dispose();
       _store = null;
       _settings = null;
+      _shareIntake.setStore(null);
       setState(() {});
     }
   }
@@ -76,6 +88,7 @@ class _SkippyAppState extends State<SkippyApp> {
   @override
   void dispose() {
     _auth.removeListener(_onAuthChanged);
+    _shareIntake.dispose();
     _store?.dispose();
     _settings?.dispose();
     _auth.dispose();
