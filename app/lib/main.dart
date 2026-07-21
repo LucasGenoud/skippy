@@ -10,6 +10,7 @@ import 'state/local_cache.dart';
 import 'state/notes_store.dart';
 import 'state/settings_store.dart';
 import 'theme.dart';
+import 'util/motion.dart';
 import 'util/snack.dart';
 import 'widgets/background_guard.dart';
 
@@ -111,7 +112,9 @@ class _SkippyAppState extends State<SkippyApp> {
             themeMode: settings?.themeMode ?? ThemeMode.system,
             home: Consumer<AuthStore>(
               builder: (context, auth, _) => AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
+                duration: Motion.slow,
+                switchInCurve: Motion.standard,
+                switchOutCurve: Motion.standard,
                 child: switch (auth.status) {
                   AuthStatus.restoring => const Scaffold(
                     body: Center(child: CircularProgressIndicator()),

@@ -72,3 +72,72 @@ async fn semantic_search_reports_unavailable_when_disabled() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
+#[tokio::test]
+async fn search_stats_report_model_and_per_user_coverage() {
+    let app = build_app(state_with_search().await);
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+
+    create_note(&app, &ada, json!({"title": "Milk", "content": "buy milk"})).await;
+    create_note(&app, &ada, json!({"title": "Eggs", "content": "buy eggs"})).await;
+    create_note(&app, &bob, json!({"title": "Bob note", "content": "hello"})).await;
+    settle_index().await;
+
+    let (status, stats) = send(&app, "GET", "/api/search/stats", Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stats["enabled"], json!(true));
+    assert_eq!(stats["model"], json!("hash-test"));
+    assert_eq!(stats["dimensions"], json!(HASH_EMBED_DIMS));
+    // Coverage is per-user: ada sees only her two notes, not bob's.
+    assert_eq!(stats["total_notes"], json!(2));
+    assert_eq!(stats["indexed_notes"], json!(2));
+}
+
+#[tokio::test]
+async fn search_stats_report_disabled_when_search_is_off() {
+    let app = app().await; // no search service wired
+    let (ada, _) = register(&app, "ada").await;
+    let (status, stats) = send(&app, "GET", "/api/search/stats", Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stats, json!({ "enabled": false }));
+}
+
+#[tokio::test]
+async fn reindex_reports_total_and_tracks_progress() {
+    let app = build_app(state_with_search().await);
+    let (ada, _) = register(&app, "ada").await;
+    create_note(&app, &ada, json!({"title": "One", "content": "first"})).await;
+    create_note(&app, &ada, json!({"title": "Two", "content": "second"})).await;
+
+    let (status, body) = send(&app, "POST", "/api/search/reindex", Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["total"], json!(2));
+
+    // The worker runs in the background; give it a beat, then the status
+    // endpoint reports it finished (done == total, no longer running).
+    settle_index().await;
+    let (status, prog) = send(&app, "GET", "/api/search/reindex/status", Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(prog["total"], json!(2));
+    assert_eq!(prog["done"], json!(2));
+    assert_eq!(prog["running"], json!(false));
+}
+
+#[tokio::test]
+async fn reindex_status_is_idle_before_any_run() {
+    let app = build_app(state_with_search().await);
+    let (ada, _) = register(&app, "ada").await;
+    let (status, prog) =
+        send(&app, "GET", "/api/search/reindex/status", Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(prog, json!({ "running": false, "done": 0, "total": 0 }));
+}
+
+#[tokio::test]
+async fn reindex_reports_unavailable_when_disabled() {
+    let app = app().await; // no search service wired
+    let (ada, _) = register(&app, "ada").await;
+    let (status, _) = send(&app, "POST", "/api/search/reindex", Some(&ada), None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+

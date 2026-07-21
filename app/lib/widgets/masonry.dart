@@ -98,9 +98,11 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
     _autoScrollTicker = createTicker(_onAutoScrollTick);
+    // 500ms end-to-end: each tile takes a 0.5 slice (see [_TileEntrance]), so
+    // no single tile animates longer than 250ms — the grid still cascades.
     _entranceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 500),
     );
   }
 

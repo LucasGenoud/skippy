@@ -50,7 +50,11 @@ impl LinkPreview {
     }
 }
 
-const MAX_BODY_BYTES: usize = 512 * 1024;
+// Hard cap on how much of a body we'll pull. Metadata lives in `<head>`, and
+// big sites (YouTube, etc.) inline hundreds of KB of script/JSON *before* their
+// Open Graph tags, so this has to be generous — `read_capped` stops early once
+// `</head>` arrives, so the full cap is only ever hit on pages with no head end.
+const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 6;
 
 fn client() -> &'static reqwest::Client {
@@ -134,17 +138,40 @@ async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(S
     bail!("too many redirects")
 }
 
+/// Read the body, stopping at whichever comes first: the end of `<head>` (all
+/// the metadata we parse lives there, so there's no point downloading the rest
+/// of a multi-MB page) or `cap` bytes.
 async fn read_capped(resp: reqwest::Response, cap: usize) -> anyhow::Result<Vec<u8>> {
+    const HEAD_CLOSE: &[u8] = b"</head>";
     let mut stream = resp.bytes_stream();
     let mut buf = Vec::new();
+    let mut scanned: usize = 0; // bytes already searched for </head>
     while let Some(chunk) = stream.next().await {
         buf.extend_from_slice(&chunk.context("read body")?);
+        // Search the newly-arrived bytes, backing up by len-1 so a `</head>`
+        // straddling a chunk boundary is still matched.
+        let from = scanned.saturating_sub(HEAD_CLOSE.len() - 1);
+        if let Some(rel) = find_ci(&buf[from..], HEAD_CLOSE) {
+            buf.truncate(from + rel + HEAD_CLOSE.len());
+            break;
+        }
+        scanned = buf.len();
         if buf.len() >= cap {
             buf.truncate(cap);
             break;
         }
     }
     Ok(buf)
+}
+
+/// First index of ASCII-case-insensitive `needle` (which must be lowercase) in
+/// `hay`, or `None`.
+fn find_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    hay.windows(needle.len())
+        .position(|w| w.iter().zip(needle).all(|(a, b)| a.to_ascii_lowercase() == *b))
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +535,14 @@ mod tests {
         assert_eq!(b.resolve("//cdn.com/x.png"), "https://cdn.com/x.png");
         assert_eq!(b.resolve("x.png"), "https://example.com/a/x.png");
         assert_eq!(b.resolve("https://z.com/q"), "https://z.com/q");
+    }
+
+    #[test]
+    fn find_ci_matches_case_insensitively() {
+        assert_eq!(find_ci(b"abc</HEAD>xyz", b"</head>"), Some(3));
+        assert_eq!(find_ci(b"abc</head>xyz", b"</head>"), Some(3));
+        assert_eq!(find_ci(b"no closing tag here", b"</head>"), None);
+        assert_eq!(find_ci(b"", b"</head>"), None);
     }
 
     #[tokio::test]

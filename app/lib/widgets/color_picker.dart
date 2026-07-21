@@ -113,6 +113,7 @@ class _ColorDot extends StatelessWidget {
         customBorder: const CircleBorder(),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
           width: 48,
           height: 48,
           decoration: BoxDecoration(

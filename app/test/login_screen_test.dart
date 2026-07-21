@@ -85,4 +85,40 @@ void main() {
 
     expect(find.text("Passwords don't match"), findsOneWidget);
   });
+
+  testWidgets('empty fields show inline errors instead of doing nothing',
+      (tester) async {
+    await tester.pumpWidget(loginApp());
+    await tester.pumpAndSettle();
+
+    // Press Sign in without typing anything — the old behaviour returned
+    // silently, leaving the user with no feedback.
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter your username'), findsOneWidget);
+    expect(find.text('Enter your password'), findsOneWidget);
+  });
+
+  testWidgets('typing clears the matching empty-field error', (tester) async {
+    await tester.pumpWidget(loginApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter your username'), findsOneWidget);
+
+    // Typing in the username field clears its error but leaves the other.
+    await tester.enterText(
+      find.ancestor(
+        of: find.text('Username'),
+        matching: find.byType(TextField),
+      ),
+      'alice',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter your username'), findsNothing);
+    expect(find.text('Enter your password'), findsOneWidget);
+  });
 }

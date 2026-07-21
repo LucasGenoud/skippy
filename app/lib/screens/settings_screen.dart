@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../state/settings_store.dart';
 import '../widgets/settings/accent_color.dart';
+import '../widgets/settings/embedding_section.dart';
 import '../widgets/settings/export_section.dart';
+import '../widgets/settings/grid_layout_section.dart';
 import '../widgets/settings/llm_section.dart';
 import '../widgets/settings/managed_note.dart';
 import '../widgets/settings/notify_section.dart';
@@ -53,26 +55,7 @@ class SettingsScreen extends StatelessWidget {
                 value: settings.defaultListMode,
                 onChanged: settings.setDefaultListMode,
               ),
-              ListTile(
-                leading: const Icon(Icons.grid_view_outlined),
-                title: const Text('Grid density'),
-                subtitle: Text(settings.gridDensity.blurb),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: SegmentedButton<GridDensity>(
-                  segments: [
-                    for (final density in GridDensity.values)
-                      ButtonSegment(
-                        value: density,
-                        label: Text(density.label),
-                      ),
-                  ],
-                  selected: {settings.gridDensity},
-                  onSelectionChanged: (s) => settings.setGridDensity(s.first),
-                  showSelectedIcon: false,
-                ),
-              ),
+              const GridLayoutSection(),
               const Divider(height: 32),
               const _SectionHeader('Features'),
               _FeatureToggle(
@@ -83,6 +66,7 @@ class SettingsScreen extends StatelessWidget {
                 value: settings.semanticSearchEnabled,
                 onChanged: settings.setSemanticSearchEnabled,
               ),
+              if (settings.semanticSearchCapable) const EmbeddingStatsTile(),
               _FeatureToggle(
                 icon: Icons.mic_none,
                 title: 'Audio notes',

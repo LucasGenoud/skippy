@@ -26,7 +26,7 @@ pub use notes::{
     purge_old_trash, purge_trash, reorder_notes, update_note,
 };
 pub use probes::{llm_test, notify_test};
-pub use search::semantic_search;
+pub use search::{reindex_search, reindex_status, search_stats, semantic_search};
 pub use settings::{get_settings, put_settings};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use unfurl::unfurl;

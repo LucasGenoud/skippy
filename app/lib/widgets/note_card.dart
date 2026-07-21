@@ -12,9 +12,9 @@ import '../state/settings_store.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
 import 'transcribing_indicator.dart';
-import '../util/attachment_image.dart';
 import '../util/highlight.dart';
 import '../util/linkify.dart';
+import '../util/note_image.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
 
@@ -71,7 +71,7 @@ class _NoteTileState extends State<NoteTile> {
           ],
         ),
         child: OpenContainer<void>(
-          transitionDuration: const Duration(milliseconds: 300),
+          transitionDuration: Motion.slow,
           transitionType: ContainerTransitionType.fade,
           closedElevation: 0,
           openElevation: 0,
@@ -386,7 +386,8 @@ class _PinButton extends StatelessWidget {
       right: 4,
       child: AnimatedOpacity(
         opacity: show ? 1 : 0,
-        duration: const Duration(milliseconds: 120),
+        duration: Motion.fast,
+        curve: Motion.standard,
         child: IgnorePointer(
           ignoring: !show,
           child: IconButton(
@@ -547,43 +548,13 @@ class _ImageStrip extends StatelessWidget {
       borderRadius: borderRadius,
       child: Stack(
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 160),
-            child: SizedBox(
-              width: double.infinity,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // Decode at display size, not the photo's full resolution —
-                  // a multi-megapixel decode per card janks grid scrolling.
-                  // Bucketed so the cache key stays stable while the column
-                  // width drifts during a window resize.
-                  final dpr = MediaQuery.devicePixelRatioOf(context);
-                  final width = constraints.maxWidth.isFinite
-                      ? constraints.maxWidth * dpr
-                      : 600.0;
-                  return Image(
-                    // Cache key = attachment id, so the hourly signed-URL
-                    // rotation doesn't refetch every visible image.
-                    image: ResizeImage.resizeIfNeeded(
-                      ((width / 160).ceil() * 160).clamp(160, 1280).toInt(),
-                      null,
-                      AttachmentImage(
-                        attachmentId: first.id,
-                        url: store.fileUrl(first),
-                      ),
-                    ),
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stack) => Container(
-                      height: 60,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      child: const Icon(Icons.broken_image_outlined),
-                    ),
-                  );
-                },
-              ),
-            ),
+          // Grow to the image's aspect ratio (up to a cap) so image-forward
+          // notes show as much of the picture as fits; SVGs render through the
+          // vector path inside [NoteImage].
+          NoteImage(
+            attachment: first,
+            url: store.fileUrl(first),
+            maxHeight: 280,
           ),
           if (extra > 0)
             Positioned(

@@ -113,10 +113,24 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
       shape: kRoundedShape,
     ),
+    // Light "elevated toast" snackbars — a raised surface card, not the dark
+    // inverse bar, so they read as native to the note cards. showAppSnack
+    // (util/snack.dart) fills in a tinted leading icon chip.
     snackBarTheme: base.snackBarTheme.copyWith(
       behavior: SnackBarBehavior.floating,
       insetPadding: const EdgeInsets.fromLTRB(16, 0, 96, 16),
       width: null,
+      elevation: 6,
+      backgroundColor: scheme.surfaceContainerHigh,
+      contentTextStyle: base.textTheme.bodyMedium?.copyWith(
+        color: scheme.onSurface,
+        fontSize: 13.5,
+      ),
+      actionTextColor: scheme.primary,
+      closeIconColor: scheme.onSurfaceVariant,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
     ),
     tooltipTheme: base.tooltipTheme.copyWith(
       waitDuration: const Duration(milliseconds: 600),

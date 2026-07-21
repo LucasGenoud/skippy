@@ -273,6 +273,7 @@ class _MicPulse extends StatelessWidget {
                 for (var i = 0; i < 3; i++) _ripple(scheme, i, live),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 90),
+                  curve: Curves.easeOut,
                   width: 88 + live * 18,
                   height: 88 + live * 18,
                   decoration: BoxDecoration(

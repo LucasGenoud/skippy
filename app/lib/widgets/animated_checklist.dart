@@ -694,6 +694,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             AnimatedRotation(
               turns: _showChecked ? 0.25 : 0,
               duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
               child: Icon(
                 Icons.chevron_right,
                 size: 20,
@@ -793,7 +794,7 @@ class _PopCheckboxState extends State<_PopCheckbox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 420),
+    duration: const Duration(milliseconds: 250),
   );
   // Quickly balloons to 1.6x then bounces back with an elastic settle, so the
   // tap reads clearly even while the ticked row is sliding to "Completed".

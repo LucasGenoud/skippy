@@ -15,6 +15,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/linkify.dart';
 import '../util/mime.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 import 'history_screen.dart';
 import '../widgets/animated_checklist.dart';
@@ -378,6 +379,7 @@ class _EditorScreenState extends State<EditorScreen> {
     Navigator.of(context).pop();
     showAppSnack(
       wasArchived ? 'Note unarchived' : 'Note archived',
+      icon: wasArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
       actionLabel: 'Undo',
       onAction: () => _store.setArchived(id, wasArchived),
     );
@@ -394,6 +396,8 @@ class _EditorScreenState extends State<EditorScreen> {
     Navigator.of(context).pop();
     showAppSnack(
       'Note moved to Trash',
+      icon: Icons.delete_outline,
+      kind: SnackKind.danger,
       actionLabel: 'Undo',
       onAction: () => _store.restoreFromTrash(id),
     );
@@ -403,7 +407,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final note = _note;
     if (note == null || note.isEmpty) return;
     _store.duplicate(note.id);
-    showAppSnack('Note copied');
+    showAppSnack('Note copied', icon: Icons.copy_outlined);
   }
 
   void _convertKind(NoteKind target) {
@@ -438,7 +442,11 @@ class _EditorScreenState extends State<EditorScreen> {
         if (f.bytes.length <= maxUploadBytes) f,
     ];
     if (accepted.length != files.length) {
-      showAppSnack('Files are limited to 25 MB');
+      showAppSnack(
+        'Files are limited to 25 MB',
+        icon: Icons.error_outline,
+        kind: SnackKind.warning,
+      );
     }
     if (accepted.isEmpty) return;
     _ensureNote();
@@ -449,7 +457,7 @@ class _EditorScreenState extends State<EditorScreen> {
         await _store.uploadFile(id, f.bytes, f.mime, f.name);
       }
     } catch (_) {
-      showAppSnack(failureMessage);
+      showAppSnack(failureMessage, icon: Icons.error_outline, kind: SnackKind.danger);
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -468,7 +476,11 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       ], failureMessage: "Couldn't upload the image");
     } catch (_) {
-      showAppSnack("Couldn't upload the image");
+      showAppSnack(
+        "Couldn't upload the image",
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
     }
   }
 
@@ -482,7 +494,11 @@ class _EditorScreenState extends State<EditorScreen> {
         failureMessage: "Couldn't upload the file",
       );
     } catch (_) {
-      showAppSnack("Couldn't upload the file");
+      showAppSnack(
+        "Couldn't upload the file",
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
     }
   }
 
@@ -675,7 +691,11 @@ class _EditorScreenState extends State<EditorScreen> {
               onPressed: () {
                 _store.restoreFromTrash(note!.id);
                 Navigator.of(context).pop();
-                showAppSnack('Note restored');
+                showAppSnack(
+                  'Note restored',
+                  icon: Icons.restore_outlined,
+                  kind: SnackKind.success,
+                );
               },
             ),
             IconButton(
@@ -684,7 +704,11 @@ class _EditorScreenState extends State<EditorScreen> {
               onPressed: () {
                 _store.deleteForever(note!.id);
                 Navigator.of(context).pop();
-                showAppSnack('Note deleted forever');
+                showAppSnack(
+                  'Note deleted forever',
+                  icon: Icons.delete_forever_outlined,
+                  kind: SnackKind.danger,
+                );
               },
             ),
           ],
@@ -737,7 +761,8 @@ class _EditorScreenState extends State<EditorScreen> {
         hint: 'Drop files to attach',
         onFiles: _addDroppedFiles,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
+          duration: Motion.base,
+          curve: Motion.standard,
           color: bg,
           child: CallbackShortcuts(
             bindings: {

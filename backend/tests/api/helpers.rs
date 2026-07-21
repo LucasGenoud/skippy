@@ -58,10 +58,18 @@ impl TextEmbedder for HashEmbedder {
             })
             .collect())
     }
+
+    fn model_name(&self) -> &str {
+        "hash-test"
+    }
+
+    fn dims(&self) -> usize {
+        HASH_EMBED_DIMS
+    }
 }
 
 pub async fn state_with_search() -> AppState {
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
     state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))

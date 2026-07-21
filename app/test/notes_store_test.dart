@@ -203,6 +203,22 @@ void main() {
       expect(api.notes['n1']!.kind, NoteKind.markdown);
     });
 
+    test('addLabelToNote adds once and is idempotent (drag onto label)', () async {
+      api.labels['l1'] = const Label(id: 'l1', name: 'work');
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      await store.load();
+
+      expect(store.addLabelToNote('n1', 'l1'), isTrue);
+      expect(store.noteById('n1')!.labelIds, contains('l1'));
+
+      // Dropping again is a no-op — never removes the label.
+      expect(store.addLabelToNote('n1', 'l1'), isFalse);
+      expect(store.noteById('n1')!.labelIds, contains('l1'));
+
+      await settle();
+      expect(api.notes['n1']!.labelIds, contains('l1'));
+    });
+
     test('reminders serialize to UTC and clear with null', () async {
       api.notes['n1'] = serverNote('n1', title: 'a');
       await store.load();

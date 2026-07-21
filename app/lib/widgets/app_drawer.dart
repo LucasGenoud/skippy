@@ -3,7 +3,10 @@ import '../theme.dart';
 import 'app_logo.dart';
 import 'package:provider/provider.dart';
 
+import '../models/note.dart';
 import '../state/notes_store.dart';
+import '../util/motion.dart';
+import '../util/snack.dart';
 import 'labels_sheet.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -159,7 +162,7 @@ class AppSidebar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 260),
+      duration: const Duration(milliseconds: 250),
       curve: Curves.easeInOutCubic,
       width: isOpen ? 268 : 72,
       color: scheme.surface,
@@ -195,7 +198,7 @@ class AppSidebar extends StatelessWidget {
                 height: 28,
                 child: AnimatedOpacity(
                   opacity: isOpen ? 1 : 0,
-                  duration: const Duration(milliseconds: 260),
+                  duration: const Duration(milliseconds: 250),
                   curve: Curves.easeInOutCubic,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
@@ -222,6 +225,8 @@ class AppSidebar extends StatelessWidget {
                   isOpen: isOpen,
                   onTap: () =>
                       onSelect(ViewSelection(NoteView.label, label.id)),
+                  onAcceptNote: (noteId) =>
+                      _dropOnLabel(context, noteId, label),
                 ),
             ],
             _SidebarItem(
@@ -243,6 +248,7 @@ class AppSidebar extends StatelessWidget {
               isSelected: selection == ViewSelection.archive,
               isOpen: isOpen,
               onTap: () => onSelect(ViewSelection.archive),
+              onAcceptNote: (noteId) => _dropOnArchive(context, noteId),
             ),
             _SidebarItem(
               icon: Icons.delete_outline,
@@ -251,10 +257,48 @@ class AppSidebar extends StatelessWidget {
               isSelected: selection == ViewSelection.trash,
               isOpen: isOpen,
               onTap: () => onSelect(ViewSelection.trash),
+              onAcceptNote: (noteId) => _dropOnTrash(context, noteId),
+              willAcceptNote: (noteId) =>
+                  context.read<NotesStore>().canTrash(noteId),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  void _dropOnLabel(BuildContext context, String noteId, Label label) {
+    final store = context.read<NotesStore>();
+    if (store.addLabelToNote(noteId, label.id)) {
+      showAppSnack('Labelled "${label.name}"', icon: Icons.label_outline);
+    } else {
+      showAppSnack('Already labelled "${label.name}"', icon: Icons.label);
+    }
+  }
+
+  void _dropOnArchive(BuildContext context, String noteId) {
+    final store = context.read<NotesStore>();
+    final note = store.noteById(noteId);
+    if (note == null || note.archived) return;
+    store.setArchived(noteId, true);
+    showAppSnack(
+      'Note archived',
+      icon: Icons.archive_outlined,
+      actionLabel: 'Undo',
+      onAction: () => store.setArchived(noteId, false),
+    );
+  }
+
+  void _dropOnTrash(BuildContext context, String noteId) {
+    final store = context.read<NotesStore>();
+    if (!store.canTrash(noteId)) return;
+    store.moveToTrash(noteId);
+    showAppSnack(
+      'Note moved to trash',
+      icon: Icons.delete_outline,
+      kind: SnackKind.danger,
+      actionLabel: 'Undo',
+      onAction: () => store.restoreFromTrash(noteId),
     );
   }
 }
@@ -267,6 +311,14 @@ class _SidebarItem extends StatelessWidget {
   final bool isOpen;
   final VoidCallback onTap;
 
+  /// When set, the item becomes a drop target for a note dragged from the
+  /// grid (the masonry drag carries the note id as `Draggable<String>` data).
+  final ValueChanged<String>? onAcceptNote;
+
+  /// Optional gate — a dragged note is only accepted when this returns true
+  /// (e.g. Trash refuses notes you don't own).
+  final bool Function(String noteId)? willAcceptNote;
+
   const _SidebarItem({
     required this.icon,
     required this.selectedIcon,
@@ -274,59 +326,90 @@ class _SidebarItem extends StatelessWidget {
     required this.isSelected,
     required this.isOpen,
     required this.onTap,
+    this.onAcceptNote,
+    this.willAcceptNote,
   });
 
   @override
   Widget build(BuildContext context) {
+    final item = _buildItem(context, dropTarget: false);
+    if (onAcceptNote == null) return item;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) =>
+          willAcceptNote?.call(details.data) ?? true,
+      onAcceptWithDetails: (details) => onAcceptNote!(details.data),
+      builder: (context, candidate, rejected) =>
+          _buildItem(context, dropTarget: candidate.isNotEmpty),
+    );
+  }
+
+  Widget _buildItem(BuildContext context, {required bool dropTarget}) {
     final scheme = Theme.of(context).colorScheme;
+    final Color background = dropTarget
+        ? scheme.primaryContainer
+        : (isSelected ? scheme.secondaryContainer : Colors.transparent);
+    final Color foreground = dropTarget
+        ? scheme.onPrimaryContainer
+        : (isSelected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant);
+    final Color labelColor = dropTarget
+        ? scheme.onPrimaryContainer
+        : (isSelected ? scheme.onSecondaryContainer : scheme.onSurface);
     return Tooltip(
       message: isOpen ? '' : label,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        child: Material(
-          color: isSelected ? scheme.secondaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(kRadius),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.standard,
+          decoration: BoxDecoration(
+            color: background,
             borderRadius: BorderRadius.circular(kRadius),
-            child: SizedBox(
-              height: 48,
-              child: OverflowBox(
-                alignment: Alignment.centerLeft,
-                minWidth: 48,
-                maxWidth: 244,
-                maxHeight: 48,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Icon(
-                        isSelected ? selectedIcon : icon,
-                        size: 24,
-                        color: isSelected
-                            ? scheme.onSecondaryContainer
-                            : scheme.onSurfaceVariant,
+            border: Border.all(
+              color: dropTarget ? scheme.primary : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(kRadius),
+              child: SizedBox(
+                height: 48,
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  minWidth: 48,
+                  maxWidth: 244,
+                  maxHeight: 48,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          isSelected ? selectedIcon : icon,
+                          size: 24,
+                          color: foreground,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: isSelected
-                                  ? scheme.onSecondaryContainer
-                                  : scheme.onSurface,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                            ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: labelColor,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

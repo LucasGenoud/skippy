@@ -5,6 +5,7 @@ import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/chat.dart';
 import 'package:skippy/models/link_preview.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/search_stats.dart';
 
 /// In-memory [Api] for tests: mirrors the server's semantics closely enough
 /// to exercise the store (patch merging, label sets, history), with failure
@@ -313,6 +314,39 @@ class FakeApi implements Api {
   @override
   Future<({bool semanticSearch, bool audioTranscription})>
   fetchCapabilities() => _run('fetchCapabilities', () => capabilities);
+
+  /// Number of notes queued by the most recent [reindexEmbeddings] call.
+  int reindexedCount = 0;
+
+  @override
+  Future<SearchStats> fetchSearchStats() => _run('fetchSearchStats', () {
+    if (!capabilities.semanticSearch) return SearchStats.disabled;
+    return SearchStats(
+      enabled: true,
+      model: 'fake-embedder',
+      dimensions: 8,
+      totalNotes: notes.length,
+      indexedNotes: notes.length,
+    );
+  });
+
+  @override
+  Future<int> reindexEmbeddings() => _run('reindexEmbeddings', () {
+    reindexedCount = notes.length;
+    return notes.length;
+  });
+
+  /// Reindex progress returned by [fetchReindexStatus]; tests can set this to
+  /// simulate an in-flight job. Defaults to "idle/finished".
+  ({bool running, int done, int total}) reindexStatus = (
+    running: false,
+    done: 0,
+    total: 0,
+  );
+
+  @override
+  Future<({bool running, int done, int total})> fetchReindexStatus() =>
+      _run('fetchReindexStatus', () => reindexStatus);
 
   @override
   Future<Map<String, ManagedSetting>> fetchManagedSettings() =>

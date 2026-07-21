@@ -16,6 +16,11 @@ class AuthStore extends ChangeNotifier {
   bool busy = false;
   String? error;
 
+  /// HTTP status of the last auth failure, when it was an [ApiException].
+  /// Lets the login screen decide which fields to flag red (401 = both
+  /// credentials, 409 = username taken); null for network/other errors.
+  int? errorStatus;
+
   static const _tokenKey = 'sticky_notes_token';
   static const _userKey = 'sticky_notes_user';
   static const _urlsKey = 'sticky_notes_backend_urls';
@@ -125,6 +130,7 @@ class AuthStore extends ChangeNotifier {
   ) async {
     busy = true;
     error = null;
+    errorStatus = null;
     notifyListeners();
     try {
       final result = await call();
@@ -136,6 +142,7 @@ class AuthStore extends ChangeNotifier {
       await prefs.setString(_userKey, jsonEncode(result.user.toJson()));
       return true;
     } on ApiException catch (e) {
+      errorStatus = e.statusCode;
       error = switch (e.statusCode) {
         401 => 'Wrong username or password',
         409 => 'That username is taken',
@@ -156,6 +163,7 @@ class AuthStore extends ChangeNotifier {
   void clearError() {
     if (error == null) return;
     error = null;
+    errorStatus = null;
     notifyListeners();
   }
 

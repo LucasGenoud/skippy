@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/note.dart';
@@ -21,6 +22,10 @@ class ImageAttachmentTile extends StatelessWidget {
     this.onRemove,
   });
 
+  bool get _isSvg =>
+      attachment.mime == 'image/svg+xml' ||
+      attachment.mime.toLowerCase().contains('svg');
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -33,31 +38,48 @@ class ImageAttachmentTile extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 320),
               child: SizedBox(
                 width: double.infinity,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // Decode at (bucketed) display size — see the note card's
-                    // image strip for the rationale.
-                    final dpr = MediaQuery.devicePixelRatioOf(context);
-                    final width = constraints.maxWidth.isFinite
-                        ? constraints.maxWidth * dpr
-                        : 1360.0;
-                    return Image(
-                      image: ResizeImage.resizeIfNeeded(
-                        ((width / 320).ceil() * 320).clamp(320, 2048).toInt(),
-                        null,
-                        AttachmentImage(attachmentId: attachment.id, url: url),
+                child: _isSvg
+                    ? SvgPicture.network(
+                        url,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                        placeholderBuilder: (context) => Container(
+                          height: 80,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                        ),
+                      )
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Decode at (bucketed) display size — see the note
+                          // card's image strip for the rationale.
+                          final dpr = MediaQuery.devicePixelRatioOf(context);
+                          final width = constraints.maxWidth.isFinite
+                              ? constraints.maxWidth * dpr
+                              : 1360.0;
+                          return Image(
+                            image: ResizeImage.resizeIfNeeded(
+                              ((width / 320).ceil() * 320)
+                                  .clamp(320, 2048)
+                                  .toInt(),
+                              null,
+                              AttachmentImage(
+                                attachmentId: attachment.id,
+                                url: url,
+                              ),
+                            ),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stack) => Container(
+                              height: 80,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                              child: const Icon(Icons.broken_image_outlined),
+                            ),
+                          );
+                        },
                       ),
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stack) => Container(
-                        height: 80,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        child: const Icon(Icons.broken_image_outlined),
-                      ),
-                    );
-                  },
-                ),
               ),
             ),
             // A single square-cornered overlay bar (matching the app's [kRadius]

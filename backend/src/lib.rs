@@ -26,6 +26,14 @@ use crate::files::FileStore;
 use crate::store::Repository;
 use crate::ws::Hub;
 
+/// Progress of a per-user "re-run embeddings" job. `done` counts notes
+/// embedded so far out of `total`; the job is finished once they are equal.
+#[derive(Clone, Copy, Default)]
+pub struct ReindexProgress {
+    pub done: usize,
+    pub total: usize,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Arc<dyn Repository>,
@@ -48,6 +56,10 @@ pub struct AppState {
     /// note_id -> generation counter, coalescing auto-labeling triggers so a
     /// burst of debounced autosaves costs one LLM call.
     pub label_generations: Arc<Mutex<HashMap<String, u64>>>,
+    /// user_id -> progress of a running "re-run embeddings" job, so the
+    /// settings UI can show a progress bar. `done == total` means finished;
+    /// the entry lingers (at most one per user) until the next reindex.
+    pub reindex_progress: Arc<Mutex<HashMap<String, ReindexProgress>>>,
     /// How long a labeling task waits for further edits before it fires.
     /// Tests shrink this.
     pub label_delay: Duration,
@@ -80,6 +92,7 @@ impl AppState {
             llm: Arc::new(llm::OpenAiCompatLlm::default()),
             notifiers: Arc::new(notify::default_connectors()),
             label_generations: Arc::default(),
+            reindex_progress: Arc::default(),
             label_delay: Duration::from_secs(20),
             file_secret: Arc::new(secret),
             managed: Arc::new(config::ManagedSettings::default()),
@@ -159,6 +172,9 @@ pub fn build_app(state: AppState) -> Router {
         .route("/checklist-history", get(handlers::checklist_history))
         .route("/settings", get(handlers::get_settings).put(handlers::put_settings))
         .route("/search", get(handlers::semantic_search))
+        .route("/search/stats", get(handlers::search_stats))
+        .route("/search/reindex", post(handlers::reindex_search))
+        .route("/search/reindex/status", get(handlers::reindex_status))
         .route("/unfurl", get(handlers::unfurl))
         .route("/labels", get(handlers::list_labels).post(handlers::create_label))
         .route(

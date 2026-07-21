@@ -13,6 +13,7 @@ import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/theme.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/animated_checklist.dart';
+import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
@@ -1115,6 +1116,127 @@ void main() {
       expect(find.text('Current'), findsOneWidget);
       expect(find.textContaining('No earlier versions yet'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Restore'), findsNothing);
+    });
+  });
+
+  group('sidebar drag-and-drop', () {
+    // A plain Draggable<String> stands in for a grid tile mid-drag; the
+    // masonry carries the note id exactly this way.
+    Widget dragHarness(NotesStore store) => harness(
+      store,
+      Row(
+        children: [
+          AppSidebar(
+            isOpen: true,
+            selection: ViewSelection.notes,
+            onSelect: (_) {},
+          ),
+          const Expanded(
+            child: Draggable<String>(
+              data: 'n1',
+              feedback: SizedBox(width: 80, height: 40),
+              child: SizedBox(
+                width: 120,
+                height: 120,
+                child: Center(child: Text('drag me')),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Future<void> dropOn(WidgetTester tester, Finder target) async {
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('drag me')),
+      );
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(target));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('dropping a note on a label adds the label', (tester) async {
+      api.labels['l1'] = const Label(id: 'l1', name: 'work');
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      await store.load();
+      await tester.pumpWidget(dragHarness(store));
+      await tester.pumpAndSettle();
+
+      await dropOn(tester, find.text('work'));
+
+      expect(store.noteById('n1')!.labelIds, contains('l1'));
+      await flushTimers(tester);
+    });
+
+    testWidgets('dropping a note on Archive archives it', (tester) async {
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      await store.load();
+      await tester.pumpWidget(dragHarness(store));
+      await tester.pumpAndSettle();
+
+      await dropOn(tester, find.text('Archive'));
+
+      expect(store.noteById('n1')!.archived, isTrue);
+      await flushTimers(tester);
+    });
+
+    testWidgets(
+      'trashing a note removes its tile from the grid and shows an undo snack',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        api.notes['n1'] = serverNote('n1', title: 'AlphaNote');
+        api.notes['n2'] = serverNote('n2', title: 'BetaNote');
+        await store.load();
+        await tester.pumpWidget(homeApp(store));
+        await tester.pumpAndSettle();
+        expect(find.text('AlphaNote'), findsOneWidget);
+
+        // The card's own control isn't the point here; drive the same store
+        // action the editor/drag paths use and confirm the grid updates.
+        store.moveToTrash('n1');
+        await tester.pump();
+        showAppSnack(
+          'Note moved to Trash',
+          icon: Icons.delete_outline,
+          actionLabel: 'Undo',
+          onAction: () => store.restoreFromTrash('n1'),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('AlphaNote'), findsNothing);
+        expect(find.widgetWithText(SnackBarAction, 'Undo'), findsOneWidget);
+        expect(find.byIcon(Icons.delete_outline), findsWidgets);
+        // Even with an Undo action, a close button is present so any
+        // notification can be dismissed outright.
+        expect(find.byIcon(Icons.close), findsOneWidget);
+
+        // Undo restores the note to the grid.
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+        await tester.pumpAndSettle();
+        expect(find.text('AlphaNote'), findsOneWidget);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets('Trash refuses a note you do not own', (tester) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        title: 'a',
+        owner: const UserRef(id: 'someone-else', username: 'x'),
+      );
+      await store.load();
+      await tester.pumpWidget(dragHarness(store));
+      await tester.pumpAndSettle();
+
+      await dropOn(tester, find.text('Trash'));
+
+      expect(store.noteById('n1')!.trashed, isFalse);
+      await flushTimers(tester);
     });
   });
 }

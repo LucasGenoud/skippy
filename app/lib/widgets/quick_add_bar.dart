@@ -9,6 +9,7 @@ import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../util/mime.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 import 'animated_checklist.dart';
 import 'markdown_toolbar.dart';
@@ -182,13 +183,16 @@ class _QuickAddBarState extends State<QuickAddBar> {
             side: BorderSide(color: scheme.outlineVariant),
           ),
           child: AnimatedSize(
-            duration: const Duration(milliseconds: 150),
+            // Ease the open/close on the Material-3 emphasized bezier so the
+            // bar unfurls into the composer rather than snapping linearly.
+            duration: Motion.base,
+            curve: Motion.emphasized,
             alignment: Alignment.topCenter,
             // Cross-fade bar <-> composer while the size animates, so the
             // expansion reads as one motion instead of a hard content swap.
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 150),
-              switchInCurve: Curves.easeOut,
+              duration: Motion.base,
+              switchInCurve: Motion.emphasized,
               switchOutCurve: Curves.easeIn,
               layoutBuilder: (currentChild, previousChildren) => Stack(
                 clipBehavior: Clip.none,
@@ -222,48 +226,55 @@ class _QuickAddBarState extends State<QuickAddBar> {
           onPressed: () => _expand(kind),
         );
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(kRadius),
-      onTap: () => _expand(NoteKind.text),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Take a note…',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ),
-            kindButton(
-              Icons.check_box_outlined,
-              'New checklist',
-              NoteKind.checklist,
-            ),
-            kindButton(
-              Icons.notes_outlined,
-              'New markdown note',
-              NoteKind.markdown,
-            ),
-            if (_uploading)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 11),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+    // A plain tap target instead of an InkWell: clicking the collapsed bar
+    // only expands the composer, and a ripple splashing across it on desktop
+    // felt wrong for something that reads as a text input. The text cursor
+    // reinforces the input affordance; the icon buttons keep their own.
+    return MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _expand(NoteKind.text),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Take a note…',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.image_outlined, size: 22),
-                color: scheme.onSurfaceVariant,
-                tooltip: 'New note with image',
-                onPressed: _quickImageNote,
               ),
-          ],
+              kindButton(
+                Icons.check_box_outlined,
+                'New checklist',
+                NoteKind.checklist,
+              ),
+              kindButton(
+                Icons.notes_outlined,
+                'New markdown note',
+                NoteKind.markdown,
+              ),
+              if (_uploading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 11),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.image_outlined, size: 22),
+                  color: scheme.onSurfaceVariant,
+                  tooltip: 'New note with image',
+                  onPressed: _quickImageNote,
+                ),
+            ],
+          ),
         ),
       ),
     );

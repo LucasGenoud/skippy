@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat.dart';
 import '../models/link_preview.dart';
 import '../models/note.dart';
+import '../models/search_stats.dart';
 import '../util/runtime_config.dart';
 
 class ApiException implements Exception {
@@ -114,6 +115,18 @@ abstract class Api {
   /// Which optional, service-backed features this server has enabled. Drives
   /// whether the audio recorder and semantic-search toggle appear at all.
   Future<({bool semanticSearch, bool audioTranscription})> fetchCapabilities();
+
+  /// Semantic-search index diagnostics: embedding model, vector width, and how
+  /// many of the user's notes are indexed. Powers the Settings stats panel.
+  Future<SearchStats> fetchSearchStats();
+
+  /// Re-embed all of the user's notes; returns how many will be embedded. The
+  /// work runs on the server; poll [fetchReindexStatus] to track it.
+  Future<int> reindexEmbeddings();
+
+  /// Progress of a running re-embed job: `running` is false when idle or done,
+  /// `done`/`total` drive the progress bar.
+  Future<({bool running, int done, int total})> fetchReindexStatus();
 
   /// Which settings keys the self-hoster pinned via env vars. Keyed by the
   /// settings-document key (e.g. `llm_base_url`); a present key locks that
@@ -515,6 +528,33 @@ class ApiClient implements Api {
     return (
       semanticSearch: map['semantic_search'] == true,
       audioTranscription: map['audio_transcription'] == true,
+    );
+  }
+
+  @override
+  Future<SearchStats> fetchSearchStats() async {
+    final data = _decode(await _client.get(_uri('/search/stats'), headers: _headers()));
+    return SearchStats.fromJson(((data as Map?) ?? const {}).cast<String, dynamic>());
+  }
+
+  @override
+  Future<int> reindexEmbeddings() async {
+    final data = _decode(
+      await _client.post(_uri('/search/reindex'), headers: _headers()),
+    );
+    return ((data as Map?)?['total'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<({bool running, int done, int total})> fetchReindexStatus() async {
+    final data = _decode(
+      await _client.get(_uri('/search/reindex/status'), headers: _headers()),
+    );
+    final map = (data as Map?) ?? const {};
+    return (
+      running: map['running'] == true,
+      done: (map['done'] as num?)?.toInt() ?? 0,
+      total: (map['total'] as num?)?.toInt() ?? 0,
     );
   }
 

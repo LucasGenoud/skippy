@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
+import 'package:skippy/models/note.dart';
 import 'package:skippy/screens/settings_screen.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
@@ -83,16 +84,61 @@ void main() {
     }
   });
 
-  testWidgets('grid density control renders and updates the store', (
+  testWidgets('embedding stats tile shows diagnostics and triggers a reindex', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    final now = DateTime.utc(2026);
+    api.notes['a'] = Note(id: 'a', createdAt: now, updatedAt: now);
+    api.notes['b'] = Note(id: 'b', createdAt: now, updatedAt: now);
+    await pumpSettings(tester, api);
+
+    // Diagnostics from the (fake) index are rendered.
+    expect(find.text('Embedding index'), findsOneWidget);
+    expect(find.text('fake-embedder'), findsOneWidget);
+    expect(find.text('8'), findsOneWidget);
+    expect(find.text('2 / 2'), findsOneWidget);
+
+    // The button re-embeds every note and shows a progress bar.
+    api.reindexStatus = (running: false, done: 2, total: 2);
+    await tester.ensureVisible(find.text('Re-run embeddings'));
+    await tester.tap(find.text('Re-run embeddings'));
+    await tester.pump(); // reindexEmbeddings resolves, progress starts
+    expect(api.log, contains('reindexEmbeddings'));
+    expect(api.reindexedCount, 2);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('0 / 2 embedded'), findsOneWidget);
+
+    // The poll reports completion; the bar then clears and stats refresh.
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(api.log, contains('fetchReindexStatus'));
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('embedding stats tile is hidden when search is unavailable', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    api.capabilities = (semanticSearch: false, audioTranscription: false);
+    await pumpSettings(tester, api);
+    expect(find.text('Embedding index'), findsNothing);
+  });
+
+  testWidgets('grid layout controls render and update the store', (
     tester,
   ) async {
     final api = FakeApi();
     final settings = await pumpSettings(tester, api);
     expect(settings.gridDensity, GridDensity.comfortable);
+    expect(settings.gridWidth, GridWidth.medium);
 
-    // All three presets are offered and the current one is described.
+    // Both control's presets are offered.
     for (final density in GridDensity.values) {
       expect(find.text(density.label), findsOneWidget);
+    }
+    for (final width in GridWidth.values) {
+      expect(find.text(width.label), findsOneWidget);
     }
     expect(find.text(GridDensity.comfortable.blurb), findsOneWidget);
 
@@ -100,5 +146,10 @@ void main() {
     await tester.tap(find.text('Compact'));
     await tester.pumpAndSettle();
     expect(settings.gridDensity, GridDensity.compact);
+
+    await tester.ensureVisible(find.text('Full'));
+    await tester.tap(find.text('Full'));
+    await tester.pumpAndSettle();
+    expect(settings.gridWidth, GridWidth.full);
   });
 }

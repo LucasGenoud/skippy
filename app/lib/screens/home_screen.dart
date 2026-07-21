@@ -191,14 +191,22 @@ class _HomeScreenState extends State<HomeScreen> {
         if (f.bytes.length <= maxUploadBytes) f,
     ];
     if (accepted.length != files.length) {
-      showAppSnack('Files are limited to 25 MB');
+      showAppSnack(
+        'Files are limited to 25 MB',
+        icon: Icons.error_outline,
+        kind: SnackKind.warning,
+      );
     }
     if (accepted.isEmpty) return;
     final id = await store.createNoteWithFiles(accepted);
     if (id == null) {
-      showAppSnack("Couldn't upload the dropped files");
+      showAppSnack(
+        "Couldn't upload the dropped files",
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
     } else if (_selection != ViewSelection.notes) {
-      showAppSnack('Note created in Notes');
+      showAppSnack('Note created in Notes', icon: Icons.lightbulb_outline);
     }
   }
 
@@ -222,7 +230,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (confirmed == true) {
       store.emptyTrash();
-      showAppSnack('Trash emptied');
+      showAppSnack(
+        'Trash emptied',
+        icon: Icons.delete_sweep_outlined,
+        kind: SnackKind.danger,
+      );
     }
   }
 
@@ -377,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         final density = settings.gridDensity;
                                         final gridMaxWidth = _listMode
                                             ? 600.0
-                                            : density.maxGridWidth;
+                                            : settings.gridWidth.maxWidth;
                                         final effectiveWidth =
                                             contentWidth > gridMaxWidth
                                             ? gridMaxWidth
@@ -412,6 +424,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                                       Alignment.topCenter,
                                                   child: AnimatedSwitcher(
                                                     duration: Motion.base,
+                                                    switchInCurve:
+                                                        Motion.standard,
+                                                    switchOutCurve:
+                                                        Motion.standard,
                                                     child: store.offline
                                                         ? _OfflineBanner(
                                                             onRetry:

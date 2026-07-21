@@ -52,7 +52,7 @@ async fn chat_turn(
 async fn chat_route_model_query_drives_retrieval() {
     let (llm, calls) =
         FakeLlm::new_seq(&[r#"{"search": "buy groceries bread"}"#, "Bread it is."]);
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
     let state = state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -116,7 +116,7 @@ async fn chat_route_model_query_drives_retrieval() {
 #[tokio::test]
 async fn chat_route_direct_skips_retrieval_and_sources() {
     let (llm, calls) = FakeLlm::new_seq(&[r#"{"search": null}"#, "You're welcome!"]);
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
     let state = state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -162,7 +162,7 @@ async fn chat_route_direct_skips_retrieval_and_sources() {
 #[tokio::test]
 async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
     let (llm, calls) = FakeLlm::new("Bread it is.");
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
     let state = state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -233,7 +233,7 @@ async fn chat_write_creates_a_new_note() {
         r#"{"write": "grocery list"}"#,
         r#"{"action":"create","kind":"checklist","title":"Groceries","items":["bread","milk"]}"#,
     ]);
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
     let state = state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -279,7 +279,7 @@ async fn chat_write_appends_to_an_existing_note() {
         r#"{"write": "groceries"}"#,
         r#"{"action":"append","note_id":"g1","items":["potatoes"]}"#,
     ]);
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS).await.unwrap());
+    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
     let state = state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))

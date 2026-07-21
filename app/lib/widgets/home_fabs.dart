@@ -33,7 +33,7 @@ class NewNoteFabs extends StatelessWidget {
         message: tooltip,
         child: _HoverLift(
           child: OpenContainer<void>(
-            transitionDuration: const Duration(milliseconds: 320),
+            transitionDuration: Motion.slow,
             transitionType: ContainerTransitionType.fade,
             closedElevation: 4,
             closedColor: color,

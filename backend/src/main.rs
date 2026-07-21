@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
-use sticky_notes_server::search::{EMBEDDING_DIM, FastEmbedder, SearchService, SqliteVectorIndex};
+use sticky_notes_server::search::{
+    EMBEDDING_DIM, FastEmbedder, SearchService, SqliteVectorIndex, TextEmbedder,
+};
 use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
@@ -131,7 +133,10 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
             return None;
         }
     };
-    let index = match SqliteVectorIndex::connect(db_path, EMBEDDING_DIM).await {
+    // Identifies the model+dimension behind the stored vectors; a change here
+    // triggers a rebuild of the index (see SqliteVectorIndex::connect).
+    let signature = format!("{}:{}", embedder.model_name(), embedder.dims());
+    let index = match SqliteVectorIndex::connect(db_path, EMBEDDING_DIM, &signature).await {
         Ok(index) => {
             println!("semantic search: sqlite-vec index in {db_path}");
             index
@@ -215,12 +220,27 @@ async fn main() -> anyhow::Result<()> {
     if let Some(service) = init_search(&db_path).await {
         state = state.with_search(service);
         // Bring the index up to date with existing notes in the background.
+        // Only embed notes missing from the index: a normal restart finds them
+        // all present (near-zero work), while a fresh/rebuilt index (new DB or
+        // an embedding-model switch that dropped the table) embeds everything,
+        // and notes skipped while the embedder was down get caught up.
         let state_for_reindex = state.clone();
         tokio::spawn(async move {
+            let Some(search) = state_for_reindex.search.clone() else { return };
+            let already = search.indexed_note_ids().await.unwrap_or_default();
             if let Ok(ids) = state_for_reindex.repo.all_note_ids().await {
+                let mut queued = 0usize;
                 for id in ids {
-                    state_for_reindex.index_note_later(&id);
+                    if !already.contains(&id) {
+                        state_for_reindex.index_note_later(&id);
+                        queued += 1;
+                    }
                 }
+                println!(
+                    "semantic reindex: {queued} note(s) queued for embedding \
+                     ({} already indexed)",
+                    already.len()
+                );
             }
         });
     }

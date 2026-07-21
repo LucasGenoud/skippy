@@ -652,6 +652,16 @@ class NotesStore extends ChangeNotifier {
     _enqueue(PendingOp('patch', id: noteId, data: {'label_ids': ids.toList()}));
   }
 
+  /// Add [labelId] to a note (used by drag-and-drop onto a sidebar label).
+  /// Idempotent: a no-op when the note is already labelled, so dropping twice
+  /// never removes the label the way [toggleLabelOnNote] would.
+  bool addLabelToNote(String noteId, String labelId) {
+    final note = noteById(noteId);
+    if (note == null || note.labelIds.contains(labelId)) return false;
+    toggleLabelOnNote(noteId, labelId);
+    return true;
+  }
+
   /// Persist a drag reorder: renumber the given section locally exactly the
   /// way the server will, so both stay in sync.
   void reorder(List<String> orderedIds) {

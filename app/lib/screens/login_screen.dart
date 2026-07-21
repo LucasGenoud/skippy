@@ -17,12 +17,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  final _usernameFocus = FocusNode();
   final _passwordFocus = FocusNode();
   final _confirmFocus = FocusNode();
   bool _creating = false;
   bool _obscure = true;
 
-  /// Local validation error for the confirm-password field (create mode).
+  /// Local validation errors for the empty-field checks and the confirm field.
+  /// Shown inline so pressing the button always gives feedback rather than
+  /// silently doing nothing.
+  String? _usernameError;
+  String? _passwordError;
   String? _confirmError;
 
   @override
@@ -30,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _username.dispose();
     _password.dispose();
     _confirm.dispose();
+    _usernameFocus.dispose();
     _passwordFocus.dispose();
     _confirmFocus.dispose();
     super.dispose();
@@ -39,6 +45,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (creating == _creating) return;
     setState(() {
       _creating = creating;
+      _usernameError = null;
+      _passwordError = null;
       _confirmError = null;
     });
     context.read<AuthStore>().clearError();
@@ -48,13 +56,30 @@ class _LoginScreenState extends State<LoginScreen> {
     final auth = context.read<AuthStore>();
     final username = _username.text.trim();
     final password = _password.text;
-    if (username.isEmpty || password.isEmpty) return;
+
+    // Presence check — show an inline error and focus the first empty field
+    // instead of returning silently (the old behaviour gave no feedback).
+    final usernameError = username.isEmpty ? 'Enter your username' : null;
+    final passwordError = password.isEmpty ? 'Enter your password' : null;
+    if (usernameError != null || passwordError != null) {
+      setState(() {
+        _usernameError = usernameError;
+        _passwordError = passwordError;
+      });
+      (usernameError != null ? _usernameFocus : _passwordFocus).requestFocus();
+      return;
+    }
+
     if (_creating && password != _confirm.text) {
       setState(() => _confirmError = "Passwords don't match");
       _confirmFocus.requestFocus();
       return;
     }
-    setState(() => _confirmError = null);
+    setState(() {
+      _usernameError = null;
+      _passwordError = null;
+      _confirmError = null;
+    });
     // Let the platform password manager offer to save these credentials.
     TextInput.finishAutofillContext();
     if (_creating) {
@@ -107,6 +132,17 @@ class _LoginScreenState extends State<LoginScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final creating = _creating;
+    // Flag the relevant fields red on a rejected submit: 401 = both credentials
+    // are wrong, 409 = the username is taken. A red outline (no extra text —
+    // the banner carries the message) so the inputs themselves signal the error.
+    final usernameRejected = auth.errorStatus == 401 || auth.errorStatus == 409;
+    final passwordRejected = auth.errorStatus == 401;
+    final rejectedBorder = OutlineInputBorder(
+      borderSide: BorderSide(color: scheme.error, width: 2),
+    );
+    // On phones, drop the enclosing card and let the form span the full width
+    // so the inputs get all the available space.
+    final isWide = MediaQuery.sizeOf(context).width >= 600;
     // This screen has no AppBar, so nothing sets the status-bar icon colour on
     // its own — without this, iOS drew the notch clock/network glyphs in a shade
     // that vanished against the light background. Derive it from the theme so
@@ -122,9 +158,14 @@ class _LoginScreenState extends State<LoginScreen> {
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.symmetric(
+                horizontal: isWide ? 24 : 20,
+                vertical: 24,
+              ),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
+                constraints: BoxConstraints(
+                  maxWidth: isWide ? 400 : double.infinity,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,14 +191,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    // ── Card ──────────────────────────────────────────────
+                    // ── Form ──────────────────────────────────────────────
+                    // Wrapped in a card on wide layouts; edge-to-edge on phones.
                     Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: scheme.surface,
-                        borderRadius: BorderRadius.circular(kRadius),
-                        border: Border.all(color: scheme.outlineVariant),
-                      ),
+                      padding: isWide ? const EdgeInsets.all(24) : EdgeInsets.zero,
+                      decoration: isWide
+                          ? BoxDecoration(
+                              color: scheme.surface,
+                              borderRadius: BorderRadius.circular(kRadius),
+                              border: Border.all(color: scheme.outlineVariant),
+                            )
+                          : null,
                       child: AutofillGroup(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -195,6 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             const SizedBox(height: 20),
                             TextField(
                               controller: _username,
+                              focusNode: _usernameFocus,
                               autofocus: true,
                               textInputAction: TextInputAction.next,
                               autofillHints: [
@@ -202,11 +247,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? AutofillHints.newUsername
                                     : AutofillHints.username,
                               ],
+                              onChanged: (_) {
+                                if (_usernameError != null) {
+                                  setState(() => _usernameError = null);
+                                }
+                                if (auth.errorStatus != null) auth.clearError();
+                              },
                               onSubmitted: (_) => _passwordFocus.requestFocus(),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Username',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.person_outline),
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.person_outline),
+                                errorText: _usernameError,
+                                enabledBorder: usernameRejected
+                                    ? rejectedBorder
+                                    : null,
+                                focusedBorder: usernameRejected
+                                    ? rejectedBorder
+                                    : null,
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -222,6 +280,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? AutofillHints.newPassword
                                     : AutofillHints.password,
                               ],
+                              onChanged: (_) {
+                                if (_passwordError != null) {
+                                  setState(() => _passwordError = null);
+                                }
+                                if (auth.errorStatus != null) auth.clearError();
+                              },
                               onSubmitted: (_) => creating
                                   ? _confirmFocus.requestFocus()
                                   : _submit(),
@@ -229,6 +293,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 labelText: 'Password',
                                 border: const OutlineInputBorder(),
                                 prefixIcon: const Icon(Icons.lock_outline),
+                                errorText: _passwordError,
+                                enabledBorder: passwordRejected
+                                    ? rejectedBorder
+                                    : null,
+                                focusedBorder: passwordRejected
+                                    ? rejectedBorder
+                                    : null,
                                 suffixIcon: IconButton(
                                   tooltip: _obscure ? 'Show' : 'Hide',
                                   icon: Icon(
