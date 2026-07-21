@@ -80,6 +80,9 @@ async fn search_stats_report_model_and_per_user_coverage() {
 
     create_note(&app, &ada, json!({"title": "Milk", "content": "buy milk"})).await;
     create_note(&app, &ada, json!({"title": "Eggs", "content": "buy eggs"})).await;
+    // A note with no embeddable text (e.g. an image-only note) is never indexed,
+    // so it must not count toward ada's total either.
+    create_note(&app, &ada, json!({"title": "", "content": ""})).await;
     create_note(&app, &bob, json!({"title": "Bob note", "content": "hello"})).await;
     settle_index().await;
 
@@ -88,7 +91,8 @@ async fn search_stats_report_model_and_per_user_coverage() {
     assert_eq!(stats["enabled"], json!(true));
     assert_eq!(stats["model"], json!("hash-test"));
     assert_eq!(stats["dimensions"], json!(HASH_EMBED_DIMS));
-    // Coverage is per-user: ada sees only her two notes, not bob's.
+    // Coverage is per-user: ada sees only her two text notes (not the text-less
+    // one, and not bob's).
     assert_eq!(stats["total_notes"], json!(2));
     assert_eq!(stats["indexed_notes"], json!(2));
 }

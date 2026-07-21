@@ -466,8 +466,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   ),
                                                 ),
                                               if (_viewTitle(store).isNotEmpty)
-                                                SliverToBoxAdapter(
-                                                  child: _ViewHeader(
+                                                _alignedToGrid(
+                                                  _ViewHeader(
                                                     title: _viewTitle(store),
                                                     isTrash:
                                                         _selection.view ==
@@ -480,6 +480,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                                           store,
                                                         ),
                                                   ),
+                                                  horizontalPad,
+                                                  gridMaxWidth,
                                                 ),
                                               if (store.loading ||
                                                   semanticLoading)
@@ -526,6 +528,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     context,
                                                     'Pinned',
                                                     horizontalPad,
+                                                    gridMaxWidth,
                                                   ),
                                                   _grid(
                                                     store,
@@ -543,6 +546,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                       context,
                                                       'Others',
                                                       horizontalPad,
+                                                      gridMaxWidth,
                                                     ),
                                                 ],
                                                 _grid(
@@ -602,10 +606,37 @@ class _HomeScreenState extends State<HomeScreen> {
     NoteView.label => 'No notes with this label yet',
   };
 
-  Widget _sectionLabel(BuildContext context, String text, double pad) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(pad + 8, 12, pad, 8),
+  /// Wrap a header-like widget (section label, view header) so its edges line
+  /// up with the grid's cards: same outer [pad] and same [gridMaxWidth] cap,
+  /// centered the same way, so it tracks the grid's left edge whether the grid
+  /// fills the area or sits centered within a narrower band.
+  Widget _alignedToGrid(Widget child, double pad, double gridMaxWidth) {
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: pad),
+      sliver: SliverToBoxAdapter(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: gridMaxWidth),
+            // Fill the capped width (unlike the grid's masonry, a bare Text
+            // would shrink to its content and then get centered), so the child
+            // left-aligns to the grid's left edge.
+            child: SizedBox(width: double.infinity, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(
+    BuildContext context,
+    String text,
+    double pad,
+    double gridMaxWidth,
+  ) {
+    return _alignedToGrid(
+      Padding(
+        // 8px inset from the card's left edge, matching the view header.
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
         child: Text(
           text.toUpperCase(),
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -614,6 +645,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+      pad,
+      gridMaxWidth,
     );
   }
 
@@ -672,7 +705,8 @@ class _ViewHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 4),
+      // 8px inset aligns the title with the grid's cards (see _alignedToGrid).
+      padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -7,6 +7,17 @@ use serde::Deserialize;
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
+use crate::models::NoteFields;
+
+/// Whether a note has any text the embedder would index — its title, content,
+/// or a checklist item. Mirrors the emptiness check in
+/// [`crate::search::SearchService::note_text`]: a note with only whitespace (or
+/// only non-text attachments) is never embedded.
+fn has_embeddable_text(note: &NoteFields) -> bool {
+    !note.title.trim().is_empty()
+        || !note.content.trim().is_empty()
+        || note.items.iter().any(|i| !i.text.trim().is_empty())
+}
 
 #[derive(Deserialize)]
 pub struct SearchParams {
@@ -49,7 +60,17 @@ pub async fn search_stats(
     let Some(search) = &state.search else {
         return Ok(Json(serde_json::json!({ "enabled": false })));
     };
-    let total_notes = state.repo.notes_for_user(&user_id).await?.len();
+    // Notes with no embeddable text (e.g. audio- or image-only notes) are never
+    // indexed — see `index_note` — so counting them in the total would leave the
+    // "X / Y embedded" stat permanently short of complete. Only count notes that
+    // actually have text to embed.
+    let total_notes = state
+        .repo
+        .notes_for_user(&user_id)
+        .await?
+        .iter()
+        .filter(|v| has_embeddable_text(&v.note))
+        .count();
     let indexed_notes = search.indexed_count(&user_id).await?;
     Ok(Json(serde_json::json!({
         "enabled": true,
