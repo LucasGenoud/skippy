@@ -423,6 +423,79 @@ void main() {
     });
 
     testWidgets(
+      'fast per-keystroke typing lands on a single item, not one per char',
+      (tester) async {
+        // The add field materializes a real row on the first keystroke and
+        // hands focus to it a couple of frames later; a fast typist's next
+        // keys can still hit the (cleared) add field before then. They must
+        // append to that row, never spawn a new item per character.
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(TextField, 'List item'));
+        await tester.pump();
+
+        // One char per single frame — outrunning the focus handoff.
+        for (final ch in 'Milk'.split('')) {
+          final focused = tester
+              .widgetList<EditableText>(find.byType(EditableText))
+              .firstWhere((e) => e.focusNode.hasFocus);
+          tester.testTextInput.enterText(focused.controller.text + ch);
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.items.map((i) => i.text), ['Milk']);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
+      'backspace on an empty row focuses the previous one with a collapsed '
+      'caret at the end (no select-all)',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [
+            const ChecklistItem(id: 'a', text: 'Milk'),
+            const ChecklistItem(id: 'b', text: ''),
+          ],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final rows = find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(TextField),
+        );
+        await tester.tap(rows.at(1)); // the empty row
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.items.map((i) => i.text), ['Milk']);
+        final milk = tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(TextField, 'Milk'),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(milk.controller.selection.isCollapsed, isTrue);
+        expect(milk.controller.selection.baseOffset, 4);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
       'checking an item moves it to the checked section, still visible',
       (tester) async {
         api.notes['n1'] = serverNote(

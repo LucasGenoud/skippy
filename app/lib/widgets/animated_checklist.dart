@@ -96,6 +96,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// A row just materialized by typing in the add field: it keeps its "typed"
   /// state when focus lands so its suggestion popup shows without a keystroke.
   String? _typeCreatedId;
+
+  /// The row the add field just spawned and is handing focus to. Focus moves a
+  /// couple of frames later, so a fast typist's next keystrokes can still land
+  /// in the (now-cleared) add field before then; while this is set they are
+  /// appended to that row instead of each spawning its own new item.
+  String? _adoptingId;
   double _dragY = 0;
   bool _snapFrame = true;
   bool _showChecked = true;
@@ -105,6 +111,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     super.initState();
     _uncheckedOrder = _uncheckedIdsFromItems();
     _newRow.focusNode.addListener(_onAnyFocusChange);
+    // A fresh visit to the add field starts a new item, so drop any stale
+    // adoption left over from a handoff that never landed focus.
+    _newRow.focusNode.addListener(() {
+      if (_newRow.focusNode.hasFocus) _adoptingId = null;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _popup.show();
     });
@@ -172,6 +183,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         if (h.focusNode.hasFocus) {
           h.typedSinceFocus = item.id == _typeCreatedId;
           if (item.id == _typeCreatedId) _typeCreatedId = null;
+          // Handoff from the add field landed: stop re-routing keystrokes.
+          if (item.id == _adoptingId) _adoptingId = null;
         }
         _onAnyFocusChange();
       });
@@ -211,9 +224,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         handles.focusNode.requestFocus();
-        // Land the caret at the end so continuing to type appends.
-        final len = handles.controller.text.length;
-        handles.controller.selection = TextSelection.collapsed(offset: len);
+        // Land the caret at the end so continuing to type appends — never a
+        // selection of the whole row (which would make the next keystroke
+        // replace the text). On web/desktop the platform issues its own
+        // select-all when a field gains focus a frame later, so re-assert the
+        // collapsed caret on the following frame to win over it.
+        void collapseCaret() {
+          if (!mounted || !handles.focusNode.hasFocus) return;
+          final len = handles.controller.text.length;
+          handles.controller.selection = TextSelection.collapsed(offset: len);
+        }
+
+        collapseCaret();
+        WidgetsBinding.instance.addPostFrameCallback((_) => collapseCaret());
       });
     } else {
       // The row's handles are created later in this build pass; retry.
@@ -656,6 +679,20 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     setState(() {});
                     return;
                   }
+                  // Focus hasn't finished moving to the row we just spawned and
+                  // a keystroke leaked back into the (cleared) add field:
+                  // append it to that row instead of spawning a new item per
+                  // keystroke. Without this, fast typing produces one item per
+                  // character.
+                  final adopting = _adoptingId;
+                  if (adopting != null && _itemById(adopting) != null) {
+                    final merged = (_itemById(adopting)?.text ?? '') + text;
+                    widget.onItemTextChanged(adopting, merged);
+                    _newRow.controller.clear();
+                    _pendingFocusId = adopting;
+                    setState(() {});
+                    return;
+                  }
                   // The first keystroke turns the add field into a real item,
                   // so typing always lands on an actual element (nothing is
                   // lost if focus leaves) and it shows on the grid instantly.
@@ -663,6 +700,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   final newId = widget.onAdd(text);
                   _newRow.controller.clear();
                   _typeCreatedId = newId;
+                  _adoptingId = newId;
                   _pendingFocusId = newId;
                   setState(() {});
                 },
