@@ -11,13 +11,13 @@ async fn share_grants_edit_but_not_trash_or_share() {
     let note = create_note(&app, &ada, json!({"title": "shared doc"})).await;
     let id = note["id"].as_str().unwrap();
 
-    // Ada shares with Bob by username.
+    // Ada shares with Bob by email.
     let (status, shared) = send(
         &app,
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "bob"})),
+        Some(json!({"email": "bob@example.test"})),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -26,7 +26,7 @@ async fn share_grants_edit_but_not_trash_or_share() {
     // Bob now sees and can edit the note.
     let bobs = list_notes(&app, &bob).await;
     assert_eq!(bobs.len(), 1);
-    assert_eq!(bobs[0]["owner"]["username"], "ada");
+    assert_eq!(bobs[0]["owner"]["name"], "ada");
     let (status, edited) = send(
         &app,
         "PATCH",
@@ -48,14 +48,21 @@ async fn share_grants_edit_but_not_trash_or_share() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, _) = send(&app, "DELETE", &format!("/api/notes/{id}"), Some(&bob), None).await;
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/notes/{id}"),
+        Some(&bob),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, _) = send(
         &app,
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&bob),
-        Some(json!({"username": "eve"})),
+        Some(json!({"email": "eve@example.test"})),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -66,7 +73,7 @@ async fn share_grants_edit_but_not_trash_or_share() {
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "nobody"})),
+        Some(json!({"email": "nobody@example.test"})),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -75,7 +82,7 @@ async fn share_grants_edit_but_not_trash_or_share() {
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "ada"})),
+        Some(json!({"email": "ada@example.test"})),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -95,7 +102,7 @@ async fn collaborator_can_leave_and_owner_can_remove() {
             "POST",
             &format!("/api/notes/{id}/collaborators"),
             Some(&ada),
-            Some(json!({"username": name})),
+            Some(json!({"email": test_email(name)})),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -158,14 +165,20 @@ async fn deleting_a_shared_note_removes_it_for_everyone() {
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "bob"})),
+        Some(json!({"email": "bob@example.test"})),
     )
     .await;
     assert_eq!(list_notes(&app, &bob).await.len(), 1);
 
-    let (status, _) = send(&app, "DELETE", &format!("/api/notes/{id}"), Some(&ada), None).await;
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/notes/{id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(list_notes(&app, &ada).await.len(), 0);
     assert_eq!(list_notes(&app, &bob).await.len(), 0);
 }
-

@@ -242,6 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();
+    final wideLayout = MediaQuery.sizeOf(context).width >= 600;
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.
     final semanticAvailable =
@@ -341,18 +342,21 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: Theme.of(context).colorScheme.surface,
                       child: SafeArea(
                         bottom: false,
-                        child: HomeTopBar(
-                          controller: _searchController,
-                          focusNode: _searchFocus,
-                          listMode: _listMode,
-                          semantic: _semantic,
-                          semanticAvailable: semanticAvailable,
-                          semanticBusy: _semanticBusy,
-                          onQuery: _onQueryChanged,
-                          onToggleSemantic: _toggleSemantic,
-                          onToggleLayout: () =>
-                              setState(() => _listMode = !_listMode),
-                          onToggleSidebar: _toggleSidebar,
+                        child: Padding(
+                          padding: EdgeInsets.only(top: wideLayout ? 12 : 0),
+                          child: HomeTopBar(
+                            controller: _searchController,
+                            focusNode: _searchFocus,
+                            listMode: _listMode,
+                            semantic: _semantic,
+                            semanticAvailable: semanticAvailable,
+                            semanticBusy: _semanticBusy,
+                            onQuery: _onQueryChanged,
+                            onToggleSemantic: _toggleSemantic,
+                            onToggleLayout: () =>
+                                setState(() => _listMode = !_listMode),
+                            onToggleSidebar: _toggleSidebar,
+                          ),
                         ),
                       ),
                     ),
@@ -456,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                         padding:
                                                             EdgeInsets.fromLTRB(
                                                               16,
-                                                              4,
+                                                              16,
                                                               16,
                                                               24,
                                                             ),

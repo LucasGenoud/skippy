@@ -19,6 +19,7 @@ class FakeApi implements Api {
 
   /// Checked-item history keyed by note id (per-note suggestions).
   Map<String, List<String>> history = {};
+  Completer<void>? fetchHistoryGate;
   Map<String, dynamic> settings = {};
 
   /// Server feature flags returned by [fetchCapabilities]; tests flip these to
@@ -44,6 +45,12 @@ class FakeApi implements Api {
 
   final StreamController<void> _events = StreamController<void>.broadcast();
 
+  AuthUser account = const AuthUser(
+    id: 'u-me',
+    name: 'Me Example',
+    email: 'me@example.test',
+  );
+
   void pushChangeEvent() => _events.add(null);
 
   Future<T> _run<T>(String op, T Function() body) async {
@@ -58,25 +65,26 @@ class FakeApi implements Api {
 
   @override
   Future<({String token, AuthUser user})> register(
-    String username,
+    String name,
+    String email,
     String password,
   ) => _run(
     'register',
     () => (
-      token: 't-$username',
-      user: AuthUser(id: 'u-$username', username: username),
+      token: 't-$email',
+      user: AuthUser(id: 'u-$email', name: name, email: email),
     ),
   );
 
   @override
   Future<({String token, AuthUser user})> login(
-    String username,
+    String email,
     String password,
   ) => _run(
     'login',
     () => (
-      token: 't-$username',
-      user: AuthUser(id: 'u-$username', username: username),
+      token: 't-$email',
+      user: AuthUser(id: 'u-$email', name: email, email: email),
     ),
   );
 
@@ -84,8 +92,22 @@ class FakeApi implements Api {
   Future<void> logout() => _run('logout', () {});
 
   @override
-  Future<AuthUser> me() =>
-      _run('me', () => const AuthUser(id: 'u-me', username: 'me'));
+  Future<AuthUser> me() => _run('me', () => account);
+
+  @override
+  Future<AuthUser> updateAccount({
+    String? name,
+    String? email,
+    String? currentPassword,
+    String? newPassword,
+  }) => _run('updateAccount', () {
+    account = AuthUser(
+      id: account.id,
+      name: name ?? account.name,
+      email: email ?? account.email,
+    );
+    return account;
+  });
 
   @override
   Future<List<Note>> fetchNotes() => _run('fetchNotes', () {
@@ -95,12 +117,13 @@ class FakeApi implements Api {
   });
 
   @override
-  Future<void> createNote(Note note) => _run('createNote:${note.id}', () {
-    if (notes.containsKey(note.id)) {
-      throw ApiException(409, '{"error":"note id already exists"}');
-    }
-    notes[note.id] = note;
-  });
+  Future<void> createNote(Note note, {bool preserveTimestamps = false}) =>
+      _run('createNote:${note.id}', () {
+        if (notes.containsKey(note.id)) {
+          throw ApiException(409, '{"error":"note id already exists"}');
+        }
+        notes[note.id] = note;
+      });
 
   @override
   Future<void> patchNote(String id, Map<String, dynamic> fields) =>
@@ -196,13 +219,18 @@ class FakeApi implements Api {
       });
 
   @override
-  Future<Map<String, List<String>>> fetchChecklistHistory() => _run(
-    'fetchHistory',
-    () => {
-      for (final entry in history.entries)
-        entry.key: List<String>.from(entry.value),
-    },
-  );
+  Future<Map<String, List<String>>> fetchChecklistHistory() async {
+    final result = await _run(
+      'fetchHistory',
+      () => {
+        for (final entry in history.entries)
+          entry.key: List<String>.from(entry.value),
+      },
+    );
+    final gate = fetchHistoryGate;
+    if (gate != null) await gate.future;
+    return result;
+  }
 
   @override
   Future<List<Label>> fetchLabels() => _run('fetchLabels', () {
@@ -247,17 +275,18 @@ class FakeApi implements Api {
   });
 
   @override
-  Future<Note> addCollaborator(String noteId, String username) =>
-      _run('addCollaborator:$noteId:$username', () {
+  Future<Note> addCollaborator(String noteId, String email) =>
+      _run('addCollaborator:$noteId:$email', () {
         final note = notes[noteId];
         if (note == null) throw ApiException(404, '{"error":"not found"}');
-        if (username == 'nobody') {
-          throw ApiException(400, '{"error":"no user named \'nobody\'"}');
+        if (email == 'nobody@example.test') {
+          throw ApiException(400, '{"error":"no account for email"}');
         }
+        final name = email.split('@').first;
         final updated = note.copyWith(
           collaborators: [
             ...note.collaborators,
-            UserRef(id: 'u-$username', username: username),
+            UserRef(id: 'u-$email', name: name),
           ],
         );
         notes[noteId] = updated;

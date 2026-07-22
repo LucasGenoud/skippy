@@ -5,7 +5,7 @@ import '../api/api_client.dart';
 import '../state/notes_store.dart';
 import '../util/snack.dart';
 
-/// Collaborator management for a note. Owners add/remove people by username;
+/// Collaborator management for a note. Owners add/remove people by email;
 /// collaborators can see the roster and leave.
 class ShareDialog extends StatefulWidget {
   final String noteId;
@@ -37,14 +37,14 @@ class _ShareDialogState extends State<ShareDialog> {
   }
 
   Future<void> _add() async {
-    final username = _controller.text.trim();
-    if (username.isEmpty || _busy) return;
+    final email = _controller.text.trim();
+    if (email.isEmpty || _busy) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await context.read<NotesStore>().addCollaborator(widget.noteId, username);
+      await context.read<NotesStore>().addCollaborator(widget.noteId, email);
       _controller.clear();
     } on ApiException catch (e) {
       _error = e.serverMessage;
@@ -78,10 +78,10 @@ class _ShareDialogState extends State<ShareDialog> {
               leading: CircleAvatar(
                 radius: 16,
                 child: Text(
-                  (note.owner?.username ?? '?').substring(0, 1).toUpperCase(),
+                  (note.owner?.name ?? '?').substring(0, 1).toUpperCase(),
                 ),
               ),
-              title: Text(note.owner?.username ?? 'You'),
+              title: Text(note.owner?.name ?? 'You'),
               subtitle: const Text('Owner'),
               dense: true,
             ),
@@ -91,14 +91,12 @@ class _ShareDialogState extends State<ShareDialog> {
                 leading: CircleAvatar(
                   radius: 16,
                   backgroundColor: scheme.secondaryContainer,
-                  child: Text(
-                    collaborator.username.substring(0, 1).toUpperCase(),
-                  ),
+                  child: Text(collaborator.name.substring(0, 1).toUpperCase()),
                 ),
                 title: Text(
                   collaborator.id == me
-                      ? '${collaborator.username} (you)'
-                      : collaborator.username,
+                      ? '${collaborator.name} (you)'
+                      : collaborator.name,
                 ),
                 trailing: (isOwner || collaborator.id == me)
                     ? IconButton(
@@ -132,7 +130,7 @@ class _ShareDialogState extends State<ShareDialog> {
                       child: TextField(
                         controller: _controller,
                         decoration: const InputDecoration(
-                          hintText: 'Add people by username',
+                          hintText: 'Add people by email',
                           isDense: true,
                           prefixIcon: Icon(Icons.person_add_alt, size: 20),
                         ),

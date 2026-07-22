@@ -74,7 +74,9 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
       await _store.restoreNoteVersion(widget.noteId, version.id);
       if (!mounted) return;
       Navigator.of(context).pop();
-      showAppSnack('Restored version from ${_stamp(settings, version.createdAt)}');
+      showAppSnack(
+        'Restored version from ${_stamp(settings, version.createdAt)}',
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _restoringId = null);
@@ -166,7 +168,7 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
   String? _authorLabel(NoteVersion version) {
     final editor = version.editedBy;
     if (editor == null || editor.id == _store.currentUserId) return null;
-    return editor.username;
+    return editor.name;
   }
 }
 
@@ -333,9 +335,9 @@ class _VersionCard extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               '+${items.length - shown.length} more',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ),
         );

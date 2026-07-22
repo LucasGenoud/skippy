@@ -109,10 +109,7 @@ void main() {
 
     testWidgets('toggle unlocks once a channel is configured', (tester) async {
       await tester.pumpWidget(harness());
-      await tester.scrollUntilVisible(
-        find.text('Reminder notifications'),
-        200,
-      );
+      await tester.scrollUntilVisible(find.text('Reminder notifications'), 200);
 
       expect(find.text('Configure a channel first'), findsOneWidget);
       expect(tester.widget<SwitchListTile>(notifySwitch()).onChanged, isNull);
@@ -137,6 +134,8 @@ void main() {
     testWidgets('channel dialog saves the config', (tester) async {
       await tester.pumpWidget(harness());
       await tester.scrollUntilVisible(find.text('Notification channels'), 200);
+      await tester.ensureVisible(find.text('Notification channels'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Notification channels'));
       await tester.pumpAndSettle();
 
@@ -144,10 +143,7 @@ void main() {
         find.widgetWithText(TextField, 'Topic URL'),
         'https://ntfy.sh/mine',
       );
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Chat ID'),
-        '4242',
-      );
+      await tester.enterText(find.widgetWithText(TextField, 'Chat ID'), '4242');
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
@@ -162,6 +158,8 @@ void main() {
     ) async {
       await tester.pumpWidget(harness());
       await tester.scrollUntilVisible(find.text('Notification channels'), 200);
+      await tester.ensureVisible(find.text('Notification channels'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Notification channels'));
       await tester.pumpAndSettle();
 

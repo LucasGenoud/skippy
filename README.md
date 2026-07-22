@@ -34,7 +34,7 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - Accent color plus grid density and maximum-width presets
 - Date format (5 styles) and 12h/24h time — applied to reminder chips and "Edited" stamps everywhere
 - **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
-- Export all non-trashed notes as JSON, Markdown, or plain text
+- Create and restore portable zip backups containing all non-trashed notes, labels, reminders, timestamps, and attachment bytes; readable JSON, Markdown, and plain-text exports remain available
 
 **Optional AI integration**
 - Each user can configure an OpenAI-compatible endpoint, API key, and model; Ollama, LM Studio, vLLM, and hosted providers can use the same path
@@ -47,8 +47,8 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - **Push notifications via [ntfy](https://ntfy.sh) and/or Telegram** (Settings → Notifications): each user brings their own ntfy topic URL and/or Telegram bot token + chat id — no server-side setup. A background sweep (every 30 s) delivers due reminders to every participant of the note with a configured channel, exactly once per scheduled time (rescheduling re-arms it); checklist reminders list only the still-pending items. A "Send test" button delivers a real probe notification before you save. Channels are pluggable — a new one is a single `Connector` impl on the backend plus a spec entry in the app.
 
 **Collaboration**
-- User accounts (username + password, argon2-hashed, token sessions)
-- Share notes with other users by username; everyone can edit, only the owner can trash/delete/share
+- User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings
+- Share notes with other users by email; everyone can edit, only the owner can trash/delete/share
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
 - Labels stay personal — each participant tags a shared note with their own labels
 
@@ -231,7 +231,7 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | --- | --- |
 | `GET /health`, `/capabilities` | Health and optional-service detection |
 | `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
-| `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET /auth/me` | Accounts & sessions |
+| `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH /auth/me` | Accounts, profile changes & sessions |
 | `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` clears) |
 | `POST /notes/reorder` | Persist drag order (renumbers the given ids) |
 | `GET /notes/{id}/versions`, `POST /notes/{id}/versions/{version_id}/restore` | Version timeline and reversible restore |

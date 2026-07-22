@@ -61,6 +61,9 @@ void showAppSnack(
           ],
         ),
         duration: Duration(seconds: hasAction ? 5 : 3),
+        // Flutter now defaults action snackbars to persistent. Undo should be
+        // available briefly, not leave deletion confirmations pinned forever.
+        persist: false,
         // Every notification is dismissable two ways: a trailing close button
         // (shown even alongside an Undo action) and a downward swipe
         // (SnackBar's default dismissDirection).

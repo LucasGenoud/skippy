@@ -17,7 +17,7 @@ mod unfurl;
 mod versions;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
-pub use auth::{login, logout, me, register};
+pub use auth::{login, logout, me, register, update_account};
 pub use chat::chat_ws;
 pub use events::ws_handler;
 pub use labels::{create_label, delete_label, list_labels, update_label};
@@ -32,8 +32,8 @@ pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use unfurl::unfurl;
 pub use versions::{list_note_versions, restore_note_version};
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -60,7 +60,11 @@ async fn require_participant(
     note_id: &str,
     user_id: &str,
 ) -> ApiResult<NoteRecord> {
-    let record = state.repo.note_record(note_id).await?.ok_or(ApiError::NotFound)?;
+    let record = state
+        .repo
+        .note_record(note_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     if !state.repo.is_participant(note_id, user_id).await? {
         return Err(ApiError::NotFound);
     }

@@ -4,6 +4,8 @@ const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
@@ -96,13 +98,41 @@ const ADDITIVE_MIGRATIONS: &[&str] = &[
     "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
     "ALTER TABLE labels ADD COLUMN color TEXT",
     "ALTER TABLE labels ADD COLUMN icon TEXT",
+    "ALTER TABLE users ADD COLUMN name TEXT",
+    "ALTER TABLE users ADD COLUMN email TEXT",
 ];
 
 /// Creates the current schema and upgrades databases written by older builds.
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
     apply_additive_migrations(pool).await;
+    migrate_user_accounts(pool).await?;
     migrate_checklist_history(pool).await?;
+    Ok(())
+}
+
+/// Older rows need values for the new account columns. The placeholder keeps
+/// the migration additive, but it is not a legacy login alias: authentication
+/// always queries the email column only.
+async fn migrate_user_accounts(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE users SET name = username
+         WHERE name IS NULL OR trim(name) = ''",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "UPDATE users SET email = lower(username) || '@local.invalid'
+         WHERE email IS NULL OR trim(email) = ''",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
+         ON users(email COLLATE NOCASE)",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

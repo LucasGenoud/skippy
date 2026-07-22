@@ -25,7 +25,10 @@ impl Connector for FakeChannel {
     }
 
     fn configured(&self, settings: &Value) -> bool {
-        settings[self.key].as_str().map(str::trim).is_some_and(|s| !s.is_empty())
+        settings[self.key]
+            .as_str()
+            .map(str::trim)
+            .is_some_and(|s| !s.is_empty())
     }
 
     async fn send(&self, settings: &Value, notification: &Notification) -> anyhow::Result<()> {
@@ -45,7 +48,12 @@ impl Connector for FakeChannel {
 async fn state_with_notifiers() -> (AppState, SentLog) {
     let log: SentLog = Arc::default();
     let connectors: Vec<Arc<dyn Connector>> = vec![
-        Arc::new(FakeChannel { name: "ntfy", key: "ntfy_url", log: log.clone(), fail: false }),
+        Arc::new(FakeChannel {
+            name: "ntfy",
+            key: "ntfy_url",
+            log: log.clone(),
+            fail: false,
+        }),
         Arc::new(FakeChannel {
             name: "telegram",
             key: "telegram_chat_id",
@@ -86,7 +94,7 @@ async fn due_reminders_fire_once_per_configured_participant() {
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "bob"})),
+        Some(json!({"email": "bob@example.test"})),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -126,9 +134,12 @@ async fn rescheduling_a_reminder_fires_again_but_content_edits_do_not() {
     let (ada, _) = register(&app, "ada").await;
     put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
 
-    let note =
-        create_note(&app, &ada, json!({"title": "Call mom", "reminder_at": "2020-01-05T10:00:00Z"}))
-            .await;
+    let note = create_note(
+        &app,
+        &ada,
+        json!({"title": "Call mom", "reminder_at": "2020-01-05T10:00:00Z"}),
+    )
+    .await;
     let id = note["id"].as_str().unwrap();
     notify::sweep_due_reminders(&state).await;
     assert_eq!(log.lock().unwrap().len(), 1);
@@ -187,12 +198,19 @@ async fn reminders_skip_future_trashed_disabled_and_unconfigured() {
 
     // Future reminders wait; offsets compare as instants, not strings
     // ("+10:00" sorts before "Z" as text but names a future moment here).
-    create_note(&app, &ada, json!({"title": "Future", "reminder_at": "2999-01-01T00:00:00+10:00"}))
-        .await;
+    create_note(
+        &app,
+        &ada,
+        json!({"title": "Future", "reminder_at": "2999-01-01T00:00:00+10:00"}),
+    )
+    .await;
     // Trashed notes never fire.
-    let trashed =
-        create_note(&app, &ada, json!({"title": "Trashed", "reminder_at": "2020-01-05T10:00:00Z"}))
-            .await;
+    let trashed = create_note(
+        &app,
+        &ada,
+        json!({"title": "Trashed", "reminder_at": "2020-01-05T10:00:00Z"}),
+    )
+    .await;
     let trashed_id = trashed["id"].as_str().unwrap();
     let (status, _) = send(
         &app,
@@ -205,7 +223,12 @@ async fn reminders_skip_future_trashed_disabled_and_unconfigured() {
     assert_eq!(status, StatusCode::OK);
     // Due, but the user turned notifications off: consumed silently (a
     // later opt-in must not replay old alarms).
-    create_note(&app, &ada, json!({"title": "Muted", "reminder_at": "2020-01-05T10:00:00Z"})).await;
+    create_note(
+        &app,
+        &ada,
+        json!({"title": "Muted", "reminder_at": "2020-01-05T10:00:00Z"}),
+    )
+    .await;
 
     notify::sweep_due_reminders(&state).await;
     assert!(log.lock().unwrap().is_empty());
@@ -218,8 +241,12 @@ async fn reminders_skip_future_trashed_disabled_and_unconfigured() {
     // An offset timestamp that IS past (as an instant) fires despite sorting
     // after "2020-..." UTC strings would suggest nothing; belt and braces for
     // the julianday comparison.
-    create_note(&app, &ada, json!({"title": "Offset", "reminder_at": "2020-01-05T10:00:00+10:00"}))
-        .await;
+    create_note(
+        &app,
+        &ada,
+        json!({"title": "Offset", "reminder_at": "2020-01-05T10:00:00+10:00"}),
+    )
+    .await;
     notify::sweep_due_reminders(&state).await;
     let sent = log.lock().unwrap();
     assert_eq!(sent.len(), 1);
@@ -265,7 +292,14 @@ async fn notify_test_endpoint_sends_and_validates() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     // Nothing configured in the probe body -> 400.
-    let (status, _) = send(&app, "POST", "/api/notify/test", Some(&ada), Some(json!({}))).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notify/test",
+        Some(&ada),
+        Some(json!({})),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // A configured channel gets a real test message; the body config is used
@@ -307,5 +341,8 @@ async fn notify_test_endpoint_sends_and_validates() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["ok"], json!(false));
-    assert!(body["error"].as_str().unwrap().contains("ntfy: boom"), "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("ntfy: boom"),
+        "{body}"
+    );
 }

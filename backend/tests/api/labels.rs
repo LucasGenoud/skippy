@@ -9,14 +9,32 @@ async fn labels_are_personal_even_on_shared_notes() {
     let (bob, _) = register(&app, "bob").await;
 
     // Create labels; duplicates conflict per-owner but not across users.
-    let (status, ada_label) =
-        send(&app, "POST", "/api/labels", Some(&ada), Some(json!({"name": "work"}))).await;
+    let (status, ada_label) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&ada),
+        Some(json!({"name": "work"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED);
-    let (status, _) =
-        send(&app, "POST", "/api/labels", Some(&ada), Some(json!({"name": "Work"}))).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&ada),
+        Some(json!({"name": "Work"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CONFLICT);
-    let (status, bob_label) =
-        send(&app, "POST", "/api/labels", Some(&bob), Some(json!({"name": "work"}))).await;
+    let (status, bob_label) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&bob),
+        Some(json!({"name": "work"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED);
 
     // Shared note: each participant tags with their own label and sees only theirs.
@@ -27,7 +45,7 @@ async fn labels_are_personal_even_on_shared_notes() {
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "bob"})),
+        Some(json!({"email": "bob@example.test"})),
     )
     .await;
     let ada_label_id = ada_label["id"].as_str().unwrap();
@@ -117,8 +135,14 @@ async fn label_rename_delete_scoped_to_owner() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
     let (bob, _) = register(&app, "bob").await;
-    let (_, label) =
-        send(&app, "POST", "/api/labels", Some(&ada), Some(json!({"name": "todo"}))).await;
+    let (_, label) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&ada),
+        Some(json!({"name": "todo"})),
+    )
+    .await;
     let label_id = label["id"].as_str().unwrap();
 
     // Bob can't touch Ada's label.
@@ -131,8 +155,14 @@ async fn label_rename_delete_scoped_to_owner() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) =
-        send(&app, "DELETE", &format!("/api/labels/{label_id}"), Some(&bob), None).await;
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/labels/{label_id}"),
+        Some(&bob),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Ada renames then deletes; the label disappears from her notes.
@@ -156,10 +186,22 @@ async fn label_rename_delete_scoped_to_owner() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(renamed["name"], "renamed");
-    let (status, _) =
-        send(&app, "DELETE", &format!("/api/labels/{label_id}"), Some(&ada), None).await;
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/labels/{label_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let (_, view) = send(&app, "GET", &format!("/api/notes/{note_id}"), Some(&ada), None).await;
+    let (_, view) = send(
+        &app,
+        "GET",
+        &format!("/api/notes/{note_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
     assert_eq!(view["label_ids"], json!([]));
 }
-

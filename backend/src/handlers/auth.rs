@@ -1,63 +1,95 @@
 //! Registration, login, and session endpoints.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::AppState;
 use crate::auth::{AuthUser, SessionToken, hash_password, verify_password};
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::new_id;
+use super::{CHANGED_MSG, new_id};
 
-fn validate_credentials(creds: &Credentials) -> ApiResult<()> {
-    let name_ok = creds.username.len() >= 3
-        && creds.username.len() <= 32
-        && creds
-            .username
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
+fn validate_name(name: &str) -> ApiResult<String> {
+    let name = name.trim();
+    let name_ok = (2..=100).contains(&name.chars().count()) && !name.chars().any(char::is_control);
     if !name_ok {
         return Err(ApiError::BadRequest(
-            "username must be 3-32 characters (letters, digits, _ - .)".to_string(),
+            "name must be 2-100 characters".to_string(),
         ));
     }
-    if creds.password.len() < 6 {
-        return Err(ApiError::BadRequest("password must be at least 6 characters".to_string()));
+    Ok(name.to_string())
+}
+
+fn validate_email(email: &str) -> ApiResult<String> {
+    let email = email.trim().to_lowercase();
+    let mut parts = email.split('@');
+    let local = parts.next().unwrap_or_default();
+    let domain = parts.next().unwrap_or_default();
+    let valid = !local.is_empty()
+        && !domain.is_empty()
+        && parts.next().is_none()
+        && !email.chars().any(char::is_whitespace)
+        && email.len() <= 254;
+    if !valid {
+        return Err(ApiError::BadRequest(
+            "enter a valid email address".to_string(),
+        ));
+    }
+    Ok(email)
+}
+
+fn validate_password(password: &str) -> ApiResult<()> {
+    if password.len() < 6 {
+        return Err(ApiError::BadRequest(
+            "password must be at least 6 characters".to_string(),
+        ));
     }
     Ok(())
 }
 
 pub async fn register(
     State(state): State<AppState>,
-    Json(creds): Json<Credentials>,
+    Json(request): Json<RegisterRequest>,
 ) -> ApiResult<(StatusCode, Json<AuthResponse>)> {
-    validate_credentials(&creds)?;
+    let name = validate_name(&request.name)?;
+    let email = validate_email(&request.email)?;
+    validate_password(&request.password)?;
     let user = User {
         id: new_id(),
-        username: creds.username.trim().to_string(),
-        password_hash: hash_password(&creds.password)?,
+        name,
+        email,
+        password_hash: hash_password(&request.password)?,
     };
     state.repo.create_user(&user).await?;
     let token = new_id();
     state.repo.create_session(&token, &user.id).await?;
-    Ok((StatusCode::CREATED, Json(AuthResponse { token, user: user.public() })))
+    Ok((
+        StatusCode::CREATED,
+        Json(AuthResponse {
+            token,
+            user: user.account(),
+        }),
+    ))
 }
 
 pub async fn login(
     State(state): State<AppState>,
-    Json(creds): Json<Credentials>,
+    Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
     let user = state
         .repo
-        .user_by_username(creds.username.trim())
+        .user_by_email(request.email.trim())
         .await?
-        .filter(|u| verify_password(&creds.password, &u.password_hash))
+        .filter(|u| verify_password(&request.password, &u.password_hash))
         .ok_or(ApiError::Unauthorized)?;
     let token = new_id();
     state.repo.create_session(&token, &user.id).await?;
-    Ok(Json(AuthResponse { token, user: user.public() }))
+    Ok(Json(AuthResponse {
+        token,
+        user: user.account(),
+    }))
 }
 
 pub async fn logout(
@@ -71,7 +103,65 @@ pub async fn logout(
 pub async fn me(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
-) -> ApiResult<Json<UserPublic>> {
-    let user = state.repo.user_by_id(&user_id).await?.ok_or(ApiError::Unauthorized)?;
-    Ok(Json(user.public()))
+) -> ApiResult<Json<AccountPublic>> {
+    let user = state
+        .repo
+        .user_by_id(&user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    Ok(Json(user.account()))
+}
+
+pub async fn update_account(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Json(request): Json<UpdateAccountRequest>,
+) -> ApiResult<Json<AccountPublic>> {
+    if request.name.is_none() && request.email.is_none() && request.new_password.is_none() {
+        return Err(ApiError::BadRequest("nothing to update".to_string()));
+    }
+
+    let user = state
+        .repo
+        .user_by_id(&user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    let name = match request.name {
+        Some(name) => validate_name(&name)?,
+        None => user.name.clone(),
+    };
+    let name_changed = name != user.name;
+    let email = match request.email {
+        Some(email) => validate_email(&email)?,
+        None => user.email.clone(),
+    };
+
+    let changing_email = !email.eq_ignore_ascii_case(&user.email);
+    if changing_email || request.new_password.is_some() {
+        let current = request.current_password.as_deref().unwrap_or_default();
+        if !verify_password(current, &user.password_hash) {
+            return Err(ApiError::Forbidden("current password is incorrect"));
+        }
+    }
+
+    let password_hash = match request.new_password {
+        Some(password) => {
+            validate_password(&password)?;
+            hash_password(&password)?
+        }
+        None => user.password_hash,
+    };
+    state
+        .repo
+        .update_user(&user_id, &name, &email, &password_hash)
+        .await?;
+    if name_changed {
+        let audience = state.repo.account_audience(&user_id).await?;
+        state.hub.notify(&audience, CHANGED_MSG);
+    }
+    Ok(Json(AccountPublic {
+        id: user_id,
+        name,
+        email,
+    }))
 }

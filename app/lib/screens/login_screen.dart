@@ -14,10 +14,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _username = TextEditingController();
+  final _name = TextEditingController();
+  final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  final _usernameFocus = FocusNode();
+  final _nameFocus = FocusNode();
+  final _emailFocus = FocusNode();
   final _passwordFocus = FocusNode();
   final _confirmFocus = FocusNode();
   bool _creating = false;
@@ -26,16 +28,19 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Local validation errors for the empty-field checks and the confirm field.
   /// Shown inline so pressing the button always gives feedback rather than
   /// silently doing nothing.
-  String? _usernameError;
+  String? _nameError;
+  String? _emailError;
   String? _passwordError;
   String? _confirmError;
 
   @override
   void dispose() {
-    _username.dispose();
+    _name.dispose();
+    _email.dispose();
     _password.dispose();
     _confirm.dispose();
-    _usernameFocus.dispose();
+    _nameFocus.dispose();
+    _emailFocus.dispose();
     _passwordFocus.dispose();
     _confirmFocus.dispose();
     super.dispose();
@@ -45,7 +50,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (creating == _creating) return;
     setState(() {
       _creating = creating;
-      _usernameError = null;
+      _nameError = null;
+      _emailError = null;
       _passwordError = null;
       _confirmError = null;
     });
@@ -54,19 +60,27 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     final auth = context.read<AuthStore>();
-    final username = _username.text.trim();
+    final name = _name.text.trim();
+    final email = _email.text.trim();
     final password = _password.text;
 
     // Presence check — show an inline error and focus the first empty field
     // instead of returning silently (the old behaviour gave no feedback).
-    final usernameError = username.isEmpty ? 'Enter your username' : null;
+    final nameError = _creating && name.isEmpty ? 'Enter your name' : null;
+    final emailError = email.isEmpty ? 'Enter your email' : null;
     final passwordError = password.isEmpty ? 'Enter your password' : null;
-    if (usernameError != null || passwordError != null) {
+    if (nameError != null || emailError != null || passwordError != null) {
       setState(() {
-        _usernameError = usernameError;
+        _nameError = nameError;
+        _emailError = emailError;
         _passwordError = passwordError;
       });
-      (usernameError != null ? _usernameFocus : _passwordFocus).requestFocus();
+      (nameError != null
+              ? _nameFocus
+              : emailError != null
+              ? _emailFocus
+              : _passwordFocus)
+          .requestFocus();
       return;
     }
 
@@ -76,16 +90,17 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     setState(() {
-      _usernameError = null;
+      _nameError = null;
+      _emailError = null;
       _passwordError = null;
       _confirmError = null;
     });
     // Let the platform password manager offer to save these credentials.
     TextInput.finishAutofillContext();
     if (_creating) {
-      await auth.registerAccount(username, password);
+      await auth.registerAccount(name, email, password);
     } else {
-      await auth.signIn(username, password);
+      await auth.signIn(email, password);
     }
   }
 
@@ -133,9 +148,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final scheme = theme.colorScheme;
     final creating = _creating;
     // Flag the relevant fields red on a rejected submit: 401 = both credentials
-    // are wrong, 409 = the username is taken. A red outline (no extra text —
+    // are wrong, 409 = the email is taken. A red outline (no extra text —
     // the banner carries the message) so the inputs themselves signal the error.
-    final usernameRejected = auth.errorStatus == 401 || auth.errorStatus == 409;
+    final emailRejected = auth.errorStatus == 401 || auth.errorStatus == 409;
     final passwordRejected = auth.errorStatus == 401;
     final rejectedBorder = OutlineInputBorder(
       borderSide: BorderSide(color: scheme.error, width: 2),
@@ -194,7 +209,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     // ── Form ──────────────────────────────────────────────
                     // Wrapped in a card on wide layouts; edge-to-edge on phones.
                     Container(
-                      padding: isWide ? const EdgeInsets.all(24) : EdgeInsets.zero,
+                      padding: isWide
+                          ? const EdgeInsets.all(24)
+                          : EdgeInsets.zero,
                       decoration: isWide
                           ? BoxDecoration(
                               color: scheme.surface,
@@ -237,32 +254,70 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             const SizedBox(height: 20),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              alignment: Alignment.topCenter,
+                              child: creating
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 16,
+                                      ),
+                                      child: TextField(
+                                        controller: _name,
+                                        focusNode: _nameFocus,
+                                        autofocus: true,
+                                        textInputAction: TextInputAction.next,
+                                        autofillHints: const [
+                                          AutofillHints.name,
+                                        ],
+                                        textCapitalization:
+                                            TextCapitalization.words,
+                                        onChanged: (_) {
+                                          if (_nameError != null) {
+                                            setState(() => _nameError = null);
+                                          }
+                                          if (auth.errorStatus != null) {
+                                            auth.clearError();
+                                          }
+                                        },
+                                        onSubmitted: (_) =>
+                                            _emailFocus.requestFocus(),
+                                        decoration: InputDecoration(
+                                          labelText: 'Full name',
+                                          border: const OutlineInputBorder(),
+                                          prefixIcon: const Icon(
+                                            Icons.badge_outlined,
+                                          ),
+                                          errorText: _nameError,
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
                             TextField(
-                              controller: _username,
-                              focusNode: _usernameFocus,
-                              autofocus: true,
+                              controller: _email,
+                              focusNode: _emailFocus,
+                              autofocus: !creating,
+                              keyboardType: TextInputType.emailAddress,
                               textInputAction: TextInputAction.next,
-                              autofillHints: [
-                                creating
-                                    ? AutofillHints.newUsername
-                                    : AutofillHints.username,
-                              ],
+                              autofillHints: const [AutofillHints.email],
                               onChanged: (_) {
-                                if (_usernameError != null) {
-                                  setState(() => _usernameError = null);
+                                if (_emailError != null) {
+                                  setState(() => _emailError = null);
                                 }
                                 if (auth.errorStatus != null) auth.clearError();
                               },
                               onSubmitted: (_) => _passwordFocus.requestFocus(),
                               decoration: InputDecoration(
-                                labelText: 'Username',
+                                labelText: 'Email',
                                 border: const OutlineInputBorder(),
-                                prefixIcon: const Icon(Icons.person_outline),
-                                errorText: _usernameError,
-                                enabledBorder: usernameRejected
+                                prefixIcon: const Icon(Icons.email_outlined),
+                                errorText: _emailError,
+                                enabledBorder: emailRejected
                                     ? rejectedBorder
                                     : null,
-                                focusedBorder: usernameRejected
+                                focusedBorder: emailRejected
                                     ? rejectedBorder
                                     : null,
                               ),

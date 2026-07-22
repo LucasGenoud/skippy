@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
-use super::{PurgedNote, RepoError, RepoResult, Repository};
 use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row};
 use super::sqlite_schema;
+use super::{PurgedNote, RepoError, RepoResult, Repository};
 use crate::models::*;
 
 pub struct SqliteRepository {
@@ -59,16 +59,19 @@ impl SqliteRepository {
         // Collaborators per note.
         let mut collabs_by_note: HashMap<String, Vec<UserPublic>> = HashMap::new();
         for row in sqlx::query(
-            "SELECT ns.note_id, u.id, u.username FROM note_shares ns
+            "SELECT ns.note_id, u.id, u.name FROM note_shares ns
              JOIN users u ON u.id = ns.user_id",
         )
         .fetch_all(&self.pool)
         .await?
         {
-            collabs_by_note.entry(row.get("note_id")).or_default().push(UserPublic {
-                id: row.get("id"),
-                username: row.get("username"),
-            });
+            collabs_by_note
+                .entry(row.get("note_id"))
+                .or_default()
+                .push(UserPublic {
+                    id: row.get("id"),
+                    name: row.get("name"),
+                });
         }
         // Attachments per note.
         let mut atts_by_note: HashMap<String, Vec<Attachment>> = HashMap::new();
@@ -78,21 +81,27 @@ impl SqliteRepository {
         .fetch_all(&self.pool)
         .await?
         {
-            atts_by_note.entry(row.get("note_id")).or_default().push(Attachment {
-                id: row.get("id"),
-                mime: row.get("mime"),
-                filename: row.get("filename"),
-                size: row.get("size"),
-                url: None,
-            });
+            atts_by_note
+                .entry(row.get("note_id"))
+                .or_default()
+                .push(Attachment {
+                    id: row.get("id"),
+                    mime: row.get("mime"),
+                    filename: row.get("filename"),
+                    size: row.get("size"),
+                    url: None,
+                });
         }
-        // Owner usernames.
+        // Owner display names.
         let mut owners: HashMap<String, UserPublic> = HashMap::new();
-        for row in sqlx::query("SELECT id, username FROM users")
+        for row in sqlx::query("SELECT id, name FROM users")
             .fetch_all(&self.pool)
             .await?
         {
-            let user = UserPublic { id: row.get("id"), username: row.get("username") };
+            let user = UserPublic {
+                id: row.get("id"),
+                name: row.get("name"),
+            };
             owners.insert(user.id.clone(), user);
         }
 
@@ -101,12 +110,12 @@ impl SqliteRepository {
             .map(|record| {
                 let mut collaborators =
                     collabs_by_note.get(&record.id).cloned().unwrap_or_default();
-                collaborators.sort_by(|a, b| a.username.cmp(&b.username));
+                collaborators.sort_by(|a, b| a.name.cmp(&b.name));
                 NoteView {
                     label_ids: labels_by_note.get(&record.id).cloned().unwrap_or_default(),
                     owner: owners.get(&record.owner_id).cloned().unwrap_or(UserPublic {
                         id: record.owner_id.clone(),
-                        username: "?".to_string(),
+                        name: "?".to_string(),
                     }),
                     collaborators,
                     attachments: atts_by_note.get(&record.id).cloned().unwrap_or_default(),
@@ -123,23 +132,30 @@ impl Repository for SqliteRepository {
 
     async fn create_user(&self, user: &User) -> RepoResult<()> {
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO users
+             (id, username, name, email, password_hash, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&user.id)
-        .bind(&user.username)
+        // Kept for compatibility with databases created before email login.
+        .bind(&user.email)
+        .bind(&user.name)
+        .bind(&user.email)
         .bind(&user.password_hash)
         .bind(now())
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
-            return Err(RepoError::Conflict("username is taken".to_string()));
+            return Err(RepoError::Conflict(
+                "email is already registered".to_string(),
+            ));
         }
         Ok(())
     }
 
-    async fn user_by_username(&self, username: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query("SELECT * FROM users WHERE username = ? COLLATE NOCASE")
-            .bind(username)
+    async fn user_by_email(&self, email: &str) -> RepoResult<Option<User>> {
+        let row = sqlx::query("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
+            .bind(email)
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.map(|r| user_from_row(&r)))
@@ -151,6 +167,58 @@ impl Repository for SqliteRepository {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.map(|r| user_from_row(&r)))
+    }
+
+    async fn update_user(
+        &self,
+        id: &str,
+        name: &str,
+        email: &str,
+        password_hash: &str,
+    ) -> RepoResult<()> {
+        let result = sqlx::query(
+            "UPDATE OR IGNORE users
+             SET username = ?, name = ?, email = ?, password_hash = ?
+             WHERE id = ?",
+        )
+        .bind(email)
+        .bind(name)
+        .bind(email)
+        .bind(password_hash)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(RepoError::Conflict(
+                "email is already registered".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn account_audience(&self, user_id: &str) -> RepoResult<Vec<String>> {
+        let rows = sqlx::query(
+            "WITH shared_notes(note_id) AS (
+                 SELECT id FROM notes WHERE owner_id = ?
+                 UNION
+                 SELECT note_id FROM note_shares WHERE user_id = ?
+             ), participants(user_id) AS (
+                 SELECT ?
+                 UNION
+                 SELECT n.owner_id FROM notes n
+                 JOIN shared_notes sn ON sn.note_id = n.id
+                 UNION
+                 SELECT ns.user_id FROM note_shares ns
+                 JOIN shared_notes sn ON sn.note_id = ns.note_id
+             )
+             SELECT user_id FROM participants",
+        )
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|row| row.get("user_id")).collect())
     }
 
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()> {
@@ -199,7 +267,11 @@ impl Repository for SqliteRepository {
         let Some(record) = self.note_record(note_id).await? else {
             return Ok(None);
         };
-        Ok(self.build_views(vec![record], viewer_id).await?.into_iter().next())
+        Ok(self
+            .build_views(vec![record], viewer_id)
+            .await?
+            .into_iter()
+            .next())
     }
 
     async fn note_record(&self, note_id: &str) -> RepoResult<Option<NoteRecord>> {
@@ -339,14 +411,19 @@ impl Repository for SqliteRepository {
                 .fetch_all(&mut *tx)
                 .await?;
             note.attachment_ids = attachments.iter().map(|r| r.get("id")).collect();
-            sqlx::query("DELETE FROM notes WHERE id = ?").bind(&note.note_id).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM notes WHERE id = ?")
+                .bind(&note.note_id)
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(purged)
     }
 
     async fn all_note_ids(&self) -> RepoResult<Vec<String>> {
-        let rows = sqlx::query("SELECT id FROM notes").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT id FROM notes")
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.iter().map(|r| r.get("id")).collect())
     }
 
@@ -460,7 +537,10 @@ impl Repository for SqliteRepository {
     }
 
     async fn is_participant(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
-        Ok(self.participant_ids(note_id).await?.contains(&user_id.to_string()))
+        Ok(self
+            .participant_ids(note_id)
+            .await?
+            .contains(&user_id.to_string()))
     }
 
     async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()> {
@@ -502,15 +582,16 @@ impl Repository for SqliteRepository {
     }
 
     async fn insert_label(&self, user_id: &str, label: &Label) -> RepoResult<()> {
-        let result =
-            sqlx::query("INSERT OR IGNORE INTO labels (id, owner_id, name, color, icon) VALUES (?, ?, ?, ?, ?)")
-                .bind(&label.id)
-                .bind(user_id)
-                .bind(&label.name)
-                .bind(&label.color)
-                .bind(&label.icon)
-                .execute(&self.pool)
-                .await?;
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO labels (id, owner_id, name, color, icon) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&label.id)
+        .bind(user_id)
+        .bind(&label.name)
+        .bind(&label.color)
+        .bind(&label.icon)
+        .execute(&self.pool)
+        .await?;
         if result.rows_affected() == 0 {
             return Err(RepoError::Conflict("label already exists".to_string()));
         }
@@ -525,15 +606,16 @@ impl Repository for SqliteRepository {
         color: Option<&str>,
         icon: Option<&str>,
     ) -> RepoResult<bool> {
-        let result =
-            sqlx::query("UPDATE labels SET name = ?, color = ?, icon = ? WHERE id = ? AND owner_id = ?")
-                .bind(name)
-                .bind(color)
-                .bind(icon)
-                .bind(label_id)
-                .bind(user_id)
-                .execute(&self.pool)
-                .await?;
+        let result = sqlx::query(
+            "UPDATE labels SET name = ?, color = ?, icon = ? WHERE id = ? AND owner_id = ?",
+        )
+        .bind(name)
+        .bind(color)
+        .bind(icon)
+        .bind(label_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 

@@ -422,9 +422,13 @@ class SettingsStore extends ChangeNotifier {
   void setThemeMode(ThemeMode mode) => _mutate(() => themeMode = mode);
   void setAccentColor(Color color) => _mutate(() => accentColor = color);
 
-  /// Cycle light/dark from the app-bar button, given the effective brightness.
-  void toggleTheme(Brightness current) => _mutate(() {
-    themeMode = current == Brightness.light ? ThemeMode.dark : ThemeMode.light;
+  /// Cycle every top-bar theme option, including following the host system.
+  void cycleThemeMode() => _mutate(() {
+    themeMode = switch (themeMode) {
+      ThemeMode.system => ThemeMode.light,
+      ThemeMode.light => ThemeMode.dark,
+      ThemeMode.dark => ThemeMode.system,
+    };
   });
 
   void setDateFormat(AppDateFormat format) =>

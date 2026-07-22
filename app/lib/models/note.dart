@@ -52,14 +52,17 @@ class ChecklistItem {
 
 class UserRef {
   final String id;
-  final String username;
+  final String name;
 
-  const UserRef({required this.id, required this.username});
+  const UserRef({required this.id, required this.name});
 
-  factory UserRef.fromJson(Map<String, dynamic> json) =>
-      UserRef(id: json['id'] as String, username: json['username'] as String);
+  factory UserRef.fromJson(Map<String, dynamic> json) => UserRef(
+    id: json['id'] as String,
+    // Read old cached notes once so an offline upgrade remains usable.
+    name: (json['name'] ?? json['username']) as String,
+  );
 
-  Map<String, dynamic> toJson() => {'id': id, 'username': username};
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
 }
 
 class Attachment {
@@ -366,12 +369,16 @@ class Label {
 @immutable
 class AuthUser {
   final String id;
-  final String username;
+  final String name;
+  final String email;
 
-  const AuthUser({required this.id, required this.username});
+  const AuthUser({required this.id, required this.name, required this.email});
 
-  factory AuthUser.fromJson(Map<String, dynamic> json) =>
-      AuthUser(id: json['id'] as String, username: json['username'] as String);
+  factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
+    id: json['id'] as String,
+    name: (json['name'] ?? json['username'] ?? '') as String,
+    email: json['email'] as String? ?? '',
+  );
 
-  Map<String, dynamic> toJson() => {'id': id, 'username': username};
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'email': email};
 }

@@ -8,7 +8,7 @@ use crate::models::*;
 
 #[derive(Debug)]
 pub enum RepoError {
-    /// Unique-constraint style conflicts (duplicate username, id, label name).
+    /// Unique-constraint style conflicts (duplicate email, id, label name).
     Conflict(String),
     Other(anyhow::Error),
 }
@@ -37,8 +37,18 @@ pub struct PurgedNote {
 pub trait Repository: Send + Sync {
     // -- users & sessions ---------------------------------------------------
     async fn create_user(&self, user: &User) -> RepoResult<()>;
-    async fn user_by_username(&self, username: &str) -> RepoResult<Option<User>>;
+    async fn user_by_email(&self, email: &str) -> RepoResult<Option<User>>;
     async fn user_by_id(&self, id: &str) -> RepoResult<Option<User>>;
+    async fn update_user(
+        &self,
+        id: &str,
+        name: &str,
+        email: &str,
+        password_hash: &str,
+    ) -> RepoResult<()>;
+    /// The account owner plus everyone who shares at least one note with them.
+    /// Used to refresh public display names after a profile change.
+    async fn account_audience(&self, user_id: &str) -> RepoResult<Vec<String>>;
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()>;
     async fn user_id_for_token(&self, token: &str) -> RepoResult<Option<String>>;
     async fn delete_session(&self, token: &str) -> RepoResult<()>;
@@ -130,8 +140,10 @@ pub trait Repository: Send + Sync {
     // -- attachments ------------------------------------------------------------
     async fn insert_attachment(&self, attachment: &Attachment, note_id: &str) -> RepoResult<()>;
     /// Returns (note_id, attachment) when it exists.
-    async fn attachment_info(&self, attachment_id: &str)
-        -> RepoResult<Option<(String, Attachment)>>;
+    async fn attachment_info(
+        &self,
+        attachment_id: &str,
+    ) -> RepoResult<Option<(String, Attachment)>>;
     async fn delete_attachment(&self, attachment_id: &str) -> RepoResult<bool>;
 
     // -- per-user settings --------------------------------------------------------

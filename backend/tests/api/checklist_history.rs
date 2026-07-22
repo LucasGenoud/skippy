@@ -32,8 +32,14 @@ async fn checking_items_builds_note_scoped_history() {
         ]})
     };
     for patch in [check(true), check(true), check(false), check(true)] {
-        let (status, _) =
-            send(&app, "PATCH", &format!("/api/notes/{id}"), Some(&ada), Some(patch)).await;
+        let (status, _) = send(
+            &app,
+            "PATCH",
+            &format!("/api/notes/{id}"),
+            Some(&ada),
+            Some(patch),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
     }
     let (_, history) = send(&app, "GET", "/api/checklist-history", Some(&ada), None).await;
@@ -52,7 +58,7 @@ async fn checking_items_builds_note_scoped_history() {
         "POST",
         &format!("/api/notes/{id}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "bob"})),
+        Some(json!({"email": "bob@example.test"})),
     )
     .await;
     let (status, _) = send(
@@ -68,8 +74,12 @@ async fn checking_items_builds_note_scoped_history() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let (_, history) = send(&app, "GET", "/api/checklist-history", Some(&bob), None).await;
-    let texts: Vec<&str> =
-        history.as_array().unwrap().iter().map(|e| e["text"].as_str().unwrap()).collect();
+    let texts: Vec<&str> = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["text"].as_str().unwrap())
+        .collect();
     assert!(texts.contains(&"Milk") && texts.contains(&"Eggs"));
 
     // Scoping: checks in Ada's second note land under that note's id, never
@@ -112,4 +122,3 @@ async fn precreated_checked_items_are_recorded() {
     assert_eq!(history[0]["text"], "Bread");
     assert_eq!(history[0]["note_id"], note["id"]);
 }
-

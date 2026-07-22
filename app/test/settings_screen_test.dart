@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/screens/settings_screen.dart';
+import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 
@@ -19,11 +20,14 @@ Future<SettingsStore> pumpSettings(WidgetTester tester, FakeApi api) async {
   final settings = SettingsStore(api: api);
   await settings.load();
   final notes = NotesStore(api: api, currentUserId: 'u-me');
+  final auth = AuthStore(api: ApiClient(baseUrl: 'http://unused'))
+    ..user = api.account;
   await tester.pumpWidget(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: settings),
         ChangeNotifierProvider.value(value: notes),
+        ChangeNotifierProvider.value(value: auth),
       ],
       child: const MaterialApp(home: SettingsScreen()),
     ),
@@ -33,12 +37,34 @@ Future<SettingsStore> pumpSettings(WidgetTester tester, FakeApi api) async {
 }
 
 void main() {
+  testWidgets('account settings expose name, email, and password editors', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    await pumpSettings(tester, api);
+
+    expect(find.text('Me Example'), findsOneWidget);
+    expect(find.text('me@example.test'), findsOneWidget);
+    expect(find.text('Change your sign-in password'), findsOneWidget);
+    expect(find.text('Create backup'), findsOneWidget);
+    expect(find.text('Restore backup'), findsOneWidget);
+
+    await tester.tap(find.text('Email').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Change email'), findsOneWidget);
+    expect(find.text('Current password'), findsOneWidget);
+    expect(find.text('New email'), findsOneWidget);
+  });
+
   testWidgets('server-managed LLM fields are locked in the dialog', (
     tester,
   ) async {
     final api = FakeApi();
     api.managedSettings = {
-      'llm_base_url': const ManagedSetting(secret: false, value: 'http://managed/v1'),
+      'llm_base_url': const ManagedSetting(
+        secret: false,
+        value: 'http://managed/v1',
+      ),
       'llm_api_key': const ManagedSetting(secret: true),
     };
     await pumpSettings(tester, api);

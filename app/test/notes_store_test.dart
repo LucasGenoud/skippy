@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -40,7 +41,7 @@ Note serverNote(
     createdAt: createdAt ?? now,
     updatedAt: updatedAt ?? now,
     labelIds: labelIds,
-    owner: owner ?? const UserRef(id: 'u-me', username: 'me'),
+    owner: owner ?? const UserRef(id: 'u-me', name: 'me'),
   );
 }
 
@@ -203,21 +204,24 @@ void main() {
       expect(api.notes['n1']!.kind, NoteKind.markdown);
     });
 
-    test('addLabelToNote adds once and is idempotent (drag onto label)', () async {
-      api.labels['l1'] = const Label(id: 'l1', name: 'work');
-      api.notes['n1'] = serverNote('n1', title: 'a');
-      await store.load();
+    test(
+      'addLabelToNote adds once and is idempotent (drag onto label)',
+      () async {
+        api.labels['l1'] = const Label(id: 'l1', name: 'work');
+        api.notes['n1'] = serverNote('n1', title: 'a');
+        await store.load();
 
-      expect(store.addLabelToNote('n1', 'l1'), isTrue);
-      expect(store.noteById('n1')!.labelIds, contains('l1'));
+        expect(store.addLabelToNote('n1', 'l1'), isTrue);
+        expect(store.noteById('n1')!.labelIds, contains('l1'));
 
-      // Dropping again is a no-op — never removes the label.
-      expect(store.addLabelToNote('n1', 'l1'), isFalse);
-      expect(store.noteById('n1')!.labelIds, contains('l1'));
+        // Dropping again is a no-op — never removes the label.
+        expect(store.addLabelToNote('n1', 'l1'), isFalse);
+        expect(store.noteById('n1')!.labelIds, contains('l1'));
 
-      await settle();
-      expect(api.notes['n1']!.labelIds, contains('l1'));
-    });
+        await settle();
+        expect(api.notes['n1']!.labelIds, contains('l1'));
+      },
+    );
 
     test('reminders serialize to UTC and clear with null', () async {
       api.notes['n1'] = serverNote('n1', title: 'a');
@@ -240,7 +244,7 @@ void main() {
         'shared-trashed',
         title: 'theirs',
         trashed: true,
-        owner: const UserRef(id: 'u-ada', username: 'ada'),
+        owner: const UserRef(id: 'u-ada', name: 'ada'),
       );
       api.notes['active'] = serverNote('active', title: 'active');
       api.notes['archived'] = serverNote(
@@ -429,36 +433,72 @@ void main() {
       await settle();
       expect(api.log.where((l) => l.contains(draft.id)), isEmpty);
     });
+
+    test('reconnect cannot overwrite a debounced checklist edit', () async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [const ChecklistItem(id: 'i1', text: 'Milk')],
+      );
+      await store.load();
+
+      api.failWith = Exception('network down');
+      await store.checkConnectionNow();
+      expect(store.offline, isTrue);
+
+      api.failWith = null;
+      store.updateNoteContent(
+        'n1',
+        items: [const ChecklistItem(id: 'i1', text: 'Milk and eggs')],
+      );
+
+      // Hold the reconnect fetch after it captured the old server note. The
+      // 400ms debounce then sends the checklist patch before that stale fetch
+      // is allowed to finish—the ordering that used to discard the edit.
+      final gate = api.fetchHistoryGate = Completer<void>();
+      final reconnect = store.checkConnectionNow();
+      await settle();
+      expect(api.notes['n1']!.items.single.text, 'Milk and eggs');
+
+      gate.complete();
+      await reconnect;
+
+      expect(store.noteById('n1')!.items.single.text, 'Milk and eggs');
+      expect(api.notes['n1']!.items.single.text, 'Milk and eggs');
+    });
   });
 
   group('labels with color + icon', () {
-    test('createLabel carries color + icon to local state and the server',
-        () async {
-      await store.load();
-      final label =
-          store.createLabel('work', color: '#1A73E8', icon: 'work');
-      // Optimistic local copy.
-      expect(store.labelById(label.id)!.color, '#1A73E8');
-      expect(store.labelById(label.id)!.icon, 'work');
-      await settle();
-      // Synced to the (fake) server.
-      expect(api.labels[label.id]!.color, '#1A73E8');
-      expect(api.labels[label.id]!.icon, 'work');
-    });
+    test(
+      'createLabel carries color + icon to local state and the server',
+      () async {
+        await store.load();
+        final label = store.createLabel('work', color: '#1A73E8', icon: 'work');
+        // Optimistic local copy.
+        expect(store.labelById(label.id)!.color, '#1A73E8');
+        expect(store.labelById(label.id)!.icon, 'work');
+        await settle();
+        // Synced to the (fake) server.
+        expect(api.labels[label.id]!.color, '#1A73E8');
+        expect(api.labels[label.id]!.icon, 'work');
+      },
+    );
 
-    test('updateLabel recolors, re-icons, and can clear back to default',
-        () async {
-      await store.load();
-      final label = store.createLabel('todo', color: '#EA4335', icon: 'flag');
-      await settle();
+    test(
+      'updateLabel recolors, re-icons, and can clear back to default',
+      () async {
+        await store.load();
+        final label = store.createLabel('todo', color: '#EA4335', icon: 'flag');
+        await settle();
 
-      store.updateLabel(label.id, name: 'todo', color: '#188038', icon: null);
-      expect(store.labelById(label.id)!.color, '#188038');
-      expect(store.labelById(label.id)!.icon, isNull);
-      await settle();
-      expect(api.labels[label.id]!.color, '#188038');
-      expect(api.labels[label.id]!.icon, isNull);
-    });
+        store.updateLabel(label.id, name: 'todo', color: '#188038', icon: null);
+        expect(store.labelById(label.id)!.color, '#188038');
+        expect(store.labelById(label.id)!.icon, isNull);
+        await settle();
+        expect(api.labels[label.id]!.color, '#188038');
+        expect(api.labels[label.id]!.icon, isNull);
+      },
+    );
   });
 
   group('sync status', () {
@@ -505,7 +545,11 @@ void main() {
 
       // Server gains a note + label out of band (e.g. another device).
       api.notes['n9'] = serverNote('n9', title: 'from elsewhere');
-      api.labels['l9'] = const Label(id: 'l9', name: 'remote', color: '#00897B');
+      api.labels['l9'] = const Label(
+        id: 'l9',
+        name: 'remote',
+        color: '#00897B',
+      );
 
       await store.refresh();
       expect(store.noteById('n9')!.title, 'from elsewhere');
@@ -636,8 +680,8 @@ void main() {
       () async {
         api.notes['n1'] = serverNote('n1', title: 'shared');
         await store.load();
-        await store.addCollaborator('n1', 'bob');
-        expect(store.noteById('n1')!.collaborators.single.username, 'bob');
+        await store.addCollaborator('n1', 'bob@example.test');
+        expect(store.noteById('n1')!.collaborators.single.name, 'bob');
 
         // A collaborator leaving (self-removal) drops the note locally.
         store.removeCollaborator('n1', 'u-me');
@@ -650,7 +694,7 @@ void main() {
       api.notes['n1'] = serverNote('n1', title: 'shared');
       await store.load();
       await expectLater(
-        store.addCollaborator('n1', 'nobody'),
+        store.addCollaborator('n1', 'nobody@example.test'),
         throwsA(isA<ApiException>()),
       );
     });

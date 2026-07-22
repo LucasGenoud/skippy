@@ -42,7 +42,8 @@ pub(super) fn version_from_row(row: &SqliteRow) -> NoteVersion {
 pub(super) fn user_from_row(row: &SqliteRow) -> User {
     User {
         id: row.get("id"),
-        username: row.get("username"),
+        name: row.get("name"),
+        email: row.get("email"),
         password_hash: row.get("password_hash"),
     }
 }

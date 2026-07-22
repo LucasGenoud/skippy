@@ -129,6 +129,8 @@ pub async fn create_note_for_user(
     let kind = body.kind.unwrap_or_else(|| KIND_TEXT.to_string());
     validate_kind(&kind)?;
     validate_reminder(&body.reminder_at)?;
+    let restored_created = validate_restore_timestamp(body.created_at.as_deref())?;
+    let restored_updated = validate_restore_timestamp(body.updated_at.as_deref())?;
     let id = match body.id {
         Some(id) if !id.trim().is_empty() => id,
         _ => new_id(),
@@ -139,6 +141,8 @@ pub async fn create_note_for_user(
         None => state.repo.min_position_for_user(user_id).await? - 1024.0,
     };
     let ts = now();
+    let created_at = restored_created.unwrap_or_else(|| ts.clone());
+    let updated_at = restored_updated.unwrap_or_else(|| ts.clone());
     let record = NoteRecord {
         id: id.clone(),
         owner_id: user_id.to_string(),
@@ -148,18 +152,27 @@ pub async fn create_note_for_user(
         items: body.items.unwrap_or_default(),
         color: body.color.unwrap_or_else(|| "default".to_string()),
         pinned: body.pinned.unwrap_or(false),
-        archived: false,
+        archived: body.archived.unwrap_or(false),
         trashed: false,
         position,
         reminder_at: body.reminder_at,
         reminder_fired_at: None,
         transcript_status: TRANSCRIPT_NONE.to_string(),
-        created_at: ts.clone(),
-        updated_at: ts,
+        created_at,
+        updated_at,
         // Set on the first edit; until then there's nothing to attribute.
         last_editor_id: None,
     };
     state.repo.insert_note(&record).await?;
+    if let Some(label_ids) = body.label_ids
+        && let Err(error) = state
+            .repo
+            .set_note_labels(&record.id, user_id, &label_ids)
+            .await
+    {
+        let _ = state.repo.delete_note(&record.id).await;
+        return Err(error.into());
+    }
     let pre_checked: Vec<String> = record
         .items
         .iter()
@@ -182,6 +195,15 @@ pub async fn create_note_for_user(
         .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(view)
+}
+
+fn validate_restore_timestamp(value: Option<&str>) -> ApiResult<Option<String>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map_err(|_| ApiError::BadRequest("invalid backup timestamp".to_string()))?;
+    Ok(Some(value.to_string()))
 }
 
 pub async fn get_note(

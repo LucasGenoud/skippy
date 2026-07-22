@@ -30,6 +30,49 @@ async fn create_defaults_and_patch() {
 }
 
 #[tokio::test]
+async fn backup_restore_can_preserve_note_timestamps() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let (status, label) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&token),
+        Some(json!({"id": "restore-label", "name": "Restored"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let created = "2020-01-02T03:04:05Z";
+    let updated = "2021-06-07T08:09:10Z";
+    let note = create_note(
+        &app,
+        &token,
+        json!({
+            "title": "restored",
+            "archived": true,
+            "label_ids": [label["id"]],
+            "created_at": created,
+            "updated_at": updated
+        }),
+    )
+    .await;
+    assert_eq!(note["created_at"], created);
+    assert_eq!(note["updated_at"], updated);
+    assert_eq!(note["archived"], true);
+    assert_eq!(note["label_ids"], json!(["restore-label"]));
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"title": "bad", "created_at": "yesterday"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn notes_are_scoped_per_user() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
@@ -53,8 +96,14 @@ async fn client_generated_ids_conflict_on_reuse() {
     let app = app().await;
     let (token, _) = register(&app, "ada").await;
     create_note(&app, &token, json!({"id": "my-id", "title": "one"})).await;
-    let (status, _) =
-        send(&app, "POST", "/api/notes", Some(&token), Some(json!({"id": "my-id"}))).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"id": "my-id"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CONFLICT);
 }
 
@@ -93,8 +142,14 @@ async fn checklist_items_roundtrip_and_kind_validation() {
     assert_eq!(updated["items"], toggled);
 
     // Unknown kinds are rejected on create and patch.
-    let (status, _) =
-        send(&app, "POST", "/api/notes", Some(&token), Some(json!({"kind": "drawing"}))).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"kind": "drawing"})),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = send(
         &app,
@@ -169,13 +224,25 @@ async fn reorder_renumbers_only_accessible_notes() {
     let ada_secret = a["id"].as_str().unwrap();
 
     // Newest-first by default: c, b, a. Reorder to a, b, c.
-    let order: Vec<&str> =
-        vec![a["id"].as_str().unwrap(), b["id"].as_str().unwrap(), c["id"].as_str().unwrap()];
-    let (status, _) =
-        send(&app, "POST", "/api/notes/reorder", Some(&ada), Some(json!({"ids": order}))).await;
+    let order: Vec<&str> = vec![
+        a["id"].as_str().unwrap(),
+        b["id"].as_str().unwrap(),
+        c["id"].as_str().unwrap(),
+    ];
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes/reorder",
+        Some(&ada),
+        Some(json!({"ids": order})),
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let titles: Vec<String> =
-        list_notes(&app, &ada).await.iter().map(|n| n["title"].as_str().unwrap().to_string()).collect();
+    let titles: Vec<String> = list_notes(&app, &ada)
+        .await
+        .iter()
+        .map(|n| n["title"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(titles, vec!["a", "b", "c"]);
 
     // Bob smuggling Ada's note id into his reorder changes nothing.
@@ -217,15 +284,27 @@ async fn trash_and_purge() {
     // With a cutoff in the future the note is swept.
     let future = (chrono::Utc::now() + chrono::Duration::days(8)).to_rfc3339();
     let purged = app_state.repo.purge_trash_before(&future).await.unwrap();
-    assert_eq!(purged.iter().map(|p| p.note_id.as_str()).collect::<Vec<_>>(), vec![id]);
+    assert_eq!(
+        purged
+            .iter()
+            .map(|p| p.note_id.as_str())
+            .collect::<Vec<_>>(),
+        vec![id]
+    );
     assert_eq!(list_notes(&app, &token).await.len(), 0);
 
     // Restore path: trash then untrash clears trashed_at (no accidental purge).
     let note = create_note(&app, &token, json!({"title": "kept"})).await;
     let id = note["id"].as_str().unwrap();
     for patch in [json!({"trashed": true}), json!({"trashed": false})] {
-        let (status, _) =
-            send(&app, "PATCH", &format!("/api/notes/{id}"), Some(&token), Some(patch)).await;
+        let (status, _) = send(
+            &app,
+            "PATCH",
+            &format!("/api/notes/{id}"),
+            Some(&token),
+            Some(patch),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
     }
     let purged = app_state.repo.purge_trash_before(&future).await.unwrap();
@@ -245,7 +324,13 @@ async fn purging_trash_deletes_attachment_blobs() {
     let (status, attachment) = upload(&app, &token, id, "image/png", b"pixels").await;
     assert_eq!(status, StatusCode::CREATED);
     let attachment_id = attachment["id"].as_str().unwrap();
-    assert!(app_state.files.read(&user_id, attachment_id).await.is_some());
+    assert!(
+        app_state
+            .files
+            .read(&user_id, attachment_id)
+            .await
+            .is_some()
+    );
 
     let (status, _) = send(
         &app,
@@ -258,15 +343,22 @@ async fn purging_trash_deletes_attachment_blobs() {
     assert_eq!(status, StatusCode::OK);
 
     let future = (chrono::Utc::now() + chrono::Duration::days(8)).to_rfc3339();
-    assert!(sticky_notes_server::handlers::purge_trash(&app_state, &future).await.is_ok());
+    assert!(
+        sticky_notes_server::handlers::purge_trash(&app_state, &future)
+            .await
+            .is_ok()
+    );
 
     assert_eq!(list_notes(&app, &token).await.len(), 0);
     assert!(
-        app_state.files.read(&user_id, attachment_id).await.is_none(),
+        app_state
+            .files
+            .read(&user_id, attachment_id)
+            .await
+            .is_none(),
         "purging a trashed note must delete its blobs"
     );
 }
-
 
 #[tokio::test]
 async fn markdown_kind_roundtrips_and_bad_kinds_reject() {
@@ -314,4 +406,3 @@ async fn markdown_kind_roundtrips_and_bad_kinds_reject() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
-

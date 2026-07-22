@@ -15,13 +15,13 @@ pub use std::sync::Arc;
 
 pub use axum::Router;
 pub use axum::body::Body;
-pub use axum::http::{header, Request, StatusCode};
+pub use axum::http::{Request, StatusCode, header};
 pub use http_body_util::BodyExt;
-pub use serde_json::{json, Value};
+pub use serde_json::{Value, json};
 pub use tower::ServiceExt;
 
 pub use sticky_notes_server::search::{SearchService, SqliteVectorIndex};
-pub use sticky_notes_server::{build_app, AppState};
+pub use sticky_notes_server::{AppState, build_app};
 
 /// Fixed signing key for the test app so tests can mint/forge file signatures
 /// deterministically (production uses a random, persisted secret).
@@ -69,7 +69,11 @@ impl TextEmbedder for HashEmbedder {
 }
 
 pub async fn state_with_search() -> AppState {
-    let index = Arc::new(SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64").await.unwrap());
+    let index = Arc::new(
+        SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64")
+            .await
+            .unwrap(),
+    );
     state()
         .await
         .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
@@ -128,17 +132,22 @@ pub async fn send(
     (status, value)
 }
 
+pub fn test_email(name: &str) -> String {
+    format!("{name}@example.test")
+}
+
 /// Registers a user and returns their (token, user_id).
-pub async fn register(app: &Router, username: &str) -> (String, String) {
+pub async fn register(app: &Router, name: &str) -> (String, String) {
+    let email = test_email(name);
     let (status, body) = send(
         app,
         "POST",
         "/api/auth/register",
         None,
-        Some(json!({"username": username, "password": "hunter22"})),
+        Some(json!({"name": name, "email": email, "password": "hunter22"})),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "register {username}: {body}");
+    assert_eq!(status, StatusCode::CREATED, "register {name}: {body}");
     (
         body["token"].as_str().unwrap().to_string(),
         body["user"]["id"].as_str().unwrap().to_string(),
@@ -156,7 +165,6 @@ pub async fn list_notes(app: &Router, token: &str) -> Vec<Value> {
     assert_eq!(status, StatusCode::OK);
     body.as_array().unwrap().clone()
 }
-
 
 // ---------------------------------------------------------------------------
 // Multipart upload helpers
@@ -196,7 +204,6 @@ pub async fn upload(
     let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, value)
 }
-
 
 // ---------------------------------------------------------------------------
 // LLM fakes
@@ -238,7 +245,11 @@ impl Llm for FakeLlm {
     ) -> anyhow::Result<String> {
         self.calls.lock().unwrap().push(messages);
         let mut replies = self.replies.lock().unwrap();
-        Ok(if replies.len() > 1 { replies.remove(0) } else { replies[0].clone() })
+        Ok(if replies.len() > 1 {
+            replies.remove(0)
+        } else {
+            replies[0].clone()
+        })
     }
 
     async fn stream(
@@ -271,9 +282,7 @@ impl Llm for FailLlm {
     }
 }
 
-pub async fn state_with_llm(
-    reply: &str,
-) -> (AppState, LlmCalls) {
+pub async fn state_with_llm(reply: &str) -> (AppState, LlmCalls) {
     let (llm, calls) = FakeLlm::new(reply);
     let state = state()
         .await
@@ -299,8 +308,14 @@ pub async fn configure_llm(app: &Router, token: &str) {
 }
 
 pub async fn make_label(app: &Router, token: &str, name: &str) -> String {
-    let (status, body) =
-        send(app, "POST", "/api/labels", Some(token), Some(json!({"name": name}))).await;
+    let (status, body) = send(
+        app,
+        "POST",
+        "/api/labels",
+        Some(token),
+        Some(json!({"name": name})),
+    )
+    .await;
     assert_eq!(status, StatusCode::CREATED, "create label {name}: {body}");
     body["id"].as_str().unwrap().to_string()
 }

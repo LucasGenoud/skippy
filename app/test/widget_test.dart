@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,7 @@ import 'package:skippy/theme.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/animated_checklist.dart';
 import 'package:skippy/widgets/app_drawer.dart';
+import 'package:skippy/widgets/home_top_bar.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
@@ -126,7 +128,7 @@ void main() {
         title: 'x',
       ).copyWith(reminderAt: DateTime(2030, 5, 1, 9));
       api.notes['n1'] = api.notes['n1']!.copyWith(
-        collaborators: [const UserRef(id: 'u2', username: 'bob')],
+        collaborators: [const UserRef(id: 'u2', name: 'bob')],
       );
       await store.load();
       await tester.pumpWidget(
@@ -139,6 +141,74 @@ void main() {
       expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
       expect(find.textContaining('2030'), findsOneWidget);
     });
+
+    testWidgets('shared notes show their external owner with an ellipsis', (
+      tester,
+    ) async {
+      api.notes['n1'] =
+          serverNote(
+            'n1',
+            title: 'Shared note',
+            owner: const UserRef(id: 'u-owner', name: 'abcdefghijklmnopq'),
+          ).copyWith(
+            collaborators: [const UserRef(id: 'u-me', name: 'me')],
+          );
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+        ),
+      );
+
+      expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
+      expect(find.text('abcdefghijklmno…'), findsOneWidget);
+      expect(find.byTooltip('Shared by abcdefghijklmnopq'), findsOneWidget);
+    });
+
+    testWidgets(
+      'desktop hover reveals the reserved note action footer',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Desktop actions',
+          content: 'Body',
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+
+        final actions = find.byKey(const ValueKey('note-actions-n1'));
+        expect(tester.widget<AnimatedOpacity>(actions).opacity, 0);
+        final cardBottom = tester.getRect(find.byType(NoteTile)).bottom;
+        final titleBottom = tester.getRect(find.text('Desktop actions')).bottom;
+        expect(cardBottom - titleBottom, greaterThanOrEqualTo(48));
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.widget<AnimatedOpacity>(actions).opacity, 1);
+        expect(find.byTooltip('Add reminder'), findsOneWidget);
+        expect(find.byTooltip('Collaborators'), findsOneWidget);
+        expect(find.byTooltip('Note color'), findsOneWidget);
+        expect(find.byTooltip('Add image'), findsOneWidget);
+        expect(find.byTooltip('Delete note'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Delete note'));
+        await tester.pump();
+        expect(store.noteById('n1')!.trashed, isTrue);
+        await flushTimers(tester);
+      },
+    );
   });
 
   group('AnimatedMasonry drag reorder', () {
@@ -507,6 +577,47 @@ void main() {
     );
 
     testWidgets(
+      'a long checklist row returns to its start after focus leaves',
+      (tester) async {
+        final longItem = List.filled(
+          12,
+          'This is a very long checklist item that cannot fit on one row',
+        ).join(' ');
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [ChecklistItem(id: 'i1', text: longItem)],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final row = find.widgetWithText(TextField, longItem);
+        final editable = tester.widget<EditableText>(
+          find.descendant(of: row, matching: find.byType(EditableText)),
+        );
+        final horizontalScroll = editable.scrollController!;
+        await tester.tap(row);
+        expect(editable.focusNode.hasFocus, isTrue);
+        tester.testTextInput.enterText('$longItem with more text');
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(horizontalScroll.position.maxScrollExtent, greaterThan(0));
+        horizontalScroll.jumpTo(horizontalScroll.position.maxScrollExtent);
+        expect(horizontalScroll.offset, greaterThan(0));
+
+        await tester.tap(find.widgetWithText(TextField, 'Title'));
+        await tester.pump();
+        await tester.pump();
+        expect(horizontalScroll.offset, 0);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
       'backspace on an empty row focuses the previous one with a collapsed '
       'caret at the end (no select-all)',
       (tester) async {
@@ -865,6 +976,22 @@ void main() {
   });
 
   group('home screen layout', () {
+    testWidgets('wide layout adds space above the top bar and quick add', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pump();
+
+      final topBar = tester.getRect(find.byType(HomeTopBar));
+      final quickAdd = tester.getRect(find.byType(QuickAddBar));
+      expect(topBar.top, 12);
+      expect(quickAdd.top - topBar.bottom, greaterThanOrEqualTo(32));
+    });
+
     testWidgets(
       'note FABs stay out of the Scaffold slot so snackbars hug the bottom',
       (tester) async {
@@ -896,6 +1023,44 @@ void main() {
         await flushTimers(tester);
       },
     );
+
+    testWidgets('notifications with actions still expire automatically', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+
+      showAppSnack('Note moved to Trash', actionLabel: 'Undo', onAction: () {});
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      final snack = tester.widget<SnackBar>(find.byType(SnackBar));
+      expect(snack.persist, isFalse);
+
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('top-bar theme action cycles system, light, and dark', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+
+      expect(find.byTooltip('Light theme'), findsOneWidget);
+      await tester.tap(find.byTooltip('Light theme'));
+      await tester.pump();
+      expect(find.byTooltip('Dark theme'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Dark theme'));
+      await tester.pump();
+      expect(find.byTooltip('System theme'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('System theme'));
+      await tester.pump();
+      expect(find.byTooltip('Light theme'), findsOneWidget);
+      await flushTimers(tester);
+    });
 
     testWidgets('top bar and FABs respect device safe-area insets', (
       tester,
@@ -1352,7 +1517,7 @@ void main() {
       api.notes['n1'] = serverNote(
         'n1',
         title: 'a',
-        owner: const UserRef(id: 'someone-else', username: 'x'),
+        owner: const UserRef(id: 'someone-else', name: 'x'),
       );
       await store.load();
       await tester.pumpWidget(dragHarness(store));
