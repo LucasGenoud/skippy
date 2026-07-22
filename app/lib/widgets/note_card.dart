@@ -41,6 +41,7 @@ class NoteTile extends StatefulWidget {
 
 class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
+  bool _menuOpen = false;
 
   Future<void> _editReminder() async {
     final store = context.read<NotesStore>();
@@ -196,6 +197,10 @@ class _NoteTileState extends State<NoteTile> {
               ? scheme.outlineVariant.withValues(alpha: 0.5)
               : Colors.transparent);
     final desktopActions = !note.trashed && !isTouchPrimaryPlatform;
+    // The popup lives in an overlay, so a pointer travelling from the card to
+    // its menu triggers MouseRegion.onExit. Keep the footer visible until that
+    // menu closes instead of making the controls vanish underneath the cursor.
+    final actionsVisible = _hovered || _menuOpen;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -248,7 +253,7 @@ class _NoteTileState extends State<NoteTile> {
                 if (desktopActions)
                   _NoteActions(
                     note: note,
-                    visible: _hovered,
+                    visible: actionsVisible,
                     canDelete: context.read<NotesStore>().canTrash(note.id),
                     onReminder: _editReminder,
                     onShare: _share,
@@ -257,9 +262,11 @@ class _NoteTileState extends State<NoteTile> {
                     onImage: _addImage,
                     onArchive: _archive,
                     onDelete: _delete,
+                    onMenuOpened: () => setState(() => _menuOpen = true),
+                    onMenuClosed: () => setState(() => _menuOpen = false),
                   ),
                 if (desktopActions)
-                  _NoteFooterStamp(note: note, visible: !_hovered),
+                  _NoteFooterStamp(note: note, visible: !actionsVisible),
               ],
             ),
           ),
@@ -637,6 +644,8 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onImage;
   final VoidCallback onArchive;
   final VoidCallback onDelete;
+  final VoidCallback onMenuOpened;
+  final VoidCallback onMenuClosed;
 
   const _NoteActions({
     required this.note,
@@ -649,6 +658,8 @@ class _NoteActions extends StatelessWidget {
     required this.onImage,
     required this.onArchive,
     required this.onDelete,
+    required this.onMenuOpened,
+    required this.onMenuClosed,
   });
 
   Widget _button({
@@ -727,12 +738,10 @@ class _NoteActions extends StatelessWidget {
                 PopupMenuButton<String>(
                   tooltip: 'More note options',
                   padding: EdgeInsets.zero,
-                  child: const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: Center(child: Icon(Icons.more_horiz, size: 19)),
-                  ),
+                  onOpened: onMenuOpened,
+                  onCanceled: onMenuClosed,
                   onSelected: (value) {
+                    onMenuClosed();
                     if (value == 'share') onShare();
                     if (value == 'delete') onDelete();
                   },
@@ -765,6 +774,11 @@ class _NoteActions extends StatelessWidget {
                       ),
                     ),
                   ],
+                  child: const SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Center(child: Icon(Icons.more_vert, size: 19)),
+                  ),
                 ),
               ],
             ),

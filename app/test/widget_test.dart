@@ -203,11 +203,17 @@ void main() {
         expect(find.byTooltip('Add image'), findsOneWidget);
         expect(find.byTooltip('Archive note'), findsOneWidget);
         expect(find.byTooltip('More note options'), findsOneWidget);
+        expect(find.byIcon(Icons.more_vert), findsOneWidget);
 
         await tester.tap(find.byTooltip('More note options'));
         await tester.pumpAndSettle();
         expect(find.text('Share'), findsOneWidget);
         expect(find.text('Move to Trash'), findsOneWidget);
+        // Moving into the menu makes the card lose hover, but its action row
+        // remains visible until the menu closes.
+        await mouse.moveTo(Offset.zero);
+        await tester.pump();
+        expect(tester.widget<AnimatedOpacity>(actions).opacity, 1);
         await tester.tap(find.text('Move to Trash'));
         await tester.pump();
         expect(store.noteById('n1')!.trashed, isTrue);
