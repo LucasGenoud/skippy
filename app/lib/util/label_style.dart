@@ -63,3 +63,7 @@ IconData labelIcon(Label label) => labelIconFor(label.icon);
 /// it has no custom colour or the stored hex is malformed.
 Color labelColor(Label label, Color fallback) =>
     PaletteEntry.hexToColor(label.color) ?? fallback;
+
+/// A label's resolved colour, or null when it has none — for callers that want
+/// to fall back to an ambient/selection-aware colour rather than a fixed one.
+Color? labelColorOrNull(Label label) => PaletteEntry.hexToColor(label.color);

@@ -42,14 +42,16 @@ class AppDrawer extends StatelessWidget {
         (
           ViewSelection(NoteView.label, label.id),
           NavigationDrawerDestination(
-            // The label's icon (custom or default), tinted with its colour.
+            // The label's icon + colour (matching its chips). A null colour
+            // falls back to the drawer's selection-aware theming; the default
+            // (no custom icon) keeps the outline/filled pair.
             icon: Icon(
-              labelIcon(label),
-              color: labelColor(label, Theme.of(context).colorScheme.onSurfaceVariant),
+              label.icon != null ? labelIcon(label) : Icons.label_outline,
+              color: labelColorOrNull(label),
             ),
             selectedIcon: Icon(
-              labelIcon(label),
-              color: labelColor(label, Theme.of(context).colorScheme.primary),
+              label.icon != null ? labelIcon(label) : Icons.label,
+              color: labelColorOrNull(label),
             ),
             label: Text(label.name, overflow: TextOverflow.ellipsis),
           ),
@@ -225,8 +227,15 @@ class AppSidebar extends StatelessWidget {
               ),
               for (final label in labels)
                 _SidebarItem(
-                  icon: Icons.label_outline,
-                  selectedIcon: Icons.label,
+                  // Reuse the label's own icon + colour (matching its chips);
+                  // a custom icon has no filled variant so it's used for both
+                  // states, while the default keeps the outline/filled pair.
+                  icon: label.icon != null
+                      ? labelIcon(label)
+                      : Icons.label_outline,
+                  selectedIcon:
+                      label.icon != null ? labelIcon(label) : Icons.label,
+                  iconColor: labelColorOrNull(label),
                   label: label.name,
                   isSelected:
                       selection == ViewSelection(NoteView.label, label.id),
@@ -278,9 +287,9 @@ class AppSidebar extends StatelessWidget {
   void _dropOnLabel(BuildContext context, String noteId, Label label) {
     final store = context.read<NotesStore>();
     if (store.addLabelToNote(noteId, label.id)) {
-      showAppSnack('Labelled "${label.name}"', icon: Icons.label_outline);
+      showAppSnack('Labelled "${label.name}"', icon: labelIcon(label));
     } else {
-      showAppSnack('Already labelled "${label.name}"', icon: Icons.label);
+      showAppSnack('Already labelled "${label.name}"', icon: labelIcon(label));
     }
   }
 
@@ -319,6 +328,11 @@ class _SidebarItem extends StatelessWidget {
   final bool isOpen;
   final VoidCallback onTap;
 
+  /// Overrides the icon's colour (a label's custom colour). Null keeps the
+  /// selection-aware default. Ignored while the item is an active drop target,
+  /// so the drop highlight stays unambiguous.
+  final Color? iconColor;
+
   /// When set, the item becomes a drop target for a note dragged from the
   /// grid (the masonry drag carries the note id as `Draggable<String>` data).
   final ValueChanged<String>? onAcceptNote;
@@ -334,6 +348,7 @@ class _SidebarItem extends StatelessWidget {
     required this.isSelected,
     required this.isOpen,
     required this.onTap,
+    this.iconColor,
     this.onAcceptNote,
     this.willAcceptNote,
   });
@@ -398,7 +413,9 @@ class _SidebarItem extends StatelessWidget {
                         child: Icon(
                           isSelected ? selectedIcon : icon,
                           size: 24,
-                          color: foreground,
+                          // A label's custom colour wins, except while it's a
+                          // drop target (keep the highlight legible).
+                          color: dropTarget ? foreground : (iconColor ?? foreground),
                         ),
                       ),
                       const SizedBox(width: 12),
