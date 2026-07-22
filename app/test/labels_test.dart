@@ -86,5 +86,78 @@ void main() {
       expect(label.color, '#1A73E8');
       expect(label.icon, 'work');
     });
+
+    testWidgets('an empty name shows an error and keeps the dialog open', (
+      tester,
+    ) async {
+      final api = FakeApi();
+      final store = NotesStore(api: api, currentUserId: 'u');
+      addTearDown(store.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<NotesStore>.value(
+            value: store,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: ElevatedButton(
+                  onPressed: () => LabelEditorDialog.show(context, null),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Save with a blank name → inline error, no label created, still open.
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a name'), findsOneWidget);
+      expect(store.labels, isEmpty);
+      expect(find.text('New label'), findsOneWidget); // dialog still up
+
+      // Typing clears the error; a valid save then works.
+      await tester.enterText(find.byType(TextField).first, 'Work');
+      await tester.pump();
+      expect(find.text('Enter a name'), findsNothing);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(store.labels.single.name, 'Work');
+    });
+
+    testWidgets('a duplicate name is rejected with an error', (tester) async {
+      final api = FakeApi();
+      final store = NotesStore(api: api, currentUserId: 'u');
+      addTearDown(store.dispose);
+      store.createLabel('Work'); // existing label
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<NotesStore>.value(
+            value: store,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: ElevatedButton(
+                  onPressed: () => LabelEditorDialog.show(context, null),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // Case-insensitive clash → error, no second label.
+      await tester.enterText(find.byType(TextField).first, 'work');
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(find.text('A label named "work" already exists'), findsOneWidget);
+      expect(store.labels, hasLength(1));
+    });
   });
 }

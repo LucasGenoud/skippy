@@ -230,6 +230,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
   late final TextEditingController _hex;
   String? _color; // hex or null (theme default)
   String? _icon; // icon key or null (default glyph)
+  String? _nameError; // shown under the Name field once invalid
 
   bool get _isNew => widget.labelId == null;
 
@@ -255,7 +256,11 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
   void _save() {
     final store = context.read<NotesStore>();
     final name = _name.text.trim();
-    if (name.isEmpty) return;
+    final error = _validate(store, name);
+    if (error != null) {
+      setState(() => _nameError = error);
+      return;
+    }
     if (_isNew) {
       store.createLabel(name, color: _color, icon: _icon);
     } else {
@@ -267,6 +272,19 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
       );
     }
     Navigator.of(context).pop();
+  }
+
+  /// The name field's problem, or null when it's valid: empty, or a duplicate
+  /// of another label (the server rejects duplicates, so catch it up front).
+  String? _validate(NotesStore store, String name) {
+    if (name.isEmpty) return 'Enter a name';
+    final clash = store.labels.any(
+      (l) =>
+          l.id != widget.labelId &&
+          l.name.toLowerCase() == name.toLowerCase(),
+    );
+    if (clash) return 'A label named "$name" already exists';
+    return null;
   }
 
   @override
@@ -285,11 +303,18 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
                 controller: _name,
                 autofocus: _isNew,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Name',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  // Non-null errorText turns the border + label red and shows
+                  // the message underneath (Material's standard error state).
+                  errorText: _nameError,
                 ),
+                // Clear the error as soon as they start correcting it.
+                onChanged: (_) {
+                  if (_nameError != null) setState(() => _nameError = null);
+                },
                 onSubmitted: (_) => _save(),
               ),
               const SizedBox(height: 20),
