@@ -76,6 +76,11 @@ class NotesStore extends ChangeNotifier {
   bool _reloadPending = false;
   bool _restoringBackup = false;
 
+  /// Increments whenever a local write enters the queue. A remote fetch that
+  /// started before this revision changed must never replace optimistic state,
+  /// even if the write drains before the response is applied.
+  int _localWriteRevision = 0;
+
   static const _connectionProbeInterval = Duration(seconds: 2);
   static const _syncOperationTimeout = Duration(seconds: 5);
 
@@ -189,7 +194,7 @@ class NotesStore extends ChangeNotifier {
           labelIds: {for (final oldId in backupNote.labelIds) ?labelMap[oldId]},
           owner: currentUserId == null
               ? null
-              : UserRef(id: currentUserId!, username: ''),
+              : UserRef(id: currentUserId!, name: ''),
         );
 
         var createdOnServer = false;
@@ -296,24 +301,41 @@ class NotesStore extends ChangeNotifier {
 
   Future<void> load() async {
     await _hydrate();
-    try {
-      final notes = await api.fetchNotes();
-      final labels = await api.fetchLabels();
-      final history = await api.fetchChecklistHistory();
-      // Don't clobber local state that still has unsynced changes.
-      if (!_hasLocalChangesInFlight) {
-        _notes = notes..sort((a, b) => a.position.compareTo(b.position));
-        _labels = labels;
-        _checklistHistory = history;
-      } else {
-        _reloadPending = true;
+    var fetchAgain = false;
+    do {
+      fetchAgain = false;
+      final startedWithLocalChanges = _hasLocalChangesInFlight;
+      final revisionAtStart = _localWriteRevision;
+      try {
+        final notes = await api.fetchNotes();
+        final labels = await api.fetchLabels();
+        final history = await api.fetchChecklistHistory();
+        final writesChangedDuringFetch = revisionAtStart != _localWriteRevision;
+        // A write can enter and leave the queue entirely while these requests
+        // are in flight. Checking only the queue at the end would then apply a
+        // stale pre-write snapshot over the optimistic checklist edit.
+        if (!startedWithLocalChanges &&
+            !writesChangedDuringFetch &&
+            !_hasLocalChangesInFlight) {
+          _notes = notes..sort((a, b) => a.position.compareTo(b.position));
+          _labels = labels;
+          _checklistHistory = history;
+          _reloadPending = false;
+        } else if (_hasLocalChangesInFlight) {
+          _reloadPending = true;
+        } else {
+          // The writes drained while fetching. Pull once more now so this load
+          // completes with the server's post-write state.
+          _reloadPending = false;
+          fetchAgain = true;
+        }
+        offline = false;
+      } catch (_) {
+        offline = true;
+        _retryTimer?.cancel();
+        _retryTimer = Timer(const Duration(seconds: 5), load);
       }
-      offline = false;
-    } catch (_) {
-      offline = true;
-      _retryTimer?.cancel();
-      _retryTimer = Timer(const Duration(seconds: 5), load);
-    }
+    } while (fetchAgain);
     loading = false;
     notifyListeners();
   }
@@ -552,7 +574,7 @@ class NotesStore extends ChangeNotifier {
       updatedAt: now,
       owner: currentUserId == null
           ? null
-          : UserRef(id: currentUserId!, username: ''),
+          : UserRef(id: currentUserId!, name: ''),
     );
     _notes.insert(0, note);
     _drafts.add(note.id);
@@ -922,7 +944,7 @@ class NotesStore extends ChangeNotifier {
 
   /// Await-based (not queued): the dialog wants immediate success/failure.
   /// Throws [ApiException] with a friendly `serverMessage` on rejection.
-  Future<void> addCollaborator(String noteId, String username) async {
+  Future<void> addCollaborator(String noteId, String email) async {
     // Sharing needs the note on the server first.
     final timer = _saveDebounce.remove(noteId);
     timer?.cancel();
@@ -932,7 +954,7 @@ class NotesStore extends ChangeNotifier {
       _enqueueContentPatch(noteId);
     }
     await _drainQueue();
-    final updated = await api.addCollaborator(noteId, username);
+    final updated = await api.addCollaborator(noteId, email);
     final local = noteById(noteId);
     if (local != null) {
       _replace(local.copyWith(collaborators: updated.collaborators));
@@ -1192,6 +1214,7 @@ class NotesStore extends ChangeNotifier {
   // Sync queue
 
   void _enqueue(PendingOp op) {
+    _localWriteRevision++;
     _queue.add(op);
     _persistNow();
     _flush();

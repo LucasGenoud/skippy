@@ -6,13 +6,21 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize)]
 pub struct UserPublic {
     pub id: String,
-    pub username: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AccountPublic {
+    pub id: String,
+    pub name: String,
+    pub email: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct User {
     pub id: String,
-    pub username: String,
+    pub name: String,
+    pub email: String,
     pub password_hash: String,
 }
 
@@ -20,21 +28,48 @@ impl User {
     pub fn public(&self) -> UserPublic {
         UserPublic {
             id: self.id.clone(),
-            username: self.username.clone(),
+            name: self.name.clone(),
+        }
+    }
+
+    pub fn account(&self) -> AccountPublic {
+        AccountPublic {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            email: self.email.clone(),
         }
     }
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Credentials {
-    pub username: String,
+pub struct RegisterRequest {
+    pub name: String,
+    pub email: String,
     pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAccountRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub current_password: Option<String>,
+    #[serde(default)]
+    pub new_password: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
-    pub user: UserPublic,
+    pub user: AccountPublic,
 }
 
 // ---------------------------------------------------------------------------
@@ -330,5 +365,5 @@ pub struct LabelPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct AddCollaborator {
-    pub username: String,
+    pub email: String,
 }

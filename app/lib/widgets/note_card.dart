@@ -3,14 +3,19 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note.dart';
 import '../screens/editor_screen.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/mime.dart';
+import '../util/snack.dart';
+import 'color_picker.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
+import 'share_dialog.dart';
 import 'transcribing_indicator.dart';
 import '../util/highlight.dart';
 import '../util/label_style.dart';
@@ -36,6 +41,128 @@ class NoteTile extends StatefulWidget {
 class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
 
+  Future<void> _editReminder() async {
+    final store = context.read<NotesStore>();
+    final note = store.noteById(widget.note.id) ?? widget.note;
+    if (note.reminderAt != null) {
+      final action = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Change reminder'),
+                onTap: () => Navigator.pop(context, 'change'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.alarm_off),
+                title: const Text('Remove reminder'),
+                onTap: () => Navigator.pop(context, 'remove'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (action == 'remove') {
+        store.setReminder(note.id, null);
+        return;
+      }
+      if (action != 'change') return;
+    }
+
+    final now = DateTime.now();
+    final initial =
+        note.reminderAt ?? DateTime(now.year, now.month, now.day + 1, 9);
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: now.subtract(const Duration(days: 1)),
+      lastDate: now.add(const Duration(days: 365 * 5)),
+      helpText: 'Remind me on',
+    );
+    if (date == null || !mounted) return;
+    final use24h = context.read<SettingsStore>().use24hTime;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+      helpText: 'Remind me at',
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
+        child: child!,
+      ),
+    );
+    if (time == null) return;
+    store.setReminder(
+      note.id,
+      DateTime(date.year, date.month, date.day, time.hour, time.minute),
+    );
+  }
+
+  Future<void> _share() async {
+    final note = context.read<NotesStore>().noteById(widget.note.id);
+    if (note == null) return;
+    if (note.isEmpty) {
+      showAppSnack('Add some content before sharing');
+      return;
+    }
+    await ShareDialog.show(context, note.id);
+  }
+
+  void _pickColor() {
+    final store = context.read<NotesStore>();
+    ColorPickerSheet.show(
+      context,
+      selected: () => store.noteById(widget.note.id)?.color ?? 'default',
+      onSelect: (color) => store.setColor(widget.note.id, color),
+    );
+  }
+
+  Future<void> _addImage() async {
+    final store = context.read<NotesStore>();
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > maxUploadBytes) {
+        showAppSnack(
+          'Files are limited to 25 MB',
+          icon: Icons.error_outline,
+          kind: SnackKind.warning,
+        );
+        return;
+      }
+      await store.uploadFile(
+        widget.note.id,
+        bytes,
+        picked.mimeType ?? mimeFromName(picked.name),
+        picked.name,
+      );
+    } catch (_) {
+      showAppSnack(
+        "Couldn't upload the image",
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
+    }
+  }
+
+  void _delete() {
+    final store = context.read<NotesStore>();
+    if (!store.canTrash(widget.note.id)) return;
+    store.moveToTrash(widget.note.id);
+    showAppSnack(
+      'Note moved to Trash',
+      icon: Icons.delete_outline,
+      kind: SnackKind.danger,
+      actionLabel: 'Undo',
+      onAction: () => store.restoreFromTrash(widget.note.id),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
@@ -52,6 +179,7 @@ class _NoteTileState extends State<NoteTile> {
         : (_hovered
               ? scheme.outlineVariant.withValues(alpha: 0.5)
               : Colors.transparent);
+    final desktopActions = !note.trashed && !isTouchPrimaryPlatform;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -95,8 +223,23 @@ class _NoteTileState extends State<NoteTile> {
             // body (markdown parse, image resolve).
             child: Stack(
               children: [
-                _NoteCardContent(note: note, query: widget.query),
+                _NoteCardContent(
+                  note: note,
+                  query: widget.query,
+                  reserveActions: desktopActions,
+                ),
                 _PinButton(note: note, hovered: _hovered),
+                if (desktopActions)
+                  _NoteActions(
+                    note: note,
+                    visible: _hovered,
+                    canDelete: context.read<NotesStore>().canTrash(note.id),
+                    onReminder: _editReminder,
+                    onShare: _share,
+                    onColor: _pickColor,
+                    onImage: _addImage,
+                    onDelete: _delete,
+                  ),
               ],
             ),
           ),
@@ -108,9 +251,16 @@ class _NoteTileState extends State<NoteTile> {
 }
 
 class _NoteCardContent extends StatelessWidget {
+  static const _maxSharedOwnerCharacters = 16;
+
   final Note note;
   final String query;
-  const _NoteCardContent({required this.note, this.query = ''});
+  final bool reserveActions;
+  const _NoteCardContent({
+    required this.note,
+    this.query = '',
+    this.reserveActions = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +269,7 @@ class _NoteCardContent extends StatelessWidget {
     final store = context.read<NotesStore>();
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final sharedBy = _sharedByLabel(note, store.currentUserId);
     // Joined with an unprintable separator (label names may contain spaces)
     // because select needs a value with a meaningful == — a freshly built
     // List never equals the previous one.
@@ -178,7 +329,7 @@ class _NoteCardContent extends StatelessWidget {
               16,
               images.isNotEmpty || hasFooter
                   ? 0
-                  : (firstLinkUrl != null ? 12 : 16),
+                  : (firstLinkUrl != null ? 12 : (reserveActions ? 4 : 16)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,7 +459,7 @@ class _NoteCardContent extends StatelessWidget {
               store: store,
               borderRadius: BorderRadius.vertical(
                 top: hasTextBlock ? Radius.zero : kRadiusCorner,
-                bottom: hasFooter || firstLinkUrl != null
+                bottom: hasFooter || firstLinkUrl != null || reserveActions
                     ? Radius.zero
                     : kRadiusCorner,
               ),
@@ -320,7 +471,7 @@ class _NoteCardContent extends StatelessWidget {
               16,
               hasTextBlock || images.isNotEmpty ? 12 : 16,
               16,
-              firstLinkUrl != null ? 12 : 16,
+              firstLinkUrl != null ? 12 : (reserveActions ? 4 : 16),
             ),
             child: Wrap(
               spacing: 6,
@@ -337,11 +488,32 @@ class _NoteCardContent extends StatelessWidget {
                   _LabelChip(name: '+${labels.length - 3}'),
                 if (note.isShared)
                   Tooltip(
-                    message: _sharedTooltip(note),
-                    child: Icon(
-                      Icons.people_alt_outlined,
-                      size: 16,
-                      color: scheme.onSurfaceVariant,
+                    message: _sharedTooltip(note, sharedBy: sharedBy),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 160),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.people_alt_outlined,
+                            size: 16,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          if (sharedBy != null) ...[
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                sharedBy,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -355,18 +527,31 @@ class _NoteCardContent extends StatelessWidget {
           LinkPreviewCard(
             url: firstLinkUrl,
             topDivider: true,
-            borderRadius: const BorderRadius.vertical(
-              bottom: kRadiusCorner,
-            ),
+            borderRadius: reserveActions
+                ? BorderRadius.zero
+                : const BorderRadius.vertical(bottom: kRadiusCorner),
           ),
+        if (reserveActions) const SizedBox(height: 48),
       ],
     );
   }
 
-  String _sharedTooltip(Note note) {
+  String? _sharedByLabel(Note note, String? currentUserId) {
+    if (note.isOwnedBy(currentUserId)) return null;
+    final name = note.owner?.name.trim() ?? '';
+    if (name.isEmpty) return null;
+    final characters = name.runes.toList();
+    if (characters.length <= _maxSharedOwnerCharacters) return name;
+    return '${String.fromCharCodes(characters.take(_maxSharedOwnerCharacters - 1))}…';
+  }
+
+  String _sharedTooltip(Note note, {required String? sharedBy}) {
+    if (sharedBy != null && note.owner != null) {
+      return 'Shared by ${note.owner!.name}';
+    }
     final names = [
-      if (note.owner != null) note.owner!.username,
-      ...note.collaborators.map((c) => c.username),
+      if (note.owner != null) note.owner!.name,
+      ...note.collaborators.map((c) => c.name),
     ];
     return 'Shared with ${names.join(', ')}';
   }
@@ -412,6 +597,112 @@ class _PinButton extends StatelessWidget {
             color: scheme.onSurfaceVariant,
             tooltip: note.pinned ? 'Unpin note' : 'Pin note',
             onPressed: () => context.read<NotesStore>().togglePin(note.id),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pointer-only card actions. The card always reserves this footer on desktop
+/// so revealing the controls never shifts text, images, or neighboring tiles.
+class _NoteActions extends StatelessWidget {
+  final Note note;
+  final bool visible;
+  final bool canDelete;
+  final VoidCallback onReminder;
+  final VoidCallback onShare;
+  final VoidCallback onColor;
+  final VoidCallback onImage;
+  final VoidCallback onDelete;
+
+  const _NoteActions({
+    required this.note,
+    required this.visible,
+    required this.canDelete,
+    required this.onReminder,
+    required this.onShare,
+    required this.onColor,
+    required this.onImage,
+    required this.onDelete,
+  });
+
+  Widget _button({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    Color? color,
+  }) => IconButton(
+    constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+    padding: EdgeInsets.zero,
+    visualDensity: VisualDensity.compact,
+    iconSize: 19,
+    icon: Icon(icon),
+    color: color,
+    tooltip: tooltip,
+    onPressed: onPressed,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      left: 8,
+      right: 8,
+      bottom: 4,
+      height: 40,
+      child: AnimatedOpacity(
+        key: ValueKey('note-actions-${note.id}'),
+        opacity: visible ? 1 : 0,
+        duration: Motion.fast,
+        curve: Motion.standard,
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _button(
+                  icon: note.reminderAt == null
+                      ? Icons.notification_add_outlined
+                      : Icons.notifications_active_outlined,
+                  tooltip: note.reminderAt == null
+                      ? 'Add reminder'
+                      : 'Edit reminder',
+                  onPressed: onReminder,
+                ),
+                _button(
+                  icon: Icons.person_add_alt_outlined,
+                  tooltip: 'Collaborators',
+                  onPressed: onShare,
+                ),
+                _button(
+                  icon: Icons.palette_outlined,
+                  tooltip: 'Note color',
+                  onPressed: onColor,
+                ),
+                _button(
+                  icon: Icons.image_outlined,
+                  tooltip: 'Add image',
+                  onPressed: onImage,
+                ),
+                _button(
+                  icon: Icons.delete_outline,
+                  tooltip: canDelete
+                      ? 'Delete note'
+                      : 'Only the owner can delete this note',
+                  color: canDelete ? scheme.error : null,
+                  onPressed: canDelete ? onDelete : null,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -703,8 +994,13 @@ class _LabelChip extends StatelessWidget {
   /// label `select`) into a styled chip.
   factory _LabelChip.encoded(String row) {
     final parts = row.split('');
-    String? at(int i) => (i < parts.length && parts[i].isNotEmpty) ? parts[i] : null;
-    return _LabelChip(name: parts.isEmpty ? '' : parts[0], color: at(1), iconKey: at(2));
+    String? at(int i) =>
+        (i < parts.length && parts[i].isNotEmpty) ? parts[i] : null;
+    return _LabelChip(
+      name: parts.isEmpty ? '' : parts[0],
+      color: at(1),
+      iconKey: at(2),
+    );
   }
 
   @override
@@ -722,7 +1018,9 @@ class _LabelChip extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(kRadius),
         color: tint?.withValues(alpha: 0.14),
-        border: Border.all(color: line.withValues(alpha: tint == null ? 0.4 : 0.55)),
+        border: Border.all(
+          color: line.withValues(alpha: tint == null ? 0.4 : 0.55),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -733,7 +1031,9 @@ class _LabelChip extends StatelessWidget {
           ],
           Text(
             name,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: line),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: line),
           ),
         ],
       ),

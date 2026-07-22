@@ -18,7 +18,7 @@ class AuthStore extends ChangeNotifier {
 
   /// HTTP status of the last auth failure, when it was an [ApiException].
   /// Lets the login screen decide which fields to flag red (401 = both
-  /// credentials, 409 = username taken); null for network/other errors.
+  /// credentials, 409 = email taken); null for network/other errors.
   int? errorStatus;
 
   static const _tokenKey = 'sticky_notes_token';
@@ -144,8 +144,8 @@ class AuthStore extends ChangeNotifier {
     } on ApiException catch (e) {
       errorStatus = e.statusCode;
       error = switch (e.statusCode) {
-        401 => 'Wrong username or password',
-        409 => 'That username is taken',
+        401 => 'Wrong email or password',
+        409 => 'That email is already registered',
         _ => e.serverMessage,
       };
       return false;
@@ -167,11 +167,29 @@ class AuthStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> signIn(String username, String password) =>
-      _authenticate(() => api.login(username, password));
+  Future<bool> signIn(String email, String password) =>
+      _authenticate(() => api.login(email, password));
 
-  Future<bool> registerAccount(String username, String password) =>
-      _authenticate(() => api.register(username, password));
+  Future<bool> registerAccount(String name, String email, String password) =>
+      _authenticate(() => api.register(name, email, password));
+
+  Future<void> updateAccount({
+    String? name,
+    String? email,
+    String? currentPassword,
+    String? newPassword,
+  }) async {
+    final updated = await api.updateAccount(
+      name: name,
+      email: email,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    user = updated;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userKey, jsonEncode(updated.toJson()));
+    notifyListeners();
+  }
 
   Future<void> signOut() async {
     try {

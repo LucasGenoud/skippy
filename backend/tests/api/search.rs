@@ -23,8 +23,7 @@ async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
     settle_index().await;
 
     // Ranked by similarity: the milk note wins for a milk-ish query.
-    let (status, hits) =
-        send(&app, "GET", "/api/search?q=milk%20bread", Some(&ada), None).await;
+    let (status, hits) = send(&app, "GET", "/api/search?q=milk%20bread", Some(&ada), None).await;
     assert_eq!(status, StatusCode::OK);
     let hits = hits.as_array().unwrap().clone();
     assert!(!hits.is_empty());
@@ -41,7 +40,7 @@ async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
         "POST",
         &format!("/api/notes/{gid}/collaborators"),
         Some(&ada),
-        Some(json!({"username": "bob"})),
+        Some(json!({"email": "bob@example.test"})),
     )
     .await;
     settle_index().await;
@@ -49,7 +48,14 @@ async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
     assert_eq!(bob_hits.as_array().unwrap().len(), 1);
 
     // Deletion removes the note from the index.
-    let (status, _) = send(&app, "DELETE", &format!("/api/notes/{gid}"), Some(&ada), None).await;
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/notes/{gid}"),
+        Some(&ada),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     settle_index().await;
     let (_, hits) = send(&app, "GET", "/api/search?q=milk", Some(&ada), None).await;
@@ -131,8 +137,7 @@ async fn reindex_reports_total_and_tracks_progress() {
 async fn reindex_status_is_idle_before_any_run() {
     let app = build_app(state_with_search().await);
     let (ada, _) = register(&app, "ada").await;
-    let (status, prog) =
-        send(&app, "GET", "/api/search/reindex/status", Some(&ada), None).await;
+    let (status, prog) = send(&app, "GET", "/api/search/reindex/status", Some(&ada), None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(prog, json!({ "running": false, "done": 0, "total": 0 }));
 }
@@ -144,4 +149,3 @@ async fn reindex_reports_unavailable_when_disabled() {
     let (status, _) = send(&app, "POST", "/api/search/reindex", Some(&ada), None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
-

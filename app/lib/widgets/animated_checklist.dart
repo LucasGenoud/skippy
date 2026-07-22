@@ -57,6 +57,7 @@ class AnimatedChecklist extends StatefulWidget {
 class _RowHandles {
   final TextEditingController controller;
   final FocusNode focusNode;
+  final ScrollController scrollController = ScrollController();
   final LayerLink link = LayerLink();
 
   /// The text that materialized this row from the add field. Some desktop
@@ -81,6 +82,7 @@ class _RowHandles {
   void dispose() {
     controller.dispose();
     focusNode.dispose();
+    scrollController.dispose();
   }
 }
 
@@ -199,6 +201,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           if (item.id == _typeCreatedId) _typeCreatedId = null;
           // Handoff from the add field landed: stop re-routing keystrokes.
           if (item.id == _adoptingId) _adoptingId = null;
+        } else {
+          // Single-line fields keep their horizontal offset after editing.
+          // Once the row is no longer active, show its beginning again so a
+          // long checklist item remains scannable on narrow/mobile layouts.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted ||
+                h.focusNode.hasFocus ||
+                _handles[item.id] != h ||
+                !h.scrollController.hasClients) {
+              return;
+            }
+            h.scrollController.jumpTo(0);
+          });
         }
         _onAnyFocusChange();
       });
@@ -609,6 +624,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   child: TextField(
                     controller: handles.controller,
                     focusNode: handles.focusNode,
+                    scrollController: handles.scrollController,
                     readOnly: widget.readOnly,
                     enabled: !widget.readOnly,
                     maxLines: 1,

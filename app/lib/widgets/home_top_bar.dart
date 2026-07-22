@@ -10,6 +10,19 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 
+({IconData icon, String label}) _nextThemeAction(ThemeMode current) =>
+    switch (current) {
+      ThemeMode.system => (
+        icon: Icons.light_mode_outlined,
+        label: 'Light theme',
+      ),
+      ThemeMode.light => (icon: Icons.dark_mode_outlined, label: 'Dark theme'),
+      ThemeMode.dark => (
+        icon: Icons.brightness_auto_outlined,
+        label: 'System theme',
+      ),
+    };
+
 /// The home screen's top bar: menu + branding, the search pill (with clear
 /// and semantic-search controls), and the quick-settings icons + avatar menu.
 /// Below 650px it collapses into a single Keep-style search pill.
@@ -42,6 +55,8 @@ class HomeTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final settings = context.watch<SettingsStore>();
+    final themeAction = _nextThemeAction(settings.themeMode);
     final isNarrow = MediaQuery.sizeOf(context).width < 650;
     if (isNarrow) return _narrowBar(context, scheme);
 
@@ -133,7 +148,7 @@ class HomeTopBar extends StatelessWidget {
             children: [
               // Notes chat: only when the user configured an LLM (and the
               // server can do the retrieval side).
-              if (context.watch<SettingsStore>().notesChatAvailable)
+              if (settings.notesChatAvailable)
                 IconButton(
                   icon: const Icon(Icons.forum_outlined),
                   tooltip: 'Chat with your notes',
@@ -157,22 +172,19 @@ class HomeTopBar extends StatelessWidget {
                   duration: Motion.base,
                   switchInCurve: Motion.standard,
                   transitionBuilder: (child, animation) => RotationTransition(
-                    turns: Tween<double>(begin: 0.85, end: 1).animate(animation),
+                    turns: Tween<double>(
+                      begin: 0.85,
+                      end: 1,
+                    ).animate(animation),
                     child: FadeTransition(opacity: animation, child: child),
                   ),
                   child: Icon(
-                    Theme.of(context).brightness == Brightness.light
-                        ? Icons.dark_mode_outlined
-                        : Icons.light_mode_outlined,
-                    key: ValueKey(Theme.of(context).brightness),
+                    themeAction.icon,
+                    key: ValueKey(settings.themeMode),
                   ),
                 ),
-                tooltip: Theme.of(context).brightness == Brightness.light
-                    ? 'Dark theme'
-                    : 'Light theme',
-                onPressed: () => context.read<SettingsStore>().toggleTheme(
-                  Theme.of(context).brightness,
-                ),
+                tooltip: themeAction.label,
+                onPressed: settings.cycleThemeMode,
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined),
@@ -339,7 +351,11 @@ class _SearchPill extends StatelessWidget {
   final FocusNode focusNode;
   final double? height;
   final Widget child;
-  const _SearchPill({required this.focusNode, this.height, required this.child});
+  const _SearchPill({
+    required this.focusNode,
+    this.height,
+    required this.child,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -385,19 +401,21 @@ class _UserAvatarMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthStore>();
+    final settings = context.watch<SettingsStore>();
     final scheme = Theme.of(context).colorScheme;
-    final username = auth.user?.username ?? '';
-    final initial = username.isNotEmpty
-        ? username.substring(0, 1).toUpperCase()
-        : '?';
+    final name = auth.user?.name ?? '';
+    final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
     final syncStatus = context.select<NotesStore, SyncStatus>(
       (s) => s.syncStatus,
     );
+    final themeAction = _nextThemeAction(settings.themeMode);
 
     return PopupMenuButton<String>(
       offset: const Offset(0, 48),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
-      tooltip: 'Google Account / User profile\n$username',
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadius),
+      ),
+      tooltip: name,
       itemBuilder: (context) => [
         PopupMenuItem<String>(
           enabled: false,
@@ -422,13 +440,13 @@ class _UserAvatarMenu extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      username,
+                      name,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
-                      auth.activeUrl,
+                      auth.user?.email ?? auth.activeUrl,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                         fontSize: 11,
@@ -468,19 +486,9 @@ class _UserAvatarMenu extends StatelessWidget {
             value: 'theme',
             child: Row(
               children: [
-                Icon(
-                  Theme.of(context).brightness == Brightness.light
-                      ? Icons.dark_mode_outlined
-                      : Icons.light_mode_outlined,
-                  size: 20,
-                  color: scheme.onSurface,
-                ),
+                Icon(themeAction.icon, size: 20, color: scheme.onSurface),
                 const SizedBox(width: 12),
-                Text(
-                  Theme.of(context).brightness == Brightness.light
-                      ? 'Dark theme'
-                      : 'Light theme',
-                ),
+                Text(themeAction.label),
               ],
             ),
           ),
@@ -503,9 +511,7 @@ class _UserAvatarMenu extends StatelessWidget {
         } else if (value == 'sort') {
           _showSortSheet(context);
         } else if (value == 'theme') {
-          context.read<SettingsStore>().toggleTheme(
-            Theme.of(context).brightness,
-          );
+          settings.cycleThemeMode();
         } else if (value == 'logout') {
           auth.signOut();
         }

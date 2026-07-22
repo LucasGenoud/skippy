@@ -22,7 +22,7 @@ void main() {
     trashed: trashed,
     reminderAt: reminderAt,
     labelIds: labelIds,
-    owner: UserRef(id: ownerId, username: ownerId),
+    owner: UserRef(id: ownerId, name: ownerId),
     createdAt: created,
     updatedAt: created,
   );

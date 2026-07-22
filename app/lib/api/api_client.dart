@@ -40,10 +40,8 @@ class ManagedSetting {
   final Object? value;
   const ManagedSetting({required this.secret, this.value});
 
-  factory ManagedSetting.fromJson(Map<String, dynamic> json) => ManagedSetting(
-    secret: json['secret'] == true,
-    value: json['value'],
-  );
+  factory ManagedSetting.fromJson(Map<String, dynamic> json) =>
+      ManagedSetting(secret: json['secret'] == true, value: json['value']);
 }
 
 /// Everything the stores need from the backend. Tests swap in a fake.
@@ -54,15 +52,19 @@ abstract class Api {
 
   // auth
   Future<({String token, AuthUser user})> register(
-    String username,
+    String name,
+    String email,
     String password,
   );
-  Future<({String token, AuthUser user})> login(
-    String username,
-    String password,
-  );
+  Future<({String token, AuthUser user})> login(String email, String password);
   Future<void> logout();
   Future<AuthUser> me();
+  Future<AuthUser> updateAccount({
+    String? name,
+    String? email,
+    String? currentPassword,
+    String? newPassword,
+  });
 
   // notes
   Future<List<Note>> fetchNotes();
@@ -85,12 +87,22 @@ abstract class Api {
 
   // labels
   Future<List<Label>> fetchLabels();
-  Future<void> createLabel(String id, String name, {String? color, String? icon});
-  Future<void> updateLabel(String id, String name, {String? color, String? icon});
+  Future<void> createLabel(
+    String id,
+    String name, {
+    String? color,
+    String? icon,
+  });
+  Future<void> updateLabel(
+    String id,
+    String name, {
+    String? color,
+    String? icon,
+  });
   Future<void> deleteLabel(String id);
 
   // sharing
-  Future<Note> addCollaborator(String noteId, String username);
+  Future<Note> addCollaborator(String noteId, String email);
   Future<void> removeCollaborator(String noteId, String userId);
 
   // attachments
@@ -227,15 +239,14 @@ class ApiClient implements Api {
 
   Future<({String token, AuthUser user})> _authCall(
     String path,
-    String username,
-    String password,
+    Map<String, String> body,
   ) async {
     final data =
         _decode(
               await _client.post(
                 _uri(path),
                 headers: {'content-type': 'application/json'},
-                body: jsonEncode({'username': username, 'password': password}),
+                body: jsonEncode(body),
               ),
               authed: false,
             )
@@ -248,15 +259,20 @@ class ApiClient implements Api {
 
   @override
   Future<({String token, AuthUser user})> register(
-    String username,
+    String name,
+    String email,
     String password,
-  ) => _authCall('/auth/register', username, password);
+  ) => _authCall('/auth/register', {
+    'name': name,
+    'email': email,
+    'password': password,
+  });
 
   @override
   Future<({String token, AuthUser user})> login(
-    String username,
+    String email,
     String password,
-  ) => _authCall('/auth/login', username, password);
+  ) => _authCall('/auth/login', {'email': email, 'password': password});
 
   @override
   Future<void> logout() async {
@@ -270,6 +286,28 @@ class ApiClient implements Api {
   Future<AuthUser> me() async {
     final data = _decode(
       await _client.get(_uri('/auth/me'), headers: _headers()),
+    );
+    return AuthUser.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<AuthUser> updateAccount({
+    String? name,
+    String? email,
+    String? currentPassword,
+    String? newPassword,
+  }) async {
+    final body = <String, String>{};
+    if (name != null) body['name'] = name;
+    if (email != null) body['email'] = email;
+    if (currentPassword != null) body['current_password'] = currentPassword;
+    if (newPassword != null) body['new_password'] = newPassword;
+    final data = _decode(
+      await _client.patch(
+        _uri('/auth/me'),
+        headers: _headers(),
+        body: jsonEncode(body),
+      ),
     );
     return AuthUser.fromJson(data as Map<String, dynamic>);
   }
@@ -444,12 +482,12 @@ class ApiClient implements Api {
   // -- sharing ----------------------------------------------------------------
 
   @override
-  Future<Note> addCollaborator(String noteId, String username) async {
+  Future<Note> addCollaborator(String noteId, String email) async {
     final data = _decode(
       await _client.post(
         _uri('/notes/$noteId/collaborators'),
         headers: _headers(),
-        body: jsonEncode({'username': username}),
+        body: jsonEncode({'email': email}),
       ),
     );
     return Note.fromJson(data as Map<String, dynamic>);
@@ -573,8 +611,12 @@ class ApiClient implements Api {
 
   @override
   Future<SearchStats> fetchSearchStats() async {
-    final data = _decode(await _client.get(_uri('/search/stats'), headers: _headers()));
-    return SearchStats.fromJson(((data as Map?) ?? const {}).cast<String, dynamic>());
+    final data = _decode(
+      await _client.get(_uri('/search/stats'), headers: _headers()),
+    );
+    return SearchStats.fromJson(
+      ((data as Map?) ?? const {}).cast<String, dynamic>(),
+    );
   }
 
   @override
@@ -600,13 +642,16 @@ class ApiClient implements Api {
 
   @override
   Future<Map<String, ManagedSetting>> fetchManagedSettings() async {
-    final data = _decode(await _client.get(_uri('/managed-settings'), headers: _headers()));
+    final data = _decode(
+      await _client.get(_uri('/managed-settings'), headers: _headers()),
+    );
     final map = (data as Map?) ?? const {};
     return {
       for (final entry in map.entries)
         if (entry.value is Map)
-          entry.key as String:
-              ManagedSetting.fromJson((entry.value as Map).cast<String, dynamic>()),
+          entry.key as String: ManagedSetting.fromJson(
+            (entry.value as Map).cast<String, dynamic>(),
+          ),
     };
   }
 

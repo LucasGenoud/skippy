@@ -21,9 +21,9 @@ void main() {
       'created_at': '2026-07-01T10:00:00+00:00',
       'updated_at': '2026-07-02T10:00:00+00:00',
       'label_ids': ['l1'],
-      'owner': {'id': 'u1', 'username': 'ada'},
+      'owner': {'id': 'u1', 'name': 'ada'},
       'collaborators': [
-        {'id': 'u2', 'username': 'bob'},
+        {'id': 'u2', 'name': 'bob'},
       ],
       'attachments': [
         {'id': 'a1', 'mime': 'image/png'},
@@ -39,8 +39,8 @@ void main() {
     // RFC3339 UTC converts to local without losing the instant.
     expect(note.reminderAt!.toUtc(), DateTime.utc(2030, 5, 1, 7));
     expect(note.labelIds, {'l1'});
-    expect(note.owner!.username, 'ada');
-    expect(note.collaborators.single.username, 'bob');
+    expect(note.owner!.name, 'ada');
+    expect(note.collaborators.single.name, 'bob');
     expect(note.attachments.single.mime, 'image/png');
     expect(note.isShared, isTrue);
     expect(note.isOwnedBy('u1'), isTrue);

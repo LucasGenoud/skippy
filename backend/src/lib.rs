@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
-use axum::Router;
 use tower_http::cors::CorsLayer;
 
 use crate::files::FileStore;
@@ -146,8 +146,14 @@ pub fn build_app(state: AppState) -> Router {
         .route("/auth/register", post(handlers::register))
         .route("/auth/login", post(handlers::login))
         .route("/auth/logout", post(handlers::logout))
-        .route("/auth/me", get(handlers::me))
-        .route("/notes", get(handlers::list_notes).post(handlers::create_note))
+        .route(
+            "/auth/me",
+            get(handlers::me).patch(handlers::update_account),
+        )
+        .route(
+            "/notes",
+            get(handlers::list_notes).post(handlers::create_note),
+        )
         .route("/notes/reorder", post(handlers::reorder_notes))
         .route(
             "/notes/{id}",
@@ -160,23 +166,35 @@ pub fn build_app(state: AppState) -> Router {
             "/notes/{id}/versions/{version_id}/restore",
             post(handlers::restore_note_version),
         )
-        .route("/notes/{id}/collaborators", post(handlers::add_collaborator))
+        .route(
+            "/notes/{id}/collaborators",
+            post(handlers::add_collaborator),
+        )
         .route(
             "/notes/{id}/collaborators/{user_id}",
             axum::routing::delete(handlers::remove_collaborator),
         )
         .route("/notes/{id}/attachments", post(handlers::upload_attachment))
         .route("/notes/{id}/transcribe", post(handlers::transcribe_note))
-        .route("/attachments/{id}", axum::routing::delete(handlers::delete_attachment))
+        .route(
+            "/attachments/{id}",
+            axum::routing::delete(handlers::delete_attachment),
+        )
         .route("/files/{id}", get(handlers::serve_file))
         .route("/checklist-history", get(handlers::checklist_history))
-        .route("/settings", get(handlers::get_settings).put(handlers::put_settings))
+        .route(
+            "/settings",
+            get(handlers::get_settings).put(handlers::put_settings),
+        )
         .route("/search", get(handlers::semantic_search))
         .route("/search/stats", get(handlers::search_stats))
         .route("/search/reindex", post(handlers::reindex_search))
         .route("/search/reindex/status", get(handlers::reindex_status))
         .route("/unfurl", get(handlers::unfurl))
-        .route("/labels", get(handlers::list_labels).post(handlers::create_label))
+        .route(
+            "/labels",
+            get(handlers::list_labels).post(handlers::create_label),
+        )
         .route(
             "/labels/{id}",
             axum::routing::patch(handlers::update_label).delete(handlers::delete_label),

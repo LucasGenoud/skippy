@@ -72,6 +72,16 @@ void main() {
     other.dispose();
   });
 
+  test('top-bar theme cycle includes the system default', () {
+    expect(settings.themeMode, ThemeMode.system);
+    settings.cycleThemeMode();
+    expect(settings.themeMode, ThemeMode.light);
+    settings.cycleThemeMode();
+    expect(settings.themeMode, ThemeMode.dark);
+    settings.cycleThemeMode();
+    expect(settings.themeMode, ThemeMode.system);
+  });
+
   test('accent color persists, roundtrips, and defaults when absent', () async {
     await settings.load();
     expect(settings.accentColor, kDefaultAccent);

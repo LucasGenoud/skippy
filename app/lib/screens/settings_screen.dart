@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/settings_store.dart';
+import '../widgets/settings/account_section.dart';
 import '../widgets/settings/accent_color.dart';
 import '../widgets/settings/embedding_section.dart';
 import '../widgets/settings/export_section.dart';
@@ -32,6 +33,9 @@ class SettingsScreen extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
+              const _SectionHeader('Account'),
+              const AccountSection(),
+              const Divider(height: 32),
               const _SectionHeader('Appearance'),
               ListTile(
                 leading: const Icon(Icons.brightness_6_outlined),
@@ -90,7 +94,8 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 value: settings.llmConfigured && settings.llmLabelingEnabled,
                 onChanged:
-                    settings.llmConfigured && !settings.isManaged('llm_labeling')
+                    settings.llmConfigured &&
+                        !settings.isManaged('llm_labeling')
                     ? settings.setLlmLabelingEnabled
                     : null,
               ),
