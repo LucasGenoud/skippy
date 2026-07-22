@@ -8,38 +8,15 @@ import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../util/connectivity.dart';
 import 'local_cache.dart';
+import 'note_collection.dart';
+import 'note_conversion.dart';
+import 'pending_operation.dart';
 
-enum NoteView { notes, reminders, archive, trash, label }
-
-enum SortMode { custom, edited, newest, oldest }
+export 'note_collection.dart'
+    show NoteSections, NoteView, SortMode, ViewSelection;
 
 /// Coarse connectivity/sync state surfaced on the top-bar avatar.
 enum SyncStatus { synced, syncing, offline }
-
-class ViewSelection {
-  final NoteView view;
-  final String? labelId;
-  const ViewSelection(this.view, [this.labelId]);
-
-  static const notes = ViewSelection(NoteView.notes);
-  static const reminders = ViewSelection(NoteView.reminders);
-  static const archive = ViewSelection(NoteView.archive);
-  static const trash = ViewSelection(NoteView.trash);
-
-  @override
-  bool operator ==(Object other) =>
-      other is ViewSelection && other.view == view && other.labelId == labelId;
-
-  @override
-  int get hashCode => Object.hash(view, labelId);
-}
-
-class NoteSections {
-  final List<Note> pinned;
-  final List<Note> others;
-  const NoteSections(this.pinned, this.others);
-  bool get isEmpty => pinned.isEmpty && others.isEmpty;
-}
 
 /// Optimistic-first store: every mutation updates local state immediately and
 /// is synced to the backend through a serial queue that retries on network
@@ -70,6 +47,7 @@ class NotesStore extends ChangeNotifier {
   Map<String, List<String>> _checklistHistory = {};
   bool loading = true;
   bool offline = false;
+
   /// True while a manual [refresh] is re-pulling from the server (drives the
   /// desktop refresh button's spin). Distinct from [loading], the first load.
   bool refreshing = false;
@@ -335,57 +313,14 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Filtering & sorting
 
-  NoteSections notesFor(ViewSelection selection, String query) {
-    final q = query.trim().toLowerCase();
-    bool matches(Note n) {
-      if (q.isEmpty) return true;
-      if (n.title.toLowerCase().contains(q)) return true;
-      if (n.content.toLowerCase().contains(q)) return true;
-      if (n.items.any((i) => i.text.toLowerCase().contains(q))) return true;
-      return n.labelIds.any((id) {
-        final label = labelById(id);
-        return label != null && label.name.toLowerCase().contains(q);
-      });
-    }
-
-    bool inView(Note n) => switch (selection.view) {
-      NoteView.notes => !n.archived && !n.trashed,
-      NoteView.reminders => n.reminderAt != null && !n.trashed,
-      NoteView.archive => n.archived && !n.trashed,
-      // Trash only shows your own notes: collaborators cannot trash, so a
-      // shared note trashed by its owner is simply gone for them.
-      NoteView.trash => n.trashed && n.isOwnedBy(currentUserId),
-      NoteView.label => !n.trashed && n.labelIds.contains(selection.labelId),
-    };
-
-    final visible = _notes.where((n) => inView(n) && matches(n)).toList();
-
-    if (selection.view == NoteView.reminders) {
-      visible.sort((a, b) => a.reminderAt!.compareTo(b.reminderAt!));
-      return NoteSections(const [], visible);
-    }
-    _applySort(visible);
-    final splitPins =
-        selection.view == NoteView.notes || selection.view == NoteView.label;
-    if (!splitPins) return NoteSections(const [], visible);
-    return NoteSections(
-      visible.where((n) => n.pinned).toList(),
-      visible.where((n) => !n.pinned).toList(),
-    );
-  }
-
-  void _applySort(List<Note> notes) {
-    switch (sortMode) {
-      case SortMode.custom:
-        break; // _notes is already position-sorted
-      case SortMode.edited:
-        notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      case SortMode.newest:
-        notes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      case SortMode.oldest:
-        notes.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    }
-  }
+  NoteSections notesFor(ViewSelection selection, String query) => selectNotes(
+    notes: _notes,
+    labels: _labels,
+    selection: selection,
+    query: query,
+    sortMode: sortMode,
+    currentUserId: currentUserId,
+  );
 
   void setSortMode(SortMode mode) {
     sortMode = mode;
@@ -467,7 +402,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   PendingOp _contentPatchOp(String id, Note note) => PendingOp(
-    'patch',
+    PendingOpKind.patch,
     id: id,
     data: {
       'kind': note.kind.wire,
@@ -533,47 +468,12 @@ class NotesStore extends ChangeNotifier {
   void convertKind(String id, NoteKind target) {
     final note = noteById(id);
     if (note == null || note.kind == target) return;
-    late final Note updated;
-    if (target == NoteKind.checklist) {
-      // One item per non-empty line; markdown list/task markers map onto
-      // the checkbox instead of being kept as text.
-      final items = <ChecklistItem>[];
-      for (final rawLine in note.content.split('\n')) {
-        var line = rawLine.trim();
-        if (line.isEmpty) continue;
-        var done = false;
-        final task = RegExp(r'^[-*+]\s+\[( |x|X)\]\s*').firstMatch(line);
-        if (task != null) {
-          done = task.group(1)!.toLowerCase() == 'x';
-          line = line.substring(task.end).trim();
-        } else {
-          line = line.replaceFirst(RegExp(r'^[-*+]\s+'), '');
-        }
-        if (line.isEmpty) continue;
-        items.add(ChecklistItem(id: _uuid.v4(), text: line, done: done));
-      }
-      updated = note.copyWith(kind: target, content: '', items: items);
-    } else if (note.isChecklist) {
-      final text = [
-        for (final item in note.items)
-          if (item.text.trim().isNotEmpty)
-            target == NoteKind.markdown
-                ? '- [${item.done ? 'x' : ' '}] ${item.text}'
-                : item.text,
-      ].join('\n');
-      final merged = note.content.trim().isEmpty
-          ? text
-          : '${note.content}\n$text';
-      updated = note.copyWith(kind: target, content: merged, items: []);
-    } else {
-      // text <-> markdown: same content, different rendering.
-      updated = note.copyWith(kind: target);
-    }
+    final updated = convertNoteKind(note, target, newItemId: _uuid.v4);
     _replace(updated.copyWith(updatedAt: DateTime.now()));
     if (_drafts.contains(id)) return;
     _enqueue(
       PendingOp(
-        'patch',
+        PendingOpKind.patch,
         id: id,
         data: {
           'kind': updated.kind.wire,
@@ -588,7 +488,7 @@ class NotesStore extends ChangeNotifier {
     final note = noteById(id);
     if (note == null || note.isEmpty) return;
     _drafts.remove(id);
-    _enqueue(PendingOp('create', id: id));
+    _enqueue(PendingOp(PendingOpKind.create, id: id));
   }
 
   void _replace(Note updated) {
@@ -618,7 +518,7 @@ class NotesStore extends ChangeNotifier {
     _replace(updated.copyWith(updatedAt: DateTime.now()));
     // Drafts have no server row yet; local state rides along in the create.
     if (_drafts.contains(id)) return;
-    _enqueue(PendingOp('patch', id: id, data: fields));
+    _enqueue(PendingOp(PendingOpKind.patch, id: id, data: fields));
   }
 
   void togglePin(String id) {
@@ -680,7 +580,7 @@ class NotesStore extends ChangeNotifier {
     _notes.removeWhere((n) => n.id == id);
     final wasDraft = _drafts.remove(id);
     notifyListeners();
-    if (!wasDraft) _enqueue(PendingOp('delete', id: id));
+    if (!wasDraft) _enqueue(PendingOp(PendingOpKind.delete, id: id));
   }
 
   void emptyTrash() {
@@ -699,7 +599,13 @@ class NotesStore extends ChangeNotifier {
     ids.contains(labelId) ? ids.remove(labelId) : ids.add(labelId);
     _replace(note.copyWith(labelIds: ids));
     if (_drafts.contains(noteId)) return;
-    _enqueue(PendingOp('patch', id: noteId, data: {'label_ids': ids.toList()}));
+    _enqueue(
+      PendingOp(
+        PendingOpKind.patch,
+        id: noteId,
+        data: {'label_ids': ids.toList()},
+      ),
+    );
   }
 
   /// Add [labelId] to a note (used by drag-and-drop onto a sidebar label).
@@ -722,7 +628,10 @@ class NotesStore extends ChangeNotifier {
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
     _enqueue(
-      PendingOp('reorder', data: {'ids': List<String>.from(orderedIds)}),
+      PendingOp(
+        PendingOpKind.reorder,
+        data: {'ids': List<String>.from(orderedIds)},
+      ),
     );
   }
 
@@ -751,11 +660,11 @@ class NotesStore extends ChangeNotifier {
     _notes.insert(0, copy);
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
-    _enqueue(PendingOp('create', id: copy.id));
+    _enqueue(PendingOp(PendingOpKind.create, id: copy.id));
     if (copy.labelIds.isNotEmpty) {
       _enqueue(
         PendingOp(
-          'patch',
+          PendingOpKind.patch,
           id: copy.id,
           data: {'label_ids': copy.labelIds.toList()},
         ),
@@ -835,7 +744,11 @@ class NotesStore extends ChangeNotifier {
       );
     }
     _enqueue(
-      PendingOp('removeCollaborator', id: noteId, data: {'userId': userId}),
+      PendingOp(
+        PendingOpKind.removeCollaborator,
+        id: noteId,
+        data: {'userId': userId},
+      ),
     );
   }
 
@@ -947,7 +860,7 @@ class NotesStore extends ChangeNotifier {
             .toList(),
       ),
     );
-    _enqueue(PendingOp('deleteAttachment', id: attachmentId));
+    _enqueue(PendingOp(PendingOpKind.deleteAttachment, id: attachmentId));
   }
 
   /// Resolved, ready-to-load URL for an attachment (uses the server's signed,
@@ -988,7 +901,7 @@ class NotesStore extends ChangeNotifier {
     final note = noteById(id);
     if (note == null) return;
     _replace(note.copyWith(transcriptStatus: 'pending'));
-    _enqueue(PendingOp('transcribe', id: id));
+    _enqueue(PendingOp(PendingOpKind.transcribe, id: id));
   }
 
   // ---------------------------------------------------------------------
@@ -1010,13 +923,18 @@ class NotesStore extends ChangeNotifier {
   // Labels
 
   Label createLabel(String name, {String? color, String? icon}) {
-    final label = Label(id: _uuid.v4(), name: name.trim(), color: color, icon: icon);
+    final label = Label(
+      id: _uuid.v4(),
+      name: name.trim(),
+      color: color,
+      icon: icon,
+    );
     _labels = [..._labels, label]
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     notifyListeners();
     _enqueue(
       PendingOp(
-        'labelCreate',
+        PendingOpKind.labelCreate,
         id: label.id,
         data: {'name': label.name, 'color': color, 'icon': icon},
       ),
@@ -1038,7 +956,7 @@ class NotesStore extends ChangeNotifier {
     notifyListeners();
     _enqueue(
       PendingOp(
-        'labelUpdate',
+        PendingOpKind.labelUpdate,
         id: id,
         data: {'name': newName, 'color': color, 'icon': icon},
       ),
@@ -1055,7 +973,7 @@ class NotesStore extends ChangeNotifier {
       }
     }
     notifyListeners();
-    _enqueue(PendingOp('labelDelete', id: id));
+    _enqueue(PendingOp(PendingOpKind.labelDelete, id: id));
   }
 
   // ---------------------------------------------------------------------
@@ -1119,38 +1037,38 @@ class NotesStore extends ChangeNotifier {
   /// is a no-op (a trailing delete/404 tidies the server side).
   Future<void> _run(PendingOp op) {
     switch (op.kind) {
-      case 'create':
+      case PendingOpKind.create:
         final note = noteById(op.id!);
         return note == null ? Future.value() : api.createNote(note);
-      case 'patch':
+      case PendingOpKind.patch:
         return api.patchNote(op.id!, op.data);
-      case 'delete':
+      case PendingOpKind.delete:
         return api.deleteNote(op.id!);
-      case 'reorder':
+      case PendingOpKind.reorder:
         return api.reorderNotes((op.data['ids'] as List).cast<String>());
-      case 'labelCreate':
+      case PendingOpKind.labelCreate:
         return api.createLabel(
           op.id!,
           op.data['name'] as String,
           color: op.data['color'] as String?,
           icon: op.data['icon'] as String?,
         );
-      case 'labelUpdate':
+      case PendingOpKind.labelUpdate:
         return api.updateLabel(
           op.id!,
           op.data['name'] as String,
           color: op.data['color'] as String?,
           icon: op.data['icon'] as String?,
         );
-      case 'labelDelete':
+      case PendingOpKind.labelDelete:
         return api.deleteLabel(op.id!);
-      case 'removeCollaborator':
+      case PendingOpKind.removeCollaborator:
         return api.removeCollaborator(op.id!, op.data['userId'] as String);
-      case 'deleteAttachment':
+      case PendingOpKind.deleteAttachment:
         return api.deleteAttachment(op.id!);
-      case 'transcribe':
+      case PendingOpKind.transcribe:
         return api.transcribeNote(op.id!);
-      default:
+      case PendingOpKind.unknown:
         return Future<void>.value();
     }
   }
@@ -1185,27 +1103,4 @@ class NotesStore extends ChangeNotifier {
     }
     super.dispose();
   }
-}
-
-/// A serializable pending write. Replacing closures with these lets the sync
-/// queue be persisted and replayed after a reload. [kind] selects the API call
-/// (see `NotesStore._run`); [id] and [data] carry its arguments.
-class PendingOp {
-  final String kind;
-  final String? id;
-  final Map<String, dynamic> data;
-
-  const PendingOp(this.kind, {this.id, this.data = const {}});
-
-  Map<String, dynamic> toJson() => {
-    'kind': kind,
-    if (id != null) 'id': id,
-    if (data.isNotEmpty) 'data': data,
-  };
-
-  factory PendingOp.fromJson(Map<String, dynamic> json) => PendingOp(
-    json['kind'] as String,
-    id: json['id'] as String?,
-    data: (json['data'] as Map?)?.cast<String, dynamic>() ?? const {},
-  );
 }

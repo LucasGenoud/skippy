@@ -21,11 +21,11 @@ impl Hub {
     pub fn notify(&self, user_ids: &[String], message: &str) {
         let mut map = self.inner.lock().unwrap();
         for user_id in user_ids {
-            if let Some(sender) = map.get(user_id) {
-                if sender.send(message.to_string()).is_err() {
-                    // No live receivers left for this user.
-                    map.remove(user_id);
-                }
+            if let Some(sender) = map.get(user_id)
+                && sender.send(message.to_string()).is_err()
+            {
+                // No live receivers left for this user.
+                map.remove(user_id);
             }
         }
     }

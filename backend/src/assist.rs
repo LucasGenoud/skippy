@@ -192,10 +192,10 @@ pub fn parse_route_reply(reply: &str) -> Option<RouteDecision> {
     let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
     let object = value.as_object()?;
     // A write intent wins: the user asked to change their notes, not just read.
-    if let Some(serde_json::Value::String(topic)) = object.get("write") {
-        if !topic.trim().is_empty() {
-            return Some(RouteDecision::Write(topic.trim().to_string()));
-        }
+    if let Some(serde_json::Value::String(topic)) = object.get("write")
+        && !topic.trim().is_empty()
+    {
+        return Some(RouteDecision::Write(topic.trim().to_string()));
     }
     Some(match object.get("search")? {
         serde_json::Value::Null => RouteDecision::Direct,

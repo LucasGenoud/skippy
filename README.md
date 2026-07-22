@@ -2,34 +2,45 @@
 
 A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with a **Rust** backend (axum + SQLite). Built for smoothness — every interaction is optimistic-first, every layout change animates, and collaboration syncs live over WebSockets.
 
-<p align="center"><em>Masonry grid · drag-to-reorder · checklists with typing suggestions · sharing & live co-editing · reminders · labels · images · dark mode</em></p>
+<p align="center"><em>Masonry grid · drag-to-reorder · text, markdown, checklist, and audio notes · sharing and live co-editing · reminders · labels · attachments · dark mode</em></p>
 
 ## Features
 
 **Note types**
-- Text notes and **checklists** (convert between them any time)
-- **Image attachments** (rendered inline) and **any other file type** (stored and served as safe downloads with original filename — PDFs, archives, audio, spreadsheets…)
+- Text, **markdown**, and **checklist** notes, with conversion between text-based kinds
+- **Audio notes** recorded on web, iOS, or Android and transcribed by an optional self-hosted Whisper service
+- **Image attachments** (including SVG) rendered inline, playable audio-note clips, and **any other file type** as a safe download with its original filename
+- Rich link previews from Open Graph/HTML metadata, fetched through an SSRF-guarded backend endpoint and cached on both client and server
 - Checklists **remember what you've checked off** and **suggest items while you type**, in a popup anchored under the row with the matched prefix bolded — type "mi" and get "Milk" from your history; your most frequent items surface when the field is empty. Perfect for grocery lists.
 - Checking an item **animates it down into a collapsible "checked" section** where it stays visible; unchecking glides it back
 - **Drag handles** (⠿) reorder checklist items with live animated reflow
 - **Undo/redo** in the editor (bottom-bar arrows, Cmd/Ctrl+Z / Shift+Z): typing groups into bursts; checks, adds, removes, reorders, and conversions are each one step
+- **Version history** groups content edits into sessions, attributes collaborator edits, and supports reversible restores
 
 **Organization**
 - Keep's classic 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
 - Flat labels (create/rename/delete; filter from the drawer)
 - Pinning, archive, trash (auto-purged after 7 days)
 - **Drag-to-reorder** with animated reflow, edge auto-scroll, haptics
-- Grid / single-column list toggle; responsive 1–5 columns from phone to desktop
+- Grid / single-column list toggle; responsive density and width presets support up to 8 columns
 - **Sort by** custom order / recently edited / recently added / oldest
 - Library-wide instant search + **find-in-note** with match highlighting
-- **Semantic search** (✨ toggle in the search bar): notes are embedded locally with an ONNX model (all-MiniLM-L6-v2, no external AI services) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension — no separate vector database to run.
+- **Semantic search** (meaning-ranking toggle in the search bar): notes are embedded locally with the full-precision **BAAI/bge-m3** ONNX model (1024 dimensions, no external AI service) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension, with one visibility-scoped row per note participant and no separate vector database.
 - **Audio notes** (mic button, when transcription is enabled): record a voice clip in a focused overlay with a live level meter, then it's transcribed locally by a self-hosted **Whisper** service — no external AI. The clip stays playable in the note and the transcript is editable, searchable, and exportable text.
 - **Feature detection**: semantic search and audio notes each have a Settings toggle, and disappear entirely when their backing service isn't running (`GET /api/capabilities`).
 
 **Per-user settings** (synced across devices, gear icon in the drawer)
 - Theme (system/light/dark), default grid vs list layout
+- Accent color plus grid density and maximum-width presets
 - Date format (5 styles) and 12h/24h time — applied to reminder chips and "Edited" stamps everywhere
 - **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
+- Export all non-trashed notes as JSON, Markdown, or plain text
+
+**Optional AI integration**
+- Each user can configure an OpenAI-compatible endpoint, API key, and model; Ollama, LM Studio, vLLM, and hosted providers can use the same path
+- **Automatic labeling** asks the configured model which existing personal labels apply after content edits; it never invents or removes labels
+- **Notes chat** retrieves semantically relevant notes, streams answers over WebSocket, cites source notes, and can create or append notes after a model-planned write
+- Self-hosters can pin and lock any LLM field or feature toggle with server environment variables; managed secrets are never sent to the app
 
 **Reminders**
 - Time-based reminders per note, shown as chips (overdue = struck through) and collected in a drawer "Reminders" view. No calendar integration.
@@ -41,7 +52,12 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
 - Labels stay personal — each participant tags a shared note with their own labels
 
-**Out of scope** (would need AI services / heavy platform APIs): drawings, audio recording, voice transcription, OCR. The schema (attachments table, note `kind` field) leaves room for them.
+**Platform integration**
+- Web drag-and-drop and file picking; native file/image pickers on mobile
+- Android/iOS share-sheet intake turns shared text/links into text notes and shared files into attachment notes
+- Offline startup from a per-user local cache, with pending writes persisted and replayed after connectivity returns
+
+**Out of scope:** drawings/handwriting, OCR, calendar synchronization, and CRDT-style conflict-free collaborative editing.
 
 ## Keyboard shortcuts
 
@@ -66,24 +82,28 @@ Web/desktop. Press **`?`** on the notes screen for the in-app cheat sheet (also 
 sticky_notes/
 ├── backend/            Rust: axum + SQLite
 │   ├── src/
-│   │   ├── main.rs       wiring (swap the repository here)
-│   │   ├── lib.rs        router (build_app) — reused by tests
-│   │   ├── store/        Repository trait  ← the DB swap point
-│   │   │   └── sqlite.rs SQLite implementation (sqlx)
-│   │   ├── handlers.rs   HTTP + WebSocket handlers, permissions
-│   │   ├── auth.rs       argon2 hashing + bearer-token extractor
-│   │   ├── ws.rs         per-user change-event fan-out hub
-│   │   ├── files.rs      attachment blobs: FileStore trait, disk + S3 backends
-│   │   └── models.rs     domain + payload types
-│   └── tests/api.rs    21 integration tests (in-memory SQLite)
+│   │   ├── main.rs       process wiring, optional services, static web serving
+│   │   ├── lib.rs        AppState + /api router (build_app), reused by tests
+│   │   ├── handlers/     HTTP/WS handlers by feature area + background work
+│   │   ├── store/        Repository trait, SQLite implementation/schema/rows
+│   │   ├── models.rs     domain, request, and response types
+│   │   ├── files.rs      FileStore trait, disk/S3 backends, signed file URLs
+│   │   ├── search.rs     BGE-M3 embeddings + sqlite-vec index
+│   │   ├── assist.rs     LLM settings, prompts, routing, and reply parsing
+│   │   ├── llm.rs        OpenAI-compatible completion and streaming client
+│   │   ├── notify.rs     reminder scheduler + ntfy/Telegram connectors
+│   │   └── unfurl.rs     safe URL fetching and metadata parsing
+│   └── tests/           API integration modules + S3 tests
 └── app/                Flutter
     ├── lib/
-    │   ├── api/          Api interface + HTTP/WS client
-    │   ├── state/        NotesStore (optimistic + retry queue), AuthStore
-    │   ├── widgets/      AnimatedMasonry (custom), note card, dialogs…
-    │   ├── screens/      home, editor, login
-    │   └── theme.dart    Keep palette, light/dark themes
-    └── test/           33 unit + widget tests (FakeApi)
+    │   ├── api/          Api seam + HTTP/WS client
+    │   ├── models/       wire/domain models
+    │   ├── state/        auth, settings, optimistic notes, cache, share intake
+    │   ├── screens/      login, home, editor, history, settings, chat
+    │   ├── widgets/      masonry, cards, checklist, media, dialogs, settings
+    │   ├── util/         platform adapters, links, export, downloads, motion
+    │   └── theme.dart    Material light/dark themes
+    └── test/           unit, store, integration-style widget tests + FakeApi
 ```
 
 **Swappable storage.** All persistence goes through the `Repository` trait ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; to move to Postgres, implement the trait and change one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` trait ([backend/src/files.rs](backend/src/files.rs)) with two backends: local disk (default) and any S3-compatible object store — one bucket per user, requests signed with a minimal built-in SigV4 (no AWS SDK). `STICKY_NOTES_STORAGE=disk|s3` picks the backend; the compose stack bundles [Garage](https://garagehq.deuxfleurs.fr/) for the S3 side.
@@ -112,7 +132,7 @@ Garage bootstraps itself (`--single-node --default-bucket`): no CLI setup, crede
 
 ### Local development
 
-Prereqs: Rust (1.85+), Flutter (3.22+).
+Prereqs: Rust 1.85+ (edition 2024) and Flutter 3.44+ / Dart 3.12+.
 
 **Backend** (port 8787):
 
@@ -124,7 +144,7 @@ docker compose up -d whisper
 STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
-Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment dir, default `uploads`), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_PUBLIC_URL` (the backend URL the bundled web app should target by default — see below), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service — enables audio-note transcription; feature is hidden when unset/unreachable), `STICKY_NOTES_TELEGRAM_API` (Telegram Bot API base, default `https://api.telegram.org` — for self-hosted bot-api servers or proxies). The embedding model (~80 MB) downloads to a local cache on first start.
+Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment directory, default `uploads`), `STICKY_NOTES_WEB` (optional Flutter web bundle to serve), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_PUBLIC_URL` (the backend URL the bundled web app should target by default — see below), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service), `STICKY_NOTES_TELEGRAM_API` (Telegram Bot API base, default `https://api.telegram.org`), and `STICKY_NOTES_UNFURL_ALLOW_PRIVATE=1` (allow link previews for private/loopback hosts; off by default for SSRF safety). BGE-M3 downloads to the fastembed/Hugging Face cache on first start.
 
 Default backend URL for the bundled web app: when the binary also serves the Flutter web build, it normally targets its own origin. Behind a reverse proxy (e.g. `https://notes.example.com` on :443) that heuristic can miss, so set **`STICKY_NOTES_PUBLIC_URL`** to the URL browsers should call — the server stamps it into `index.html` at startup and the app uses it as the default, no rebuild needed. Users can still switch servers from the login screen's server picker.
 
@@ -174,7 +194,7 @@ flutter install --device-id <device-id>
 open ios/Runner.xcworkspace
 ```
 
-Select your iPhone as the run destination in the toolbar and press ▶️. Xcode gives better error messages for signing or provisioning issues.
+Select your iPhone as the run destination in the toolbar and press Run. Xcode gives better error messages for signing or provisioning issues.
 
 **Connecting to the backend from a physical device:**
 
@@ -195,11 +215,13 @@ cd ../backend && cargo run            # → open http://localhost:8787
 ## Tests
 
 ```sh
-cd backend && cargo test    # 30 integration tests over the HTTP API
-cd app && flutter test      # store/model/widget tests
+cd backend && cargo test
+cd backend && cargo clippy --all-targets -- -D warnings
+cd app && flutter test
+cd app && flutter analyze
 ```
 
-Backend tests run the real router against in-memory SQLite: auth flows, per-user scoping, sharing permission matrix, personal labels on shared notes, checklist history recording, reminders, attachments (multipart upload → serve → delete), trash purge, capabilities reporting, and the audio-note transcription flow (upload → pending → transcript, with a deterministic fake Whisper). Flutter tests cover the optimistic store (drafts, debounce, offline retry queue, 4xx dropping), audio-note creation, feature-availability logic, suggestion ranking, sort/search/views, and widget behavior (checklist cards, masonry drag-reorder, editor lifecycle, find-in-note).
+Backend tests run the real router against in-memory SQLite and deterministic fakes for embeddings, Whisper, LLMs, notification connectors, outbound unfurls, and S3. They cover auth, permissions, sharing, versions, checklist history, reminders, signed/range-capable file serving, semantic indexing, chat/write flows, managed settings, and optional-service behavior. Flutter tests cover models and pure utilities, the optimistic/offline store, settings persistence, share intake, media flows, keyboard shortcuts, and integration-style widget behavior with `FakeApi`.
 
 ## API sketch
 
@@ -207,23 +229,28 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /health`, `/capabilities` | Health and optional-service detection |
+| `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
 | `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET /auth/me` | Accounts & sessions |
 | `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` clears) |
 | `POST /notes/reorder` | Persist drag order (renumbers the given ids) |
-| `POST /notes/{id}/collaborators`, `DELETE /notes/{id}/collaborators/{user}` | Sharing |
-| `POST /notes/{id}/attachments`, `DELETE /attachments/{id}`, `GET /files/{id}` | Images (files are served unauthenticated by unguessable UUID so `<img>` tags work) |
+| `GET /notes/{id}/versions`, `POST /notes/{id}/versions/{version_id}/restore` | Version timeline and reversible restore |
+| `POST /notes/{id}/collaborators`, `DELETE /notes/{id}/collaborators/{user_id}` | Sharing |
+| `POST /notes/{id}/attachments`, `DELETE /attachments/{id}`, `GET /files/{id}?exp=…&sig=…` | Attachments and signed, expiring media/download access |
 | `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per-user) |
 | `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
 | `GET /search?q=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
+| `GET /search/stats`, `POST /search/reindex`, `GET /search/reindex/status` | Embedding diagnostics and background reindexing |
 | `POST /notes/{id}/transcribe` | Re-run Whisper on an audio note's clip (retry; 503 when disabled) |
-| `GET /capabilities` | Which optional services are on: `{semantic_search, audio_transcription}` (unauthenticated) |
 | `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
-| `POST /notify/test` | Send a test notification through the channels in the body (`ntfy_url`, `telegram_bot_token`, …) — `{ok, error?}` |
-| `GET /ws?token=…` | WebSocket: `{"type":"notes_changed"}` pushes (notes *and* settings) |
+| `GET /unfurl?url=…` | SSRF-guarded link preview metadata |
+| `POST /llm/test`, `/notify/test` | Test unsaved LLM or notification configuration |
+| `GET /chat?token=…` | One streaming notes-chat turn over WebSocket |
+| `GET /ws?token=…` | Change-event WebSocket; clients debounce and refetch notes/settings |
 
 ## Design notes & trade-offs
 
 - **Co-editing is last-write-wins** at note granularity (no CRDT). The WS nudge keeps everyone fresh; a reorder mid-drag from another device is never committed as your drag.
 - **Pin/archive/order are shared** on a shared note (Keep makes them per-user; kept global for simplicity).
-- Client-generated UUIDs let notes be created offline and synced later; the server accepts them idempotently (409 on reuse).
-- Checklist history records on the *check-off* transition, credited to whoever checked it, capped at 500 entries per user.
+- Client-generated UUIDs let notes be created offline and synced later; the server returns 409 Conflict if an id is reused.
+- Checklist history records on the *check-off* transition and is shared by collaborators on that note, capped at 500 entries per note.

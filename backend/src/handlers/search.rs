@@ -96,10 +96,10 @@ pub async fn reindex_search(
     // Don't start a second job while one is still running for this user.
     {
         let progress = state.reindex_progress.lock().unwrap();
-        if let Some(p) = progress.get(&user_id) {
-            if p.done < p.total {
-                return Ok(Json(serde_json::json!({ "total": p.total, "running": true })));
-            }
+        if let Some(p) = progress.get(&user_id)
+            && p.done < p.total
+        {
+            return Ok(Json(serde_json::json!({ "total": p.total, "running": true })));
         }
     }
 

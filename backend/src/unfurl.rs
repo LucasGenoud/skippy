@@ -359,11 +359,11 @@ pub fn parse_preview(html: &str, base: &ParsedUrl) -> LinkPreview {
     let mut favicon = None;
     for tag in each_tag(html, &lower, "link") {
         let rel = get_attr(tag, "rel").unwrap_or_default().to_ascii_lowercase();
-        if rel.contains("icon") {
-            if let Some(href) = get_attr(tag, "href") {
-                favicon = Some(decode_entities(href.trim()));
-                break;
-            }
+        if rel.contains("icon")
+            && let Some(href) = get_attr(tag, "href")
+        {
+            favicon = Some(decode_entities(href.trim()));
+            break;
         }
     }
 

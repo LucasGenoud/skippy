@@ -1,17 +1,23 @@
-# sticky_notes
+# Skippy Flutter client
 
-A new Flutter project.
+This directory contains the Flutter client for Skippy. It targets web, iOS, and Android and talks to the Rust API in `../backend`. See the [root README](../README.md) for product features, full-stack setup, and deployment details.
 
-## Getting Started
+## Development
 
-This project is a starting point for a Flutter application.
+Use Flutter 3.44+ with Dart 3.12+.
 
-A few resources to get you started if this is your first Flutter project:
+```sh
+flutter pub get
+flutter run
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+The login screen lets users choose a backend. A bundled web build normally uses the current origin; `--dart-define=API_BASE=http://localhost:8787` overrides that default during development.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Verification
+
+```sh
+flutter analyze
+flutter test
+```
+
+Production code depends on the `Api` interface in `lib/api/api_client.dart`. Tests use `test/fake_api.dart`, so store and widget behavior can be exercised without a running backend.

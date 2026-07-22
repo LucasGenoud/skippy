@@ -185,10 +185,10 @@ pub fn drain_sse_deltas(buf: &mut String) -> (Vec<String>, bool) {
             continue;
         }
         let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else { continue };
-        if let Some(content) = value["choices"][0]["delta"]["content"].as_str() {
-            if !content.is_empty() {
-                deltas.push(content.to_string());
-            }
+        if let Some(content) = value["choices"][0]["delta"]["content"].as_str()
+            && !content.is_empty()
+        {
+            deltas.push(content.to_string());
         }
     }
     (deltas, done)

@@ -1,4 +1,6 @@
 pub mod sqlite;
+mod sqlite_rows;
+mod sqlite_schema;
 
 use async_trait::async_trait;
 

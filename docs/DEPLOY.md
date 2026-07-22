@@ -22,7 +22,7 @@ restart untouched, and DB migrations run on startup.
 
 ### 2. Runner
 
-- The workflow's `runs-on: docker` must match a label your Forgejo runner
+- The workflow's `runs-on: homeserver-runner` must match a label your Forgejo runner
   registered with — adjust if yours differs.
 - The runner must expose the host Docker daemon to jobs (forgejo-runner does
   this by default). The job shells out to `docker build`/`docker push`.
@@ -36,12 +36,14 @@ image (it reads `~/.docker/config.json`):
 docker login forgejo.genoud.dev
 ```
 
-Then bring the stack up. Watchtower is part of the compose file and takes over
-from there:
+Then bring the stack up:
 
 ```
 docker compose up -d
 ```
+
+Watchtower is not defined in this repository's `docker-compose.yml`. Configure
+it separately on the homeserver if you want automatic pulls and restarts.
 
 ## Rollback
 

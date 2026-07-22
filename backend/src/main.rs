@@ -16,12 +16,14 @@ use tower_http::services::{ServeDir, ServeFile};
 /// restarts (a per-process key would invalidate every outstanding URL on
 /// reboot).
 async fn load_file_secret(repo: &dyn Repository) -> anyhow::Result<Vec<u8>> {
-    if let Some(stored) = repo.meta_get("file_secret").await.map_err(|e| anyhow::anyhow!("{e:?}"))? {
-        if let Ok(bytes) = hex::decode(stored.trim()) {
-            if bytes.len() >= 32 {
-                return Ok(bytes);
-            }
-        }
+    if let Some(stored) = repo
+        .meta_get("file_secret")
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        && let Ok(bytes) = hex::decode(stored.trim())
+        && bytes.len() >= 32
+    {
+        return Ok(bytes);
     }
     let mut bytes = vec![0u8; 32];
     rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
@@ -82,36 +84,6 @@ fn inject_api_base(html: &str, url: &str) -> String {
         html.replacen("</head>", &format!("{snippet}\n</head>"), 1)
     } else {
         format!("{snippet}\n{html}")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::inject_api_base;
-
-    #[test]
-    fn injects_before_head_close() {
-        let out = inject_api_base("<html><head><title>x</title></head><body></body></html>", "https://notes.example.com");
-        assert!(out.contains(r#"window.stickyNotesApiBase="https://notes.example.com";"#));
-        // Placed inside <head>, before the app's own scripts run.
-        let script = out.find("stickyNotesApiBase").unwrap();
-        assert!(script < out.find("</head>").unwrap());
-    }
-
-    #[test]
-    fn escapes_url_so_it_cannot_break_out_of_the_script() {
-        let out = inject_api_base("<head></head>", r#"https://x/"</script><script>alert(1)"#);
-        // No literal </script> can appear in the injected value — it's \u-escaped.
-        let value_end = out.find(";</script>").unwrap();
-        assert!(!out[..value_end].contains("</script>"));
-        assert!(out.contains("\\u003c"));
-    }
-
-    #[test]
-    fn falls_back_when_no_head() {
-        let out = inject_api_base("<body>app</body>", "http://localhost:8787");
-        assert!(out.starts_with("<script>window.stickyNotesApiBase="));
-        assert!(out.contains("<body>app</body>"));
     }
 }
 
@@ -274,4 +246,37 @@ async fn main() -> anyhow::Result<()> {
     println!("sticky-notes-server listening on http://{addr} (db: {db_path})");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inject_api_base;
+
+    #[test]
+    fn injects_before_head_close() {
+        let out = inject_api_base(
+            "<html><head><title>x</title></head><body></body></html>",
+            "https://notes.example.com",
+        );
+        assert!(out.contains(r#"window.stickyNotesApiBase="https://notes.example.com";"#));
+        // Placed inside <head>, before the app's own scripts run.
+        let script = out.find("stickyNotesApiBase").unwrap();
+        assert!(script < out.find("</head>").unwrap());
+    }
+
+    #[test]
+    fn escapes_url_so_it_cannot_break_out_of_the_script() {
+        let out = inject_api_base("<head></head>", r#"https://x/"</script><script>alert(1)"#);
+        // No literal </script> can appear in the injected value — it's \u-escaped.
+        let value_end = out.find(";</script>").unwrap();
+        assert!(!out[..value_end].contains("</script>"));
+        assert!(out.contains("\\u003c"));
+    }
+
+    #[test]
+    fn falls_back_when_no_head() {
+        let out = inject_api_base("<body>app</body>", "http://localhost:8787");
+        assert!(out.starts_with("<script>window.stickyNotesApiBase="));
+        assert!(out.contains("<body>app</body>"));
+    }
 }

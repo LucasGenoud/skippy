@@ -201,21 +201,23 @@ pub async fn upload(
 // ---------------------------------------------------------------------------
 // LLM fakes
 
+pub type LlmCalls = Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>;
+
 /// Deterministic LLM: replays scripted replies in order (the last one
 /// repeats) and records every request, so tests can assert on call counts
 /// and prompts without a model server.
 pub struct FakeLlm {
     replies: std::sync::Mutex<Vec<String>>,
-    calls: Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>,
+    calls: LlmCalls,
 }
 
 impl FakeLlm {
-    pub fn new(reply: &str) -> (Arc<Self>, Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>) {
+    pub fn new(reply: &str) -> (Arc<Self>, LlmCalls) {
         Self::new_seq(&[reply])
     }
 
     /// One reply per successive call; chat turns make two (route, answer).
-    pub fn new_seq(replies: &[&str]) -> (Arc<Self>, Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>) {
+    pub fn new_seq(replies: &[&str]) -> (Arc<Self>, LlmCalls) {
         let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
         (
             Arc::new(Self {
@@ -271,12 +273,15 @@ impl Llm for FailLlm {
 
 pub async fn state_with_llm(
     reply: &str,
-) -> (AppState, Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>) {
+) -> (AppState, LlmCalls) {
     let (llm, calls) = FakeLlm::new(reply);
     let state = state()
         .await
         .with_llm(llm)
-        .with_label_delay(std::time::Duration::from_millis(50));
+        // Production waits 20 seconds. Keep tests fast while leaving enough
+        // headroom for create/edit bursts when the integration suite runs all
+        // 69 cases concurrently on a loaded machine.
+        .with_label_delay(std::time::Duration::from_millis(250));
     (state, calls)
 }
 
@@ -302,6 +307,5 @@ pub async fn make_label(app: &Router, token: &str, name: &str) -> String {
 
 /// Labeling tasks wait out the (shrunken) debounce before calling the LLM.
 pub async fn settle_labeling() {
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(750)).await;
 }
-

@@ -5,95 +5,9 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
 use super::{PurgedNote, RepoError, RepoResult, Repository};
+use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row};
+use super::sqlite_schema;
 use crate::models::*;
-
-const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sessions (
-    token TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS notes (
-    id TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL DEFAULT 'text',
-    title TEXT NOT NULL DEFAULT '',
-    content TEXT NOT NULL DEFAULT '',
-    items TEXT NOT NULL DEFAULT '[]',
-    color TEXT NOT NULL DEFAULT 'default',
-    pinned INTEGER NOT NULL DEFAULT 0,
-    archived INTEGER NOT NULL DEFAULT 0,
-    trashed INTEGER NOT NULL DEFAULT 0,
-    position REAL NOT NULL DEFAULT 0,
-    reminder_at TEXT,
-    reminder_fired_at TEXT,
-    transcript_status TEXT NOT NULL DEFAULT 'none',
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    trashed_at TEXT,
-    last_editor_id TEXT
-);
-CREATE TABLE IF NOT EXISTS note_versions (
-    id TEXT PRIMARY KEY,
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL DEFAULT 'text',
-    title TEXT NOT NULL DEFAULT '',
-    content TEXT NOT NULL DEFAULT '',
-    items TEXT NOT NULL DEFAULT '[]',
-    edited_by TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS note_shares (
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (note_id, user_id)
-);
-CREATE TABLE IF NOT EXISTS labels (
-    id TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    color TEXT,
-    icon TEXT,
-    UNIQUE (owner_id, name COLLATE NOCASE)
-);
-CREATE TABLE IF NOT EXISTS note_labels (
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
-    PRIMARY KEY (note_id, label_id)
-);
-CREATE TABLE IF NOT EXISTS checklist_history (
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    text TEXT NOT NULL COLLATE NOCASE,
-    uses INTEGER NOT NULL DEFAULT 1,
-    last_used_at TEXT NOT NULL,
-    PRIMARY KEY (note_id, text)
-);
-CREATE TABLE IF NOT EXISTS attachments (
-    id TEXT PRIMARY KEY,
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    mime TEXT NOT NULL,
-    filename TEXT NOT NULL DEFAULT '',
-    size INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS user_settings (
-    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    data TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS app_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_id);
-CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);
-CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at);
-"#;
 
 pub struct SqliteRepository {
     pool: SqlitePool,
@@ -112,97 +26,9 @@ impl SqliteRepository {
             .max_connections(if path == ":memory:" { 1 } else { 5 })
             .connect_with(options)
             .await?;
-        sqlx::raw_sql(SCHEMA).execute(&pool).await?;
-        // Best-effort column migrations for databases created before these
-        // fields existed; the errors on already-migrated DBs are harmless.
-        for ddl in [
-            "ALTER TABLE attachments ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE attachments ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
-            "ALTER TABLE notes ADD COLUMN transcript_status TEXT NOT NULL DEFAULT 'none'",
-            "ALTER TABLE notes ADD COLUMN last_editor_id TEXT",
-            // Pre-existing reminders on migrated databases keep a NULL fired
-            // mark: any that are already past will fire once on the next
-            // sweep, which reads as catch-up rather than a bug.
-            "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
-            // Per-label presentation (colour + icon); NULL keeps the theme
-            // default, so existing labels are unaffected.
-            "ALTER TABLE labels ADD COLUMN color TEXT",
-            "ALTER TABLE labels ADD COLUMN icon TEXT",
-        ] {
-            let _ = sqlx::query(ddl).execute(&pool).await;
-        }
-        // Checklist history moved from per-user to per-note (suggestions must
-        // never leak across notes). The old rows can't be attributed to a
-        // note, so rebuild the table and seed it from each note's currently
-        // checked items.
-        if sqlx::query("SELECT note_id FROM checklist_history LIMIT 1")
-            .fetch_optional(&pool)
-            .await
-            .is_err()
-        {
-            sqlx::query("DROP TABLE checklist_history").execute(&pool).await?;
-            sqlx::raw_sql(SCHEMA).execute(&pool).await?;
-            sqlx::query(
-                "INSERT OR IGNORE INTO checklist_history (note_id, text, uses, last_used_at)
-                 SELECT n.id, json_extract(je.value, '$.text'), 1, n.updated_at
-                 FROM notes n, json_each(n.items) je
-                 WHERE json_extract(je.value, '$.done') = 1
-                   AND trim(coalesce(json_extract(je.value, '$.text'), '')) != ''",
-            )
-            .execute(&pool)
-            .await?;
-        }
+        sqlite_schema::initialize(&pool).await?;
         Ok(Self { pool })
     }
-}
-
-fn record_from_row(row: &sqlx::sqlite::SqliteRow) -> NoteRecord {
-    let items_json: String = row.get("items");
-    NoteRecord {
-        id: row.get("id"),
-        owner_id: row.get("owner_id"),
-        kind: row.get("kind"),
-        title: row.get("title"),
-        content: row.get("content"),
-        items: serde_json::from_str(&items_json).unwrap_or_default(),
-        color: row.get("color"),
-        pinned: row.get::<i64, _>("pinned") != 0,
-        archived: row.get::<i64, _>("archived") != 0,
-        trashed: row.get::<i64, _>("trashed") != 0,
-        position: row.get("position"),
-        reminder_at: row.get("reminder_at"),
-        reminder_fired_at: row.get("reminder_fired_at"),
-        transcript_status: row.get("transcript_status"),
-        created_at: row.get("created_at"),
-        updated_at: row.get("updated_at"),
-        last_editor_id: row.get("last_editor_id"),
-    }
-}
-
-fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> NoteVersion {
-    let items_json: String = row.get("items");
-    NoteVersion {
-        id: row.get("id"),
-        note_id: row.get("note_id"),
-        kind: row.get("kind"),
-        title: row.get("title"),
-        content: row.get("content"),
-        items: serde_json::from_str(&items_json).unwrap_or_default(),
-        edited_by: row.get("edited_by"),
-        created_at: row.get("created_at"),
-    }
-}
-
-fn user_from_row(row: &sqlx::sqlite::SqliteRow) -> User {
-    User {
-        id: row.get("id"),
-        username: row.get("username"),
-        password_hash: row.get("password_hash"),
-    }
-}
-
-fn now() -> String {
-    chrono::Utc::now().to_rfc3339()
 }
 
 impl SqliteRepository {
@@ -365,7 +191,7 @@ impl Repository for SqliteRepository {
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
-        let records = rows.iter().map(record_from_row).collect();
+        let records = rows.iter().map(note_from_row).collect();
         self.build_views(records, user_id).await
     }
 
@@ -381,7 +207,7 @@ impl Repository for SqliteRepository {
             .bind(note_id)
             .fetch_optional(&self.pool)
             .await?;
-        Ok(row.map(|r| record_from_row(&r)))
+        Ok(row.map(|r| note_from_row(&r)))
     }
 
     async fn insert_note(&self, note: &NoteRecord) -> RepoResult<()> {
@@ -537,7 +363,7 @@ impl Repository for SqliteRepository {
         .bind(now)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(record_from_row).collect())
+        Ok(rows.iter().map(note_from_row).collect())
     }
 
     async fn mark_reminder_fired(&self, note_id: &str, fired_at: &str) -> RepoResult<()> {

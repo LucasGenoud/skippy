@@ -3,9 +3,9 @@
 //! [`apply_note_update`]) so the chat write path runs the exact same
 //! indexing + labeling + history + notify flow as the HTTP handlers.
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 use chrono::Utc;
 
 use crate::AppState;
@@ -13,8 +13,8 @@ use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::versions::{seconds_since, version_of, VERSION_SESSION_GAP_SECS};
-use super::{new_id, now, require_participant, CHANGED_MSG};
+use super::versions::{VERSION_SESSION_GAP_SECS, seconds_since, version_of};
+use super::{CHANGED_MSG, new_id, now, require_participant};
 
 const TRASH_RETENTION_DAYS: i64 = 7;
 
@@ -32,6 +32,52 @@ fn validate_reminder(value: &Option<String>) -> ApiResult<()> {
             .map_err(|_| ApiError::BadRequest("reminder_at must be RFC3339".to_string()))?;
     }
     Ok(())
+}
+
+fn validate_update(record: &NoteRecord, user_id: &str, body: &UpdateNote) -> ApiResult<()> {
+    if body.trashed.is_some() && record.owner_id != user_id {
+        return Err(ApiError::Forbidden(
+            "only the owner can trash or restore a note",
+        ));
+    }
+    if let Some(kind) = &body.kind {
+        validate_kind(kind)?;
+    }
+    if let Some(reminder) = &body.reminder_at {
+        validate_reminder(reminder)?;
+    }
+    Ok(())
+}
+
+fn changes_content(body: &UpdateNote, record: &NoteRecord) -> bool {
+    body.kind.as_ref().is_some_and(|v| *v != record.kind)
+        || body.title.as_ref().is_some_and(|v| *v != record.title)
+        || body.content.as_ref().is_some_and(|v| *v != record.content)
+        || body.items.as_ref().is_some_and(|v| *v != record.items)
+}
+
+fn reset_delivered_reminder_if_rescheduled(body: &UpdateNote, record: &mut NoteRecord) {
+    if body
+        .reminder_at
+        .as_ref()
+        .is_some_and(|reminder| *reminder != record.reminder_at)
+    {
+        // A rescheduled reminder is a new alarm and must be delivered again.
+        record.reminder_fired_at = None;
+    }
+}
+
+fn starts_new_edit_session(record: &NoteRecord, user_id: &str) -> bool {
+    record.last_editor_id.as_deref() != Some(user_id)
+        || seconds_since(&record.updated_at) >= VERSION_SESSION_GAP_SECS
+}
+
+fn newly_checked_texts(before: &[ChecklistItem], after: &[ChecklistItem]) -> Vec<String> {
+    after
+        .iter()
+        .filter(|item| item.done && !before.iter().any(|old| old.id == item.id && old.done))
+        .map(|item| item.text.clone())
+        .collect()
 }
 
 pub async fn list_notes(
@@ -114,15 +160,26 @@ pub async fn create_note_for_user(
         last_editor_id: None,
     };
     state.repo.insert_note(&record).await?;
-    let pre_checked: Vec<String> =
-        record.items.iter().filter(|i| i.done).map(|i| i.text.clone()).collect();
+    let pre_checked: Vec<String> = record
+        .items
+        .iter()
+        .filter(|i| i.done)
+        .map(|i| i.text.clone())
+        .collect();
     if !pre_checked.is_empty() {
-        state.repo.record_checked_items(&record.id, &pre_checked).await?;
+        state
+            .repo
+            .record_checked_items(&record.id, &pre_checked)
+            .await?;
     }
     state.index_note_later(&id);
     state.label_note_later(&id, user_id);
     state.notify_user(user_id);
-    let mut view = state.repo.note_view(&id, user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state
+        .repo
+        .note_view(&id, user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(view)
 }
@@ -133,7 +190,11 @@ pub async fn get_note(
     Path(id): Path<String>,
 ) -> ApiResult<Json<NoteView>> {
     require_participant(&state, &id, &user_id).await?;
-    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state
+        .repo
+        .note_view(&id, &user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(Json(view))
 }
@@ -158,23 +219,9 @@ pub async fn apply_note_update(
 ) -> ApiResult<NoteView> {
     let mut record = require_participant(state, id, user_id).await?;
     let old_items = record.items.clone();
-
-    // Trash lifecycle is the owner's call; everything else is shared editing.
-    if body.trashed.is_some() && record.owner_id != user_id {
-        return Err(ApiError::Forbidden("only the owner can trash or restore a note"));
-    }
-    if let Some(kind) = &body.kind {
-        validate_kind(kind)?;
-    }
-    if let Some(reminder) = &body.reminder_at {
-        validate_reminder(reminder)?;
-        // A (re)scheduled reminder is a new alarm: clear the fired mark so
-        // the scheduler delivers the new time too.
-        if *reminder != record.reminder_at {
-            record.reminder_fired_at = None;
-        }
-    }
-
+    validate_update(&record, user_id, &body)?;
+    let content_changed = changes_content(&body, &record);
+    reset_delivered_reminder_if_rescheduled(&body, &mut record);
     let label_ids = body.label_ids.take();
 
     // Version history: only content edits are versioned (color/pin/archive and
@@ -184,14 +231,8 @@ pub async fn apply_note_update(
     // edits within the window coalesce, so history is one entry per sitting
     // rather than one per debounced save. The first-ever edit always snapshots
     // (last_editor_id is None), preserving how the note started.
-    let content_changed = body.kind.as_ref().is_some_and(|v| *v != record.kind)
-        || body.title.as_ref().is_some_and(|v| *v != record.title)
-        || body.content.as_ref().is_some_and(|v| *v != record.content)
-        || body.items.as_ref().is_some_and(|v| *v != record.items);
     if content_changed {
-        let same_session = record.last_editor_id.as_deref() == Some(user_id)
-            && seconds_since(&record.updated_at) < VERSION_SESSION_GAP_SECS;
-        if !same_session {
+        if starts_new_edit_session(&record, user_id) {
             state.repo.insert_note_version(&version_of(&record)).await?;
         }
         record.last_editor_id = Some(user_id.to_string());
@@ -204,12 +245,7 @@ pub async fn apply_note_update(
     // Items checked off in this patch feed this note's suggestion dictionary
     // ("Milk" checked today autocompletes on next week's list) — scoped per
     // note, so suggestions never leak across notes.
-    let newly_checked: Vec<String> = record
-        .items
-        .iter()
-        .filter(|item| item.done && !old_items.iter().any(|o| o.id == item.id && o.done))
-        .map(|item| item.text.clone())
-        .collect();
+    let newly_checked = newly_checked_texts(&old_items, &record.items);
     if !newly_checked.is_empty() {
         state.repo.record_checked_items(id, &newly_checked).await?;
     }
@@ -224,7 +260,11 @@ pub async fn apply_note_update(
         state.label_note_later(id, user_id);
     }
     state.notify_note(id).await;
-    let mut view = state.repo.note_view(id, user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state
+        .repo
+        .note_view(id, user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(view)
 }
