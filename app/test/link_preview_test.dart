@@ -91,5 +91,56 @@ void main() {
       // The chip shows the bare host.
       expect(find.text('example.com'), findsOneWidget);
     });
+
+    // The server inlines small favicons as `data:` URIs so Flutter web can
+    // render them (a cross-origin favicon is CORS-tainted on CanvasKit). Those
+    // must decode to bytes — mobile's NetworkImage can't fetch the data: scheme.
+    testWidgets('renders an inlined data: favicon via MemoryImage', (
+      tester,
+    ) async {
+      // A valid 1x1 transparent PNG.
+      const dataUri =
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFc'
+          'SJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      final api = FakeApi();
+      api.previews['https://flutter.dev'] = const LinkPreview(
+        url: 'https://flutter.dev',
+        title: 'Flutter',
+        siteName: 'flutter.dev',
+        favicon: dataUri,
+      );
+      await tester.pumpWidget(
+        harness(api, const LinkPreviewCard(url: 'https://flutter.dev')),
+      );
+      await tester.pumpAndSettle();
+
+      final images = tester.widgetList<Image>(find.byType(Image));
+      expect(
+        images.any((i) => i.image is MemoryImage),
+        isTrue,
+        reason: 'a data: favicon must be decoded to bytes, not fetched',
+      );
+      // A valid inlined icon means no globe fallback.
+      expect(find.byIcon(Icons.public), findsNothing);
+    });
+
+    testWidgets('renders an absolute-URL favicon via NetworkImage', (
+      tester,
+    ) async {
+      final api = FakeApi();
+      api.previews['https://example.org'] = const LinkPreview(
+        url: 'https://example.org',
+        title: 'Example',
+        siteName: 'example.org',
+        favicon: 'https://example.org/favicon.png',
+      );
+      await tester.pumpWidget(
+        harness(api, const LinkPreviewCard(url: 'https://example.org')),
+      );
+      await tester.pumpAndSettle();
+
+      final images = tester.widgetList<Image>(find.byType(Image));
+      expect(images.any((i) => i.image is NetworkImage), isTrue);
+    });
   });
 }

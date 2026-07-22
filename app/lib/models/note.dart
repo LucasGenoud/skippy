@@ -333,12 +333,34 @@ class Label {
   final String id;
   final String name;
 
-  const Label({required this.id, required this.name});
+  /// Hex colour (`#RRGGBB`) for the label's chip/dot, or null for the theme
+  /// default. [icon] is a stable key into the client's curated icon set (see
+  /// `util/label_style.dart`), or null for the default label glyph.
+  final String? color;
+  final String? icon;
 
-  factory Label.fromJson(Map<String, dynamic> json) =>
-      Label(id: json['id'] as String, name: json['name'] as String);
+  const Label({required this.id, required this.name, this.color, this.icon});
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+  factory Label.fromJson(Map<String, dynamic> json) => Label(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    color: json['color'] as String?,
+    icon: json['icon'] as String?,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (color != null) 'color': color,
+    if (icon != null) 'icon': icon,
+  };
+
+  Label copyWith({String? name, String? color, String? icon}) => Label(
+    id: id,
+    name: name ?? this.name,
+    color: color ?? this.color,
+    icon: icon ?? this.icon,
+  );
 }
 
 @immutable

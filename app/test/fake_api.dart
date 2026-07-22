@@ -209,16 +209,34 @@ class FakeApi implements Api {
   });
 
   @override
-  Future<void> createLabel(String id, String name) =>
-      _run('createLabel:$name', () {
-        labels[id] = Label(id: id, name: name);
-      });
+  Future<void> createLabel(
+    String id,
+    String name, {
+    String? color,
+    String? icon,
+  }) => _run('createLabel:$name', () {
+    labels[id] = Label(
+      id: id,
+      name: name,
+      color: (color ?? '').isEmpty ? null : color,
+      icon: (icon ?? '').isEmpty ? null : icon,
+    );
+  });
 
   @override
-  Future<void> renameLabel(String id, String name) =>
-      _run('renameLabel:$id', () {
-        labels[id] = Label(id: id, name: name);
-      });
+  Future<void> updateLabel(
+    String id,
+    String name, {
+    String? color,
+    String? icon,
+  }) => _run('updateLabel:$id', () {
+    labels[id] = Label(
+      id: id,
+      name: name,
+      color: (color ?? '').isEmpty ? null : color,
+      icon: (icon ?? '').isEmpty ? null : icon,
+    );
+  });
 
   @override
   Future<void> deleteLabel(String id) => _run('deleteLabel:$id', () {

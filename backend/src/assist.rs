@@ -435,7 +435,7 @@ mod tests {
     use super::*;
 
     fn label(id: &str, name: &str) -> Label {
-        Label { id: id.into(), name: name.into() }
+        Label { id: id.into(), name: name.into(), color: None, icon: None }
     }
 
     #[test]

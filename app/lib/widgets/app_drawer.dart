@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/note.dart';
 import '../state/notes_store.dart';
+import '../util/label_style.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'labels_sheet.dart';
@@ -41,8 +42,15 @@ class AppDrawer extends StatelessWidget {
         (
           ViewSelection(NoteView.label, label.id),
           NavigationDrawerDestination(
-            icon: const Icon(Icons.label_outline),
-            selectedIcon: const Icon(Icons.label),
+            // The label's icon (custom or default), tinted with its colour.
+            icon: Icon(
+              labelIcon(label),
+              color: labelColor(label, Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            selectedIcon: Icon(
+              labelIcon(label),
+              color: labelColor(label, Theme.of(context).colorScheme.primary),
+            ),
             label: Text(label.name, overflow: TextOverflow.ellipsis),
           ),
         ),

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:provider/provider.dart';
@@ -165,6 +167,27 @@ class _Strip extends StatelessWidget {
   }
 }
 
+/// An [ImageProvider] for a favicon. The server inlines small raster favicons
+/// as `data:` URIs (so Flutter web can render them — a cross-origin favicon
+/// fetched by `Image.network` is CORS-tainted on CanvasKit and fails). Those
+/// must be decoded to bytes: mobile's `NetworkImage` can't fetch the `data:`
+/// scheme. Anything else is a plain absolute URL. Returns null when unusable.
+ImageProvider? _faviconProvider(String favicon) {
+  if (!favicon.startsWith('data:')) return NetworkImage(favicon);
+  final comma = favicon.indexOf(',');
+  if (comma < 0) return null;
+  final isBase64 = favicon.substring(5, comma).contains(';base64');
+  final payload = favicon.substring(comma + 1);
+  try {
+    final bytes = isBase64
+        ? base64Decode(payload)
+        : utf8.encode(Uri.decodeComponent(payload));
+    return bytes.isEmpty ? null : MemoryImage(bytes);
+  } catch (_) {
+    return null;
+  }
+}
+
 /// The strip's leading square: the Open Graph image if there is one, otherwise
 /// the favicon on a tinted tile, otherwise a globe glyph. Favicons are often
 /// `.ico` (which Flutter can't decode) so every image has a graceful fallback.
@@ -204,20 +227,23 @@ class _Thumb extends StatelessWidget {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final globe = Icon(Icons.public, size: 22, color: scheme.onSurfaceVariant);
+    final provider = (favicon != null && favicon.isNotEmpty)
+        ? _faviconProvider(favicon)
+        : null;
     return Container(
       width: size,
       height: size,
       color: tile,
       alignment: Alignment.center,
-      child: (favicon != null && favicon.isNotEmpty)
-          ? Image.network(
-              favicon,
+      child: provider == null
+          ? globe
+          : Image(
+              image: provider,
               width: 22,
               height: 22,
               fit: BoxFit.contain,
               errorBuilder: (context, _, _) => globe,
-            )
-          : globe,
+            ),
     );
   }
 }

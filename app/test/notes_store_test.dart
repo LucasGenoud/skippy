@@ -431,6 +431,70 @@ void main() {
     });
   });
 
+  group('labels with color + icon', () {
+    test('createLabel carries color + icon to local state and the server',
+        () async {
+      await store.load();
+      final label =
+          store.createLabel('work', color: '#1A73E8', icon: 'work');
+      // Optimistic local copy.
+      expect(store.labelById(label.id)!.color, '#1A73E8');
+      expect(store.labelById(label.id)!.icon, 'work');
+      await settle();
+      // Synced to the (fake) server.
+      expect(api.labels[label.id]!.color, '#1A73E8');
+      expect(api.labels[label.id]!.icon, 'work');
+    });
+
+    test('updateLabel recolors, re-icons, and can clear back to default',
+        () async {
+      await store.load();
+      final label = store.createLabel('todo', color: '#EA4335', icon: 'flag');
+      await settle();
+
+      store.updateLabel(label.id, name: 'todo', color: '#188038', icon: null);
+      expect(store.labelById(label.id)!.color, '#188038');
+      expect(store.labelById(label.id)!.icon, isNull);
+      await settle();
+      expect(api.labels[label.id]!.color, '#188038');
+      expect(api.labels[label.id]!.icon, isNull);
+    });
+  });
+
+  group('sync status', () {
+    test('reflects synced / syncing / offline', () async {
+      await store.load();
+      expect(store.syncStatus, SyncStatus.synced);
+      expect(store.hasPendingWork, isFalse);
+
+      // An unsynced local draft = pending work; still online → syncing.
+      store.createDraft();
+      expect(store.hasPendingWork, isTrue);
+      expect(store.syncStatus, SyncStatus.syncing);
+
+      // Server unreachable → offline wins over syncing.
+      api.failWith = ApiException(500, 'boom');
+      await store.load();
+      expect(store.offline, isTrue);
+      expect(store.syncStatus, SyncStatus.offline);
+    });
+  });
+
+  group('manual refresh', () {
+    test('re-pulls notes and labels from the server', () async {
+      await store.load();
+      expect(store.notesForExport, isEmpty);
+
+      // Server gains a note + label out of band (e.g. another device).
+      api.notes['n9'] = serverNote('n9', title: 'from elsewhere');
+      api.labels['l9'] = const Label(id: 'l9', name: 'remote', color: '#00897B');
+
+      await store.refresh();
+      expect(store.noteById('n9')!.title, 'from elsewhere');
+      expect(store.labelById('l9')!.color, '#00897B');
+    });
+  });
+
   group('drag-drop files', () {
     DroppedFile file(String name, String mime, int size) =>
         DroppedFile(name: name, mime: mime, bytes: Uint8List(size));

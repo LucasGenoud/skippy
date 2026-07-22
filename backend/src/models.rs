@@ -171,6 +171,14 @@ pub struct NoteVersion {
 pub struct Label {
     pub id: String,
     pub name: String,
+    /// Hex colour (`#RRGGBB`) for the label's chip/dot, or `None` for the
+    /// theme default. Purely presentational — the server never interprets it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Stable key into the client's curated icon set (e.g. `"work"`), or
+    /// `None` for the default label glyph.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// A checklist item text previously checked off in a note; powers typing
@@ -303,6 +311,10 @@ pub struct LabelPayload {
     #[serde(default)]
     pub id: Option<String>,
     pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -139,6 +139,7 @@ class HomeTopBar extends StatelessWidget {
                   tooltip: 'Chat with your notes',
                   onPressed: () => ChatScreen.open(context),
                 ),
+              const _RefreshButton(),
               const _SortButton(),
               IconButton(
                 icon: Icon(
@@ -389,6 +390,9 @@ class _UserAvatarMenu extends StatelessWidget {
     final initial = username.isNotEmpty
         ? username.substring(0, 1).toUpperCase()
         : '?';
+    final syncStatus = context.select<NotesStore, SyncStatus>(
+      (s) => s.syncStatus,
+    );
 
     return PopupMenuButton<String>(
       offset: const Offset(0, 48),
@@ -508,16 +512,135 @@ class _UserAvatarMenu extends StatelessWidget {
       },
       child: Padding(
         padding: const EdgeInsets.all(4.0),
-        child: CircleAvatar(
-          radius: 18,
-          backgroundColor: scheme.primaryContainer,
-          foregroundColor: scheme.onPrimaryContainer,
-          child: Text(
-            initial,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-          ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: scheme.primaryContainer,
+              foregroundColor: scheme.onPrimaryContainer,
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: _SyncBadge(status: syncStatus),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// A small connectivity/sync indicator overlaid on the avatar: offline (no
+/// server), syncing (unsynced local edits in flight, animated), or synced
+/// (all changes saved). Ringed with the bar colour so it reads over the avatar.
+class _SyncBadge extends StatefulWidget {
+  final SyncStatus status;
+  const _SyncBadge({required this.status});
+
+  @override
+  State<_SyncBadge> createState() => _SyncBadgeState();
+}
+
+class _SyncBadgeState extends State<_SyncBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spin = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSpin();
+  }
+
+  @override
+  void didUpdateWidget(_SyncBadge old) {
+    super.didUpdateWidget(old);
+    if (old.status != widget.status) _syncSpin();
+  }
+
+  void _syncSpin() {
+    if (widget.status == SyncStatus.syncing) {
+      _spin.repeat();
+    } else {
+      _spin.stop();
+      _spin.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (IconData icon, Color color, String tip) = switch (widget.status) {
+      SyncStatus.offline => (
+        Icons.cloud_off_rounded,
+        scheme.error,
+        'Offline — changes will sync when you reconnect',
+      ),
+      SyncStatus.syncing => (
+        Icons.sync_rounded,
+        scheme.primary,
+        'Syncing changes…',
+      ),
+      SyncStatus.synced => (
+        Icons.cloud_done_rounded,
+        // A calm green that reads the same in light and dark.
+        const Color(0xFF34A853),
+        'All changes saved',
+      ),
+    };
+    return Tooltip(
+      message: tip,
+      child: Container(
+        padding: const EdgeInsets.all(1.5),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          // Ring in the bar's colour so the badge separates from the avatar.
+          color: scheme.surface,
+        ),
+        child: RotationTransition(
+          turns: _spin,
+          child: Icon(icon, size: 13, color: color),
+        ),
+      ),
+    );
+  }
+}
+
+/// Desktop-only manual refresh: re-pulls notes/labels from the server (mobile
+/// relies on the live WebSocket). Shows a spinner while the pull is in flight.
+class _RefreshButton extends StatelessWidget {
+  const _RefreshButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final refreshing = context.select<NotesStore, bool>((s) => s.refreshing);
+    return IconButton(
+      icon: refreshing
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.refresh),
+      tooltip: 'Refresh',
+      onPressed: refreshing ? null : () => context.read<NotesStore>().refresh(),
     );
   }
 }

@@ -13,6 +13,9 @@ enum NoteView { notes, reminders, archive, trash, label }
 
 enum SortMode { custom, edited, newest, oldest }
 
+/// Coarse connectivity/sync state surfaced on the top-bar avatar.
+enum SyncStatus { synced, syncing, offline }
+
 class ViewSelection {
   final NoteView view;
   final String? labelId;
@@ -67,6 +70,9 @@ class NotesStore extends ChangeNotifier {
   Map<String, List<String>> _checklistHistory = {};
   bool loading = true;
   bool offline = false;
+  /// True while a manual [refresh] is re-pulling from the server (drives the
+  /// desktop refresh button's spin). Distinct from [loading], the first load.
+  bool refreshing = false;
   SortMode sortMode = SortMode.custom;
 
   final List<PendingOp> _queue = [];
@@ -121,6 +127,15 @@ class NotesStore extends ChangeNotifier {
   bool get _hasLocalChangesInFlight =>
       _queue.isNotEmpty || _drafts.isNotEmpty || _saveDebounce.isNotEmpty;
 
+  /// Whether there are local edits not yet acknowledged by the server.
+  bool get hasPendingWork => _hasLocalChangesInFlight;
+
+  /// Coarse connectivity/sync state for the UI indicator. Offline wins (nothing
+  /// can sync); otherwise pending local work reads as syncing; else all saved.
+  SyncStatus get syncStatus => offline
+      ? SyncStatus.offline
+      : (_hasLocalChangesInFlight ? SyncStatus.syncing : SyncStatus.synced);
+
   Future<void> load() async {
     await _hydrate();
     try {
@@ -143,6 +158,41 @@ class NotesStore extends ChangeNotifier {
     }
     loading = false;
     notifyListeners();
+  }
+
+  /// A user-triggered re-pull (the desktop refresh button). Unlike [load] it
+  /// doesn't re-hydrate the cache or flip [loading], and it first drains any
+  /// pending writes so the refetch reflects them. Skips clobbering when local
+  /// changes are still in flight, matching [load].
+  Future<void> refresh() async {
+    if (refreshing) return;
+    refreshing = true;
+    notifyListeners();
+    // Push anything queued/mid-debounce first, so the server state we pull back
+    // already includes it (and won't be discarded by the in-flight guard).
+    for (final id in _saveDebounce.keys.toList()) {
+      _saveDebounce.remove(id)?.cancel();
+      _enqueueContentPatch(id);
+    }
+    if (_queue.isNotEmpty) _flush();
+    try {
+      final notes = await api.fetchNotes();
+      final labels = await api.fetchLabels();
+      final history = await api.fetchChecklistHistory();
+      if (!_hasLocalChangesInFlight) {
+        _notes = notes..sort((a, b) => a.position.compareTo(b.position));
+        _labels = labels;
+        _checklistHistory = history;
+      } else {
+        _reloadPending = true;
+      }
+      offline = false;
+    } catch (_) {
+      offline = true;
+    } finally {
+      refreshing = false;
+      notifyListeners();
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -959,26 +1009,40 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Labels
 
-  Label createLabel(String name) {
-    final label = Label(id: _uuid.v4(), name: name.trim());
+  Label createLabel(String name, {String? color, String? icon}) {
+    final label = Label(id: _uuid.v4(), name: name.trim(), color: color, icon: icon);
     _labels = [..._labels, label]
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     notifyListeners();
     _enqueue(
-      PendingOp('labelCreate', id: label.id, data: {'name': label.name}),
+      PendingOp(
+        'labelCreate',
+        id: label.id,
+        data: {'name': label.name, 'color': color, 'icon': icon},
+      ),
     );
     return label;
   }
 
-  void renameLabel(String id, String name) {
+  /// Rename and/or restyle a label. Passing null for [color]/[icon] clears it
+  /// (resets to the theme default) — these are set to exactly what's given, not
+  /// merged, so the editor's "no colour"/"no icon" choice sticks.
+  void updateLabel(String id, {String? name, String? color, String? icon}) {
     final i = _labels.indexWhere((l) => l.id == id);
     if (i == -1) return;
-    _labels[i] = Label(id: id, name: name.trim());
+    final newName = (name ?? _labels[i].name).trim();
+    _labels[i] = Label(id: id, name: newName, color: color, icon: icon);
     _labels.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
     notifyListeners();
-    _enqueue(PendingOp('labelRename', id: id, data: {'name': name.trim()}));
+    _enqueue(
+      PendingOp(
+        'labelUpdate',
+        id: id,
+        data: {'name': newName, 'color': color, 'icon': icon},
+      ),
+    );
   }
 
   void deleteLabel(String id) {
@@ -1065,9 +1129,19 @@ class NotesStore extends ChangeNotifier {
       case 'reorder':
         return api.reorderNotes((op.data['ids'] as List).cast<String>());
       case 'labelCreate':
-        return api.createLabel(op.id!, op.data['name'] as String);
-      case 'labelRename':
-        return api.renameLabel(op.id!, op.data['name'] as String);
+        return api.createLabel(
+          op.id!,
+          op.data['name'] as String,
+          color: op.data['color'] as String?,
+          icon: op.data['icon'] as String?,
+        );
+      case 'labelUpdate':
+        return api.updateLabel(
+          op.id!,
+          op.data['name'] as String,
+          color: op.data['color'] as String?,
+          icon: op.data['icon'] as String?,
+        );
       case 'labelDelete':
         return api.deleteLabel(op.id!);
       case 'removeCollaborator':

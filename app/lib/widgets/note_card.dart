@@ -13,6 +13,7 @@ import 'link_preview.dart';
 import 'linked_text.dart';
 import 'transcribing_indicator.dart';
 import '../util/highlight.dart';
+import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/note_image.dart';
 import '../util/motion.dart';
@@ -125,7 +126,10 @@ class _NoteCardContent extends StatelessWidget {
       (s) =>
           ([
             for (final id in note.labelIds)
-              if (s.labelById(id) case final Label label) label.name,
+              if (s.labelById(id) case final Label label)
+                // name  color  icon (empty = unset); carries the
+                // chip's styling through select without widening rebuilds.
+                '${label.name}${label.color ?? ''}${label.icon ?? ''}',
           ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()))).join(
             '\u0000',
           ),
@@ -328,7 +332,7 @@ class _NoteCardContent extends StatelessWidget {
                 for (final file in files.take(2)) _FileChip(file: file),
                 if (files.length > 2)
                   _LabelChip(name: '+${files.length - 2} files'),
-                for (final name in labels.take(3)) _LabelChip(name: name),
+                for (final row in labels.take(3)) _LabelChip.encoded(row),
                 if (labels.length > 3)
                   _LabelChip(name: '+${labels.length - 3}'),
                 if (note.isShared)
@@ -691,24 +695,47 @@ class _AudioPill extends StatelessWidget {
 
 class _LabelChip extends StatelessWidget {
   final String name;
-  const _LabelChip({required this.name});
+  final String? color; // hex, or null for the theme default
+  final String? iconKey; // curated icon key, or null for no leading icon
+  const _LabelChip({required this.name, this.color, this.iconKey});
+
+  /// Decode a `name<U+0001>color<U+0001>icon` row (as encoded in the card's
+  /// label `select`) into a styled chip.
+  factory _LabelChip.encoded(String row) {
+    final parts = row.split('');
+    String? at(int i) => (i < parts.length && parts[i].isNotEmpty) ? parts[i] : null;
+    return _LabelChip(name: parts.isEmpty ? '' : parts[0], color: at(1), iconKey: at(2));
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final tint = PaletteEntry.hexToColor(color);
+    final line = tint ?? scheme.onSurfaceVariant;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: EdgeInsets.only(
+        left: iconKey != null ? 7 : 10,
+        right: 10,
+        top: 3,
+        bottom: 3,
+      ),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(kRadius),
-        border: Border.all(
-          color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
-        ),
+        color: tint?.withValues(alpha: 0.14),
+        border: Border.all(color: line.withValues(alpha: tint == null ? 0.4 : 0.55)),
       ),
-      child: Text(
-        name,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (iconKey != null) ...[
+            Icon(labelIconFor(iconKey), size: 13, color: line),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            name,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(color: line),
+          ),
+        ],
       ),
     );
   }

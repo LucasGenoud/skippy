@@ -81,8 +81,8 @@ abstract class Api {
 
   // labels
   Future<List<Label>> fetchLabels();
-  Future<void> createLabel(String id, String name);
-  Future<void> renameLabel(String id, String name);
+  Future<void> createLabel(String id, String name, {String? color, String? icon});
+  Future<void> updateLabel(String id, String name, {String? color, String? icon});
   Future<void> deleteLabel(String id);
 
   // sharing
@@ -375,23 +375,43 @@ class ApiClient implements Api {
   }
 
   @override
-  Future<void> createLabel(String id, String name) async {
+  Future<void> createLabel(
+    String id,
+    String name, {
+    String? color,
+    String? icon,
+  }) async {
     _decode(
       await _client.post(
         _uri('/labels'),
         headers: _headers(),
-        body: jsonEncode({'id': id, 'name': name}),
+        // Empty strings clear the field server-side; null omits it.
+        body: jsonEncode({
+          'id': id,
+          'name': name,
+          'color': color ?? '',
+          'icon': icon ?? '',
+        }),
       ),
     );
   }
 
   @override
-  Future<void> renameLabel(String id, String name) async {
+  Future<void> updateLabel(
+    String id,
+    String name, {
+    String? color,
+    String? icon,
+  }) async {
     _decode(
       await _client.patch(
         _uri('/labels/$id'),
         headers: _headers(),
-        body: jsonEncode({'name': name}),
+        body: jsonEncode({
+          'name': name,
+          'color': color ?? '',
+          'icon': icon ?? '',
+        }),
       ),
     );
   }

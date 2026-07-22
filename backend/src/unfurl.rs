@@ -85,13 +85,96 @@ pub fn allow_private() -> bool {
 /// the client still gets a usable card.
 pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkPreview> {
     let parsed = validate_public_http_url(raw, allow_private).await?;
-    match fetch_html(&parsed, allow_private).await {
+    let mut preview = match fetch_html(&parsed, allow_private).await {
         Ok((final_url, html)) => {
             let base = validate_public_http_url(&final_url, true).await.unwrap_or(parsed);
-            Ok(parse_preview(&html, &base))
+            parse_preview(&html, &base)
         }
-        Err(_) => Ok(LinkPreview::host_only(&parsed)),
+        Err(_) => LinkPreview::host_only(&parsed),
+    };
+    // Inline the favicon as a `data:` URI. Flutter web (CanvasKit) can't render
+    // a cross-origin favicon fetched by `Image.network` — favicon servers don't
+    // send CORS headers, so the browser taints the fetch and the client falls
+    // back to a generic globe. A same-origin data URI renders identically on web
+    // and mobile. On any failure we keep the original absolute URL (mobile fetch
+    // is unrestricted), so this never regresses the existing behaviour.
+    if let Some(fav) = preview.favicon.take() {
+        preview.favicon = Some(inline_favicon(&fav, allow_private).await.unwrap_or(fav));
     }
+    Ok(preview)
+}
+
+/// Favicons are tiny; anything larger than this isn't a favicon and isn't worth
+/// inlining into the (cached, JSON) preview.
+const MAX_FAVICON_BYTES: usize = 256 * 1024;
+
+/// Fetch `url` and return it as a `data:` URI when it's a raster image Flutter
+/// can decode everywhere. Returns `None` on any failure or for formats Flutter
+/// can't decode (`.ico`, SVG) so the caller falls back to the absolute URL.
+async fn inline_favicon(url: &str, allow_private: bool) -> Option<String> {
+    if url.starts_with("data:") {
+        return Some(url.to_string());
+    }
+    let parsed = validate_public_http_url(url, allow_private).await.ok()?;
+    let (content_type, bytes) = fetch_bytes(&parsed, allow_private, MAX_FAVICON_BYTES).await.ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+    let mime = decodable_image_mime(&content_type, &bytes)?;
+    Some(format!("data:{mime};base64,{}", base64_encode(&bytes)))
+}
+
+/// Map a response `content-type` (falling back to magic-byte sniffing) to a MIME
+/// type Flutter decodes on every platform, or `None` for formats it can't
+/// (`.ico`, SVG) — those keep the generic globe as they always have.
+fn decodable_image_mime(content_type: &str, bytes: &[u8]) -> Option<&'static str> {
+    let ct = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    match ct.as_str() {
+        "image/png" => return Some("image/png"),
+        "image/jpeg" | "image/jpg" => return Some("image/jpeg"),
+        "image/gif" => return Some("image/gif"),
+        "image/webp" => return Some("image/webp"),
+        "image/bmp" => return Some("image/bmp"),
+        // .ico and SVG (and anything else) fall through to sniffing.
+        _ => {}
+    }
+    sniff_image_mime(bytes)
+}
+
+/// Best-effort content sniff for the raster formats Flutter can decode. Servers
+/// frequently mislabel favicons (`text/plain`, `application/octet-stream`), so a
+/// wrong or missing `content-type` shouldn't cost us a good PNG.
+fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"BM") {
+        Some("image/bmp")
+    } else {
+        None
+    }
+}
+
+/// Standard base64 (RFC 4648, with padding). Hand-rolled to keep the crate's
+/// no-extra-deps style (see the module header).
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+        out.push(ALPHABET[b0 >> 2] as char);
+        out.push(ALPHABET[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
+        out.push(if chunk.len() > 1 { ALPHABET[((b1 & 0x0F) << 2) | (b2 >> 6)] as char } else { '=' });
+        out.push(if chunk.len() > 2 { ALPHABET[b2 & 0x3F] as char } else { '=' });
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +217,61 @@ async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(S
         let bytes = read_capped(resp, MAX_BODY_BYTES).await?;
         let html = String::from_utf8_lossy(&bytes).into_owned();
         return Ok((current.full, html));
+    }
+    bail!("too many redirects")
+}
+
+/// Fetch a non-HTML resource (a favicon), following redirects and re-validating
+/// each hop through the SSRF guard. Returns `(content_type, bytes)` with the
+/// body capped at `cap`. Unlike [`fetch_html`] this doesn't stop at `</head>`.
+async fn fetch_bytes(
+    start: &ParsedUrl,
+    allow_private: bool,
+    cap: usize,
+) -> anyhow::Result<(String, Vec<u8>)> {
+    let mut current = start.clone();
+    for _ in 0..MAX_REDIRECTS {
+        let resp = client()
+            .get(&current.full)
+            .header(ACCEPT, "image/*")
+            .header(
+                USER_AGENT,
+                "Mozilla/5.0 (compatible; StickyNotesBot/1.0; +https://sticky-notes.local)",
+            )
+            .send()
+            .await
+            .context("request failed")?;
+        let status = resp.status();
+        if status.is_redirection() {
+            let loc = resp
+                .headers()
+                .get(LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| anyhow!("redirect without Location"))?;
+            let next = current.resolve(loc);
+            current = validate_public_http_url(&next, allow_private).await?;
+            continue;
+        }
+        if !status.is_success() {
+            bail!("upstream status {status}");
+        }
+        let content_type = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let mut stream = resp.bytes_stream();
+        let mut buf = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            buf.extend_from_slice(&chunk.context("read body")?);
+            if buf.len() >= cap {
+                // Larger than any real favicon — treat as unusable and bail so
+                // the caller keeps the plain URL rather than inlining a huge blob.
+                bail!("favicon exceeds size cap");
+            }
+        }
+        return Ok((content_type, buf));
     }
     bail!("too many redirects")
 }
@@ -561,5 +699,98 @@ mod tests {
     #[tokio::test]
     async fn ssrf_guard_allows_private_when_opted_in() {
         assert!(validate_public_http_url("http://127.0.0.1:8080/x", true).await.is_ok());
+    }
+
+    #[test]
+    fn base64_matches_reference_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        // Non-ASCII bytes exercise the top of the alphabet (+, /).
+        assert_eq!(base64_encode(&[0xFB, 0xFF, 0xBF]), "+/+/");
+    }
+
+    #[test]
+    fn decodable_mime_trusts_known_content_types() {
+        assert_eq!(decodable_image_mime("image/png", b""), Some("image/png"));
+        assert_eq!(decodable_image_mime("image/jpeg; charset=binary", b""), Some("image/jpeg"));
+        assert_eq!(decodable_image_mime("IMAGE/WEBP", b""), Some("image/webp"));
+        // Formats Flutter can't decode are rejected so the caller keeps the URL.
+        assert_eq!(decodable_image_mime("image/x-icon", b""), None);
+        assert_eq!(decodable_image_mime("image/svg+xml", b"<svg/>"), None);
+    }
+
+    /// Minimal HTTP/1.1 server: serves `page_html` at `/` and `favicon_bytes`
+    /// (as image/png) at `/fav.png`. Returns its base URL. Handles one request
+    /// per connection, enough connections for a full unfurl (page + favicon).
+    async fn serve_page(page_html: String, favicon_bytes: Vec<u8>) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else { return };
+                let (html, fav) = (page_html.clone(), favicon_bytes.clone());
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let wants_favicon = req.starts_with("GET /fav.png");
+                    let (ctype, body) = if wants_favicon {
+                        ("image/png".to_string(), fav)
+                    } else {
+                        ("text/html; charset=utf-8".to_string(), html.into_bytes())
+                    };
+                    let head = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = sock.write_all(head.as_bytes()).await;
+                    let _ = sock.write_all(&body).await;
+                    let _ = sock.flush().await;
+                });
+            }
+        });
+        format!("http://{addr}/")
+    }
+
+    #[tokio::test]
+    async fn preview_inlines_a_png_favicon_as_data_uri() {
+        // Bytes only need the PNG magic header — the server labels them image/png
+        // and the inliner never decodes, it just base64s.
+        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4];
+        let html = r#"<html><head><title>T</title><link rel="icon" href="/fav.png"></head></html>"#;
+        let base = serve_page(html.to_string(), png.to_vec()).await;
+
+        let p = preview_for(&base, true).await.unwrap();
+        let fav = p.favicon.expect("favicon present");
+        assert!(fav.starts_with("data:image/png;base64,"), "got {fav}");
+        assert_eq!(fav, format!("data:image/png;base64,{}", base64_encode(&png)));
+    }
+
+    #[tokio::test]
+    async fn preview_keeps_url_when_favicon_missing() {
+        // No /fav.png route → the default /favicon.ico 404s → keep the URL, and
+        // an .ico wouldn't be inlined even if served (Flutter can't decode it).
+        let html = "<html><head><title>T</title></head></html>";
+        let base = serve_page(html.to_string(), Vec::new()).await;
+
+        let p = preview_for(&base, true).await.unwrap();
+        assert_eq!(p.favicon, Some(format!("{base}favicon.ico")));
+    }
+
+    #[test]
+    fn decodable_mime_sniffs_when_header_is_wrong() {
+        // Servers routinely mislabel favicons; magic bytes win over the header.
+        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
+        assert_eq!(decodable_image_mime("application/octet-stream", &png), Some("image/png"));
+        assert_eq!(decodable_image_mime("text/plain", &[0xFF, 0xD8, 0xFF, 0]), Some("image/jpeg"));
+        assert_eq!(decodable_image_mime("", b"GIF89a...."), Some("image/gif"));
+        // Genuinely unknown bytes stay rejected.
+        assert_eq!(decodable_image_mime("", b"not an image"), None);
     }
 }

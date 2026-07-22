@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS labels (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    color TEXT,
+    icon TEXT,
     UNIQUE (owner_id, name COLLATE NOCASE)
 );
 CREATE TABLE IF NOT EXISTS note_labels (
@@ -122,6 +124,10 @@ impl SqliteRepository {
             // mark: any that are already past will fire once on the next
             // sweep, which reads as catch-up rather than a bug.
             "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
+            // Per-label presentation (colour + icon); NULL keeps the theme
+            // default, so existing labels are unaffected.
+            "ALTER TABLE labels ADD COLUMN color TEXT",
+            "ALTER TABLE labels ADD COLUMN icon TEXT",
         ] {
             let _ = sqlx::query(ddl).execute(&pool).await;
         }
@@ -653,34 +659,55 @@ impl Repository for SqliteRepository {
 
     async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>> {
         let rows = sqlx::query(
-            "SELECT id, name FROM labels WHERE owner_id = ? ORDER BY name COLLATE NOCASE",
+            "SELECT id, name, color, icon FROM labels WHERE owner_id = ? ORDER BY name COLLATE NOCASE",
         )
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| Label { id: r.get("id"), name: r.get("name") }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| Label {
+                id: r.get("id"),
+                name: r.get("name"),
+                color: r.get("color"),
+                icon: r.get("icon"),
+            })
+            .collect())
     }
 
     async fn insert_label(&self, user_id: &str, label: &Label) -> RepoResult<()> {
-        let result = sqlx::query("INSERT OR IGNORE INTO labels (id, owner_id, name) VALUES (?, ?, ?)")
-            .bind(&label.id)
-            .bind(user_id)
-            .bind(&label.name)
-            .execute(&self.pool)
-            .await?;
+        let result =
+            sqlx::query("INSERT OR IGNORE INTO labels (id, owner_id, name, color, icon) VALUES (?, ?, ?, ?, ?)")
+                .bind(&label.id)
+                .bind(user_id)
+                .bind(&label.name)
+                .bind(&label.color)
+                .bind(&label.icon)
+                .execute(&self.pool)
+                .await?;
         if result.rows_affected() == 0 {
             return Err(RepoError::Conflict("label already exists".to_string()));
         }
         Ok(())
     }
 
-    async fn rename_label(&self, user_id: &str, label_id: &str, name: &str) -> RepoResult<bool> {
-        let result = sqlx::query("UPDATE labels SET name = ? WHERE id = ? AND owner_id = ?")
-            .bind(name)
-            .bind(label_id)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
+    async fn update_label(
+        &self,
+        user_id: &str,
+        label_id: &str,
+        name: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> RepoResult<bool> {
+        let result =
+            sqlx::query("UPDATE labels SET name = ?, color = ?, icon = ? WHERE id = ? AND owner_id = ?")
+                .bind(name)
+                .bind(color)
+                .bind(icon)
+                .bind(label_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await?;
         Ok(result.rows_affected() > 0)
     }
 

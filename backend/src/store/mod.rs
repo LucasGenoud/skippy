@@ -99,7 +99,14 @@ pub trait Repository: Send + Sync {
     // -- labels ---------------------------------------------------------------
     async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>>;
     async fn insert_label(&self, user_id: &str, label: &Label) -> RepoResult<()>;
-    async fn rename_label(&self, user_id: &str, label_id: &str, name: &str) -> RepoResult<bool>;
+    async fn update_label(
+        &self,
+        user_id: &str,
+        label_id: &str,
+        name: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> RepoResult<bool>;
     async fn delete_label(&self, user_id: &str, label_id: &str) -> RepoResult<bool>;
     /// Replace the viewer's own labels on a note (never touches labels other
     /// participants attached).

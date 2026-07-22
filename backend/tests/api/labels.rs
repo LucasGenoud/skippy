@@ -70,6 +70,49 @@ async fn labels_are_personal_even_on_shared_notes() {
 }
 
 #[tokio::test]
+async fn label_color_and_icon_round_trip() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+
+    // Create carrying colour + icon.
+    let (status, created) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&ada),
+        Some(json!({"name": "work", "color": "#1A73E8", "icon": "work"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["color"], "#1A73E8");
+    assert_eq!(created["icon"], "work");
+    let label_id = created["id"].as_str().unwrap();
+
+    // They survive a list fetch.
+    let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
+    assert_eq!(labels[0]["color"], "#1A73E8");
+    assert_eq!(labels[0]["icon"], "work");
+
+    // Update recolours + clears the icon (empty string resets to default).
+    let (status, updated) = send(
+        &app,
+        "PATCH",
+        &format!("/api/labels/{label_id}"),
+        Some(&ada),
+        Some(json!({"name": "work", "color": "#188038", "icon": ""})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["color"], "#188038");
+    // Cleared icon is omitted from the response (serde skips None).
+    assert!(updated.get("icon").is_none());
+
+    let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
+    assert_eq!(labels[0]["color"], "#188038");
+    assert!(labels[0].get("icon").is_none());
+}
+
+#[tokio::test]
 async fn label_rename_delete_scoped_to_owner() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;

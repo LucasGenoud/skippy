@@ -1,7 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/note.dart';
 import '../state/notes_store.dart';
+import '../state/settings_store.dart';
+import '../util/label_style.dart';
+import 'settings/accent_color.dart' show kAccentPresets;
+
+/// A small colour dot with the label's icon inside — the shared leading glyph
+/// for a label across the assign sheet, the editor list, and the drawer.
+class LabelGlyph extends StatelessWidget {
+  final Label label;
+  final double size;
+  const LabelGlyph({super.key, required this.label, this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = labelColor(label, scheme.onSurfaceVariant);
+    final tinted = label.color != null;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: tinted ? color.withValues(alpha: 0.18) : Colors.transparent,
+        border: Border.all(color: color.withValues(alpha: tinted ? 0.0 : 0.5)),
+      ),
+      alignment: Alignment.center,
+      child: Icon(labelIcon(label), size: size * 0.62, color: color),
+    );
+  }
+}
 
 /// Bottom sheet for assigning labels to a note, with inline creation —
 /// typing a name that doesn't exist offers "Create `name`".
@@ -100,6 +130,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       value: note.labelIds.contains(label.id),
                       controlAffinity: ListTileControlAffinity.leading,
                       dense: true,
+                      secondary: LabelGlyph(label: label),
                       title: Text(label.name),
                       onChanged: (_) =>
                           store.toggleLabelOnNote(widget.noteId, label.id),
@@ -120,39 +151,15 @@ class _LabelsSheetState extends State<LabelsSheet> {
   }
 }
 
-/// The "Edit labels" management dialog reached from the drawer.
-class EditLabelsDialog extends StatefulWidget {
+/// The "Edit labels" management dialog reached from the drawer. Lists labels
+/// with their colour/icon; each opens a [LabelEditorDialog] on tap.
+class EditLabelsDialog extends StatelessWidget {
   const EditLabelsDialog({super.key});
 
   static Future<void> show(BuildContext context) => showDialog<void>(
     context: context,
     builder: (_) => const EditLabelsDialog(),
   );
-
-  @override
-  State<EditLabelsDialog> createState() => _EditLabelsDialogState();
-}
-
-class _EditLabelsDialogState extends State<EditLabelsDialog> {
-  final _newController = TextEditingController();
-
-  @override
-  void dispose() {
-    _newController.dispose();
-    super.dispose();
-  }
-
-  void _create() {
-    final store = context.read<NotesStore>();
-    final name = _newController.text.trim();
-    if (name.isEmpty) return;
-    if (store.labels.any((l) => l.name.toLowerCase() == name.toLowerCase())) {
-      return;
-    }
-    store.createLabel(name);
-    _newController.clear();
-    setState(() {});
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,23 +174,22 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
           children: [
             ListTile(
               leading: const Icon(Icons.add),
-              title: TextField(
-                controller: _newController,
-                decoration: const InputDecoration(
-                  hintText: 'Create new label',
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _create(),
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.check),
-                tooltip: 'Create label',
-                onPressed: _create,
-              ),
+              title: const Text('Create new label'),
+              onTap: () => LabelEditorDialog.show(context, null),
             ),
+            const Divider(height: 8),
             for (final label in store.labels)
-              _EditLabelRow(key: ValueKey(label.id), labelId: label.id),
+              ListTile(
+                key: ValueKey(label.id),
+                leading: LabelGlyph(label: label, size: 28),
+                title: Text(label.name, overflow: TextOverflow.ellipsis),
+                onTap: () => LabelEditorDialog.show(context, label.id),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete label',
+                  onPressed: () => store.deleteLabel(label.id),
+                ),
+              ),
           ],
         ),
       ),
@@ -197,61 +203,267 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
   }
 }
 
-class _EditLabelRow extends StatefulWidget {
-  final String labelId;
-  const _EditLabelRow({super.key, required this.labelId});
+/// Create or edit one label: name, colour (default / preset swatch / custom
+/// hex), and icon (curated grid, with a "default" slot). [labelId] null =
+/// create. Colour presets reuse [kAccentPresets]; the icon set is [kLabelIcons].
+class LabelEditorDialog extends StatefulWidget {
+  final String? labelId;
+  const LabelEditorDialog({super.key, this.labelId});
+
+  static Future<void> show(BuildContext context, String? labelId) {
+    final store = context.read<NotesStore>();
+    return showDialog<void>(
+      context: context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: store,
+        child: LabelEditorDialog(labelId: labelId),
+      ),
+    );
+  }
 
   @override
-  State<_EditLabelRow> createState() => _EditLabelRowState();
+  State<LabelEditorDialog> createState() => _LabelEditorDialogState();
 }
 
-class _EditLabelRowState extends State<_EditLabelRow> {
-  late final TextEditingController _controller;
+class _LabelEditorDialogState extends State<LabelEditorDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _hex;
+  String? _color; // hex or null (theme default)
+  String? _icon; // icon key or null (default glyph)
+
+  bool get _isNew => widget.labelId == null;
 
   @override
   void initState() {
     super.initState();
-    final label = context.read<NotesStore>().labelById(widget.labelId);
-    _controller = TextEditingController(text: label?.name ?? '');
+    final existing = widget.labelId == null
+        ? null
+        : context.read<NotesStore>().labelById(widget.labelId!);
+    _name = TextEditingController(text: existing?.name ?? '');
+    _color = existing?.color;
+    _icon = existing?.icon;
+    _hex = TextEditingController(text: _color ?? '');
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _name.dispose();
+    _hex.dispose();
     super.dispose();
   }
 
-  void _commitRename() {
+  void _save() {
     final store = context.read<NotesStore>();
-    final name = _controller.text.trim();
-    final current = store.labelById(widget.labelId);
-    if (current == null || name.isEmpty || name == current.name) return;
-    store.renameLabel(widget.labelId, name);
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+    if (_isNew) {
+      store.createLabel(name, color: _color, icon: _icon);
+    } else {
+      store.updateLabel(
+        widget.labelId!,
+        name: name,
+        color: _color,
+        icon: _icon,
+      );
+    }
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = context.read<NotesStore>();
-    return ListTile(
-      leading: const Icon(Icons.label_outline),
-      title: Focus(
-        onFocusChange: (focused) {
-          if (!focused) _commitRename();
-        },
-        child: TextField(
-          controller: _controller,
-          decoration: const InputDecoration(
-            border: InputBorder.none,
-            isDense: true,
+    final scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Text(_isNew ? 'New label' : 'Edit label'),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _name,
+                autofocus: _isNew,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _save(),
+              ),
+              const SizedBox(height: 20),
+              _sectionLabel(context, 'Color'),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  // Default (no colour) slot.
+                  _ColorDot(
+                    color: null,
+                    selected: _color == null,
+                    onTap: () => setState(() {
+                      _color = null;
+                      _hex.text = '';
+                    }),
+                  ),
+                  for (final c in kAccentPresets)
+                    _ColorDot(
+                      color: c,
+                      selected: _color != null &&
+                          PaletteEntry.hexToColor(_color) == c,
+                      onTap: () => setState(() {
+                        _color = PaletteEntry.colorToHex(c);
+                        _hex.text = _color!;
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 150,
+                child: TextField(
+                  controller: _hex,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    labelText: 'Custom hex',
+                    hintText: '#RRGGBB',
+                  ),
+                  onChanged: (value) {
+                    final parsed = PaletteEntry.hexToColor(value);
+                    setState(() => _color = parsed == null
+                        ? (value.trim().isEmpty ? null : _color)
+                        : PaletteEntry.colorToHex(parsed));
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              _sectionLabel(context, 'Icon'),
+              const SizedBox(height: 10),
+              _IconGrid(
+                selected: _icon,
+                tint: PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,
+                onSelect: (key) => setState(() => _icon = key),
+              ),
+            ],
           ),
-          onSubmitted: (_) => _commitRename(),
         ),
       ),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        tooltip: 'Delete label',
-        onPressed: () => store.deleteLabel(widget.labelId),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: Text(_isNew ? 'Create' : 'Save'),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String text) => Text(
+    text,
+    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    ),
+  );
+}
+
+/// One tappable colour circle in the editor. A null [color] is the "default"
+/// slot (theme colour, shown as a neutral swatch).
+class _ColorDot extends StatelessWidget {
+  final Color? color;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ColorDot({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fill = color;
+    final onFill = fill != null &&
+            ThemeData.estimateBrightnessForColor(fill) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: fill ?? scheme.surfaceContainerHighest,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? scheme.onSurface : scheme.outlineVariant,
+            width: selected ? 2.5 : 1,
+          ),
+        ),
+        child: fill == null
+            ? Icon(
+                selected ? Icons.check : Icons.format_color_reset_outlined,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              )
+            : selected
+            ? Icon(Icons.check, size: 18, color: onFill)
+            : null,
       ),
+    );
+  }
+}
+
+/// The curated icon grid, plus a leading "default" slot (no custom icon).
+class _IconGrid extends StatelessWidget {
+  final String? selected;
+  final Color tint;
+  final ValueChanged<String?> onSelect;
+  const _IconGrid({
+    required this.selected,
+    required this.tint,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget cell({required String? key, required IconData icon}) {
+      final isSel = selected == key;
+      return InkWell(
+        onTap: () => onSelect(key),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            color: isSel ? tint.withValues(alpha: 0.18) : null,
+            border: Border.all(
+              color: isSel ? tint : scheme.outlineVariant,
+              width: isSel ? 2 : 1,
+            ),
+          ),
+          child: Icon(icon, size: 20, color: isSel ? tint : scheme.onSurface),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        // Default slot: clears any custom icon.
+        cell(key: null, icon: kDefaultLabelIcon),
+        for (final entry in kLabelIcons.entries)
+          cell(key: entry.key, icon: entry.value),
+      ],
     );
   }
 }

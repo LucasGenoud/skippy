@@ -13,6 +13,7 @@ import '../models/note.dart';
 import '../state/editor_history.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
@@ -1049,18 +1050,31 @@ class _EditorScreenState extends State<EditorScreen> {
                     },
             ),
           for (final label in labels)
-            InputChip(
-              label: Text(label.name),
-              visualDensity: VisualDensity.compact,
-              onDeleted: trashed
-                  ? null
-                  : () => _store.toggleLabelOnNote(note.id, label.id),
-              onPressed: trashed
-                  ? null
-                  : () => LabelsSheet.show(context, note.id),
-            ),
+            _labelChip(context, label, trashed, note.id),
         ],
       ),
+    );
+  }
+
+  /// One label chip in the editor, tinted with the label's colour and prefixed
+  /// with its icon (custom or default).
+  Widget _labelChip(
+    BuildContext context,
+    Label label,
+    bool trashed,
+    String noteId,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = labelColor(label, scheme.onSurfaceVariant);
+    final tinted = label.color != null;
+    return InputChip(
+      avatar: Icon(labelIcon(label), size: 16, color: tint),
+      label: Text(label.name),
+      visualDensity: VisualDensity.compact,
+      backgroundColor: tinted ? tint.withValues(alpha: 0.12) : null,
+      side: tinted ? BorderSide(color: tint.withValues(alpha: 0.55)) : null,
+      onDeleted: trashed ? null : () => _store.toggleLabelOnNote(noteId, label.id),
+      onPressed: trashed ? null : () => LabelsSheet.show(context, noteId),
     );
   }
 
