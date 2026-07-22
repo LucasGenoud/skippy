@@ -197,13 +197,18 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.widget<AnimatedOpacity>(actions).opacity, 1);
-        expect(find.byTooltip('Add reminder'), findsOneWidget);
-        expect(find.byTooltip('Collaborators'), findsOneWidget);
         expect(find.byTooltip('Note color'), findsOneWidget);
+        expect(find.byTooltip('Add label'), findsOneWidget);
+        expect(find.byTooltip('Add reminder'), findsOneWidget);
         expect(find.byTooltip('Add image'), findsOneWidget);
-        expect(find.byTooltip('Delete note'), findsOneWidget);
+        expect(find.byTooltip('Archive note'), findsOneWidget);
+        expect(find.byTooltip('More note options'), findsOneWidget);
 
-        await tester.tap(find.byTooltip('Delete note'));
+        await tester.tap(find.byTooltip('More note options'));
+        await tester.pumpAndSettle();
+        expect(find.text('Share'), findsOneWidget);
+        expect(find.text('Move to Trash'), findsOneWidget);
+        await tester.tap(find.text('Move to Trash'));
         await tester.pump();
         expect(store.noteById('n1')!.trashed, isTrue);
         await flushTimers(tester);

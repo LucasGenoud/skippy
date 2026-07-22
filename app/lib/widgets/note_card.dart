@@ -13,6 +13,7 @@ import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/snack.dart';
 import 'color_picker.dart';
+import 'labels_sheet.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
 import 'share_dialog.dart';
@@ -163,6 +164,21 @@ class _NoteTileState extends State<NoteTile> {
     );
   }
 
+  void _archive() {
+    final store = context.read<NotesStore>();
+    final note = store.noteById(widget.note.id) ?? widget.note;
+    final wasArchived = note.archived;
+    store.setArchived(note.id, !wasArchived);
+    showAppSnack(
+      wasArchived ? 'Note unarchived' : 'Note archived',
+      icon: wasArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+      actionLabel: 'Undo',
+      onAction: () => store.setArchived(note.id, wasArchived),
+    );
+  }
+
+  Future<void> _addLabel() => LabelsSheet.show(context, widget.note.id);
+
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
@@ -237,9 +253,13 @@ class _NoteTileState extends State<NoteTile> {
                     onReminder: _editReminder,
                     onShare: _share,
                     onColor: _pickColor,
+                    onLabel: _addLabel,
                     onImage: _addImage,
+                    onArchive: _archive,
                     onDelete: _delete,
                   ),
+                if (desktopActions)
+                  _NoteFooterStamp(note: note, visible: !_hovered),
               ],
             ),
           ),
@@ -613,7 +633,9 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onReminder;
   final VoidCallback onShare;
   final VoidCallback onColor;
+  final VoidCallback onLabel;
   final VoidCallback onImage;
+  final VoidCallback onArchive;
   final VoidCallback onDelete;
 
   const _NoteActions({
@@ -623,7 +645,9 @@ class _NoteActions extends StatelessWidget {
     required this.onReminder,
     required this.onShare,
     required this.onColor,
+    required this.onLabel,
     required this.onImage,
+    required this.onArchive,
     required this.onDelete,
   });
 
@@ -670,6 +694,16 @@ class _NoteActions extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _button(
+                  icon: Icons.palette_outlined,
+                  tooltip: 'Note color',
+                  onPressed: onColor,
+                ),
+                _button(
+                  icon: Icons.label_outline,
+                  tooltip: 'Add label',
+                  onPressed: onLabel,
+                ),
+                _button(
                   icon: note.reminderAt == null
                       ? Icons.notification_add_outlined
                       : Icons.notifications_active_outlined,
@@ -679,29 +713,100 @@ class _NoteActions extends StatelessWidget {
                   onPressed: onReminder,
                 ),
                 _button(
-                  icon: Icons.person_add_alt_outlined,
-                  tooltip: 'Collaborators',
-                  onPressed: onShare,
-                ),
-                _button(
-                  icon: Icons.palette_outlined,
-                  tooltip: 'Note color',
-                  onPressed: onColor,
-                ),
-                _button(
                   icon: Icons.image_outlined,
                   tooltip: 'Add image',
                   onPressed: onImage,
                 ),
                 _button(
-                  icon: Icons.delete_outline,
-                  tooltip: canDelete
-                      ? 'Delete note'
-                      : 'Only the owner can delete this note',
-                  color: canDelete ? scheme.error : null,
-                  onPressed: canDelete ? onDelete : null,
+                  icon: note.archived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
+                  tooltip: note.archived ? 'Unarchive note' : 'Archive note',
+                  onPressed: onArchive,
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'More note options',
+                  padding: EdgeInsets.zero,
+                  child: const SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Center(child: Icon(Icons.more_horiz, size: 19)),
+                  ),
+                  onSelected: (value) {
+                    if (value == 'share') onShare();
+                    if (value == 'delete') onDelete();
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'share',
+                      child: ListTile(
+                        leading: Icon(Icons.person_add_alt_outlined),
+                        title: Text('Share'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      enabled: canDelete,
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.delete_outline,
+                          color: canDelete ? scheme.error : null,
+                        ),
+                        title: Text(
+                          canDelete
+                              ? 'Move to Trash'
+                              : 'Only the owner can delete',
+                          style: canDelete
+                              ? TextStyle(color: scheme.error)
+                              : null,
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The otherwise reserved desktop footer has a small piece of useful context
+/// at rest. It is replaced by the action row on hover without shifting a card.
+class _NoteFooterStamp extends StatelessWidget {
+  final Note note;
+  final bool visible;
+  const _NoteFooterStamp({required this.note, required this.visible});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final stamp = context.select<SettingsStore, String>(
+      (settings) => settings.editedLabel(note.updatedAt),
+    );
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 4,
+      height: 40,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: Motion.fast,
+        curve: Motion.standard,
+        child: IgnorePointer(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Edited $stamp',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ),
         ),
