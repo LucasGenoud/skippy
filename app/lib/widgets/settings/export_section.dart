@@ -145,7 +145,8 @@ class _ExportSectionState extends State<ExportSection> {
           '${backup.attachmentCount} '
           '${backup.attachmentCount == 1 ? 'file' : 'files'}.\n\n'
           'Nothing currently in your account will be deleted. Shared notes '
-          'are restored as private copies.',
+          'are restored as private copies. Notes whose IDs are already in '
+          'your account are skipped.',
         ),
         actions: [
           TextButton(
@@ -183,7 +184,8 @@ class _ExportSectionState extends State<ExportSection> {
           'Restored ${result.notes} '
           '${result.notes == 1 ? 'note' : 'notes'} and '
           '${result.attachments} '
-          '${result.attachments == 1 ? 'file' : 'files'}',
+          '${result.attachments == 1 ? 'file' : 'files'}'
+          '${result.skippedNotes == 0 ? '' : '; skipped ${result.skippedNotes} already present'}',
           icon: Icons.check_circle_outline,
         );
       }

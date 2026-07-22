@@ -116,6 +116,7 @@ class NotesStore extends ChangeNotifier {
         bundle.labels.length + bundle.notes.length + bundle.attachmentCount;
     var completed = 0;
     var restoredNotes = 0;
+    var skippedNotes = 0;
     var restoredAttachments = 0;
     var labelsCreated = 0;
     var labelsReused = 0;
@@ -159,9 +160,16 @@ class NotesStore extends ChangeNotifier {
           ? 0
           : bundle.notes.length - 1;
       final firstPosition = _frontPosition() - notesBeforeFront * 1024;
+      final knownNoteIds = _notes.map((note) => note.id).toSet();
       for (var index = 0; index < bundle.notes.length; index++) {
         final backupNote = bundle.notes[index];
-        final noteId = _uuid.v4();
+        if (!knownNoteIds.add(backupNote.id)) {
+          skippedNotes++;
+          completed += 1 + backupNote.attachments.length;
+          onProgress?.call(completed, totalSteps);
+          continue;
+        }
+        final noteId = backupNote.id;
         var note = Note(
           id: noteId,
           kind: backupNote.kind,
@@ -184,8 +192,10 @@ class NotesStore extends ChangeNotifier {
               : UserRef(id: currentUserId!, username: ''),
         );
 
+        var createdOnServer = false;
         try {
           await api.createNote(note, preserveTimestamps: true);
+          createdOnServer = true;
           onProgress?.call(++completed, totalSteps);
 
           final uploaded = <Attachment>[];
@@ -205,10 +215,25 @@ class NotesStore extends ChangeNotifier {
           _notes.add(note);
           restoredNotes++;
           notifyListeners();
+        } on ApiException catch (error) {
+          if (!createdOnServer && error.statusCode == 409) {
+            skippedNotes++;
+            completed += 1 + backupNote.attachments.length;
+            onProgress?.call(completed, totalSteps);
+            continue;
+          }
+          if (createdOnServer) {
+            try {
+              await api.deleteNote(noteId);
+            } catch (_) {}
+          }
+          rethrow;
         } catch (_) {
-          try {
-            await api.deleteNote(noteId);
-          } catch (_) {}
+          if (createdOnServer) {
+            try {
+              await api.deleteNote(noteId);
+            } catch (_) {}
+          }
           rethrow;
         }
       }
@@ -217,6 +242,7 @@ class NotesStore extends ChangeNotifier {
       _persistNow();
       return BackupRestoreResult(
         notes: restoredNotes,
+        skippedNotes: skippedNotes,
         attachments: restoredAttachments,
         labelsCreated: labelsCreated,
         labelsReused: labelsReused,

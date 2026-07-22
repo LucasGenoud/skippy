@@ -116,13 +116,14 @@ void main() {
     );
 
     expect(result.notes, 1);
+    expect(result.skippedNotes, 0);
     expect(result.attachments, 1);
     expect(result.labelsCreated, 1);
     expect(result.labelsReused, 1);
     expect(progress, (done: 4, total: 4));
     expect(api.notes, hasLength(1));
     final note = api.notes.values.single;
-    expect(note.id, isNot('old-note'));
+    expect(note.id, 'old-note');
     expect(note.title, 'Imported');
     expect(note.archived, isTrue);
     expect(note.pinned, isTrue);
@@ -133,6 +134,19 @@ void main() {
     expect(
       store.labels.map((label) => label.name),
       containsAll(['Travel', 'Work']),
+    );
+
+    final uploadCount = api.log
+        .where((entry) => entry.startsWith('upload:'))
+        .length;
+    final repeated = await store.restoreBackup(backup);
+    expect(repeated.notes, 0);
+    expect(repeated.skippedNotes, 1);
+    expect(repeated.attachments, 0);
+    expect(api.notes, hasLength(1));
+    expect(
+      api.log.where((entry) => entry.startsWith('upload:')),
+      hasLength(uploadCount),
     );
   });
 }

@@ -29,12 +29,14 @@ class BackupBundle {
 
 class BackupRestoreResult {
   final int notes;
+  final int skippedNotes;
   final int attachments;
   final int labelsCreated;
   final int labelsReused;
 
   const BackupRestoreResult({
     required this.notes,
+    required this.skippedNotes,
     required this.attachments,
     required this.labelsCreated,
     required this.labelsReused,
