@@ -190,6 +190,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Expanding is a pleasant, deliberate reveal. Closing follows a focus
+    // loss, however, and must get out of the way immediately — otherwise the
+    // still-visible composer makes the page feel like it ignored the click.
     return TapRegion(
       onTapOutside: (_) => _saveAndCollapse(),
       child: CallbackShortcuts(
@@ -207,13 +210,17 @@ class _QuickAddBarState extends State<QuickAddBar> {
           child: AnimatedSize(
             // Ease the open/close on the Material-3 emphasized bezier so the
             // bar unfurls into the composer rather than snapping linearly.
+            // A zero reverse duration trips an AnimatedSize layout assertion,
+            // so one millisecond is used: visually instant, framework-safe.
             duration: Motion.base,
+            reverseDuration: const Duration(milliseconds: 1),
             curve: Motion.emphasized,
             alignment: Alignment.topCenter,
             // Cross-fade bar <-> composer while the size animates, so the
             // expansion reads as one motion instead of a hard content swap.
             child: AnimatedSwitcher(
               duration: Motion.base,
+              reverseDuration: Duration.zero,
               switchInCurve: Motion.emphasized,
               switchOutCurve: Curves.easeIn,
               layoutBuilder: (currentChild, previousChildren) => Stack(

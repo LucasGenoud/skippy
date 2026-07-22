@@ -301,7 +301,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               autofocus: !creating,
                               keyboardType: TextInputType.emailAddress,
                               textInputAction: TextInputAction.next,
-                              autofillHints: const [AutofillHints.email],
+                              // Desktop password managers pair a
+                              // `username` field with `current-password`.
+                              // Our username happens to be an email address,
+                              // but marking sign-in as email alone makes many
+                              // browser managers treat it as a contact field
+                              // instead of a saved-login identifier.
+                              autofillHints: creating
+                                  ? const [AutofillHints.email]
+                                  : const [AutofillHints.username],
                               onChanged: (_) {
                                 if (_emailError != null) {
                                   setState(() => _emailError = null);

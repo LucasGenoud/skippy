@@ -22,6 +22,13 @@ List<String>? passwordHints(WidgetTester tester) {
   return field.autofillHints?.toList();
 }
 
+List<String>? emailHints(WidgetTester tester) {
+  final field = tester.widget<TextField>(
+    find.ancestor(of: find.text('Email'), matching: find.byType(TextField)),
+  );
+  return field.autofillHints?.toList();
+}
+
 void main() {
   testWidgets('sign-in mode hides confirm and uses current-password hint', (
     tester,
@@ -34,6 +41,9 @@ void main() {
     expect(find.text('Full name'), findsNothing);
     expect(find.text('Confirm password'), findsNothing);
     expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
+    // The account identifier is an email, but browsers recognize this as the
+    // login half of a saved credential only when it is marked `username`.
+    expect(emailHints(tester), [AutofillHints.username]);
     expect(passwordHints(tester), [AutofillHints.password]);
   });
 
@@ -50,6 +60,7 @@ void main() {
     expect(find.text('Confirm password'), findsOneWidget);
     expect(find.text('Full name'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Create account'), findsOneWidget);
+    expect(emailHints(tester), [AutofillHints.email]);
     // A new-password hint is what makes managers offer to generate/save.
     expect(passwordHints(tester), [AutofillHints.newPassword]);
   });

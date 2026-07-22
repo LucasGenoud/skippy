@@ -316,7 +316,10 @@ void main() {
         'drive-by note',
       );
       await tester.tapAt(const Offset(400, 550)); // well below the bar
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 1));
+      // Losing focus should return the space to the grid in the same frame;
+      // opening remains animated, but an outside click must not feel delayed.
+      expect(find.text('Close'), findsNothing);
       final note = store.notesFor(ViewSelection.notes, '').others.single;
       expect(note.content, 'drive-by note');
       expect(find.text('Close'), findsNothing);
