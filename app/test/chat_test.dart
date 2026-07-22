@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/chat.dart';
@@ -75,10 +76,10 @@ void main() {
       child: MaterialApp(home: child),
     );
 
-    IconButton sendButton(WidgetTester tester) => tester.widget<IconButton>(
+    FilledButton sendButton(WidgetTester tester) => tester.widget<FilledButton>(
       find.ancestor(
         of: find.byIcon(Icons.arrow_upward),
-        matching: find.byType(IconButton),
+        matching: find.byType(FilledButton),
       ),
     );
 
@@ -131,6 +132,26 @@ void main() {
       expect(find.textContaining('Created: Groceries'), findsOneWidget);
       // The write turn also refreshes the local note store.
       expect(api.log, contains('fetchNotes'));
+    });
+
+    testWidgets('assistant responses render Markdown formatting', (
+      tester,
+    ) async {
+      api.chatScript = const [
+        ChatDeltaEvent('**Important**\n\n- Milk\n- Eggs'),
+        ChatDoneEvent(),
+      ];
+      await tester.pumpWidget(harness(const ChatScreen()));
+
+      await tester.enterText(find.byType(TextField), 'show my groceries');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownBody), findsOneWidget);
+      expect(find.text('Important'), findsOneWidget);
+      expect(find.text('Milk'), findsOneWidget);
+      // The user's own message remains literal plain text.
+      expect(find.text('show my groceries'), findsOneWidget);
     });
 
     testWidgets('the composer stays focused through a turn, ready for the '

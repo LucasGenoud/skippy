@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../theme.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../theme.dart';
 import 'editor_screen.dart';
 
 /// Ask questions about your notes. Each turn the server retrieves the most
@@ -242,10 +244,21 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
-                        tooltip: 'Send',
-                        onPressed: _busy ? null : _send,
-                        icon: const Icon(Icons.arrow_upward),
+                      Tooltip(
+                        message: 'Send',
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: FilledButton(
+                            onPressed: _busy ? null : _send,
+                            style: const ButtonStyle(
+                              padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                              minimumSize: WidgetStatePropertyAll(Size(48, 48)),
+                              shape: WidgetStatePropertyAll(kRoundedShape),
+                            ),
+                            child: const Icon(Icons.arrow_upward),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -336,6 +349,23 @@ class _Bubble extends StatelessWidget {
             Text(turn.error!, style: TextStyle(color: scheme.onErrorContainer))
           else if (turn.text.isEmpty && turn.streaming)
             const _TypingDots()
+          else if (!isUser)
+            MarkdownBody(
+              data: turn.text,
+              selectable: true,
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                  .copyWith(
+                    p: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(height: 1.45),
+                  ),
+              onTapLink: (text, href, title) {
+                final uri = href == null ? null : Uri.tryParse(href);
+                if (uri != null) {
+                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            )
           else
             Text(turn.text),
           if (turn.error != null && turn.text.isNotEmpty) ...[

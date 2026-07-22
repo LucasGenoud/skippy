@@ -136,21 +136,25 @@ class SettingsScreen extends StatelessWidget {
               ),
               const Divider(height: 32),
               const _SectionHeader('Date & time'),
-              ListTile(
-                leading: const Icon(Icons.calendar_today_outlined),
-                title: const Text('Date format'),
-                subtitle: Text('Today: ${settings.formatDate(now)}'),
-                trailing: DropdownButton<AppDateFormat>(
-                  value: settings.dateFormat,
-                  underline: const SizedBox.shrink(),
-                  onChanged: (f) {
-                    if (f != null) settings.setDateFormat(f);
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: DropdownButtonFormField<AppDateFormat>(
+                  initialValue: settings.dateFormat,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Date format',
+                    helperText: 'Today: ${settings.formatDate(now)}',
+                    prefixIcon: const Icon(Icons.calendar_today_outlined),
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (format) {
+                    if (format != null) settings.setDateFormat(format);
                   },
                   items: [
                     for (final format in AppDateFormat.values)
                       DropdownMenuItem(
                         value: format,
-                        child: Text(format.example),
+                        child: Text('${format.label} (${format.example})'),
                       ),
                   ],
                 ),

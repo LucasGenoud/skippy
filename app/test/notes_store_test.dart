@@ -478,6 +478,24 @@ void main() {
       expect(store.offline, isTrue);
       expect(store.syncStatus, SyncStatus.offline);
     });
+
+    test(
+      'active health probes quickly update and recover connectivity',
+      () async {
+        await store.load();
+        store.startSync();
+
+        api.failWith = Exception('server unreachable');
+        await store.checkConnectionNow();
+        expect(store.offline, isTrue);
+        expect(store.syncStatus, SyncStatus.offline);
+
+        api.failWith = null;
+        await store.checkConnectionNow();
+        expect(store.offline, isFalse);
+        expect(api.log, contains('checkConnection'));
+      },
+    );
   });
 
   group('manual refresh', () {

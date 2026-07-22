@@ -70,7 +70,12 @@ class NotesStore extends ChangeNotifier {
   StreamSubscription<void>? _syncSub;
   StreamSubscription<void>? _onlineSub;
   Timer? _syncReloadDebounce;
+  Timer? _connectionProbeTimer;
+  bool _checkingConnection = false;
   bool _reloadPending = false;
+
+  static const _connectionProbeInterval = Duration(seconds: 2);
+  static const _syncOperationTimeout = Duration(seconds: 5);
 
   NotesStore({
     required this.api,
@@ -308,6 +313,38 @@ class NotesStore extends ChangeNotifier {
     // pending queue right away instead of waiting for the 5s retry tick.
     _onlineSub?.cancel();
     _onlineSub = onlineEvents().listen((_) => retryNow());
+
+    // A quiet WebSocket can take a long time to notice that its TCP connection
+    // disappeared. Probe the tiny health endpoint so the status indicator is
+    // useful even while the user is only reading notes.
+    _connectionProbeTimer?.cancel();
+    _connectionProbeTimer = Timer.periodic(
+      _connectionProbeInterval,
+      (_) => checkConnectionNow(),
+    );
+  }
+
+  /// Probe immediately (also exposed for deterministic tests and explicit
+  /// lifecycle hooks). The periodic timer above normally drives this.
+  Future<void> checkConnectionNow() async {
+    if (_checkingConnection) return;
+    _checkingConnection = true;
+    try {
+      await api.checkConnection();
+      final wasOffline = offline;
+      if (wasOffline) {
+        offline = false;
+        notifyListeners();
+        await retryNow();
+      }
+    } catch (_) {
+      if (!offline) {
+        offline = true;
+        notifyListeners();
+      }
+    } finally {
+      _checkingConnection = false;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1002,7 +1039,7 @@ class NotesStore extends ChangeNotifier {
     while (_queue.isNotEmpty) {
       final op = _queue.first;
       try {
-        await _run(op);
+        await _run(op).timeout(_syncOperationTimeout);
         _queue.removeAt(0);
         _persistNow();
         if (offline) {
@@ -1082,12 +1119,12 @@ class NotesStore extends ChangeNotifier {
     _retryTimer = Timer(const Duration(seconds: 5), _flush);
   }
 
-  void retryNow() {
+  Future<void> retryNow() async {
     _retryTimer?.cancel();
     if (_queue.isEmpty) {
-      load();
+      await load();
     } else {
-      _flush();
+      await _flush();
     }
   }
 
@@ -1095,6 +1132,7 @@ class NotesStore extends ChangeNotifier {
   void dispose() {
     _retryTimer?.cancel();
     _syncReloadDebounce?.cancel();
+    _connectionProbeTimer?.cancel();
     _syncSub?.cancel();
     _onlineSub?.cancel();
     _notifyThrottle?.cancel();

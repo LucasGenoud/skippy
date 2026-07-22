@@ -59,13 +59,24 @@ class _RowHandles {
   final FocusNode focusNode;
   final LayerLink link = LayerLink();
 
+  /// The text that materialized this row from the add field. Some desktop
+  /// text-input clients race the focus handoff and report the next character
+  /// as a replacement value instead of appending it. Preserve this prefix
+  /// until the first real edit lands on the row.
+  String? handoffPrefix;
+  DateTime? handoffPrefixExpiresAt;
+
   /// Suggestions only appear once the user actually types in a row, not on
   /// mere focus (except for the new-item row).
   bool typedSinceFocus = false;
 
-  _RowHandles(String text)
+  _RowHandles(String text, {bool createdFromAddField = false})
     : controller = TextEditingController(text: text),
-      focusNode = FocusNode();
+      focusNode = FocusNode(),
+      handoffPrefix = createdFromAddField ? text : null,
+      handoffPrefixExpiresAt = createdFromAddField
+          ? DateTime.now().add(const Duration(milliseconds: 250))
+          : null;
 
   void dispose() {
     controller.dispose();
@@ -178,7 +189,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   _RowHandles _handleFor(ChecklistItem item) {
     final handles = _handles.putIfAbsent(item.id, () {
-      final h = _RowHandles(item.text);
+      final h = _RowHandles(
+        item.text,
+        createdFromAddField: item.id == _typeCreatedId,
+      );
       h.focusNode.addListener(() {
         if (h.focusNode.hasFocus) {
           h.typedSinceFocus = item.id == _typeCreatedId;
@@ -608,8 +622,29 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                       isDense: true,
                     ),
                     onChanged: (text) {
+                      final prefix = handles.handoffPrefix;
+                      final prefixStillFresh =
+                          handles.handoffPrefixExpiresAt?.isAfter(
+                            DateTime.now(),
+                          ) ??
+                          false;
+                      handles.handoffPrefix = null;
+                      handles.handoffPrefixExpiresAt = null;
+                      var effectiveText = text;
+                      if (prefix != null &&
+                          prefixStillFresh &&
+                          text.isNotEmpty &&
+                          !text.startsWith(prefix)) {
+                        effectiveText = '$prefix$text';
+                        handles.controller.value = TextEditingValue(
+                          text: effectiveText,
+                          selection: TextSelection.collapsed(
+                            offset: effectiveText.length,
+                          ),
+                        );
+                      }
                       handles.typedSinceFocus = true;
-                      widget.onItemTextChanged(item.id, text);
+                      widget.onItemTextChanged(item.id, effectiveText);
                       setState(() {});
                     },
                     onSubmitted: (_) {

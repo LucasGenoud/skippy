@@ -116,14 +116,15 @@ const List<PaletteEntry> kDefaultPalette = [
 ];
 
 enum AppDateFormat {
-  monthFirst('Jul 15, 2026'),
-  dayFirst('15 Jul 2026'),
-  numericUS('07/15/2026'),
-  numericEU('15.07.2026'),
-  iso('2026-07-15');
+  monthFirst(label: 'Month day year', example: 'Jul 15, 2026'),
+  dayFirst(label: 'Day month year', example: '15 Jul 2026'),
+  numericUS(label: 'Month/day/year', example: '07/15/2026'),
+  numericEU(label: 'Day.month.year', example: '15.07.2026'),
+  iso(label: 'Year-month-day', example: '2026-07-15');
 
+  final String label;
   final String example;
-  const AppDateFormat(this.example);
+  const AppDateFormat({required this.label, required this.example});
 }
 
 /// How tightly the note grid packs cards. Drives the auto-column layout in the
@@ -187,8 +188,8 @@ class SettingsStore extends ChangeNotifier {
 
   ThemeMode themeMode = ThemeMode.system;
   Color accentColor = kDefaultAccent;
-  AppDateFormat dateFormat = AppDateFormat.monthFirst;
-  bool use24hTime = false;
+  AppDateFormat dateFormat = AppDateFormat.dayFirst;
+  bool use24hTime = true;
   bool defaultListMode = false;
   GridDensity gridDensity = GridDensity.comfortable;
   GridWidth gridWidth = GridWidth.medium;
@@ -342,8 +343,8 @@ class SettingsStore extends ChangeNotifier {
         PaletteEntry.hexToColor(json['accent'] as String?) ?? kDefaultAccent;
     dateFormat =
         AppDateFormat.values.asNameMap()[json['date_format']] ??
-        AppDateFormat.monthFirst;
-    use24hTime = json['time_format'] == '24h';
+        AppDateFormat.dayFirst;
+    use24hTime = json['time_format'] != '12h';
     defaultListMode = json['default_view'] == 'list';
     gridDensity =
         GridDensity.values.asNameMap()[json['grid_density']] ??

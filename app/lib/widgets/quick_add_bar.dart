@@ -31,6 +31,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  late final FocusNode _titleFocus;
   final _contentFocus = FocusNode();
 
   bool _expanded = false;
@@ -42,9 +43,30 @@ class _QuickAddBarState extends State<QuickAddBar> {
   bool _uploading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _titleFocus = FocusNode(onKeyEvent: _handleTitleKey);
+  }
+
+  KeyEventResult _handleTitleKey(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.tab &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        !HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isMetaPressed &&
+        !HardwareKeyboard.instance.isAltPressed &&
+        _kind != NoteKind.checklist) {
+      _contentFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _titleFocus.dispose();
     _contentFocus.dispose();
     super.dispose();
   }
@@ -291,8 +313,14 @@ class _QuickAddBarState extends State<QuickAddBar> {
             children: [
               TextField(
                 controller: _titleController,
+                focusNode: _titleFocus,
                 maxLines: null,
                 textInputAction: TextInputAction.next,
+                onSubmitted: (_) {
+                  if (_kind != NoteKind.checklist) {
+                    _contentFocus.requestFocus();
+                  }
+                },
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -320,7 +348,10 @@ class _QuickAddBarState extends State<QuickAddBar> {
           child: Row(
             children: [
               const Spacer(),
-              TextButton(onPressed: _saveAndCollapse, child: const Text('Close')),
+              TextButton(
+                onPressed: _saveAndCollapse,
+                child: const Text('Close'),
+              ),
             ],
           ),
         ),

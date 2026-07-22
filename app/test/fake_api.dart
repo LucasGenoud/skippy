@@ -54,6 +54,9 @@ class FakeApi implements Api {
   }
 
   @override
+  Future<void> checkConnection() => _run('checkConnection', () {});
+
+  @override
   Future<({String token, AuthUser user})> register(
     String username,
     String password,

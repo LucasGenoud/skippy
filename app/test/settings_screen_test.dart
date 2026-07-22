@@ -152,4 +152,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(settings.gridWidth, GridWidth.full);
   });
+
+  testWidgets('date format uses the standard form dropdown', (tester) async {
+    final api = FakeApi();
+    final settings = await pumpSettings(tester, api);
+
+    expect(settings.dateFormat, AppDateFormat.dayFirst);
+    expect(settings.use24hTime, isTrue);
+
+    final picker = find.byType(DropdownButtonFormField<AppDateFormat>);
+    await tester.ensureVisible(picker);
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Day.month.year (15.07.2026)'), findsOneWidget);
+
+    await tester.tap(find.text('Day.month.year (15.07.2026)'));
+    await tester.pumpAndSettle();
+    expect(settings.dateFormat, AppDateFormat.numericEU);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
 }

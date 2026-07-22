@@ -48,6 +48,10 @@ class ManagedSetting {
 
 /// Everything the stores need from the backend. Tests swap in a fake.
 abstract class Api {
+  /// Lightweight reachability probe used by the sync indicator. Implementors
+  /// must fail promptly when the server cannot be reached.
+  Future<void> checkConnection();
+
   // auth
   Future<({String token, AuthUser user})> register(
     String username,
@@ -167,6 +171,8 @@ abstract class Api {
 }
 
 class ApiClient implements Api {
+  static const connectionProbeTimeout = Duration(seconds: 3);
+
   /// Resolution order: --dart-define=API_BASE (compile-time), then the URL the
   /// server injected into the page (STICKY_NOTES_PUBLIC_URL env var), then
   /// same-origin when the app is served by the Rust binary itself, then the
@@ -197,6 +203,14 @@ class ApiClient implements Api {
     if (json) 'content-type': 'application/json',
     if (token != null) 'authorization': 'Bearer $token',
   };
+
+  @override
+  Future<void> checkConnection() async {
+    final response = await _client
+        .get(_uri('/health'))
+        .timeout(connectionProbeTimeout);
+    _decode(response, authed: false);
+  }
 
   dynamic _decode(http.Response res, {bool authed = true}) {
     if (res.statusCode == 401 && authed) {

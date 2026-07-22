@@ -267,6 +267,28 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('Tab moves from the quick-note title to its content', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(harness(store, const QuickAddBar()));
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+
+      final title = find.widgetWithText(TextField, 'Title');
+      await tester.tap(title);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final content = tester.widget<EditableText>(
+        find.descendant(
+          of: find.widgetWithText(TextField, 'Take a note…'),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(content.focusNode.hasFocus, isTrue);
+    });
+
     testWidgets('checklist icon composes a checklist inline, not in a popup', (
       tester,
     ) async {
@@ -450,6 +472,36 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(store.noteById('n1')!.items.map((i) => i.text), ['Milk']);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
+      'checklist row keeps its first character across the focus handoff',
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        final addField = find.widgetWithText(TextField, 'List item');
+        await tester.tap(addField);
+        tester.testTextInput.enterText('M');
+        await tester.pump();
+        await tester.pump();
+
+        // Reproduce the desktop race: the input client reports only the next
+        // character after focus moves, rather than the accumulated value.
+        final focused = tester
+            .widgetList<EditableText>(find.byType(EditableText))
+            .singleWhere((field) => field.focusNode.hasFocus);
+        expect(focused.controller.text, 'M');
+        tester.testTextInput.enterText('i');
+        await tester.pump();
+
+        expect(store.noteById('n1')!.items.single.text, 'Mi');
         await flushTimers(tester);
       },
     );

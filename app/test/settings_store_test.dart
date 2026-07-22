@@ -22,8 +22,8 @@ void main() {
 
   test('defaults are sane before and after loading empty settings', () async {
     expect(settings.themeMode, ThemeMode.system);
-    expect(settings.dateFormat, AppDateFormat.monthFirst);
-    expect(settings.use24hTime, isFalse);
+    expect(settings.dateFormat, AppDateFormat.dayFirst);
+    expect(settings.use24hTime, isTrue);
     expect(settings.gridDensity, GridDensity.comfortable);
     expect(settings.gridWidth, GridWidth.medium);
     expect(settings.palette.length, kDefaultPalette.length);
@@ -105,7 +105,7 @@ void main() {
     };
     await settings.load();
     expect(settings.themeMode, ThemeMode.system);
-    expect(settings.dateFormat, AppDateFormat.monthFirst);
+    expect(settings.dateFormat, AppDateFormat.dayFirst);
     // Only the valid palette entry survives.
     expect(settings.palette.single.key, 'ok');
     expect(settings.palette.single.light, const Color(0xFF112233));
@@ -259,8 +259,8 @@ void main() {
 
   test('date and time formats follow preferences', () {
     final dt = DateTime(2026, 7, 15, 18, 5);
-    expect(settings.formatDate(dt), 'Jul 15, 2026');
-    expect(settings.formatClock(dt), '6:05 PM');
+    expect(settings.formatDate(dt), '15 Jul 2026');
+    expect(settings.formatClock(dt), '18:05');
 
     settings.setDateFormat(AppDateFormat.numericEU);
     settings.setUse24hTime(true);
