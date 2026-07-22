@@ -66,7 +66,7 @@ abstract class Api {
 
   // notes
   Future<List<Note>> fetchNotes();
-  Future<void> createNote(Note note);
+  Future<void> createNote(Note note, {bool preserveTimestamps = false});
   Future<void> patchNote(String id, Map<String, dynamic> fields);
   Future<void> deleteNote(String id);
   Future<void> reorderNotes(List<String> ids);
@@ -284,7 +284,7 @@ class ApiClient implements Api {
   }
 
   @override
-  Future<void> createNote(Note note) async {
+  Future<void> createNote(Note note, {bool preserveTimestamps = false}) async {
     _decode(
       await _client.post(
         _uri('/notes'),
@@ -300,6 +300,12 @@ class ApiClient implements Api {
           'position': note.position,
           if (note.reminderAt != null)
             'reminder_at': note.reminderAt!.toUtc().toIso8601String(),
+          if (preserveTimestamps) ...{
+            'archived': note.archived,
+            'label_ids': note.labelIds.toList(),
+            'created_at': note.createdAt.toUtc().toIso8601String(),
+            'updated_at': note.updatedAt.toUtc().toIso8601String(),
+          },
         }),
       ),
     );

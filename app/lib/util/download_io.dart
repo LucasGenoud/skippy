@@ -17,6 +17,9 @@ void downloadTextFile(String filename, String content, String mime) {
   _shareBytes(filename, Uint8List.fromList(utf8.encode(content)), mime);
 }
 
+Future<void> downloadBytesFile(String filename, Uint8List bytes, String mime) =>
+    _shareBytes(filename, bytes, mime);
+
 Future<void> downloadUrl(String url, String filename) async {
   final http.Response response;
   try {

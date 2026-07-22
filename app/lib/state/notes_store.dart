@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../util/backup.dart';
 import '../util/connectivity.dart';
 import 'local_cache.dart';
 import 'note_collection.dart';
@@ -73,6 +74,7 @@ class NotesStore extends ChangeNotifier {
   Timer? _connectionProbeTimer;
   bool _checkingConnection = false;
   bool _reloadPending = false;
+  bool _restoringBackup = false;
 
   static const _connectionProbeInterval = Duration(seconds: 2);
   static const _syncOperationTimeout = Duration(seconds: 5);
@@ -91,6 +93,150 @@ class NotesStore extends ChangeNotifier {
       _notes.where((n) => !n.trashed).toList()
         ..sort((a, b) => a.position.compareTo(b.position));
 
+  /// Restore a validated backup as private copies. Existing content is never
+  /// removed; same-named labels are reused to avoid server-side conflicts.
+  /// Direct, awaited API calls keep the progress dialog truthful and allow a
+  /// failed current note to be rolled back before reporting a partial import.
+  Future<BackupRestoreResult> restoreBackup(
+    BackupBundle bundle, {
+    BackupProgress? onProgress,
+  }) async {
+    flushForBackground();
+    await _drainQueue();
+    if (offline || _queue.isNotEmpty) {
+      throw const BackupRestoreException(
+        'Connect to the server before restoring a backup',
+        restoredNotes: 0,
+      );
+    }
+
+    _restoringBackup = true;
+    notifyListeners();
+    final totalSteps =
+        bundle.labels.length + bundle.notes.length + bundle.attachmentCount;
+    var completed = 0;
+    var restoredNotes = 0;
+    var restoredAttachments = 0;
+    var labelsCreated = 0;
+    var labelsReused = 0;
+    final labelMap = <String, String>{};
+
+    try {
+      for (final backupLabel in bundle.labels) {
+        Label? label;
+        for (final existing in _labels) {
+          if (existing.name.toLowerCase() == backupLabel.name.toLowerCase()) {
+            label = existing;
+            break;
+          }
+        }
+        if (label == null) {
+          label = Label(
+            id: _uuid.v4(),
+            name: backupLabel.name,
+            color: backupLabel.color,
+            icon: backupLabel.icon,
+          );
+          await api.createLabel(
+            label.id,
+            label.name,
+            color: label.color,
+            icon: label.icon,
+          );
+          _labels.add(label);
+          labelsCreated++;
+        } else {
+          labelsReused++;
+        }
+        labelMap[backupLabel.id] = label.id;
+        onProgress?.call(++completed, totalSteps);
+      }
+      _labels.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+
+      final notesBeforeFront = bundle.notes.isEmpty
+          ? 0
+          : bundle.notes.length - 1;
+      final firstPosition = _frontPosition() - notesBeforeFront * 1024;
+      for (var index = 0; index < bundle.notes.length; index++) {
+        final backupNote = bundle.notes[index];
+        final noteId = _uuid.v4();
+        var note = Note(
+          id: noteId,
+          kind: backupNote.kind,
+          title: backupNote.title,
+          content: backupNote.content,
+          items: [
+            for (final item in backupNote.items)
+              ChecklistItem(id: _uuid.v4(), text: item.text, done: item.done),
+          ],
+          color: backupNote.color,
+          pinned: backupNote.pinned,
+          archived: backupNote.archived,
+          position: firstPosition + index * 1024,
+          reminderAt: backupNote.reminderAt?.toLocal(),
+          createdAt: backupNote.createdAt,
+          updatedAt: backupNote.updatedAt,
+          labelIds: {for (final oldId in backupNote.labelIds) ?labelMap[oldId]},
+          owner: currentUserId == null
+              ? null
+              : UserRef(id: currentUserId!, username: ''),
+        );
+
+        try {
+          await api.createNote(note, preserveTimestamps: true);
+          onProgress?.call(++completed, totalSteps);
+
+          final uploaded = <Attachment>[];
+          for (final attachment in backupNote.attachments) {
+            uploaded.add(
+              await api.uploadAttachment(
+                note.id,
+                attachment.bytes,
+                attachment.mime,
+                attachment.filename,
+              ),
+            );
+            restoredAttachments++;
+            onProgress?.call(++completed, totalSteps);
+          }
+          note = note.copyWith(attachments: uploaded);
+          _notes.add(note);
+          restoredNotes++;
+          notifyListeners();
+        } catch (_) {
+          try {
+            await api.deleteNote(noteId);
+          } catch (_) {}
+          rethrow;
+        }
+      }
+
+      _notes.sort((a, b) => a.position.compareTo(b.position));
+      _persistNow();
+      return BackupRestoreResult(
+        notes: restoredNotes,
+        attachments: restoredAttachments,
+        labelsCreated: labelsCreated,
+        labelsReused: labelsReused,
+      );
+    } catch (error) {
+      final message = error is ApiException
+          ? error.serverMessage
+          : 'Restore could not be completed';
+      throw BackupRestoreException(message, restoredNotes: restoredNotes);
+    } finally {
+      _restoringBackup = false;
+      _persistNow();
+      notifyListeners();
+      if (_reloadPending) {
+        _reloadPending = false;
+        load();
+      }
+    }
+  }
+
   Note? noteById(String id) {
     for (final n in _notes) {
       if (n.id == id) return n;
@@ -108,7 +254,10 @@ class NotesStore extends ChangeNotifier {
   bool isDraft(String id) => _drafts.contains(id);
 
   bool get _hasLocalChangesInFlight =>
-      _queue.isNotEmpty || _drafts.isNotEmpty || _saveDebounce.isNotEmpty;
+      _queue.isNotEmpty ||
+      _drafts.isNotEmpty ||
+      _saveDebounce.isNotEmpty ||
+      _restoringBackup;
 
   /// Whether there are local edits not yet acknowledged by the server.
   bool get hasPendingWork => _hasLocalChangesInFlight;

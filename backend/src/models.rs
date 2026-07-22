@@ -18,7 +18,10 @@ pub struct User {
 
 impl User {
     pub fn public(&self) -> UserPublic {
-        UserPublic { id: self.id.clone(), username: self.username.clone() }
+        UserPublic {
+            id: self.id.clone(),
+            username: self.username.clone(),
+        }
     }
 }
 
@@ -213,9 +216,17 @@ pub struct CreateNote {
     #[serde(default)]
     pub pinned: Option<bool>,
     #[serde(default)]
+    pub archived: Option<bool>,
+    #[serde(default)]
     pub position: Option<f64>,
     #[serde(default)]
     pub reminder_at: Option<String>,
+    #[serde(default)]
+    pub label_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 /// Partial update: only fields present in the JSON body are applied.

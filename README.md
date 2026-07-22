@@ -34,7 +34,7 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - Accent color plus grid density and maximum-width presets
 - Date format (5 styles) and 12h/24h time — applied to reminder chips and "Edited" stamps everywhere
 - **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
-- Export all non-trashed notes as JSON, Markdown, or plain text
+- Create and restore portable zip backups containing all non-trashed notes, labels, reminders, timestamps, and attachment bytes; readable JSON, Markdown, and plain-text exports remain available
 
 **Optional AI integration**
 - Each user can configure an OpenAI-compatible endpoint, API key, and model; Ollama, LM Studio, vLLM, and hosted providers can use the same path

@@ -30,6 +30,49 @@ async fn create_defaults_and_patch() {
 }
 
 #[tokio::test]
+async fn backup_restore_can_preserve_note_timestamps() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let (status, label) = send(
+        &app,
+        "POST",
+        "/api/labels",
+        Some(&token),
+        Some(json!({"id": "restore-label", "name": "Restored"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let created = "2020-01-02T03:04:05Z";
+    let updated = "2021-06-07T08:09:10Z";
+    let note = create_note(
+        &app,
+        &token,
+        json!({
+            "title": "restored",
+            "archived": true,
+            "label_ids": [label["id"]],
+            "created_at": created,
+            "updated_at": updated
+        }),
+    )
+    .await;
+    assert_eq!(note["created_at"], created);
+    assert_eq!(note["updated_at"], updated);
+    assert_eq!(note["archived"], true);
+    assert_eq!(note["label_ids"], json!(["restore-label"]));
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"title": "bad", "created_at": "yesterday"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn notes_are_scoped_per_user() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
@@ -314,4 +357,3 @@ async fn markdown_kind_roundtrips_and_bad_kinds_reject() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
-

@@ -33,6 +33,15 @@ Future<SettingsStore> pumpSettings(WidgetTester tester, FakeApi api) async {
 }
 
 void main() {
+  testWidgets('backup and restore actions are available in settings', (
+    tester,
+  ) async {
+    await pumpSettings(tester, FakeApi());
+
+    expect(find.text('Create backup'), findsOneWidget);
+    expect(find.text('Restore backup'), findsOneWidget);
+  });
+
   testWidgets('server-managed LLM fields are locked in the dialog', (
     tester,
   ) async {

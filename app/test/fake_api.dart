@@ -95,12 +95,13 @@ class FakeApi implements Api {
   });
 
   @override
-  Future<void> createNote(Note note) => _run('createNote:${note.id}', () {
-    if (notes.containsKey(note.id)) {
-      throw ApiException(409, '{"error":"note id already exists"}');
-    }
-    notes[note.id] = note;
-  });
+  Future<void> createNote(Note note, {bool preserveTimestamps = false}) =>
+      _run('createNote:${note.id}', () {
+        if (notes.containsKey(note.id)) {
+          throw ApiException(409, '{"error":"note id already exists"}');
+        }
+        notes[note.id] = note;
+      });
 
   @override
   Future<void> patchNote(String id, Map<String, dynamic> fields) =>
