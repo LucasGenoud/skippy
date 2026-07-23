@@ -20,7 +20,7 @@ jobs:
           --volume "$PWD/backend:/src"
           --workdir /src
           rust:trixie
-          sh -lc 'cargo test && cargo clippy --all-targets -- -D warnings'
+          sh -c 'cargo test && cargo clippy --all-targets -- -D warnings'
 
       - name: Flutter tests and analysis
         run: >-
@@ -28,7 +28,7 @@ jobs:
           --volume "$PWD/app:/src"
           --workdir /src
           ghcr.io/cirruslabs/flutter:stable
-          sh -lc 'flutter test && flutter analyze'
+          sh -c 'flutter test && flutter analyze'
 
   build:
     needs: test
