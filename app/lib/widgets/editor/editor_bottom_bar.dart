@@ -71,7 +71,14 @@ class EditorBottomBar extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: color),
           const SizedBox(width: 12),
-          Text(label, style: color == null ? null : TextStyle(color: color)),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: color == null ? null : TextStyle(color: color),
+            ),
+          ),
         ],
       ),
     );
@@ -80,110 +87,164 @@ class EditorBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.palette_outlined),
-            tooltip: 'Note color',
-            onPressed: onPalette,
-          ),
-          IconButton(
-            icon: const Icon(Icons.label_outline),
-            tooltip: 'Labels',
-            onPressed: onLabels,
-          ),
-          IconButton(
-            icon: const Icon(Icons.notification_add_outlined),
-            tooltip: 'Remind me',
-            onPressed: onReminder,
-          ),
-          IconButton(
-            icon: const Icon(Icons.image_outlined),
-            tooltip: 'Add image',
-            onPressed: onImage,
-          ),
-          IconButton(
-            icon: const Icon(Icons.attach_file),
-            tooltip: 'Attach file',
-            onPressed: onAttach,
-          ),
-          IconButton(
-            icon: const Icon(Icons.person_add_alt_outlined),
-            tooltip: 'Collaborators',
-            onPressed: onShare,
-          ),
-          // Takes the whole middle band (not a third of it, the way two
-          // Spacers flanking a Flexible would) so the stamp isn't needlessly
-          // truncated to "Edit…".
-          Expanded(
-            child: Center(
-              child: Text(
-                editedStamp,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Nine standard 48 px targets don't fit on a phone. Keep the common
+        // note actions in reach and place the rest in More, where they retain
+        // their full-size, accessible menu targets instead of overflowing.
+        final compact = constraints.maxWidth < 600;
+        final veryNarrow = constraints.maxWidth < 360;
+
+        Widget action({
+          required IconData icon,
+          required String tooltip,
+          required VoidCallback? onPressed,
+        }) => IconButton(
+          icon: Icon(icon),
+          tooltip: tooltip,
+          onPressed: onPressed,
+        );
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Row(
+            children: [
+              action(
+                icon: Icons.palette_outlined,
+                tooltip: 'Note color',
+                onPressed: onPalette,
               ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.undo),
-            tooltip: 'Undo',
-            onPressed: onUndo,
-          ),
-          IconButton(
-            icon: const Icon(Icons.redo),
-            tooltip: 'Redo',
-            onPressed: onRedo,
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'More',
-            onSelected: (value) {
-              if (value == 'delete') onDelete?.call();
-              if (value == 'copy') onCopy?.call();
-              if (value == 'history') onHistory?.call();
-              for (final target in NoteKind.values) {
-                if (value == 'convert:${target.name}') onConvert?.call(target);
-              }
-            },
-            itemBuilder: (context) => [
-              // Audio notes come from a recording, never a conversion target.
-              for (final target in NoteKind.values)
-                if (target != kind && target != NoteKind.audio)
-                  _menuItem(
-                    value: 'convert:${target.name}',
-                    icon: _kindIcons[target]!,
-                    label: _kindLabels[target]!,
-                    enabled: onConvert != null,
-                  ),
-              const PopupMenuDivider(),
-              _menuItem(
-                value: 'history',
-                icon: Icons.history,
-                label: 'Version history',
-                enabled: onHistory != null,
+              action(
+                icon: Icons.label_outline,
+                tooltip: 'Labels',
+                onPressed: onLabels,
               ),
-              _menuItem(
-                value: 'copy',
-                icon: Icons.copy_all_outlined,
-                label: 'Make a copy',
-                enabled: onCopy != null,
-              ),
-              if (isOwner)
-                _menuItem(
-                  value: 'delete',
-                  icon: Icons.delete_outline,
-                  label: 'Delete',
-                  enabled: onDelete != null,
-                  color: scheme.error,
+              if (!veryNarrow)
+                action(
+                  icon: Icons.notification_add_outlined,
+                  tooltip: 'Remind me',
+                  onPressed: onReminder,
                 ),
+              if (!veryNarrow)
+                action(
+                  icon: Icons.image_outlined,
+                  tooltip: 'Add image',
+                  onPressed: onImage,
+                ),
+              if (!compact) ...[
+                action(
+                  icon: Icons.attach_file,
+                  tooltip: 'Attach file',
+                  onPressed: onAttach,
+                ),
+                action(
+                  icon: Icons.person_add_alt_outlined,
+                  tooltip: 'Collaborators',
+                  onPressed: onShare,
+                ),
+                // Takes the whole middle band (not a third of it, the way two
+                // Spacers flanking a Flexible would) so the stamp isn't
+                // needlessly truncated to "Edit…".
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      editedStamp,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ] else
+                const Spacer(),
+              // Editing should never require opening More, including on the
+              // smallest phones.
+              action(icon: Icons.undo, tooltip: 'Undo', onPressed: onUndo),
+              action(icon: Icons.redo, tooltip: 'Redo', onPressed: onRedo),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'More',
+                onSelected: (value) {
+                  if (value == 'image') onImage?.call();
+                  if (value == 'reminder') onReminder?.call();
+                  if (value == 'attach') onAttach?.call();
+                  if (value == 'share') onShare?.call();
+                  if (value == 'delete') onDelete?.call();
+                  if (value == 'copy') onCopy?.call();
+                  if (value == 'history') onHistory?.call();
+                  for (final target in NoteKind.values) {
+                    if (value == 'convert:${target.name}') {
+                      onConvert?.call(target);
+                    }
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (compact) ...[
+                    if (veryNarrow)
+                      _menuItem(
+                        value: 'image',
+                        icon: Icons.image_outlined,
+                        label: 'Add image',
+                        enabled: onImage != null,
+                      ),
+                    if (veryNarrow)
+                      _menuItem(
+                        value: 'reminder',
+                        icon: Icons.notification_add_outlined,
+                        label: 'Remind me',
+                        enabled: onReminder != null,
+                      ),
+                    _menuItem(
+                      value: 'attach',
+                      icon: Icons.attach_file,
+                      label: 'Attach file',
+                      enabled: onAttach != null,
+                    ),
+                    _menuItem(
+                      value: 'share',
+                      icon: Icons.person_add_alt_outlined,
+                      label: 'Collaborators',
+                      enabled: onShare != null,
+                    ),
+                    const PopupMenuDivider(),
+                  ],
+                  // Audio notes come from a recording, never a conversion target.
+                  for (final target in NoteKind.values)
+                    if (target != kind && target != NoteKind.audio)
+                      _menuItem(
+                        value: 'convert:${target.name}',
+                        icon: _kindIcons[target]!,
+                        label: _kindLabels[target]!,
+                        enabled: onConvert != null,
+                      ),
+                  const PopupMenuDivider(),
+                  _menuItem(
+                    value: 'history',
+                    icon: Icons.history,
+                    label: 'Version history',
+                    enabled: onHistory != null,
+                  ),
+                  _menuItem(
+                    value: 'copy',
+                    icon: Icons.copy_all_outlined,
+                    label: 'Make a copy',
+                    enabled: onCopy != null,
+                  ),
+                  if (isOwner)
+                    _menuItem(
+                      value: 'delete',
+                      icon: Icons.delete_outline,
+                      label: 'Delete',
+                      enabled: onDelete != null,
+                      color: scheme.error,
+                    ),
+                ],
+              ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

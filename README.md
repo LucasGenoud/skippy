@@ -132,7 +132,7 @@ Garage bootstraps itself (`--single-node --default-bucket`): no CLI setup, crede
 
 ### Local development
 
-Prereqs: Rust 1.85+ (edition 2024) and Flutter 3.44+ / Dart 3.12+.
+Prereqs: Rust 1.88+ (edition 2024) and Flutter 3.44+ / Dart 3.12+.
 
 **Backend** (port 8787):
 

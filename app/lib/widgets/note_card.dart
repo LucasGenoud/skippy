@@ -735,49 +735,61 @@ class _NoteActions extends StatelessWidget {
                   tooltip: note.archived ? 'Unarchive note' : 'Archive note',
                   onPressed: onArchive,
                 ),
-                PopupMenuButton<String>(
-                  tooltip: 'More note options',
-                  padding: EdgeInsets.zero,
-                  onOpened: onMenuOpened,
-                  onCanceled: onMenuClosed,
-                  onSelected: (value) {
-                    onMenuClosed();
-                    if (value == 'share') onShare();
-                    if (value == 'delete') onDelete();
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'share',
-                      child: ListTile(
-                        leading: Icon(Icons.person_add_alt_outlined),
-                        title: Text('Share'),
-                        contentPadding: EdgeInsets.zero,
+                // A custom PopupMenuButton child gets a square InkWell.
+                // Supplying an icon creates the same circular IconButton
+                // feedback as every other footer control.
+                Theme(
+                  data: Theme.of(context).copyWith(
+                    iconButtonTheme: const IconButtonThemeData(
+                      style: ButtonStyle(
+                        minimumSize: WidgetStatePropertyAll(Size(36, 36)),
+                        maximumSize: WidgetStatePropertyAll(Size(36, 36)),
+                        padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      enabled: canDelete,
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.delete_outline,
-                          color: canDelete ? scheme.error : null,
+                  ),
+                  child: PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
+                    iconSize: 19,
+                    tooltip: 'More note options',
+                    padding: EdgeInsets.zero,
+                    onOpened: onMenuOpened,
+                    onCanceled: onMenuClosed,
+                    onSelected: (value) {
+                      onMenuClosed();
+                      if (value == 'share') onShare();
+                      if (value == 'delete') onDelete();
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'share',
+                        child: ListTile(
+                          leading: Icon(Icons.person_add_alt_outlined),
+                          title: Text('Share'),
+                          contentPadding: EdgeInsets.zero,
                         ),
-                        title: Text(
-                          canDelete
-                              ? 'Move to Trash'
-                              : 'Only the owner can delete',
-                          style: canDelete
-                              ? TextStyle(color: scheme.error)
-                              : null,
-                        ),
-                        contentPadding: EdgeInsets.zero,
                       ),
-                    ),
-                  ],
-                  child: const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: Center(child: Icon(Icons.more_vert, size: 19)),
+                      PopupMenuItem(
+                        value: 'delete',
+                        enabled: canDelete,
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.delete_outline,
+                            color: canDelete ? scheme.error : null,
+                          ),
+                          title: Text(
+                            canDelete
+                                ? 'Move to Trash'
+                                : 'Only the owner can delete',
+                            style: canDelete
+                                ? TextStyle(color: scheme.error)
+                                : null,
+                          ),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

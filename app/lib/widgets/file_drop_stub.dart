@@ -24,7 +24,7 @@ class FileDropArea extends StatelessWidget {
 
 /// Native file dialog via file_picker. Empty list on cancel.
 Future<List<DroppedFile>> pickAnyFiles() async {
-  final result = await FilePicker.platform.pickFiles(
+  final result = await FilePicker.pickFiles(
     withData: true,
     allowMultiple: true,
   );
