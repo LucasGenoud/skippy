@@ -239,12 +239,7 @@ void main() {
         );
 
         expect(find.text('Work'), findsOneWidget);
-        final stamp = find.textContaining('Edited');
-        expect(stamp, findsOneWidget);
-        expect(
-          tester.getCenter(stamp).dx,
-          greaterThan(tester.getCenter(find.text('Work')).dx),
-        );
+        expect(find.textContaining('Edited'), findsNothing);
         final footer = tester.widget<AnimatedOpacity>(
           find.byKey(const ValueKey('note-footer-labels-n1')),
         );
@@ -311,13 +306,22 @@ void main() {
           find.byKey(const ValueKey('note-footer-label-marker-n1-1')),
           findsOneWidget,
         );
-        expect(find.textContaining('Edited'), findsOneWidget);
+        expect(find.textContaining('Edited'), findsNothing);
         final cardRect = tester.getRect(find.byType(NoteTile));
         final markerRect = tester.getRect(
           find.byKey(const ValueKey('note-footer-label-marker-n1-0')),
         );
         expect(markerRect.left, closeTo(cardRect.left + 16, 0.1));
         expect(markerRect.bottom, closeTo(cardRect.bottom - 16, 0.1));
+        final decoratedBox = tester.widget<DecoratedBox>(
+          find.descendant(
+            of: find.byKey(const ValueKey('note-footer-label-marker-n1-0')),
+            matching: find.byType(DecoratedBox),
+          ),
+        );
+        final decoration = decoratedBox.decoration as BoxDecoration;
+        expect(decoration.color, isNotNull);
+        expect(decoration.border, isNotNull);
       },
     );
   });

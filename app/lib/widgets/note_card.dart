@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -269,7 +267,7 @@ class _NoteTileState extends State<NoteTile> {
                     onMenuClosed: () => setState(() => _menuOpen = false),
                   ),
                 if (desktopActions)
-                  _NoteFooterStamp(note: note, visible: !actionsVisible),
+                  _NoteFooterLabels(note: note, visible: !actionsVisible),
               ],
             ),
           ),
@@ -806,20 +804,15 @@ class _NoteActions extends StatelessWidget {
   }
 }
 
-/// The otherwise reserved desktop footer shows labels at rest, falling back
-/// to the edit stamp. The action row replaces it on hover without shifting a
-/// card.
-class _NoteFooterStamp extends StatelessWidget {
+/// The otherwise reserved desktop footer shows labels at rest. The action row
+/// replaces it on hover without shifting a card.
+class _NoteFooterLabels extends StatelessWidget {
   final Note note;
   final bool visible;
-  const _NoteFooterStamp({required this.note, required this.visible});
+  const _NoteFooterLabels({required this.note, required this.visible});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final stamp = context.select<SettingsStore, String>(
-      (settings) => settings.editedLabel(note.updatedAt),
-    );
     final joinedLabels = context.select<NotesStore, String>(
       (store) =>
           ([
@@ -833,10 +826,6 @@ class _NoteFooterStamp extends StatelessWidget {
     final labels = joinedLabels.isEmpty
         ? const <String>[]
         : joinedLabels.split('\u0000');
-    final stampText = 'Edited $stamp';
-    final stampStyle = Theme.of(
-      context,
-    ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
     return Positioned(
       left: 16,
       right: 16,
@@ -850,92 +839,65 @@ class _NoteFooterStamp extends StatelessWidget {
         child: IgnorePointer(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const gap = 8.0;
               const markerWidth = 24.0;
               const markerGap = 6.0;
-              // Some localized date formats are long enough to otherwise
-              // squeeze the labels down to a few pixels on narrow cards.
-              // Keep the edit stamp on the right, but let it ellipsize before
-              // it crowds out the footer's label affordance.
-              final stampWidth = math.min(
-                _textWidth(context, stampText, stampStyle),
-                constraints.maxWidth * 0.5,
-              );
-              final labelsWidth = math.max(
-                0.0,
-                constraints.maxWidth - stampWidth - gap,
-              );
               final fullLabelsWidth = labels.isEmpty
                   ? 0.0
                   : labels
                             .map((row) => _labelChipWidth(context, row))
                             .reduce((a, b) => a + markerGap + b) +
                         1;
-              final compact = fullLabelsWidth > labelsWidth;
-              final markerSlots = math.max(
-                0,
-                ((labelsWidth + markerGap) / (markerWidth + markerGap)).floor(),
-              );
+              final compact = fullLabelsWidth > constraints.maxWidth;
+              final markerSlots =
+                  ((constraints.maxWidth + markerGap) /
+                          (markerWidth + markerGap))
+                      .floor();
               final showOverflow =
                   compact && markerSlots > 0 && labels.length > markerSlots;
               final visibleLabelCount = compact
-                  ? math.max(0, markerSlots - (showOverflow ? 1 : 0))
+                  ? (markerSlots - (showOverflow ? 1 : 0)).clamp(
+                      0,
+                      labels.length,
+                    )
                   : labels.length;
 
-              return Row(
-                children: [
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: compact
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                for (
-                                  var index = 0;
-                                  index < visibleLabelCount;
-                                  index++
-                                ) ...[
-                                  _FooterLabelMarker(
-                                    row: labels[index],
-                                    key: ValueKey(
-                                      'note-footer-label-marker-${note.id}-$index',
-                                    ),
-                                  ),
-                                  if (index + 1 < visibleLabelCount ||
-                                      showOverflow)
-                                    const SizedBox(width: markerGap),
-                                ],
-                                if (showOverflow) const _FooterOverflowMarker(),
-                              ],
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                for (
-                                  var index = 0;
-                                  index < labels.length;
-                                  index++
-                                ) ...[
-                                  _LabelChip.encoded(labels[index]),
-                                  if (index + 1 < labels.length)
-                                    const SizedBox(width: markerGap),
-                                ],
-                              ],
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: compact
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (
+                            var index = 0;
+                            index < visibleLabelCount;
+                            index++
+                          ) ...[
+                            _FooterLabelMarker(
+                              row: labels[index],
+                              key: ValueKey(
+                                'note-footer-label-marker-${note.id}-$index',
+                              ),
                             ),
-                    ),
-                  ),
-                  const SizedBox(width: gap),
-                  SizedBox(
-                    width: stampWidth,
-                    child: Text(
-                      stampText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: stampStyle,
-                    ),
-                  ),
-                ],
+                            if (index + 1 < visibleLabelCount || showOverflow)
+                              const SizedBox(width: markerGap),
+                          ],
+                          if (showOverflow) const _FooterOverflowMarker(),
+                        ],
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (
+                            var index = 0;
+                            index < labels.length;
+                            index++
+                          ) ...[
+                            _LabelChip.encoded(labels[index]),
+                            if (index + 1 < labels.length)
+                              const SizedBox(width: markerGap),
+                          ],
+                        ],
+                      ),
               );
             },
           ),
@@ -976,18 +938,21 @@ class _FooterLabelMarker extends StatelessWidget {
     final iconKey = parts.length > 2 ? parts[2] : null;
     final scheme = Theme.of(context).colorScheme;
     final tint = PaletteEntry.hexToColor(color);
+    final line = tint ?? scheme.onSurfaceVariant;
     return Tooltip(
       message: parts.isEmpty ? '' : parts.first,
-      child: SizedBox(
+      child: Container(
         width: 24,
         height: 24,
-        child: Center(
-          child: Icon(
-            labelIconFor(iconKey),
-            size: 17,
-            color: tint ?? scheme.onSurfaceVariant,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(kRadius),
+          color: tint?.withValues(alpha: 0.14),
+          border: Border.all(
+            color: line.withValues(alpha: tint == null ? 0.4 : 0.55),
           ),
         ),
+        child: Icon(labelIconFor(iconKey), size: 13, color: line),
       ),
     );
   }
@@ -999,10 +964,15 @@ class _FooterOverflowMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    return SizedBox(
+    return Container(
       width: 24,
       height: 24,
-      child: Icon(Icons.more_horiz, size: 18, color: color),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(kRadius),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Icon(Icons.more_horiz, size: 16, color: color),
     );
   }
 }
