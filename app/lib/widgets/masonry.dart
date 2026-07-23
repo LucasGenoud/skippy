@@ -415,8 +415,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
 /// tile's slice of it (capped) so the grid arrives like staggered bricks,
 /// rather than popping together.
 class _TileEntrance extends StatelessWidget {
-  static const _verticalOffset = 20.0;
-  static const _horizontalOffset = 12.0;
+  static const _verticalOffset = 28.0;
 
   final Animation<double> animation;
   final int index;
@@ -437,13 +436,10 @@ class _TileEntrance extends StatelessWidget {
       builder: (context, child) {
         final raw = ((animation.value - start) / (end - start)).clamp(0.0, 1.0);
         final t = Motion.standard.transform(raw);
-        final horizontal = index.isEven
-            ? -_horizontalOffset
-            : _horizontalOffset;
         return Opacity(
           opacity: t,
           child: Transform.translate(
-            offset: Offset(horizontal * (1 - t), _verticalOffset * (1 - t)),
+            offset: Offset(0, _verticalOffset * (1 - t)),
             child: child,
           ),
         );

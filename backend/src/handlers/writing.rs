@@ -124,6 +124,7 @@ fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::C
         }
         _ => "This is a plain-text note: return the title and content as plain text only, without Markdown syntax or formatting.",
     };
+    let language_instruction = "Keep every part of the note in its original language. Never translate it or switch languages; for mixed-language notes, preserve the language of each title, paragraph, and checklist item.";
     let note = if record.kind == KIND_CHECKLIST {
         format!(
             "Title: {}\nChecklist items (keep their order):\n{}",
@@ -145,7 +146,7 @@ fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::C
     };
     vec![
         crate::llm::ChatMessage::system(format!(
-            "You edit one personal note. {instruction} {format_instruction} {shape}"
+            "You edit one personal note. {instruction} {format_instruction} {language_instruction} {shape}"
         )),
         crate::llm::ChatMessage::user(note),
     ]

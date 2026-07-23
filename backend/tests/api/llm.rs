@@ -267,6 +267,7 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     let prompt = calls.lock().unwrap()[0][0].content.clone();
     assert!(prompt.contains("grammar, spelling, punctuation, and syntax"));
     assert!(prompt.contains("plain text only, without Markdown syntax"));
+    assert!(prompt.contains("Never translate it or switch languages"));
 
     let markdown_note = create_note(
         &app,
