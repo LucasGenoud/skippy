@@ -840,7 +840,7 @@ class _NoteFooterStamp extends StatelessWidget {
     return Positioned(
       left: 16,
       right: 16,
-      bottom: 4,
+      bottom: 8,
       height: 40,
       child: AnimatedOpacity(
         key: ValueKey('note-footer-labels-${note.id}'),
@@ -976,21 +976,18 @@ class _FooterLabelMarker extends StatelessWidget {
     final iconKey = parts.length > 2 ? parts[2] : null;
     final scheme = Theme.of(context).colorScheme;
     final tint = PaletteEntry.hexToColor(color);
-    final line = tint ?? scheme.onSurfaceVariant;
     return Tooltip(
       message: parts.isEmpty ? '' : parts.first,
-      child: Container(
+      child: SizedBox(
         width: 24,
         height: 24,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(kRadius),
-          color: tint?.withValues(alpha: 0.14),
-          border: Border.all(
-            color: line.withValues(alpha: tint == null ? 0.4 : 0.55),
+        child: Center(
+          child: Icon(
+            labelIconFor(iconKey),
+            size: 17,
+            color: tint ?? scheme.onSurfaceVariant,
           ),
         ),
-        child: Icon(labelIconFor(iconKey), size: 15, color: line),
       ),
     );
   }

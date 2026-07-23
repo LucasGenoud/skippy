@@ -312,6 +312,12 @@ void main() {
           findsOneWidget,
         );
         expect(find.textContaining('Edited'), findsOneWidget);
+        final cardRect = tester.getRect(find.byType(NoteTile));
+        final markerRect = tester.getRect(
+          find.byKey(const ValueKey('note-footer-label-marker-n1-0')),
+        );
+        expect(markerRect.left, closeTo(cardRect.left + 16, 0.1));
+        expect(markerRect.bottom, closeTo(cardRect.bottom - 16, 0.1));
       },
     );
   });
