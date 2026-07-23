@@ -10,17 +10,13 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 
-({IconData icon, String label}) _nextThemeAction(ThemeMode current) =>
+/// The top bar displays the active setting, matching Settings → Appearance.
+/// Tapping still cycles to the next choice.
+({IconData icon, String label}) _currentThemeAction(ThemeMode current) =>
     switch (current) {
-      ThemeMode.system => (
-        icon: Icons.light_mode_outlined,
-        label: 'Light theme',
-      ),
-      ThemeMode.light => (icon: Icons.dark_mode_outlined, label: 'Dark theme'),
-      ThemeMode.dark => (
-        icon: Icons.brightness_auto_outlined,
-        label: 'System theme',
-      ),
+      ThemeMode.system => (icon: Icons.brightness_auto_outlined, label: 'Auto'),
+      ThemeMode.light => (icon: Icons.light_mode_outlined, label: 'Light'),
+      ThemeMode.dark => (icon: Icons.dark_mode_outlined, label: 'Dark'),
     };
 
 /// The home screen's top bar: menu + branding, the search pill (with clear
@@ -56,7 +52,7 @@ class HomeTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final settings = context.watch<SettingsStore>();
-    final themeAction = _nextThemeAction(settings.themeMode);
+    final themeAction = _currentThemeAction(settings.themeMode);
     final isNarrow = MediaQuery.sizeOf(context).width < 650;
     if (isNarrow) return _narrowBar(context, scheme);
 
@@ -183,7 +179,7 @@ class HomeTopBar extends StatelessWidget {
                     key: ValueKey(settings.themeMode),
                   ),
                 ),
-                tooltip: themeAction.label,
+                tooltip: 'Theme: ${themeAction.label} — tap to change',
                 onPressed: settings.cycleThemeMode,
               ),
               IconButton(
@@ -408,7 +404,7 @@ class _UserAvatarMenu extends StatelessWidget {
     final syncStatus = context.select<NotesStore, SyncStatus>(
       (s) => s.syncStatus,
     );
-    final themeAction = _nextThemeAction(settings.themeMode);
+    final themeAction = _currentThemeAction(settings.themeMode);
 
     return PopupMenuButton<String>(
       offset: const Offset(0, 48),
@@ -488,7 +484,7 @@ class _UserAvatarMenu extends StatelessWidget {
               children: [
                 Icon(themeAction.icon, size: 20, color: scheme.onSurface),
                 const SizedBox(width: 12),
-                Text(themeAction.label),
+                Text('Theme: ${themeAction.label}'),
               ],
             ),
           ),

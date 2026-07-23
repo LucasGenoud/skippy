@@ -1257,18 +1257,18 @@ void main() {
       await store.load();
       await tester.pumpWidget(homeApp(store));
 
-      expect(find.byTooltip('Light theme'), findsOneWidget);
-      await tester.tap(find.byTooltip('Light theme'));
+      expect(find.byTooltip('Theme: Auto — tap to change'), findsOneWidget);
+      await tester.tap(find.byTooltip('Theme: Auto — tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Dark theme'), findsOneWidget);
+      expect(find.byTooltip('Theme: Light — tap to change'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Dark theme'));
+      await tester.tap(find.byTooltip('Theme: Light — tap to change'));
       await tester.pump();
-      expect(find.byTooltip('System theme'), findsOneWidget);
+      expect(find.byTooltip('Theme: Dark — tap to change'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('System theme'));
+      await tester.tap(find.byTooltip('Theme: Dark — tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Light theme'), findsOneWidget);
+      expect(find.byTooltip('Theme: Auto — tap to change'), findsOneWidget);
       await flushTimers(tester);
     });
 
