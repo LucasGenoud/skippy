@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -831,6 +833,10 @@ class _NoteFooterStamp extends StatelessWidget {
     final labels = joinedLabels.isEmpty
         ? const <String>[]
         : joinedLabels.split('\u0000');
+    final stampText = 'Edited $stamp';
+    final stampStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
     return Positioned(
       left: 16,
       right: 16,
@@ -842,33 +848,164 @@ class _NoteFooterStamp extends StatelessWidget {
         duration: Motion.fast,
         curve: Motion.standard,
         child: IgnorePointer(
-          child: labels.isEmpty
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Edited $stamp',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 8.0;
+              const markerWidth = 24.0;
+              const markerGap = 6.0;
+              // Some localized date formats are long enough to otherwise
+              // squeeze the labels down to a few pixels on narrow cards.
+              // Keep the edit stamp on the right, but let it ellipsize before
+              // it crowds out the footer's label affordance.
+              final stampWidth = math.min(
+                _textWidth(context, stampText, stampStyle),
+                constraints.maxWidth * 0.5,
+              );
+              final labelsWidth = math.max(
+                0.0,
+                constraints.maxWidth - stampWidth - gap,
+              );
+              final fullLabelsWidth = labels.isEmpty
+                  ? 0.0
+                  : labels
+                            .map((row) => _labelChipWidth(context, row))
+                            .reduce((a, b) => a + markerGap + b) +
+                        1;
+              final compact = fullLabelsWidth > labelsWidth;
+              final markerSlots = math.max(
+                0,
+                ((labelsWidth + markerGap) / (markerWidth + markerGap)).floor(),
+              );
+              final showOverflow =
+                  compact && markerSlots > 0 && labels.length > markerSlots;
+              final visibleLabelCount = compact
+                  ? math.max(0, markerSlots - (showOverflow ? 1 : 0))
+                  : labels.length;
+
+              return Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: compact
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < visibleLabelCount;
+                                  index++
+                                ) ...[
+                                  _FooterLabelMarker(
+                                    row: labels[index],
+                                    key: ValueKey(
+                                      'note-footer-label-marker-${note.id}-$index',
+                                    ),
+                                  ),
+                                  if (index + 1 < visibleLabelCount ||
+                                      showOverflow)
+                                    const SizedBox(width: markerGap),
+                                ],
+                                if (showOverflow) const _FooterOverflowMarker(),
+                              ],
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < labels.length;
+                                  index++
+                                ) ...[
+                                  _LabelChip.encoded(labels[index]),
+                                  if (index + 1 < labels.length)
+                                    const SizedBox(width: markerGap),
+                                ],
+                              ],
+                            ),
                     ),
                   ),
-                )
-              : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final row in labels) ...[
-                        _LabelChip.encoded(row),
-                        const SizedBox(width: 6),
-                      ],
-                    ],
+                  const SizedBox(width: gap),
+                  SizedBox(
+                    width: stampWidth,
+                    child: Text(
+                      stampText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: stampStyle,
+                    ),
                   ),
-                ),
+                ],
+              );
+            },
+          ),
         ),
       ),
+    );
+  }
+
+  double _textWidth(BuildContext context, String text, TextStyle? style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    return painter.width;
+  }
+
+  double _labelChipWidth(BuildContext context, String row) {
+    final parts = row.split('\u0001');
+    final name = parts.isEmpty ? '' : parts.first;
+    final hasIcon = parts.length > 2 && parts[2].isNotEmpty;
+    // The text width plus the chip's horizontal padding, optional icon and
+    // border. This lets the footer switch layouts before RenderFlex overflows.
+    return _textWidth(context, name, Theme.of(context).textTheme.labelSmall) +
+        (hasIcon ? 36 : 22);
+  }
+}
+
+class _FooterLabelMarker extends StatelessWidget {
+  final String row;
+  const _FooterLabelMarker({required this.row, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = row.split('\u0001');
+    final color = parts.length > 1 ? parts[1] : null;
+    final iconKey = parts.length > 2 ? parts[2] : null;
+    final scheme = Theme.of(context).colorScheme;
+    final tint = PaletteEntry.hexToColor(color);
+    final line = tint ?? scheme.onSurfaceVariant;
+    return Tooltip(
+      message: parts.isEmpty ? '' : parts.first,
+      child: Container(
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(kRadius),
+          color: tint?.withValues(alpha: 0.14),
+          border: Border.all(
+            color: line.withValues(alpha: tint == null ? 0.4 : 0.55),
+          ),
+        ),
+        child: Icon(labelIconFor(iconKey), size: 15, color: line),
+      ),
+    );
+  }
+}
+
+class _FooterOverflowMarker extends StatelessWidget {
+  const _FooterOverflowMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Icon(Icons.more_horiz, size: 18, color: color),
     );
   }
 }

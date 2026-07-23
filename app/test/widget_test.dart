@@ -239,6 +239,12 @@ void main() {
         );
 
         expect(find.text('Work'), findsOneWidget);
+        final stamp = find.textContaining('Edited');
+        expect(stamp, findsOneWidget);
+        expect(
+          tester.getCenter(stamp).dx,
+          greaterThan(tester.getCenter(find.text('Work')).dx),
+        );
         final footer = tester.widget<AnimatedOpacity>(
           find.byKey(const ValueKey('note-footer-labels-n1')),
         );
@@ -258,6 +264,54 @@ void main() {
               .opacity,
           0,
         );
+      },
+    );
+
+    testWidgets(
+      'desktop card footer compacts overflowing labels to colored icons',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.labels['l1'] = const Label(
+          id: 'l1',
+          name: 'Very long work label',
+          color: '#d44a3f',
+          icon: 'work',
+        );
+        api.labels['l2'] = const Label(
+          id: 'l2',
+          name: 'Another lengthy travel label',
+          color: '#2878d4',
+          icon: 'travel',
+        );
+        api.labels['l3'] = const Label(
+          id: 'l3',
+          name: 'One more label that cannot fit',
+          color: '#3c9b62',
+          icon: 'home',
+        );
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Compact labels',
+          labelIds: const {'l1', 'l2', 'l3'},
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+
+        expect(find.text('Very long work label'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('note-footer-label-marker-n1-0')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('note-footer-label-marker-n1-1')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Edited'), findsOneWidget);
       },
     );
   });

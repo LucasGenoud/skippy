@@ -9,8 +9,30 @@ on:
   workflow_dispatch: # lets you trigger a rebuild by hand from the Forgejo UI
 
 jobs:
+  test:
+    runs-on: homeserver-runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backend tests and lint
+        run: >-
+          docker run --rm
+          --volume "$PWD/backend:/src"
+          --workdir /src
+          rust:trixie
+          sh -lc 'cargo test && cargo clippy --all-targets -- -D warnings'
+
+      - name: Flutter tests and analysis
+        run: >-
+          docker run --rm
+          --volume "$PWD/app:/src"
+          --workdir /src
+          ghcr.io/cirruslabs/flutter:stable
+          sh -lc 'flutter test && flutter analyze'
+
   build:
-    runs-on: homeserver-runner 
+    needs: test
+    runs-on: homeserver-runner
     steps:
       - uses: actions/checkout@v4
 
