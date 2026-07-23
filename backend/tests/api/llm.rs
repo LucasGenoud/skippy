@@ -218,6 +218,56 @@ async fn llm_test_endpoint_probes_and_validates() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn note_rewrite_requires_opt_in_and_updates_content() {
+    let (state, calls) = state_with_llm(r#"{"title":"Short title","content":"Correct sentence."}"#).await;
+    let app = build_app(state);
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+    let note = create_note(&app, &token, json!({"title": "Long title", "content": "bad sentence"})).await;
+    let id = note["id"].as_str().unwrap();
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/rewrite"),
+        Some(&token),
+        Some(json!({"mode": "grammar"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(calls.lock().unwrap().is_empty());
+
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&token),
+        Some(json!({
+            "llm_base_url": "http://fake/v1",
+            "llm_model": "test-model",
+            "llm_labeling": false,
+            "llm_writing": true,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, rewritten) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/rewrite"),
+        Some(&token),
+        Some(json!({"mode": "grammar"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(rewritten["title"], json!("Short title"));
+    assert_eq!(rewritten["content"], json!("Correct sentence."));
+    let prompt = &calls.lock().unwrap()[0][0].content;
+    assert!(prompt.contains("grammar, spelling, punctuation, and syntax"));
+}
+
 // ---------------------------------------------------------------------------
 // Server-managed (env-var) settings
 
@@ -291,4 +341,3 @@ async fn llm_test_falls_back_to_managed_config() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["ok"], json!(true));
 }
-

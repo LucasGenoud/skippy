@@ -121,6 +121,21 @@ class SettingsScreen extends StatelessWidget {
                     ? settings.setLlmChatEnabled
                     : null,
               ),
+              SwitchListTile(
+                secondary: const Icon(Icons.auto_fix_high_outlined),
+                title: const Text('AI note editing'),
+                subtitle: ManagedToggleSubtitle(
+                  managed: settings.isManaged('llm_writing'),
+                  text: settings.llmConfigured
+                      ? 'Add cleanup and grammar actions to each note menu'
+                      : 'Configure an AI provider first',
+                ),
+                value: settings.llmConfigured && settings.llmWritingEnabled,
+                onChanged:
+                    settings.llmConfigured && !settings.isManaged('llm_writing')
+                    ? settings.setLlmWritingEnabled
+                    : null,
+              ),
               const Divider(height: 32),
               const _SectionHeader('Notifications'),
               const NotifyConfigTile(),

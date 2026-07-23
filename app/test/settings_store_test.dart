@@ -183,6 +183,7 @@ void main() {
     expect(settings.llmConfigured, isFalse);
     expect(settings.llmLabelingEnabled, isTrue); // toggles default on
     expect(settings.llmChatEnabled, isTrue);
+    expect(settings.llmWritingEnabled, isFalse);
     expect(settings.autoLabelingAvailable, isFalse);
     expect(settings.notesChatAvailable, isFalse);
 
@@ -194,7 +195,9 @@ void main() {
     expect(settings.llmConfigured, isTrue);
     expect(settings.autoLabelingAvailable, isTrue);
     expect(settings.notesChatAvailable, isTrue);
+    expect(settings.noteWritingAvailable, isFalse);
     settings.setLlmLabelingEnabled(false);
+    settings.setLlmWritingEnabled(true);
     expect(settings.autoLabelingAvailable, isFalse);
     await settleSave();
 
@@ -204,6 +207,7 @@ void main() {
     expect(api.settings['llm_model'], 'llama3.1');
     expect(api.settings['llm_labeling'], isFalse);
     expect(api.settings['llm_chat'], isTrue);
+    expect(api.settings['llm_writing'], isTrue);
 
     // Another device picks it all up.
     final other = SettingsStore(api: api);
@@ -212,6 +216,7 @@ void main() {
     expect(other.llmModel, 'llama3.1');
     expect(other.llmLabelingEnabled, isFalse);
     expect(other.notesChatAvailable, isTrue);
+    expect(other.noteWritingAvailable, isTrue);
     other.dispose();
 
     // No semantic search on the server: chat unavailable even when configured.
@@ -233,7 +238,10 @@ void main() {
       'llm_model': 'user-model',
     };
     api.managedSettings = {
-      'llm_base_url': const ManagedSetting(secret: false, value: 'http://managed/v1'),
+      'llm_base_url': const ManagedSetting(
+        secret: false,
+        value: 'http://managed/v1',
+      ),
       'llm_api_key': const ManagedSetting(secret: true),
       'llm_model': const ManagedSetting(secret: false, value: 'managed-model'),
       'llm_chat': const ManagedSetting(secret: false, value: false),

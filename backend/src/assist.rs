@@ -37,10 +37,14 @@ pub struct LlmSettings {
     pub labeling: bool,
     /// Notes-chat toggle; defaults on.
     pub chat: bool,
+    /// Note cleanup and grammar-correction toggle; defaults off because these
+    /// actions directly change note content.
+    pub writing: bool,
 }
 
 /// Read `llm_base_url` / `llm_api_key` / `llm_model` / `llm_labeling` /
-/// `llm_chat` from a settings JSON document (as stored by `put_settings`).
+/// `llm_chat` / `llm_writing` from a settings JSON document (as stored by
+/// `put_settings`).
 pub fn parse_llm_settings(settings_json: Option<&str>) -> LlmSettings {
     let value: serde_json::Value = settings_json
         .and_then(|s| serde_json::from_str(s).ok())
@@ -65,6 +69,7 @@ pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
         config,
         labeling: value["llm_labeling"] != false,
         chat: value["llm_chat"] != false,
+        writing: value["llm_writing"] == true,
     }
 }
 

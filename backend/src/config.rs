@@ -38,6 +38,7 @@ pub const MANAGED_KEYS: &[ManagedKey] = &[
     ManagedKey { env: "STICKY_NOTES_LLM_MODEL", key: "llm_model", secret: false, kind: Kind::Text },
     ManagedKey { env: "STICKY_NOTES_LLM_LABELING", key: "llm_labeling", secret: false, kind: Kind::Bool },
     ManagedKey { env: "STICKY_NOTES_LLM_CHAT", key: "llm_chat", secret: false, kind: Kind::Bool },
+    ManagedKey { env: "STICKY_NOTES_LLM_WRITING", key: "llm_writing", secret: false, kind: Kind::Bool },
 ];
 
 /// A resolved managed value plus whether it should be hidden from the frontend.

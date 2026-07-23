@@ -34,4 +34,3 @@ async fn settings_roundtrip_scoped_and_validated() {
     let (status, _) = send(&app, "GET", "/api/settings", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
-

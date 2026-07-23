@@ -15,6 +15,7 @@ mod settings;
 mod sharing;
 mod unfurl;
 mod versions;
+mod writing;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
 pub use auth::{login, logout, me, register, update_account};
@@ -31,6 +32,7 @@ pub use settings::{get_settings, put_settings};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use unfurl::unfurl;
 pub use versions::{list_note_versions, restore_note_version};
+pub use writing::rewrite_note;
 
 use axum::Json;
 use axum::extract::State;

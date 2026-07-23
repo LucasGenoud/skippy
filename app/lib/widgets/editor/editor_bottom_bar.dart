@@ -24,6 +24,7 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onCopy;
   final VoidCallback? onHistory;
   final void Function(NoteKind target)? onConvert;
+  final ValueChanged<NoteRewriteMode>? onRewrite;
 
   const EditorBottomBar({
     super.key,
@@ -45,6 +46,7 @@ class EditorBottomBar extends StatelessWidget {
     this.onCopy,
     this.onHistory,
     this.onConvert,
+    this.onRewrite,
   });
 
   static const _kindLabels = {
@@ -185,6 +187,12 @@ class EditorBottomBar extends StatelessWidget {
                   if (value == 'delete') onDelete?.call();
                   if (value == 'copy') onCopy?.call();
                   if (value == 'history') onHistory?.call();
+                  if (value == 'concise') {
+                    onRewrite?.call(NoteRewriteMode.concise);
+                  }
+                  if (value == 'grammar') {
+                    onRewrite?.call(NoteRewriteMode.grammar);
+                  }
                   for (final target in NoteKind.values) {
                     if (value == 'convert:${target.name}') {
                       onConvert?.call(target);
@@ -226,6 +234,21 @@ class EditorBottomBar extends StatelessWidget {
                           : Icons.archive_outlined,
                       label: archived ? 'Unarchive' : 'Archive',
                       enabled: onArchive != null,
+                    ),
+                    const PopupMenuDivider(),
+                  ],
+                  if (onRewrite != null && kind != NoteKind.audio) ...[
+                    _menuItem(
+                      value: 'concise',
+                      icon: Icons.auto_fix_high_outlined,
+                      label: 'Clean up and make concise',
+                      enabled: true,
+                    ),
+                    _menuItem(
+                      value: 'grammar',
+                      icon: Icons.spellcheck_outlined,
+                      label: 'Fix grammar and syntax',
+                      enabled: true,
                     ),
                     const PopupMenuDivider(),
                   ],

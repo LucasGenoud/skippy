@@ -160,6 +160,26 @@ class FakeApi implements Api {
       });
 
   @override
+  Future<Note> rewriteNote(String id, NoteRewriteMode mode) =>
+      _run('rewriteNote:$id:${mode.wire}', () {
+        final note = notes[id];
+        if (note == null) throw ApiException(404, '{"error":"not found"}');
+        final updated = switch (mode) {
+          NoteRewriteMode.concise => note.copyWith(
+            content: 'Concise: ${note.content}',
+            updatedAt: DateTime.now(),
+          ),
+          NoteRewriteMode.grammar => note.copyWith(
+            content: 'Corrected: ${note.content}',
+            updatedAt: DateTime.now(),
+          ),
+        };
+        notes[id] = updated;
+        _events.add(null);
+        return updated;
+      });
+
+  @override
   Future<void> deleteNote(String id) => _run('deleteNote:$id', () {
     if (notes.remove(id) == null) {
       throw ApiException(404, '{"error":"not found"}');

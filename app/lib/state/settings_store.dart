@@ -226,6 +226,7 @@ class SettingsStore extends ChangeNotifier {
   String llmModel = '';
   bool llmLabelingEnabled = true;
   bool llmChatEnabled = true;
+  bool llmWritingEnabled = false;
 
   // Settings keys the self-hoster pinned via server env vars (backend
   // `config.rs`). A present key is locked in the UI and its value is
@@ -242,6 +243,7 @@ class SettingsStore extends ChangeNotifier {
   // the semantic-search capability.
   bool get notesChatAvailable =>
       llmConfigured && llmChatEnabled && semanticSearchCapable;
+  bool get noteWritingAvailable => llmConfigured && llmWritingEnabled;
 
   // Reminder notifications (ntfy, Telegram, …). Like the LLM config there is
   // no server capability: the channels in [kNotifyChannels] describe which
@@ -331,6 +333,7 @@ class SettingsStore extends ChangeNotifier {
     llmModel = text('llm_model') ?? llmModel;
     llmLabelingEnabled = flag('llm_labeling') ?? llmLabelingEnabled;
     llmChatEnabled = flag('llm_chat') ?? llmChatEnabled;
+    llmWritingEnabled = flag('llm_writing') ?? llmWritingEnabled;
   }
 
   void _applyJson(Map<String, dynamic> json) {
@@ -361,6 +364,7 @@ class SettingsStore extends ChangeNotifier {
     llmModel = ((json['llm_model'] as String?) ?? '').trim();
     llmLabelingEnabled = json['llm_labeling'] != false;
     llmChatEnabled = json['llm_chat'] != false;
+    llmWritingEnabled = json['llm_writing'] == true;
     notifyValues = {
       for (final key in kNotifyFieldKeys)
         key: ((json[key] as String?) ?? '').trim(),
@@ -397,6 +401,7 @@ class SettingsStore extends ChangeNotifier {
     'llm_model': llmModel,
     'llm_labeling': llmLabelingEnabled,
     'llm_chat': llmChatEnabled,
+    'llm_writing': llmWritingEnabled,
     // toJson rebuilds the whole settings document, so every notify key must
     // appear here or a save from this device would erase it.
     for (final key in kNotifyFieldKeys) key: notifyValues[key] ?? '',
@@ -455,6 +460,8 @@ class SettingsStore extends ChangeNotifier {
   void setLlmLabelingEnabled(bool value) =>
       _mutate(() => llmLabelingEnabled = value);
   void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
+  void setLlmWritingEnabled(bool value) =>
+      _mutate(() => llmWritingEnabled = value);
 
   void setNotifyValues(Map<String, String> values) => _mutate(() {
     notifyValues = {

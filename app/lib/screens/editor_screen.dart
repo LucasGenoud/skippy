@@ -411,6 +411,46 @@ class _EditorScreenState extends State<EditorScreen> {
     showAppSnack('Note copied', icon: Icons.copy_outlined);
   }
 
+  Future<void> _rewriteWithAi(NoteRewriteMode mode) async {
+    final note = _note;
+    if (note == null || note.isEmpty || note.isAudio) return;
+    // Put the currently visible controllers into the store before waiting for
+    // the server-side rewrite; [NotesStore.rewriteNote] then flushes that
+    // pending patch before it asks the LLM to transform the note.
+    _store.updateNoteContent(
+      note.id,
+      title: _titleController.text,
+      content: note.isChecklist ? null : _contentController.text,
+      items: note.isChecklist ? _items : null,
+    );
+    try {
+      await _store.rewriteNote(note.id, mode);
+      if (!mounted) return;
+      final updated = _note;
+      if (updated != null) {
+        _restoring = true;
+        _titleController.text = updated.title;
+        if (!updated.isChecklist) _contentController.text = updated.content;
+        _restoring = false;
+      }
+      _afterChange(discrete: true);
+      setState(() {});
+      showAppSnack(
+        mode == NoteRewriteMode.concise
+            ? 'Note cleaned up'
+            : 'Grammar corrected',
+        icon: Icons.auto_fix_high_outlined,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnack(
+        "Couldn't update the note with AI",
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
+    }
+  }
+
   void _convertKind(NoteKind target) {
     _ensureNote();
     // Flush any un-debounced content first so nothing is lost in conversion.
@@ -898,6 +938,14 @@ class _EditorScreenState extends State<EditorScreen> {
                               ? null
                               : () => NoteHistoryScreen.open(context, note.id),
                           onConvert: trashed ? null : _convertKind,
+                          onRewrite:
+                              trashed ||
+                                  note == null ||
+                                  note.isEmpty ||
+                                  note.isAudio ||
+                                  !settings.noteWritingAvailable
+                              ? null
+                              : _rewriteWithAi,
                         ),
                       ],
                     ),

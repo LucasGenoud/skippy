@@ -318,4 +318,3 @@ async fn chat_write_appends_to_an_existing_note() {
         note["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
     assert_eq!(items, ["bread", "potatoes"]);
 }
-

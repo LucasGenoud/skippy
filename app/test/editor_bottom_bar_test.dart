@@ -21,6 +21,7 @@ void main() {
               child: EditorBottomBar(
                 trashed: false,
                 isOwner: true,
+                archived: false,
                 kind: NoteKind.text,
                 editedStamp: 'Edited just now',
                 onPalette: () {},
@@ -74,5 +75,37 @@ void main() {
     await tester.tap(find.text('Collaborators'));
     await tester.pumpAndSettle();
     expect(shared, isTrue);
+  });
+
+  testWidgets('AI note editing actions are available from More on phones', (
+    tester,
+  ) async {
+    NoteRewriteMode? rewritten;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 320,
+            child: EditorBottomBar(
+              trashed: false,
+              isOwner: true,
+              archived: false,
+              kind: NoteKind.text,
+              editedStamp: 'Edited just now',
+              onRewrite: (mode) => rewritten = mode,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    expect(find.text('Clean up and make concise'), findsOneWidget);
+    expect(find.text('Fix grammar and syntax'), findsOneWidget);
+
+    await tester.tap(find.text('Fix grammar and syntax'));
+    await tester.pumpAndSettle();
+    expect(rewritten, NoteRewriteMode.grammar);
   });
 }

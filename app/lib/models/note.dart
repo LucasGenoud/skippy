@@ -17,6 +17,15 @@ enum NoteKind {
   };
 }
 
+/// The bounded set of AI edits a user can request for a note.
+enum NoteRewriteMode {
+  concise('concise'),
+  grammar('grammar');
+
+  final String wire;
+  const NoteRewriteMode(this.wire);
+}
+
 class ChecklistItem {
   final String id;
   final String text;

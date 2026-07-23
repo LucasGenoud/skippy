@@ -178,6 +178,26 @@ class _NoteTileState extends State<NoteTile> {
     );
   }
 
+  Future<void> _rewrite(NoteRewriteMode mode) async {
+    try {
+      await context.read<NotesStore>().rewriteNote(widget.note.id, mode);
+      if (!mounted) return;
+      showAppSnack(
+        mode == NoteRewriteMode.concise
+            ? 'Note cleaned up'
+            : 'Grammar corrected',
+        icon: Icons.auto_fix_high_outlined,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnack(
+        "Couldn't update the note with AI",
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
+    }
+  }
+
   Future<void> _addLabel() => LabelsSheet.show(context, widget.note.id);
 
   @override
@@ -263,6 +283,7 @@ class _NoteTileState extends State<NoteTile> {
                     onImage: _addImage,
                     onArchive: _archive,
                     onDelete: _delete,
+                    onRewrite: _rewrite,
                     onMenuOpened: () => setState(() => _menuOpen = true),
                     onMenuClosed: () => setState(() => _menuOpen = false),
                   ),
@@ -649,6 +670,7 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onImage;
   final VoidCallback onArchive;
   final VoidCallback onDelete;
+  final ValueChanged<NoteRewriteMode> onRewrite;
   final VoidCallback onMenuOpened;
   final VoidCallback onMenuClosed;
 
@@ -663,6 +685,7 @@ class _NoteActions extends StatelessWidget {
     required this.onImage,
     required this.onArchive,
     required this.onDelete,
+    required this.onRewrite,
     required this.onMenuOpened,
     required this.onMenuClosed,
   });
@@ -686,6 +709,9 @@ class _NoteActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final aiEditingEnabled = context.select<SettingsStore, bool>(
+      (settings) => settings.noteWritingAvailable,
+    );
     return Positioned(
       left: 8,
       right: 8,
@@ -753,8 +779,29 @@ class _NoteActions extends StatelessWidget {
                     onMenuClosed();
                     if (value == 'share') onShare();
                     if (value == 'delete') onDelete();
+                    if (value == 'concise') onRewrite(NoteRewriteMode.concise);
+                    if (value == 'grammar') onRewrite(NoteRewriteMode.grammar);
                   },
                   itemBuilder: (context) => [
+                    if (aiEditingEnabled && note.kind != NoteKind.audio) ...[
+                      const PopupMenuItem(
+                        value: 'concise',
+                        child: ListTile(
+                          leading: Icon(Icons.auto_fix_high_outlined),
+                          title: Text('Clean up and make concise'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'grammar',
+                        child: ListTile(
+                          leading: Icon(Icons.spellcheck_outlined),
+                          title: Text('Fix grammar and syntax'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                    ],
                     const PopupMenuItem(
                       value: 'share',
                       child: ListTile(

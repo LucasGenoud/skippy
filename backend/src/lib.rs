@@ -184,6 +184,7 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         )
         .route("/notes/{id}/attachments", post(handlers::upload_attachment))
         .route("/notes/{id}/transcribe", post(handlers::transcribe_note))
+        .route("/notes/{id}/rewrite", post(handlers::rewrite_note))
         .route(
             "/attachments/{id}",
             axum::routing::delete(handlers::delete_attachment),

@@ -91,4 +91,3 @@ async fn transcribe_reports_unavailable_when_disabled() {
         send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
-

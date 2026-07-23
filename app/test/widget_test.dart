@@ -209,6 +209,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Share'), findsOneWidget);
         expect(find.text('Move to Trash'), findsOneWidget);
+        expect(find.text('Clean up and make concise'), findsNothing);
+        expect(find.text('Fix grammar and syntax'), findsNothing);
         // Moving into the menu makes the card lose hover, but its action row
         // remains visible until the menu closes.
         await mouse.moveTo(Offset.zero);
@@ -218,6 +220,57 @@ void main() {
         await tester.pump();
         expect(store.noteById('n1')!.trashed, isTrue);
         await flushTimers(tester);
+      },
+    );
+    testWidgets(
+      'desktop note menu exposes enabled AI editing actions',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'AI actions',
+          content: 'this sentence needs fixing',
+        );
+        await store.load();
+        final settings = SettingsStore(api: api)
+          ..llmBaseUrl = 'http://fake/v1'
+          ..llmModel = 'test-model'
+          ..llmWritingEnabled = true;
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: store),
+              ChangeNotifierProvider.value(value: settings),
+            ],
+            child: MaterialApp(
+              home: Scaffold(
+                body: SizedBox(
+                  width: 240,
+                  child: NoteTile(note: store.noteById('n1')!),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('More note options'));
+        await tester.pumpAndSettle();
+        expect(find.text('Clean up and make concise'), findsOneWidget);
+        expect(find.text('Fix grammar and syntax'), findsOneWidget);
+
+        await tester.tap(find.text('Fix grammar and syntax'));
+        await tester.pump();
+        expect(api.log, contains('rewriteNote:n1:grammar'));
+        expect(
+          store.noteById('n1')!.content,
+          'Corrected: this sentence needs fixing',
+        );
       },
     );
     testWidgets(

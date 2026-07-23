@@ -279,14 +279,18 @@ void main() {
       await tester.pumpWidget(harness());
       await tester.scrollUntilVisible(find.text('Notes chat'), 200);
 
-      // Unconfigured: both switches inert and explaining why.
-      expect(find.text('Configure an AI provider first'), findsNWidgets(2));
+      // Unconfigured: every provider-backed feature is inert and explains why.
+      expect(find.text('Configure an AI provider first'), findsNWidgets(3));
       expect(
         tester.widget<SwitchListTile>(aiSwitch('Automatic labeling')).onChanged,
         isNull,
       );
       expect(
         tester.widget<SwitchListTile>(aiSwitch('Notes chat')).onChanged,
+        isNull,
+      );
+      expect(
+        tester.widget<SwitchListTile>(aiSwitch('AI note editing')).onChanged,
         isNull,
       );
 
@@ -312,6 +316,10 @@ void main() {
       );
       expect(
         tester.widget<SwitchListTile>(aiSwitch('Notes chat')).onChanged,
+        isNotNull,
+      );
+      expect(
+        tester.widget<SwitchListTile>(aiSwitch('AI note editing')).onChanged,
         isNotNull,
       );
       // Flush the settings-save debounce so no timers leak.
