@@ -1186,6 +1186,23 @@ void main() {
   });
 
   group('home screen layout', () {
+    testWidgets('sort control uses the themed top-bar icon color', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pump();
+
+      final sortButton = find.byWidgetPredicate(
+        (widget) =>
+            widget is PopupMenuButton<SortMode> && widget.tooltip == 'Sort by',
+      );
+      final popup = tester.widget<PopupMenuButton<SortMode>>(sortButton);
+      final scheme = Theme.of(tester.element(sortButton)).colorScheme;
+
+      expect(popup.iconColor, scheme.onSurfaceVariant);
+    });
+
     testWidgets('wide layout adds space above the top bar and quick add', (
       tester,
     ) async {

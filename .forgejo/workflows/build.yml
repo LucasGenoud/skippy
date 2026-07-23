@@ -1,12 +1,9 @@
-# Builds the full-stack image and pushes it to the Forgejo container registry.
-# The homeserver deploys itself: a Watchtower container there polls the registry
-# and restarts `server` whenever a new :latest appears. See docs/DEPLOY.md.
 name: build-image
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: # lets you trigger a rebuild by hand from the Forgejo UI
+  workflow_dispatch:
 
 jobs:
   build:

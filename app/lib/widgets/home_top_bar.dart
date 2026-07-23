@@ -662,8 +662,13 @@ class _SortButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
+    final scheme = Theme.of(context).colorScheme;
     return PopupMenuButton<SortMode>(
       icon: const Icon(Icons.swap_vert),
+      // Popup menus otherwise resolve their icon through a different theme
+      // path than the neighboring IconButtons, which made this control read
+      // as a different colour in the top bar.
+      iconColor: scheme.onSurfaceVariant,
       tooltip: 'Sort by',
       initialValue: store.sortMode,
       onSelected: store.setSortMode,
