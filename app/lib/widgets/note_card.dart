@@ -248,6 +248,7 @@ class _NoteTileState extends State<NoteTile> {
                   note: note,
                   query: widget.query,
                   reserveActions: desktopActions,
+                  showLabelsInBody: !desktopActions,
                 ),
                 _PinButton(note: note, hovered: _hovered),
                 if (desktopActions)
@@ -283,10 +284,12 @@ class _NoteCardContent extends StatelessWidget {
   final Note note;
   final String query;
   final bool reserveActions;
+  final bool showLabelsInBody;
   const _NoteCardContent({
     required this.note,
     this.query = '',
     this.reserveActions = false,
+    this.showLabelsInBody = true,
   });
 
   @override
@@ -341,7 +344,7 @@ class _NoteCardContent extends StatelessWidget {
         note.isEmpty; // truly empty draft shows the placeholder
     final hasFooter =
         note.reminderAt != null ||
-        labels.isNotEmpty ||
+        (showLabelsInBody && labels.isNotEmpty) ||
         files.isNotEmpty ||
         note.isShared;
 
@@ -510,9 +513,11 @@ class _NoteCardContent extends StatelessWidget {
                 for (final file in files.take(2)) _FileChip(file: file),
                 if (files.length > 2)
                   _LabelChip(name: '+${files.length - 2} files'),
-                for (final row in labels.take(3)) _LabelChip.encoded(row),
-                if (labels.length > 3)
-                  _LabelChip(name: '+${labels.length - 3}'),
+                if (showLabelsInBody) ...[
+                  for (final row in labels.take(3)) _LabelChip.encoded(row),
+                  if (labels.length > 3)
+                    _LabelChip(name: '+${labels.length - 3}'),
+                ],
                 if (note.isShared)
                   Tooltip(
                     message: _sharedTooltip(note, sharedBy: sharedBy),
@@ -799,8 +804,9 @@ class _NoteActions extends StatelessWidget {
   }
 }
 
-/// The otherwise reserved desktop footer has a small piece of useful context
-/// at rest. It is replaced by the action row on hover without shifting a card.
+/// The otherwise reserved desktop footer shows labels at rest, falling back
+/// to the edit stamp. The action row replaces it on hover without shifting a
+/// card.
 class _NoteFooterStamp extends StatelessWidget {
   final Note note;
   final bool visible;
@@ -812,27 +818,55 @@ class _NoteFooterStamp extends StatelessWidget {
     final stamp = context.select<SettingsStore, String>(
       (settings) => settings.editedLabel(note.updatedAt),
     );
+    final joinedLabels = context.select<NotesStore, String>(
+      (store) =>
+          ([
+            for (final id in note.labelIds)
+              if (store.labelById(id) case final Label label)
+                '${label.name}\u0001${label.color ?? ''}\u0001${label.icon ?? ''}',
+          ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()))).join(
+            '\u0000',
+          ),
+    );
+    final labels = joinedLabels.isEmpty
+        ? const <String>[]
+        : joinedLabels.split('\u0000');
     return Positioned(
       left: 16,
       right: 16,
       bottom: 4,
       height: 40,
       child: AnimatedOpacity(
+        key: ValueKey('note-footer-labels-${note.id}'),
         opacity: visible ? 1 : 0,
         duration: Motion.fast,
         curve: Motion.standard,
         child: IgnorePointer(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Edited $stamp',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ),
+          child: labels.isEmpty
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Edited $stamp',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final row in labels) ...[
+                        _LabelChip.encoded(row),
+                        const SizedBox(width: 6),
+                      ],
+                    ],
+                  ),
+                ),
         ),
       ),
     );

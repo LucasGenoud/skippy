@@ -100,6 +100,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   late final _RowHandles _newRow = _RowHandles('');
   final Map<String, double> _heights = {};
   final OverlayPortalController _popup = OverlayPortalController();
+  // The popup is rendered in an overlay, but remains beneath the editor's
+  // PrimaryScrollController in the widget tree. Give it an independent
+  // controller so wheel/trackpad input scrolls suggestions, never the note.
+  final ScrollController _suggestionsScrollController = ScrollController();
 
   List<String> _uncheckedOrder = [];
   String? _draggingId;
@@ -140,6 +144,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       h.dispose();
     }
     _newRow.dispose();
+    _suggestionsScrollController.dispose();
     super.dispose();
   }
 
@@ -470,6 +475,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               color: scheme.surfaceContainerHigh,
               clipBehavior: Clip.antiAlias,
               child: ListView(
+                key: const Key('checklist-suggestions'),
+                controller: _suggestionsScrollController,
+                primary: false,
                 shrinkWrap: true,
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 children: [

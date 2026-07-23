@@ -626,11 +626,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   /// Top bar: find-in-note mode swaps every action for a close button;
-  /// otherwise trashed notes get restore/delete and live ones pin/archive.
+  /// otherwise trashed notes get restore/delete and live ones can be pinned.
   AppBar _buildAppBar(Note? note) {
     final trashed = note?.trashed ?? false;
     final pinned = note?.pinned ?? false;
-    final archived = note?.archived ?? false;
     return AppBar(
       backgroundColor: Colors.transparent,
       leading: widget.modal
@@ -681,13 +680,6 @@ class _EditorScreenState extends State<EditorScreen> {
               icon: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined),
               tooltip: pinned ? 'Unpin' : 'Pin',
               onPressed: _togglePin,
-            ),
-            IconButton(
-              icon: Icon(
-                archived ? Icons.unarchive_outlined : Icons.archive_outlined,
-              ),
-              tooltip: archived ? 'Unarchive' : 'Archive',
-              onPressed: note == null || note.isEmpty ? null : _archiveAndClose,
             ),
           ] else ...[
             IconButton(
@@ -868,6 +860,7 @@ class _EditorScreenState extends State<EditorScreen> {
                         EditorBottomBar(
                           trashed: trashed,
                           isOwner: isOwner,
+                          archived: note?.archived ?? false,
                           kind: _kind,
                           editedStamp: note == null
                               ? ''
@@ -886,6 +879,9 @@ class _EditorScreenState extends State<EditorScreen> {
                           onImage: trashed || _uploading ? null : _pickImage,
                           onAttach: trashed || _uploading ? null : _pickFile,
                           onShare: trashed ? null : _openShare,
+                          onArchive: trashed || note == null || note.isEmpty
+                              ? null
+                              : _archiveAndClose,
                           onUndo: trashed || !_history.canUndo ? null : _undo,
                           onRedo: trashed || !_history.canRedo ? null : _redo,
                           onDelete:

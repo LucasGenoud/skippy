@@ -8,6 +8,7 @@ import '../../models/note.dart';
 class EditorBottomBar extends StatelessWidget {
   final bool trashed;
   final bool isOwner;
+  final bool archived;
   final NoteKind kind;
   final String editedStamp;
   final VoidCallback? onPalette;
@@ -16,6 +17,7 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onImage;
   final VoidCallback? onAttach;
   final VoidCallback? onShare;
+  final VoidCallback? onArchive;
   final VoidCallback? onUndo;
   final VoidCallback? onRedo;
   final VoidCallback? onDelete;
@@ -27,6 +29,7 @@ class EditorBottomBar extends StatelessWidget {
     super.key,
     required this.trashed,
     required this.isOwner,
+    required this.archived,
     required this.kind,
     required this.editedStamp,
     this.onPalette,
@@ -35,6 +38,7 @@ class EditorBottomBar extends StatelessWidget {
     this.onImage,
     this.onAttach,
     this.onShare,
+    this.onArchive,
     this.onUndo,
     this.onRedo,
     this.onDelete,
@@ -142,6 +146,13 @@ class EditorBottomBar extends StatelessWidget {
                   tooltip: 'Collaborators',
                   onPressed: onShare,
                 ),
+                action(
+                  icon: archived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
+                  tooltip: archived ? 'Unarchive' : 'Archive',
+                  onPressed: onArchive,
+                ),
                 // Takes the whole middle band (not a third of it, the way two
                 // Spacers flanking a Flexible would) so the stamp isn't
                 // needlessly truncated to "Edit…".
@@ -170,6 +181,7 @@ class EditorBottomBar extends StatelessWidget {
                   if (value == 'reminder') onReminder?.call();
                   if (value == 'attach') onAttach?.call();
                   if (value == 'share') onShare?.call();
+                  if (value == 'archive') onArchive?.call();
                   if (value == 'delete') onDelete?.call();
                   if (value == 'copy') onCopy?.call();
                   if (value == 'history') onHistory?.call();
@@ -206,6 +218,14 @@ class EditorBottomBar extends StatelessWidget {
                       icon: Icons.person_add_alt_outlined,
                       label: 'Collaborators',
                       enabled: onShare != null,
+                    ),
+                    _menuItem(
+                      value: 'archive',
+                      icon: archived
+                          ? Icons.unarchive_outlined
+                          : Icons.archive_outlined,
+                      label: archived ? 'Unarchive' : 'Archive',
+                      enabled: onArchive != null,
                     ),
                     const PopupMenuDivider(),
                   ],

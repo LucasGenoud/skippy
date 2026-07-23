@@ -220,6 +220,46 @@ void main() {
         await flushTimers(tester);
       },
     );
+    testWidgets(
+      'desktop cards show labels in the reserved footer before hover actions',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.labels['l1'] = const Label(id: 'l1', name: 'Work');
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Desktop labels',
+          labelIds: const {'l1'},
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+
+        expect(find.text('Work'), findsOneWidget);
+        final footer = tester.widget<AnimatedOpacity>(
+          find.byKey(const ValueKey('note-footer-labels-n1')),
+        );
+        expect(footer.opacity, 1);
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<AnimatedOpacity>(
+                find.byKey(const ValueKey('note-footer-labels-n1')),
+              )
+              .opacity,
+          0,
+        );
+      },
+    );
   });
 
   group('AnimatedMasonry drag reorder', () {
@@ -466,6 +506,28 @@ void main() {
       expect(api.notes, isEmpty);
     });
 
+    testWidgets('archive lives in the editor bottom actions after sharing', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Archive me');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      final share = find.byTooltip('Collaborators');
+      final archive = find.byTooltip('Archive');
+      expect(share, findsOneWidget);
+      expect(archive, findsOneWidget);
+      expect(
+        tester.getCenter(archive).dx,
+        greaterThan(tester.getCenter(share).dx),
+      );
+      expect(
+        tester.getCenter(archive).dy,
+        greaterThan(tester.getCenter(find.byType(AppBar)).dy),
+      );
+    });
+
     testWidgets('checklist editor: typing suggestions from history add items', (
       tester,
     ) async {
@@ -482,6 +544,11 @@ void main() {
       await tester.pump();
       expect(find.text('Milk'), findsOneWidget);
       expect(find.text('Eggs'), findsOneWidget);
+      final suggestions = tester.widget<ListView>(
+        find.byKey(const Key('checklist-suggestions')),
+      );
+      expect(suggestions.primary, isFalse);
+      expect(suggestions.controller, isNotNull);
 
       // Typing materializes a real row on the first keystroke and hands focus
       // to it; its popup keeps narrowing the suggestions.
