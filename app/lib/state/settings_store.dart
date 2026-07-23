@@ -69,7 +69,7 @@ class PaletteEntry {
   }
 }
 
-/// Keep's classic 8 colors — the palette users start from and can reset to.
+/// The default 8 colors — the palette users start from and can reset to.
 const List<PaletteEntry> kDefaultPalette = [
   PaletteEntry(
     key: 'red',
@@ -435,8 +435,7 @@ class SettingsStore extends ChangeNotifier {
       _mutate(() => dateFormat = format);
   void setUse24hTime(bool value) => _mutate(() => use24hTime = value);
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
-  void setGridDensity(GridDensity value) =>
-      _mutate(() => gridDensity = value);
+  void setGridDensity(GridDensity value) => _mutate(() => gridDensity = value);
   void setGridWidth(GridWidth value) => _mutate(() => gridWidth = value);
   void setSemanticSearchEnabled(bool value) =>
       _mutate(() => semanticSearchEnabled = value);

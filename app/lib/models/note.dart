@@ -173,7 +173,7 @@ class Note {
 
   bool isOwnedBy(String? userId) => owner == null || owner!.id == userId;
 
-  static const _sentinelDate = 'sticky-notes-keep';
+  static const _sentinelDate = 'sticky-notes-unset';
 
   Note copyWith({
     NoteKind? kind,

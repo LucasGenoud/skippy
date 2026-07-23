@@ -14,7 +14,7 @@ import '../util/snack.dart';
 import 'animated_checklist.dart';
 import 'markdown_toolbar.dart';
 
-/// Keep-style quick add, shown above the grid on wide screens: pick a kind and
+/// Inline quick add, shown above the grid on wide screens: pick a kind and
 /// compose the whole note inline — plain text, a checklist, or markdown —
 /// without ever leaving the grid. Close / tap outside / Escape all save (an
 /// empty composer just collapses). The image icon creates an image note
@@ -93,7 +93,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
     return _contentController.text.trim().isNotEmpty;
   }
 
-  /// Keep behavior: closing always saves what's there.
+  /// Closing always saves what's there.
   void _saveAndCollapse() {
     if (!_expanded) return;
     if (_hasContent) {

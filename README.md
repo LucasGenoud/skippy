@@ -1,6 +1,6 @@
 # Sticky Notes
 
-A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with a **Rust** backend (axum + SQLite). Built for smoothness — every interaction is optimistic-first, every layout change animates, and collaboration syncs live over WebSockets.
+A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **Rust** backend (axum + SQLite). Built for smoothness — every interaction is optimistic-first, every layout change animates, and collaboration syncs live over WebSockets.
 
 <p align="center"><em>Masonry grid · drag-to-reorder · text, markdown, checklist, and audio notes · sharing and live co-editing · reminders · labels · attachments · dark mode</em></p>
 
@@ -18,7 +18,7 @@ A Google Keep–style notes app: **Flutter** frontend (web + iOS + Android) with
 - **Version history** groups content edits into sessions, attributes collaborator edits, and supports reversible restores
 
 **Organization**
-- Keep's classic 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
+- An 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
 - Flat labels (create/rename/delete; filter from the drawer)
 - Pinning, archive, trash (auto-purged after 7 days)
 - **Drag-to-reorder** with animated reflow, edge auto-scroll, haptics
@@ -110,7 +110,7 @@ sticky_notes/
 
 **Optimistic-first client.** Every action updates the UI immediately; writes flow through a serial queue that retries on network failure (a banner shows offline state). The network is never in the tap path — that's where the smoothness comes from.
 
-**Custom animated masonry.** Keep's grid is a masonry with drag-to-reorder; no Flutter package does both, so [app/lib/widgets/masonry.dart](app/lib/widgets/masonry.dart) implements it: tiles are measured after layout and absolutely positioned, so any reflow — reorder, edit, column change — glides tiles to their new spots. Long-press lifts a card; siblings flow around the pointer in real time.
+**Custom animated masonry.** The grid is a masonry with drag-to-reorder; no Flutter package does both, so [app/lib/widgets/masonry.dart](app/lib/widgets/masonry.dart) implements it: tiles are measured after layout and absolutely positioned, so any reflow — reorder, edit, column change — glides tiles to their new spots. Long-press lifts a card; siblings flow around the pointer in real time.
 
 ## Running it
 
@@ -146,7 +146,7 @@ STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 
 Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment directory, default `uploads`), `STICKY_NOTES_WEB` (optional Flutter web bundle to serve), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_PUBLIC_URL` (the backend URL the bundled web app should target by default — see below), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service), `STICKY_NOTES_TELEGRAM_API` (Telegram Bot API base, default `https://api.telegram.org`), and `STICKY_NOTES_UNFURL_ALLOW_PRIVATE=1` (allow link previews for private/loopback hosts; off by default for SSRF safety). BGE-M3 downloads to the fastembed/Hugging Face cache on first start.
 
-Default backend URL for the bundled web app: when the binary also serves the Flutter web build, it normally targets its own origin. Behind a reverse proxy (e.g. `https://notes.example.com` on :443) that heuristic can miss, so set **`STICKY_NOTES_PUBLIC_URL`** to the URL browsers should call — the server stamps it into `index.html` at startup and the app uses it as the default, no rebuild needed. Users can still switch servers from the login screen's server picker.
+Default backend URL for the bundled web app: when the binary also serves the Flutter web build, it normally targets its own origin. Behind a reverse proxy (e.g. `https://notes.example.com` on :443) that heuristic can miss, so set **`STICKY_NOTES_PUBLIC_URL`** to the URL browsers should call — the server stamps it into `index.html` at startup and the app uses it as the default, no rebuild needed. It also restricts HTTP CORS to that URL's origin (scheme, host, and port), rather than allowing every browser origin. Users can still switch servers from the login screen's server picker.
 
 Attachment storage: `STICKY_NOTES_STORAGE` (`disk` default, or `s3`). With `s3`, set `STICKY_NOTES_S3_URL` (endpoint, e.g. `http://localhost:3900`), `STICKY_NOTES_S3_ACCESS_KEY`, `STICKY_NOTES_S3_SECRET_KEY`, and optionally `STICKY_NOTES_S3_REGION` (default `garage`) and `STICKY_NOTES_S3_BUCKET_PREFIX` (default `sticky-notes-`, bucket names are `{prefix}{user-id}`). The access key needs permission to create buckets (Garage's auto-provisioned default key has it). Works against any S3-compatible store; for dev: `docker compose up -d garage`, then run with the compose file's key pair.
 
@@ -251,6 +251,6 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 ## Design notes & trade-offs
 
 - **Co-editing is last-write-wins** at note granularity (no CRDT). The WS nudge keeps everyone fresh; a reorder mid-drag from another device is never committed as your drag.
-- **Pin/archive/order are shared** on a shared note (Keep makes them per-user; kept global for simplicity).
+- **Pin/archive/order are shared** on a shared note (global for simplicity).
 - Client-generated UUIDs let notes be created offline and synced later; the server returns 409 Conflict if an id is reused.
 - Checklist history records on the *check-off* transition and is shared by collaborators on that note, capped at 500 entries per note.

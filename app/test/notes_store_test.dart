@@ -104,7 +104,7 @@ void main() {
   });
 
   group('note actions', () {
-    test('pinning an archived note unarchives it (Keep parity)', () async {
+    test('pinning an archived note unarchives it', () async {
       api.notes['n1'] = serverNote('n1', title: 'a', archived: true);
       await store.load();
       store.togglePin('n1');

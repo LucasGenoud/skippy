@@ -273,7 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
         (_selection.view == NoteView.notes ||
             _selection.view == NoteView.archive);
 
-    // Keyboard shortcuts (web/desktop), Keep-style. Printable keys use
+    // Keyboard shortcuts (web/desktop). Printable keys use
     // CharacterActivator so they match what the keystroke actually produced
     // on any layout ("/" is Shift+7 on Swiss keyboards), and _HomeAction
     // suppresses them while a text field has focus — the event then falls
@@ -438,13 +438,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                                                 store.retryNow,
                                                           )
                                                         : const SizedBox(
-                                                            width: double
-                                                                .infinity,
+                                                            width:
+                                                                double.infinity,
                                                           ),
                                                   ),
                                                 ),
                                               ),
-                                              // Keep-style quick add: wide screens, main notes view only.
+                                              // Inline quick add: wide screens, main notes view only.
                                               if (_selection ==
                                                       ViewSelection.notes &&
                                                   !searching &&

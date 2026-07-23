@@ -9,6 +9,7 @@ mod audio;
 mod auth;
 mod chat;
 mod checklist_history;
+mod cors;
 mod labels;
 mod llm;
 mod notes;

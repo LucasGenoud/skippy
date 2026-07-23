@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#FFFFFF",
     "theme_color": "#f6c344",
-    "description": "A Google Keep style notes app.",
+    "description": "A cross-platform notes app.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -34,7 +34,7 @@ import '../widgets/transcribing_indicator.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
 /// debounces the network write); empty notes are discarded on close, exactly
-/// like Keep.
+/// on wide layouts.
 ///
 /// With [noteId] null this is the "new note" editor: the note is only created
 /// in the store on the first actual change, so backing out of an untouched
@@ -64,12 +64,12 @@ class EditorScreen extends StatefulWidget {
   State<EditorScreen> createState() => _EditorScreenState();
 }
 
-/// Whether this layout opens notes as a centered modal (Keep's web behavior)
+/// Whether this layout opens notes as a centered modal
 /// instead of fullscreen. Same breakpoint as the quick-add bar.
 bool wantsModalEditor(BuildContext context) =>
     MediaQuery.sizeOf(context).width >= 600;
 
-/// Open the editor the Keep way for the current layout: a centered
+/// Open the editor for the current layout: a centered
 /// fade-scale modal over a dimmed barrier on wide screens, or the given
 /// fullscreen container-transform ([openFullscreen], from an enclosing
 /// OpenContainer) on narrow ones. Dismissing the modal — barrier tap,
@@ -458,7 +458,11 @@ class _EditorScreenState extends State<EditorScreen> {
         await _store.uploadFile(id, f.bytes, f.mime, f.name);
       }
     } catch (_) {
-      showAppSnack(failureMessage, icon: Icons.error_outline, kind: SnackKind.danger);
+      showAppSnack(
+        failureMessage,
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -796,7 +800,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     constraints: const BoxConstraints(maxWidth: 680),
                     child: Column(
                       // Modal: shrink to the note's content (the dialog grows
-                      // with the note, like Keep's web editor) instead of
+                      // with the note) instead of
                       // filling the screen.
                       mainAxisSize: widget.modal
                           ? MainAxisSize.min
@@ -913,7 +917,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   /// Fullscreen: a regular Scaffold. Modal: no Scaffold — it would expand to
   /// the dialog's max height — so a min-height column lets the dialog hug the
-  /// note's content, Keep-style.
+  /// note's content.
   Widget _editorShell({required Note? note, required Widget body}) {
     if (!widget.modal) {
       return Scaffold(
@@ -1073,7 +1077,9 @@ class _EditorScreenState extends State<EditorScreen> {
       visualDensity: VisualDensity.compact,
       backgroundColor: tinted ? tint.withValues(alpha: 0.12) : null,
       side: tinted ? BorderSide(color: tint.withValues(alpha: 0.55)) : null,
-      onDeleted: trashed ? null : () => _store.toggleLabelOnNote(noteId, label.id),
+      onDeleted: trashed
+          ? null
+          : () => _store.toggleLabelOnNote(noteId, label.id),
       onPressed: trashed ? null : () => LabelsSheet.show(context, noteId),
     );
   }

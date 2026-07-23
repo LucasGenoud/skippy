@@ -4,11 +4,11 @@ import 'package:provider/provider.dart';
 import '../../state/settings_store.dart';
 import '../../theme.dart';
 
-/// A handful of pleasant seeds to pick from, the Keep amber ([kDefaultAccent])
+/// A handful of pleasant seeds to pick from, the amber ([kDefaultAccent])
 /// first so the out-of-the-box state reads as selected. Any hex is reachable
 /// through the custom picker.
 const List<Color> kAccentPresets = [
-  kDefaultAccent, // Amber (Keep)
+  kDefaultAccent, // Amber
   Color(0xFFFF7043), // Deep orange
   Color(0xFFEA4335), // Red
   Color(0xFFD81B60), // Pink

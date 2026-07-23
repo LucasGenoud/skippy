@@ -8,7 +8,7 @@ import '../models/note.dart';
 import '../util/platform.dart';
 import 'measure_size.dart';
 
-/// Keep-style checklist editor:
+/// Checklist editor:
 ///
 /// * every row is absolutely positioned and glides when anything changes, so
 ///   checking an item visibly slides it down into the "checked" section
@@ -31,7 +31,7 @@ class AnimatedChecklist extends StatefulWidget {
   final String Function(String text) onAdd;
   final void Function(List<ChecklistItem> newItems) onReorderItems;
 
-  /// Enter in a row inserts a fresh empty row right below it (Keep behavior);
+  /// Enter in a row inserts a fresh empty row right below it;
   /// returns the new item's id so it can be focused.
   final String Function(String afterItemId)? onInsertAfter;
 
@@ -546,7 +546,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final focused = handles.focusNode.hasFocus;
     final hovered = _hoveredId == item.id;
     // Touch has no hover: keep affordances visible. Desktop reveals them on
-    // hover/focus, keeping the list visually calm like Keep.
+    // hover/focus, keeping the list visually calm.
     final showControls =
         !widget.readOnly &&
         (isTouchPrimaryPlatform || hovered || focused || dragging);

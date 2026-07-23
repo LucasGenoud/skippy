@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 // Note colors live in SettingsStore (user-customizable palette); this file
 // only builds the app-wide themes.
 
-/// The app's default accent — Keep's amber. Users can override it in Settings;
+/// The app's default accent — amber. Users can override it in Settings;
 /// [SettingsStore] stores the choice and feeds it back in as [buildTheme]'s
 /// seed, so one color reseeds the whole Material scheme for both brightnesses.
 const Color kDefaultAccent = Color(0xFFFBBC04);
@@ -26,14 +26,11 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
 
 ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final light = brightness == Brightness.light;
-  // Neutralize the seed's cast on surfaces — Keep pairs a colored accent with
+  // Neutralize the seed's cast on surfaces — the design pairs a colored accent with
   // plain gray/white neutrals, so we keep the surfaces neutral whatever the
   // accent is and let the seed drive only `primary` and its companions.
-  final scheme =
-      ColorScheme.fromSeed(
-        seedColor: seed,
-        brightness: brightness,
-      ).copyWith(
+  final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness)
+      .copyWith(
         surface: light ? Colors.white : const Color(0xFF202124),
         surfaceContainerLow: light
             ? const Color(0xFFF8F9FA)
@@ -74,9 +71,7 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     dialogTheme: base.dialogTheme.copyWith(shape: kRoundedShape),
     popupMenuTheme: base.popupMenuTheme.copyWith(shape: kRoundedShape),
     menuTheme: const MenuThemeData(
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(kRoundedShape),
-      ),
+      style: MenuStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
     ),
     bottomSheetTheme: base.bottomSheetTheme.copyWith(
       shape: const RoundedRectangleBorder(

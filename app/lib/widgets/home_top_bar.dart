@@ -25,7 +25,7 @@ import '../util/motion.dart';
 
 /// The home screen's top bar: menu + branding, the search pill (with clear
 /// and semantic-search controls), and the quick-settings icons + avatar menu.
-/// Below 650px it collapses into a single Keep-style search pill.
+/// Below 650px it collapses into a single search pill.
 class HomeTopBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -231,7 +231,7 @@ class HomeTopBar extends StatelessWidget {
     );
   }
 
-  /// Phone layout, Keep-style: the whole bar is a single search pill. The
+  /// Phone layout: the whole bar is a single search pill. The
   /// drawer button, search field, and the few icons that matter on a phone
   /// (chat, layout, avatar) live inside it; while typing they give way to
   /// clear + semantic-search. Sort/theme/settings tuck into the avatar menu,
@@ -346,7 +346,7 @@ Widget _fadeScale({required Widget child}) {
 
 /// The search pill's chrome. At rest it sits flush in the bar; when the field
 /// gains focus it lifts — surface fill plus a soft shadow — so the active
-/// search state is unmistakable (Keep's focused-search treatment).
+/// search state is unmistakable.
 class _SearchPill extends StatelessWidget {
   final FocusNode focusNode;
   final double? height;
@@ -651,7 +651,7 @@ class _RefreshButton extends StatelessWidget {
   }
 }
 
-/// Sort control: Keep's "Sort by" options. Anything but custom order
+/// Sort control: the available "Sort by" options. Anything but custom order
 /// disables drag-to-reorder (positions stay untouched).
 const _sortModes = [
   (SortMode.custom, 'Custom order'),

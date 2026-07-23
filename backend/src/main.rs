@@ -8,7 +8,9 @@ use sticky_notes_server::search::{
 use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
-use sticky_notes_server::{AppState, build_app, handlers};
+use sticky_notes_server::{
+    AppState, build_app_with_cors_origin, cors_origin_from_public_url, handlers,
+};
 use tower_http::services::{ServeDir, ServeFile};
 
 /// Load the persistent HMAC key used to sign file-access URLs, creating and
@@ -136,12 +138,14 @@ fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
         }
         "s3" => {
             let require = |key: &str| {
-                std::env::var(key)
-                    .map_err(|_| anyhow::anyhow!("STICKY_NOTES_STORAGE=s3 requires {key} to be set"))
+                std::env::var(key).map_err(|_| {
+                    anyhow::anyhow!("STICKY_NOTES_STORAGE=s3 requires {key} to be set")
+                })
             };
             let cfg = S3Config {
                 url: require("STICKY_NOTES_S3_URL")?,
-                region: std::env::var("STICKY_NOTES_S3_REGION").unwrap_or_else(|_| "garage".to_string()),
+                region: std::env::var("STICKY_NOTES_S3_REGION")
+                    .unwrap_or_else(|_| "garage".to_string()),
                 access_key: require("STICKY_NOTES_S3_ACCESS_KEY")?,
                 secret_key: require("STICKY_NOTES_S3_SECRET_KEY")?,
                 bucket_prefix: std::env::var("STICKY_NOTES_S3_BUCKET_PREFIX")
@@ -175,7 +179,8 @@ async fn init_transcription() -> Option<Arc<dyn Transcriber>> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let db_path = std::env::var("STICKY_NOTES_DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
+    let db_path =
+        std::env::var("STICKY_NOTES_DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
     let uploads = std::env::var("STICKY_NOTES_UPLOADS").unwrap_or_else(|_| "uploads".to_string());
 
     // Swap point: implement `Repository` for another database and change
@@ -198,7 +203,9 @@ async fn main() -> anyhow::Result<()> {
         // and notes skipped while the embedder was down get caught up.
         let state_for_reindex = state.clone();
         tokio::spawn(async move {
-            let Some(search) = state_for_reindex.search.clone() else { return };
+            let Some(search) = state_for_reindex.search.clone() else {
+                return;
+            };
             let already = search.indexed_note_ids().await.unwrap_or_default();
             if let Ok(ids) = state_for_reindex.repo.all_note_ids().await {
                 let mut queued = 0usize;
@@ -220,10 +227,16 @@ async fn main() -> anyhow::Result<()> {
     // Due reminders push to each user's configured channels (ntfy, Telegram).
     sticky_notes_server::notify::spawn_reminder_scheduler(state.clone());
 
-    let mut app = build_app(state);
+    let cors_origin = std::env::var("STICKY_NOTES_PUBLIC_URL")
+        .ok()
+        .filter(|url| !url.trim().is_empty())
+        .map(|url| cors_origin_from_public_url(&url))
+        .transpose()?;
+    let mut app = build_app_with_cors_origin(state, cors_origin);
 
     // If the Flutter web build exists, serve it so the whole app runs off one binary.
-    let web_dir = std::env::var("STICKY_NOTES_WEB").unwrap_or_else(|_| "../app/build/web".to_string());
+    let web_dir =
+        std::env::var("STICKY_NOTES_WEB").unwrap_or_else(|_| "../app/build/web".to_string());
     if Path::new(&web_dir).join("index.html").exists() {
         // A self-hoster can pin the backend URL browsers should use via
         // STICKY_NOTES_PUBLIC_URL (e.g. behind a reverse proxy on :443). We

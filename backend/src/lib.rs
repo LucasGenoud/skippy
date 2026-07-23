@@ -19,8 +19,9 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
+use axum::http::HeaderValue;
 use axum::routing::{get, post};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::files::FileStore;
 use crate::store::Repository;
@@ -139,6 +140,13 @@ impl AppState {
 
 /// The full API router. Tests build this against an in-memory repository.
 pub fn build_app(state: AppState) -> Router {
+    build_app_with_cors_origin(state, None)
+}
+
+/// Build the API router with an optional browser-origin allow-list. The
+/// production binary supplies the origin derived from `STICKY_NOTES_PUBLIC_URL`.
+/// Tests and local development without that setting retain permissive CORS.
+pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<HeaderValue>) -> Router {
     let api = Router::new()
         .route("/health", get(handlers::health))
         .route("/capabilities", get(handlers::capabilities))
@@ -205,8 +213,48 @@ pub fn build_app(state: AppState) -> Router {
         .route("/ws", get(handlers::ws_handler))
         .with_state(state);
 
-    Router::new()
+    let app = Router::new()
         .nest("/api", api)
-        .layer(DefaultBodyLimit::max(30 * 1024 * 1024))
-        .layer(CorsLayer::very_permissive())
+        .layer(DefaultBodyLimit::max(30 * 1024 * 1024));
+
+    match allowed_origin {
+        Some(origin) => app.layer(
+            CorsLayer::new()
+                // A one-item list mirrors the origin only when it matches.
+                // Passing a lone HeaderValue would send that value for every
+                // request, which browsers reject but is needlessly confusing.
+                .allow_origin([origin])
+                .allow_methods(Any)
+                .allow_headers(Any),
+        ),
+        None => app.layer(CorsLayer::very_permissive()),
+    }
+}
+
+/// Turn a configured public URL into the exact value browsers send in their
+/// `Origin` header. Paths and trailing slashes are deliberately discarded.
+pub fn cors_origin_from_public_url(raw: &str) -> anyhow::Result<HeaderValue> {
+    let url = reqwest::Url::parse(raw.trim())?;
+    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+        anyhow::bail!("STICKY_NOTES_PUBLIC_URL must be an absolute http(s) URL");
+    }
+    HeaderValue::try_from(url.origin().ascii_serialization())
+        .map_err(|_| anyhow::anyhow!("STICKY_NOTES_PUBLIC_URL contains an invalid origin"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cors_origin_from_public_url;
+
+    #[test]
+    fn cors_origin_uses_only_scheme_host_and_port() {
+        assert_eq!(
+            cors_origin_from_public_url("https://notes.example.com/app/")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "https://notes.example.com",
+        );
+        assert!(cors_origin_from_public_url("notes.example.com").is_err());
+    }
 }

@@ -759,7 +759,7 @@ class NotesStore extends ChangeNotifier {
     final note = noteById(id);
     if (note == null) return;
     if (note.archived && !note.pinned) {
-      // Keep parity: pinning an archived note moves it back to Notes.
+      // Pinning an archived note moves it back to Notes.
       _patch(id, note.copyWith(pinned: true, archived: false), {
         'pinned': true,
         'archived': false,
@@ -907,7 +907,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Flush pending edits when an editor closes. Returns true when the note
-  /// was empty and has been discarded (Keep behavior).
+  /// was empty and has been discarded.
   bool finalizeNote(String id) {
     final note = noteById(id);
     if (note == null) return false;

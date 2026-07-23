@@ -1,5 +1,5 @@
 name: skippy
-description: "A Google Keep style notes app with a Rust backend."
+description: "A cross-platform notes app with a Rust backend."
 publish_to: 'none'
 version: 1.0.0+1
 

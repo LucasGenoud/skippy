@@ -21,6 +21,9 @@ services:
     ports:
       - "8787:8787"
     environment:
+      # When set (for example https://notes.example.com), this becomes the
+      # browser API base and the sole allowed CORS origin.
+      STICKY_NOTES_PUBLIC_URL: ${STICKY_NOTES_PUBLIC_URL:-}
       STICKY_NOTES_WHISPER_URL: http://whisper:9000
       # File storage backend: "disk" (default) keeps blobs in app_data;
       # "s3" stores them in the garage service, one bucket per user.

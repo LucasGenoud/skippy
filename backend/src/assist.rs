@@ -264,8 +264,8 @@ pub fn write_plan_messages(
          {\"action\":\"create\",\"kind\":\"text\"|\"checklist\",\"title\":\"…\",\
          \"content\":\"…\",\"items\":[\"…\"]}\n\
          Use \"checklist\" with an \"items\" array for a list of things (to-dos, \
-         shopping, steps); use \"text\" with \"content\" for prose. Keep the \
-         title short; it may be empty. Include only the fields you need.\n\
+         shopping, steps); use \"text\" with \"content\" for prose. Keep \
+         the title short; it may be empty. Include only the fields you need.\n\
          To add to an existing note listed below:\n\
          {\"action\":\"append\",\"note_id\":\"<id from the list>\",\"content\":\"…\",\
          \"items\":[\"…\"]}\n\
