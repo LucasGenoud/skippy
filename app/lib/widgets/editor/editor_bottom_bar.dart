@@ -25,6 +25,7 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onHistory;
   final void Function(NoteKind target)? onConvert;
   final ValueChanged<NoteRewriteMode>? onRewrite;
+  final bool rewriting;
 
   const EditorBottomBar({
     super.key,
@@ -47,6 +48,7 @@ class EditorBottomBar extends StatelessWidget {
     this.onHistory,
     this.onConvert,
     this.onRewrite,
+    this.rewriting = false,
   });
 
   static const _kindLabels = {
@@ -176,7 +178,14 @@ class EditorBottomBar extends StatelessWidget {
               action(icon: Icons.undo, tooltip: 'Undo', onPressed: onUndo),
               action(icon: Icons.redo, tooltip: 'Redo', onPressed: onRedo),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert),
+                icon: rewriting
+                    ? const SizedBox(
+                        key: ValueKey('editor-rewrite-progress'),
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2.25),
+                      )
+                    : const Icon(Icons.more_vert),
                 tooltip: 'More',
                 onSelected: (value) {
                   if (value == 'image') onImage?.call();
@@ -242,13 +251,13 @@ class EditorBottomBar extends StatelessWidget {
                       value: 'concise',
                       icon: Icons.auto_fix_high_outlined,
                       label: 'Clean up and make concise',
-                      enabled: true,
+                      enabled: !rewriting,
                     ),
                     _menuItem(
                       value: 'grammar',
                       icon: Icons.spellcheck_outlined,
                       label: 'Fix grammar and syntax',
-                      enabled: true,
+                      enabled: !rewriting,
                     ),
                     const PopupMenuDivider(),
                   ],

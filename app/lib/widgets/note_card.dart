@@ -179,8 +179,10 @@ class _NoteTileState extends State<NoteTile> {
   }
 
   Future<void> _rewrite(NoteRewriteMode mode) async {
+    final store = context.read<NotesStore>();
+    if (store.isRewritingNote(widget.note.id)) return;
     try {
-      await context.read<NotesStore>().rewriteNote(widget.note.id, mode);
+      await store.rewriteNote(widget.note.id, mode);
       if (!mounted) return;
       showAppSnack(
         mode == NoteRewriteMode.concise
@@ -210,6 +212,9 @@ class _NoteTileState extends State<NoteTile> {
     // fill changes, instead of on every settings notification.
     final fill = context.select<SettingsStore, Color?>(
       (s) => s.resolveColor(note.color, brightness),
+    );
+    final isRewriting = context.select<NotesStore, bool>(
+      (store) => store.isRewritingNote(note.id),
     );
     final borderColor = fill == null
         ? scheme.outlineVariant
@@ -270,11 +275,13 @@ class _NoteTileState extends State<NoteTile> {
                   reserveActions: desktopActions,
                   showLabelsInBody: !desktopActions,
                 ),
-                _PinButton(note: note, hovered: _hovered),
+                _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
+                if (isRewriting) const _NoteRewriteProgress(),
                 if (desktopActions)
                   _NoteActions(
                     note: note,
                     visible: actionsVisible,
+                    rewriting: isRewriting,
                     canDelete: context.read<NotesStore>().canTrash(note.id),
                     onReminder: _editReminder,
                     onShare: _share,
@@ -617,12 +624,17 @@ class _NoteCardContent extends StatelessWidget {
 class _PinButton extends StatelessWidget {
   final Note note;
   final bool hovered;
-  const _PinButton({required this.note, required this.hovered});
+  final bool hidden;
+  const _PinButton({
+    required this.note,
+    required this.hovered,
+    this.hidden = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final show = !note.trashed && (hovered || note.pinned);
+    final show = !hidden && !note.trashed && (hovered || note.pinned);
     return Positioned(
       top: 4,
       right: 4,
@@ -657,11 +669,40 @@ class _PinButton extends StatelessWidget {
   }
 }
 
+/// A compact, non-blocking signal that the server is applying an AI rewrite.
+/// It occupies the pin's usual corner so it stays visible without covering
+/// the note content or the desktop action footer.
+class _NoteRewriteProgress extends StatelessWidget {
+  const _NoteRewriteProgress();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      top: 16,
+      right: 16,
+      child: Semantics(
+        label: 'AI editing note',
+        child: SizedBox(
+          key: const ValueKey('note-rewrite-progress'),
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.25,
+            color: scheme.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Pointer-only card actions. The card always reserves this footer on desktop
 /// so revealing the controls never shifts text, images, or neighboring tiles.
 class _NoteActions extends StatelessWidget {
   final Note note;
   final bool visible;
+  final bool rewriting;
   final bool canDelete;
   final VoidCallback onReminder;
   final VoidCallback onShare;
@@ -677,6 +718,7 @@ class _NoteActions extends StatelessWidget {
   const _NoteActions({
     required this.note,
     required this.visible,
+    required this.rewriting,
     required this.canDelete,
     required this.onReminder,
     required this.onShare,
@@ -784,16 +826,18 @@ class _NoteActions extends StatelessWidget {
                   },
                   itemBuilder: (context) => [
                     if (aiEditingEnabled && note.kind != NoteKind.audio) ...[
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'concise',
+                        enabled: !rewriting,
                         child: ListTile(
                           leading: Icon(Icons.auto_fix_high_outlined),
                           title: Text('Clean up and make concise'),
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'grammar',
+                        enabled: !rewriting,
                         child: ListTile(
                           leading: Icon(Icons.spellcheck_outlined),
                           title: Text('Fix grammar and syntax'),

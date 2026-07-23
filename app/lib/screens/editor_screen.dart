@@ -413,7 +413,12 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Future<void> _rewriteWithAi(NoteRewriteMode mode) async {
     final note = _note;
-    if (note == null || note.isEmpty || note.isAudio) return;
+    if (note == null ||
+        note.isEmpty ||
+        note.isAudio ||
+        _store.isRewritingNote(note.id)) {
+      return;
+    }
     // Put the currently visible controllers into the store before waiting for
     // the server-side rewrite; [NotesStore.rewriteNote] then flushes that
     // pending patch before it asks the LLM to transform the note.
@@ -779,6 +784,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final bg = fill ?? scheme.surface;
     final trashed = note?.trashed ?? false;
     final isOwner = note?.isOwnedBy(_store.currentUserId) ?? true;
+    final isRewriting = note != null && _store.isRewritingNote(note.id);
     final query = _finding ? _findController.text.trim() : '';
 
     final labels = [
@@ -946,6 +952,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                   !settings.noteWritingAvailable
                               ? null
                               : _rewriteWithAi,
+                          rewriting: isRewriting,
                         ),
                       ],
                     ),

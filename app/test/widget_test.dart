@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -264,8 +266,18 @@ void main() {
         expect(find.text('Clean up and make concise'), findsOneWidget);
         expect(find.text('Fix grammar and syntax'), findsOneWidget);
 
+        api.rewriteGate = Completer<void>();
         await tester.tap(find.text('Fix grammar and syntax'));
         await tester.pump();
+        expect(find.byKey(const ValueKey('note-rewrite-progress')), findsOne);
+        expect(api.log, isNot(contains('rewriteNote:n1:grammar')));
+
+        api.rewriteGate!.complete();
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('note-rewrite-progress')),
+          findsNothing,
+        );
         expect(api.log, contains('rewriteNote:n1:grammar'));
         expect(
           store.noteById('n1')!.content,

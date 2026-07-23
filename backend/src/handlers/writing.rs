@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
-use crate::models::{KIND_AUDIO, KIND_CHECKLIST, NoteRecord, NoteView, UpdateNote};
+use crate::models::{KIND_AUDIO, KIND_CHECKLIST, KIND_MARKDOWN, NoteRecord, NoteView, UpdateNote};
 
 use super::{apply_note_update, require_participant};
 
@@ -109,11 +109,20 @@ pub async fn rewrite_note(
 fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::ChatMessage> {
     let instruction = match mode {
         RewriteMode::Concise => {
-            "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information. Keep Markdown syntax meaningful."
+            "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information."
         }
         RewriteMode::Grammar => {
-            "Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, change tone, or alter Markdown structure."
+            "Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, or change tone."
         }
+    };
+    let format_instruction = match record.kind.as_str() {
+        KIND_MARKDOWN => {
+            "This is a Markdown note: preserve meaningful Markdown syntax and structure."
+        }
+        KIND_CHECKLIST => {
+            "This is a checklist: return the title and every item as plain text only, without Markdown syntax or formatting."
+        }
+        _ => "This is a plain-text note: return the title and content as plain text only, without Markdown syntax or formatting.",
     };
     let note = if record.kind == KIND_CHECKLIST {
         format!(
@@ -136,7 +145,7 @@ fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::C
     };
     vec![
         crate::llm::ChatMessage::system(format!(
-            "You edit one personal note. {instruction} {shape}"
+            "You edit one personal note. {instruction} {format_instruction} {shape}"
         )),
         crate::llm::ChatMessage::user(note),
     ]

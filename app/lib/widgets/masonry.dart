@@ -98,11 +98,11 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
     _autoScrollTicker = createTicker(_onAutoScrollTick);
-    // 500ms end-to-end: each tile takes a 0.5 slice (see [_TileEntrance]), so
-    // no single tile animates longer than 250ms — the grid still cascades.
+    // A brisk, one-shot cascade: each tile takes a 0.5 slice (see
+    // [_TileEntrance]), so no single tile animates longer than 210ms.
     _entranceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 420),
     );
   }
 
@@ -410,10 +410,14 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   }
 }
 
-/// Fades and lifts a tile into place on first appearance. Every tile shares the
-/// masonry's one entrance controller; [index] offsets each tile's slice of it
-/// (capped) so they cascade in rather than popping together.
+/// Fades and slides each tile into its masonry slot on first appearance. Every
+/// tile shares the masonry's one entrance controller; [index] offsets each
+/// tile's slice of it (capped) so the grid arrives like staggered bricks,
+/// rather than popping together.
 class _TileEntrance extends StatelessWidget {
+  static const _verticalOffset = 20.0;
+  static const _horizontalOffset = 12.0;
+
   final Animation<double> animation;
   final int index;
   final Widget child;
@@ -433,10 +437,13 @@ class _TileEntrance extends StatelessWidget {
       builder: (context, child) {
         final raw = ((animation.value - start) / (end - start)).clamp(0.0, 1.0);
         final t = Motion.standard.transform(raw);
+        final horizontal = index.isEven
+            ? -_horizontalOffset
+            : _horizontalOffset;
         return Opacity(
           opacity: t,
           child: Transform.translate(
-            offset: Offset(0, (1 - t) * 8),
+            offset: Offset(horizontal * (1 - t), _verticalOffset * (1 - t)),
             child: child,
           ),
         );

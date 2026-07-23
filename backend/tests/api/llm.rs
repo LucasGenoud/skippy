@@ -264,8 +264,29 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(rewritten["title"], json!("Short title"));
     assert_eq!(rewritten["content"], json!("Correct sentence."));
-    let prompt = &calls.lock().unwrap()[0][0].content;
+    let prompt = calls.lock().unwrap()[0][0].content.clone();
     assert!(prompt.contains("grammar, spelling, punctuation, and syntax"));
+    assert!(prompt.contains("plain text only, without Markdown syntax"));
+
+    let markdown_note = create_note(
+        &app,
+        &token,
+        json!({"kind": "markdown", "title": "Readme", "content": "# bad heading"}),
+    )
+    .await;
+    let markdown_id = markdown_note["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{markdown_id}/rewrite"),
+        Some(&token),
+        Some(json!({"mode": "grammar"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let markdown_prompt = calls.lock().unwrap()[1][0].content.clone();
+    assert!(markdown_prompt.contains("Markdown note"));
+    assert!(!markdown_prompt.contains("plain text only"));
 }
 
 // ---------------------------------------------------------------------------

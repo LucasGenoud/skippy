@@ -68,6 +68,11 @@ class NotesStore extends ChangeNotifier {
   /// Notes created locally that have not been sent to the server yet.
   final Set<String> _drafts = {};
 
+  /// Notes currently being transformed by the optional AI writing service.
+  /// A rewrite is not optimistic, so the UI uses this to provide feedback and
+  /// prevent the same note from being submitted twice.
+  final Set<String> _rewritingNoteIds = {};
+
   StreamSubscription<void>? _syncSub;
   StreamSubscription<void>? _onlineSub;
   Timer? _syncReloadDebounce;
@@ -639,10 +644,19 @@ class NotesStore extends ChangeNotifier {
   /// has reached the server. Unlike normal typing this cannot be optimistic:
   /// the replacement text comes from the configured provider.
   Future<void> rewriteNote(String id, NoteRewriteMode mode) async {
-    await _pushPending(id);
-    final updated = await api.rewriteNote(id, mode);
-    if (noteById(id) != null) _replace(updated);
+    if (!_rewritingNoteIds.add(id)) return;
+    notifyListeners();
+    try {
+      await _pushPending(id);
+      final updated = await api.rewriteNote(id, mode);
+      if (noteById(id) != null) _replace(updated);
+    } finally {
+      _rewritingNoteIds.remove(id);
+      notifyListeners();
+    }
   }
+
+  bool isRewritingNote(String id) => _rewritingNoteIds.contains(id);
 
   PendingOp _contentPatchOp(String id, Note note) => PendingOp(
     PendingOpKind.patch,

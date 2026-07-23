@@ -20,6 +20,7 @@ class FakeApi implements Api {
   /// Checked-item history keyed by note id (per-note suggestions).
   Map<String, List<String>> history = {};
   Completer<void>? fetchHistoryGate;
+  Completer<void>? rewriteGate;
   Map<String, dynamic> settings = {};
 
   /// Server feature flags returned by [fetchCapabilities]; tests flip these to
@@ -160,24 +161,27 @@ class FakeApi implements Api {
       });
 
   @override
-  Future<Note> rewriteNote(String id, NoteRewriteMode mode) =>
-      _run('rewriteNote:$id:${mode.wire}', () {
-        final note = notes[id];
-        if (note == null) throw ApiException(404, '{"error":"not found"}');
-        final updated = switch (mode) {
-          NoteRewriteMode.concise => note.copyWith(
-            content: 'Concise: ${note.content}',
-            updatedAt: DateTime.now(),
-          ),
-          NoteRewriteMode.grammar => note.copyWith(
-            content: 'Corrected: ${note.content}',
-            updatedAt: DateTime.now(),
-          ),
-        };
-        notes[id] = updated;
-        _events.add(null);
-        return updated;
-      });
+  Future<Note> rewriteNote(String id, NoteRewriteMode mode) async {
+    final gate = rewriteGate;
+    if (gate != null) await gate.future;
+    return _run('rewriteNote:$id:${mode.wire}', () {
+      final note = notes[id];
+      if (note == null) throw ApiException(404, '{"error":"not found"}');
+      final updated = switch (mode) {
+        NoteRewriteMode.concise => note.copyWith(
+          content: 'Concise: ${note.content}',
+          updatedAt: DateTime.now(),
+        ),
+        NoteRewriteMode.grammar => note.copyWith(
+          content: 'Corrected: ${note.content}',
+          updatedAt: DateTime.now(),
+        ),
+      };
+      notes[id] = updated;
+      _events.add(null);
+      return updated;
+    });
+  }
 
   @override
   Future<void> deleteNote(String id) => _run('deleteNote:$id', () {
