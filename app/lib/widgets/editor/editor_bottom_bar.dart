@@ -22,7 +22,8 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onUndo;
   final VoidCallback? onRedo;
   final VoidCallback? onDelete;
-  final VoidCallback? onCopy;
+  final VoidCallback? onDuplicate;
+  final VoidCallback? onCopyToClipboard;
   final VoidCallback? onHistory;
   final void Function(NoteKind target)? onConvert;
   final ValueChanged<NoteRewriteMode>? onRewrite;
@@ -45,7 +46,8 @@ class EditorBottomBar extends StatelessWidget {
     this.onUndo,
     this.onRedo,
     this.onDelete,
-    this.onCopy,
+    this.onDuplicate,
+    this.onCopyToClipboard,
     this.onHistory,
     this.onConvert,
     this.onRewrite,
@@ -196,7 +198,8 @@ class EditorBottomBar extends StatelessWidget {
                   if (value == 'share') onShare?.call();
                   if (value == 'archive') onArchive?.call();
                   if (value == 'delete') onDelete?.call();
-                  if (value == 'copy') onCopy?.call();
+                  if (value == 'duplicate') onDuplicate?.call();
+                  if (value == 'clipboard') onCopyToClipboard?.call();
                   if (value == 'history') onHistory?.call();
                   if (value == 'concise') {
                     onRewrite?.call(NoteRewriteMode.concise);
@@ -280,10 +283,16 @@ class EditorBottomBar extends StatelessWidget {
                     enabled: onHistory != null,
                   ),
                   _menuItem(
-                    value: 'copy',
+                    value: 'clipboard',
+                    icon: Icons.content_copy_outlined,
+                    label: 'Copy to clipboard',
+                    enabled: onCopyToClipboard != null,
+                  ),
+                  _menuItem(
+                    value: 'duplicate',
                     icon: Icons.copy_all_outlined,
-                    label: 'Make a copy',
-                    enabled: onCopy != null,
+                    label: 'Duplicate',
+                    enabled: onDuplicate != null,
                   ),
                   if (isOwner)
                     _menuItem(

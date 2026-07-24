@@ -892,7 +892,7 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
-  /// "Make a copy": clone content into a fresh note at the front of the grid.
+  /// "Duplicate": clone content into a fresh note at the front of the grid.
   /// Attachments and collaborators intentionally stay behind.
   void duplicate(String id) {
     final source = noteById(id);

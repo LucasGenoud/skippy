@@ -98,23 +98,34 @@ String _toMarkdown(List<Note> notes, Map<String, String> names, DateTime now) {
   return '${buf.toString().trimRight()}\n';
 }
 
+/// One note as plain text: title, then the body — a checklist's rows as
+/// `[x] item` lines. This is what "Copy to clipboard" puts on the clipboard
+/// and what a text export is built from, so the two never drift apart.
+/// [labels] is appended as a trailing line when given (the export does; the
+/// clipboard doesn't — you're pasting the note, not its filing).
+String noteToPlainText(Note note, {List<String> labels = const []}) {
+  final buf = StringBuffer();
+  final title = note.title.trim();
+  if (title.isNotEmpty) buf.writeln('$title\n');
+  if (note.isChecklist) {
+    for (final i in note.items) {
+      buf.writeln('[${i.done ? 'x' : ' '}] ${i.text}');
+    }
+    buf.writeln();
+  } else if (note.content.trim().isNotEmpty) {
+    buf.writeln('${note.content.trimRight()}\n');
+  }
+  if (labels.isNotEmpty) buf.writeln('Labels: ${labels.join(', ')}\n');
+  return buf.toString();
+}
+
 String _toText(List<Note> notes, Map<String, String> names) {
   final buf = StringBuffer();
   for (var idx = 0; idx < notes.length; idx++) {
-    final n = notes[idx];
     if (idx > 0) buf.writeln('${'—' * 40}\n');
-    final title = n.title.trim();
-    if (title.isNotEmpty) buf.writeln('$title\n');
-    if (n.isChecklist) {
-      for (final i in n.items) {
-        buf.writeln('[${i.done ? 'x' : ' '}] ${i.text}');
-      }
-      buf.writeln();
-    } else if (n.content.trim().isNotEmpty) {
-      buf.writeln('${n.content.trimRight()}\n');
-    }
-    final labels = _labelNames(n, names);
-    if (labels.isNotEmpty) buf.writeln('Labels: ${labels.join(', ')}\n');
+    buf.write(
+      noteToPlainText(notes[idx], labels: _labelNames(notes[idx], names)),
+    );
   }
   return '${buf.toString().trimRight()}\n';
 }

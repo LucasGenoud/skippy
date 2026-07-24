@@ -318,14 +318,17 @@ void main() {
       },
     );
     testWidgets(
-      'the card menu copies a note without opening it',
+      'the card menu duplicates a note and copies it to the clipboard',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {
         api.notes['n1'] = serverNote(
           'n1',
           title: 'Groceries',
           kind: NoteKind.checklist,
-          items: [const ChecklistItem(id: 'i1', text: 'Milk', done: true)],
+          items: [
+            const ChecklistItem(id: 'i1', text: 'Milk', done: true),
+            const ChecklistItem(id: 'i2', text: 'Eggs'),
+          ],
         );
         await store.load();
         await tester.pumpWidget(
@@ -341,13 +344,37 @@ void main() {
           location: tester.getCenter(find.byType(NoteTile)),
         );
         await tester.pumpAndSettle();
+
+        // Clipboard: the note's text, checked state and all.
+        String? copied;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied = call.arguments['text'] as String;
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
         await tester.tap(find.byTooltip('More note options'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Make a copy'));
+        await tester.tap(find.text('Copy to clipboard'));
         await tester.pumpAndSettle();
+        expect(copied, 'Groceries\n\n[x] Milk\n[ ] Eggs');
 
-        // What duplicate() copies is NotesStore's business (covered there);
-        // what matters here is that the card's menu reaches it.
+        // Duplicate: a second note, same content. What exactly duplicate()
+        // clones is NotesStore's business (covered there); what matters here
+        // is that the menu reaches it, and that it isn't the clipboard entry.
+        await tester.tap(find.byTooltip('More note options'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Duplicate'));
+        await tester.pumpAndSettle();
         final all = store.notesFor(ViewSelection.notes, '').others;
         expect(all.length, 2);
         expect(all.firstWhere((n) => n.id != 'n1').title, 'Groceries');

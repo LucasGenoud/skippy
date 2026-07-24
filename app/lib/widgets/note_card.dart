@@ -2,6 +2,7 @@ import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../screens/editor_screen.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
+import '../util/note_export.dart';
 import '../util/snack.dart';
 import 'color_picker.dart';
 import 'labels_sheet.dart';
@@ -163,9 +165,20 @@ class _NoteTileState extends State<NoteTile> {
     }
   }
 
-  void _copy() {
+  void _duplicate() {
     context.read<NotesStore>().duplicate(widget.note.id);
-    showAppSnack('Note copied', icon: Icons.copy_outlined);
+    showAppSnack('Note duplicated', icon: Icons.copy_all_outlined);
+  }
+
+  Future<void> _copyToClipboard() async {
+    final note = context.read<NotesStore>().noteById(widget.note.id);
+    if (note == null) return;
+    // trimRight: the export's block form ends with a blank line to separate
+    // notes; a paste shouldn't carry that.
+    await Clipboard.setData(
+      ClipboardData(text: noteToPlainText(note).trimRight()),
+    );
+    showAppSnack('Note copied to clipboard', icon: Icons.content_copy_outlined);
   }
 
   void _delete() {
@@ -328,7 +341,8 @@ class _NoteTileState extends State<NoteTile> {
                   onLabel: _addLabel,
                   onImage: _addImage,
                   onArchive: _archive,
-                  onCopy: _copy,
+                  onDuplicate: _duplicate,
+                  onCopyToClipboard: _copyToClipboard,
                   onDelete: _delete,
                   onRewrite: _rewrite,
                   onMenuOpened: () => setState(() => _menuOpen = true),
@@ -864,7 +878,8 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onLabel;
   final VoidCallback onImage;
   final VoidCallback onArchive;
-  final VoidCallback onCopy;
+  final VoidCallback onDuplicate;
+  final VoidCallback onCopyToClipboard;
   final VoidCallback onDelete;
   final ValueChanged<NoteRewriteMode> onRewrite;
   final VoidCallback onMenuOpened;
@@ -881,7 +896,8 @@ class _NoteActions extends StatelessWidget {
     required this.onLabel,
     required this.onImage,
     required this.onArchive,
-    required this.onCopy,
+    required this.onDuplicate,
+    required this.onCopyToClipboard,
     required this.onDelete,
     required this.onRewrite,
     required this.onMenuOpened,
@@ -977,7 +993,8 @@ class _NoteActions extends StatelessWidget {
                   onSelected: (value) {
                     onMenuClosed();
                     if (value == 'share') onShare();
-                    if (value == 'copy') onCopy();
+                    if (value == 'duplicate') onDuplicate();
+                    if (value == 'clipboard') onCopyToClipboard();
                     if (value == 'delete') onDelete();
                     if (value == 'concise') onRewrite(NoteRewriteMode.concise);
                     if (value == 'grammar') onRewrite(NoteRewriteMode.grammar);
@@ -1012,14 +1029,21 @@ class _NoteActions extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    // Same label and icon as the editor's own "Make a copy",
-                    // in the menu rather than the action row: six controls
-                    // already share a card's width.
+                    // Both live in the menu rather than the action row: six
+                    // controls already share a card's width.
                     const PopupMenuItem(
-                      value: 'copy',
+                      value: 'clipboard',
+                      child: ListTile(
+                        leading: Icon(Icons.content_copy_outlined),
+                        title: Text('Copy to clipboard'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'duplicate',
                       child: ListTile(
                         leading: Icon(Icons.copy_all_outlined),
-                        title: Text('Make a copy'),
+                        title: Text('Duplicate'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),

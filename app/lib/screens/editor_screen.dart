@@ -18,6 +18,7 @@ import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
+import '../util/note_export.dart';
 import '../util/snack.dart';
 import 'history_screen.dart';
 import '../widgets/animated_checklist.dart';
@@ -413,11 +414,20 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  void _copyNote() {
+  void _duplicateNote() {
     final note = _note;
     if (note == null || note.isEmpty) return;
     _store.duplicate(note.id);
-    showAppSnack('Note copied', icon: Icons.copy_outlined);
+    showAppSnack('Note duplicated', icon: Icons.copy_all_outlined);
+  }
+
+  Future<void> _copyNoteToClipboard() async {
+    final note = _note;
+    if (note == null || note.isEmpty) return;
+    await Clipboard.setData(
+      ClipboardData(text: noteToPlainText(note).trimRight()),
+    );
+    showAppSnack('Note copied to clipboard', icon: Icons.content_copy_outlined);
   }
 
   Future<void> _rewriteWithAi(NoteRewriteMode mode) async {
@@ -946,9 +956,14 @@ class _EditorScreenState extends State<EditorScreen> {
                                   !isOwner
                               ? null
                               : _deleteAndClose,
-                          onCopy: trashed || note == null || note.isEmpty
+                          onDuplicate: trashed || note == null || note.isEmpty
                               ? null
-                              : _copyNote,
+                              : _duplicateNote,
+                          // Copying to the clipboard reads the note; a trashed
+                          // one is still readable, so this stays available.
+                          onCopyToClipboard: note == null || note.isEmpty
+                              ? null
+                              : _copyNoteToClipboard,
                           onHistory: note == null || note.isEmpty
                               ? null
                               : () => NoteHistoryScreen.open(context, note.id),
