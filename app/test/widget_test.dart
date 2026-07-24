@@ -1241,7 +1241,7 @@ void main() {
   });
 
   group('home screen layout', () {
-    testWidgets('selects multiple masonry notes and archives them together', (
+    testWidgets('selects multiple masonry notes and applies a label', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1200, 800);
@@ -1249,20 +1249,42 @@ void main() {
       addTearDown(tester.view.reset);
       api.notes['n1'] = serverNote('n1', title: 'First note');
       api.notes['n2'] = serverNote('n2', title: 'Second note');
+      api.labels['l1'] = const Label(id: 'l1', name: 'work');
       await store.load();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Select notes'));
+      expect(find.byTooltip('Select notes'), findsNothing);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(
+        location: tester.getCenter(find.text('First note')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NoteTile).first,
+          matching: find.byTooltip('Select note'),
+        ),
+      );
       await tester.pump();
-      expect(find.text('Select notes'), findsOneWidget);
+      expect(find.text('1 selected'), findsOneWidget);
       expect(find.byTooltip('Archive selected notes'), findsOneWidget);
 
-      await tester.tap(find.text('First note'));
       await tester.tap(find.text('Second note'));
       await tester.pump();
       expect(find.text('2 selected'), findsOneWidget);
 
+      await tester.tap(find.byTooltip('Add label to selected notes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add label to 2 notes'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'work'));
+      await tester.pump();
+      expect(store.noteById('n1')!.labelIds, contains('l1'));
+      expect(store.noteById('n2')!.labelIds, contains('l1'));
+
+      await tester.tapAt(const Offset(8, 80));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Archive selected notes'));
       await tester.pump();
       expect(store.noteById('n1')!.archived, isTrue);

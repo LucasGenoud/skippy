@@ -36,8 +36,8 @@ class LabelGlyph extends StatelessWidget {
 /// Bottom sheet for assigning labels to a note, with inline creation —
 /// typing a name that doesn't exist offers "Create `name`".
 class LabelsSheet extends StatefulWidget {
-  final String noteId;
-  const LabelsSheet({super.key, required this.noteId});
+  final List<String> noteIds;
+  const LabelsSheet({super.key, required this.noteIds});
 
   static Future<void> show(BuildContext context, String noteId) {
     return showModalBottomSheet<void>(
@@ -49,7 +49,29 @@ class LabelsSheet extends StatefulWidget {
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
         ),
-        child: LabelsSheet(noteId: noteId),
+        child: LabelsSheet(noteIds: [noteId]),
+      ),
+    );
+  }
+
+  /// Adds labels to every selected note. Existing labels are left in place,
+  /// so applying the same label twice is harmless.
+  static Future<void> showForNotes(
+    BuildContext context,
+    Iterable<String> noteIds,
+  ) {
+    final ids = noteIds.toList(growable: false);
+    if (ids.isEmpty) return Future.value();
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+        ),
+        child: LabelsSheet(noteIds: ids),
       ),
     );
   }
@@ -71,8 +93,12 @@ class _LabelsSheetState extends State<LabelsSheet> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
-    final note = store.noteById(widget.noteId);
-    if (note == null) return const SizedBox.shrink();
+    final notes = [
+      for (final id in widget.noteIds)
+        if (store.noteById(id) case final Note note) note,
+    ];
+    if (notes.isEmpty) return const SizedBox.shrink();
+    final isMultiple = notes.length > 1;
 
     final q = _query.trim().toLowerCase();
     final visible = store.labels
@@ -92,7 +118,9 @@ class _LabelsSheetState extends State<LabelsSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
               child: Text(
-                'Label note',
+                isMultiple
+                    ? 'Add label to ${notes.length} notes'
+                    : 'Label note',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
@@ -120,21 +148,40 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       title: Text('Create "${_query.trim()}"'),
                       onTap: () {
                         final label = store.createLabel(_query.trim());
-                        store.toggleLabelOnNote(widget.noteId, label.id);
+                        for (final note in notes) {
+                          store.addLabelToNote(note.id, label.id);
+                        }
                         _controller.clear();
                         setState(() => _query = '');
                       },
                     ),
                   for (final label in visible)
-                    CheckboxListTile(
-                      value: note.labelIds.contains(label.id),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      dense: true,
-                      secondary: LabelGlyph(label: label),
-                      title: Text(label.name),
-                      onChanged: (_) =>
-                          store.toggleLabelOnNote(widget.noteId, label.id),
-                    ),
+                    if (isMultiple)
+                      ListTile(
+                        leading: LabelGlyph(label: label),
+                        title: Text(label.name),
+                        trailing:
+                            notes.every(
+                              (note) => note.labelIds.contains(label.id),
+                            )
+                            ? const Icon(Icons.check)
+                            : const Icon(Icons.add),
+                        onTap: () {
+                          for (final note in notes) {
+                            store.addLabelToNote(note.id, label.id);
+                          }
+                        },
+                      )
+                    else
+                      CheckboxListTile(
+                        value: notes.single.labelIds.contains(label.id),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        dense: true,
+                        secondary: LabelGlyph(label: label),
+                        title: Text(label.name),
+                        onChanged: (_) =>
+                            store.toggleLabelOnNote(notes.single.id, label.id),
+                      ),
                   if (visible.isEmpty && q.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(20),
@@ -280,8 +327,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
     if (name.isEmpty) return 'Enter a name';
     final clash = store.labels.any(
       (l) =>
-          l.id != widget.labelId &&
-          l.name.toLowerCase() == name.toLowerCase(),
+          l.id != widget.labelId && l.name.toLowerCase() == name.toLowerCase(),
     );
     if (clash) return 'A label named "$name" already exists';
     return null;
@@ -336,7 +382,8 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
                   for (final c in kAccentPresets)
                     _ColorDot(
                       color: c,
-                      selected: _color != null &&
+                      selected:
+                          _color != null &&
                           PaletteEntry.hexToColor(_color) == c,
                       onTap: () => setState(() {
                         _color = PaletteEntry.colorToHex(c);
@@ -358,9 +405,11 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
                   ),
                   onChanged: (value) {
                     final parsed = PaletteEntry.hexToColor(value);
-                    setState(() => _color = parsed == null
-                        ? (value.trim().isEmpty ? null : _color)
-                        : PaletteEntry.colorToHex(parsed));
+                    setState(
+                      () => _color = parsed == null
+                          ? (value.trim().isEmpty ? null : _color)
+                          : PaletteEntry.colorToHex(parsed),
+                    );
                   },
                 ),
               ),
@@ -369,7 +418,8 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
               const SizedBox(height: 10),
               _IconGrid(
                 selected: _icon,
-                tint: PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,
+                tint:
+                    PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,
                 onSelect: (key) => setState(() => _icon = key),
               ),
             ],
@@ -381,10 +431,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: Text(_isNew ? 'Create' : 'Save'),
-        ),
+        FilledButton(onPressed: _save, child: Text(_isNew ? 'Create' : 'Save')),
       ],
     );
   }
@@ -413,7 +460,8 @@ class _ColorDot extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final fill = color;
-    final onFill = fill != null &&
+    final onFill =
+        fill != null &&
             ThemeData.estimateBrightnessForColor(fill) == Brightness.dark
         ? Colors.white
         : Colors.black87;

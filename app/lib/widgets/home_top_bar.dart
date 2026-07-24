@@ -40,12 +40,12 @@ class HomeTopBar extends StatelessWidget {
   final bool archiveSelected;
   final bool canRestore;
   final bool canTrash;
-  final VoidCallback onStartSelection;
   final VoidCallback onCancelSelection;
   final VoidCallback onToggleSelectAll;
   final VoidCallback onArchiveSelected;
   final VoidCallback onRestoreSelected;
   final VoidCallback onTrashSelected;
+  final VoidCallback onAddLabelSelected;
 
   const HomeTopBar({
     super.key,
@@ -66,12 +66,12 @@ class HomeTopBar extends StatelessWidget {
     required this.archiveSelected,
     required this.canRestore,
     required this.canTrash,
-    required this.onStartSelection,
     required this.onCancelSelection,
     required this.onToggleSelectAll,
     required this.onArchiveSelected,
     required this.onRestoreSelected,
     required this.onTrashSelected,
+    required this.onAddLabelSelected,
   });
 
   @override
@@ -179,11 +179,6 @@ class HomeTopBar extends StatelessWidget {
                 ),
               const _RefreshButton(),
               const _SortButton(),
-              IconButton(
-                icon: const Icon(Icons.select_all_outlined),
-                tooltip: 'Select notes',
-                onPressed: onStartSelection,
-              ),
               IconButton(
                 icon: Icon(
                   listMode
@@ -342,11 +337,6 @@ class HomeTopBar extends StatelessWidget {
                         tooltip: listMode ? 'Grid view' : 'List view',
                         onPressed: onToggleLayout,
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.select_all_outlined),
-                        tooltip: 'Select notes',
-                        onPressed: onStartSelection,
-                      ),
                       const _UserAvatarMenu(),
                       const SizedBox(width: 6),
                     ],
@@ -383,6 +373,11 @@ class HomeTopBar extends StatelessWidget {
         icon: Icon(allSelected ? Icons.deselect_outlined : Icons.select_all),
         tooltip: allSelected ? 'Deselect all' : 'Select all',
         onPressed: onToggleSelectAll,
+      ),
+      IconButton(
+        icon: const Icon(Icons.label_outline),
+        tooltip: 'Add label to selected notes',
+        onPressed: selectedCount == 0 ? null : onAddLabelSelected,
       ),
       if (canArchive)
         IconButton(

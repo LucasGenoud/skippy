@@ -18,6 +18,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/home_fabs.dart';
 import '../widgets/home_top_bar.dart';
+import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
 import '../widgets/quick_add_bar.dart';
@@ -161,8 +162,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _startSelection() => setState(() => _selectionMode = true);
-
   void _cancelSelection() => setState(() {
     _selectionMode = false;
     _selectedNoteIds.clear();
@@ -171,6 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _toggleNoteSelection(String id, bool selected) {
     setState(() {
       if (selected) {
+        _selectionMode = true;
         _selectedNoteIds.add(id);
       } else {
         _selectedNoteIds.remove(id);
@@ -193,6 +193,12 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final id in _selectedNoteIds)
       if (store.noteById(id) case final Note note) note,
   ];
+
+  Future<void> _addLabelToSelected(NotesStore store) =>
+      LabelsSheet.showForNotes(
+        context,
+        _selectedNotes(store).map((note) => note.id),
+      );
 
   void _setArchivedForSelected(NotesStore store, bool archived) {
     final notes = _selectedNotes(
@@ -461,7 +467,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _selection.view != NoteView.archive,
                             canRestore: _selection.view == NoteView.trash,
                             canTrash: _selection.view != NoteView.trash,
-                            onStartSelection: _startSelection,
                             onCancelSelection: _cancelSelection,
                             onToggleSelectAll: () =>
                                 _toggleSelectAll(visibleNotes),
@@ -471,6 +476,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             onRestoreSelected: () => _restoreSelected(store),
                             onTrashSelected: () => _trashSelected(store),
+                            onAddLabelSelected: () =>
+                                _addLabelToSelected(store),
                           ),
                         ),
                       ),

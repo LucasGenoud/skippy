@@ -234,6 +234,10 @@ class _NoteTileState extends State<NoteTile> {
               : Colors.transparent);
     final desktopActions =
         !widget.selectionMode && !note.trashed && !isTouchPrimaryPlatform;
+    // Desktop keeps this compact control out of the way until the card is
+    // hovered. Touch has no hover state, so leave it available there.
+    final showSelectionControl =
+        widget.selectionMode || _hovered || isTouchPrimaryPlatform;
     // The popup lives in an overlay, so a pointer travelling from the card to
     // its menu triggers MouseRegion.onExit. Keep the footer visible until that
     // menu closes instead of making the controls vanish underneath the cursor.
@@ -247,9 +251,6 @@ class _NoteTileState extends State<NoteTile> {
         curve: Motion.standard,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(kRadius),
-          border: widget.selected
-              ? Border.all(color: scheme.primary, width: 2)
-              : null,
           boxShadow: [
             // A whisper of shadow at rest lifts the card off the grey canvas;
             // it deepens on hover for a tactile response.
@@ -270,7 +271,10 @@ class _NoteTileState extends State<NoteTile> {
           openColor: fill ?? scheme.surface,
           closedShape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(kRadius),
-            side: BorderSide(color: borderColor),
+            side: BorderSide(
+              color: widget.selected ? scheme.primary : borderColor,
+              width: widget.selected ? 2 : 1,
+            ),
           ),
           // Tap handling is ours: wide layouts open a centered modal
           // instead of letting the container expand fullscreen.
@@ -300,38 +304,14 @@ class _NoteTileState extends State<NoteTile> {
                     note: note,
                     hovered: _hovered,
                     hidden: isRewriting,
+                    right: showSelectionControl ? 32 : 4,
                   ),
-                if (widget.selectionMode)
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: IgnorePointer(
-                      child: AnimatedContainer(
-                        duration: Motion.fast,
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: widget.selected
-                              ? scheme.primary
-                              : scheme.surface.withValues(alpha: 0.92),
-                          border: Border.all(
-                            color: widget.selected
-                                ? scheme.primary
-                                : scheme.outline,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: widget.selected
-                            ? Icon(
-                                Icons.check,
-                                color: scheme.onPrimary,
-                                size: 18,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
+                _SelectionButton(
+                  selected: widget.selected,
+                  visible: showSelectionControl,
+                  onPressed: () =>
+                      widget.onSelectionChanged?.call(!widget.selected),
+                ),
                 if (isRewriting) const _NoteRewriteProgress(),
                 if (desktopActions)
                   _NoteActions(
@@ -681,10 +661,12 @@ class _PinButton extends StatelessWidget {
   final Note note;
   final bool hovered;
   final bool hidden;
+  final double right;
   const _PinButton({
     required this.note,
     required this.hovered,
     this.hidden = false,
+    this.right = 4,
   });
 
   @override
@@ -693,7 +675,7 @@ class _PinButton extends StatelessWidget {
     final show = !hidden && !note.trashed && (hovered || note.pinned);
     return Positioned(
       top: 4,
-      right: 4,
+      right: right,
       child: AnimatedOpacity(
         opacity: show ? 1 : 0,
         duration: Motion.fast,
@@ -718,6 +700,78 @@ class _PinButton extends StatelessWidget {
             color: scheme.onSurfaceVariant,
             tooltip: note.pinned ? 'Unpin note' : 'Pin note',
             onPressed: () => context.read<NotesStore>().togglePin(note.id),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small top-right affordance for entering or extending a selection.
+/// It shares the card's accent colour once selected and stays unobtrusive on
+/// desktop until the pointer is over the card.
+class _SelectionButton extends StatelessWidget {
+  final bool selected;
+  final bool visible;
+  final VoidCallback onPressed;
+
+  const _SelectionButton({
+    required this.selected,
+    required this.visible,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      top: 5,
+      right: 5,
+      child: AnimatedOpacity(
+        duration: Motion.fast,
+        curve: Motion.standard,
+        opacity: visible ? 1 : 0,
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: Tooltip(
+            message: selected ? 'Deselect note' : 'Select note',
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: onPressed,
+                customBorder: const CircleBorder(),
+                child: AnimatedContainer(
+                  duration: Motion.fast,
+                  curve: Motion.standard,
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected
+                        ? scheme.primary
+                        : scheme.surface.withValues(alpha: 0.92),
+                    border: Border.all(
+                      color: scheme.primary,
+                      width: selected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeIn,
+                    child: selected
+                        ? Icon(
+                            Icons.check,
+                            key: const ValueKey('selected'),
+                            color: scheme.onPrimary,
+                            size: 15,
+                          )
+                        : const SizedBox(key: ValueKey('unselected')),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
