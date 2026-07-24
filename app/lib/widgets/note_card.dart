@@ -811,6 +811,7 @@ class _NoteActions extends StatelessWidget {
                 // PopupMenuButton's default icon target is 48 px. Use the
                 // same 36 px circular ink target as the neighboring controls.
                 PopupMenuButton<String>(
+                  popUpAnimationStyle: Motion.menuFor(context),
                   borderRadius: BorderRadius.circular(18),
                   splashRadius: 18,
                   tooltip: 'More note options',

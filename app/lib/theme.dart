@@ -14,6 +14,10 @@ const Color kDefaultAccent = Color(0xFFFBBC04);
 /// stays consistent. Change it here to retune the whole app.
 const double kRadius = 4;
 
+/// Menus are given a touch more rounding than controls and cards, helping the
+/// floating surface read separately from the near-square note layout.
+const double kMenuRadius = 6;
+
 /// [kRadius] as a [Radius]/[BorderRadius] for the many hand-rolled containers
 /// that can't read a shape from the theme.
 const Radius kRadiusCorner = Radius.circular(kRadius);
@@ -69,7 +73,20 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     // in individual widgets use [kBorderRadius]/[kRoundedShape] to match.
     cardTheme: base.cardTheme.copyWith(shape: kRoundedShape),
     dialogTheme: base.dialogTheme.copyWith(shape: kRoundedShape),
-    popupMenuTheme: base.popupMenuTheme.copyWith(shape: kRoundedShape),
+    // Popup menus borrow the compact, outlined floating-surface treatment used
+    // by the motion preview: enough separation from the canvas without a
+    // heavy Material dialog feel.
+    popupMenuTheme: base.popupMenuTheme.copyWith(
+      color: scheme.surface,
+      elevation: 6,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.black.withValues(alpha: 0.14),
+      menuPadding: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kMenuRadius),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+    ),
     menuTheme: const MenuThemeData(
       style: MenuStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
     ),

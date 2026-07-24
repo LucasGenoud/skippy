@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 /// Shared motion tokens so every animation in the app feels like one system.
 /// Two rules keep it coherent: durations stay short (nothing over [slow] =
@@ -24,6 +24,21 @@ class Motion {
 
   /// A calmer ease-out cubic, for hovers, fades, and moves in place.
   static const Curve standard = Curves.easeOutCubic;
+
+  /// Popup menus use Flutter's native anchored route and item sequencing, but
+  /// the stock linear 300 ms grow feels sluggish beside the rest of Skippy.
+  /// This gives them a controlled, emphasized entrance and a quick close.
+  static const AnimationStyle menu = AnimationStyle(
+    duration: base,
+    reverseDuration: fast,
+    curve: emphasized,
+    reverseCurve: standard,
+  );
+
+  /// The menu route has no access to [MediaQuery], so callers select the
+  /// accessible no-animation variant before opening it.
+  static AnimationStyle menuFor(BuildContext context) =>
+      reduced(context) ? AnimationStyle.noAnimation : menu;
 
   /// True when the OS "reduce motion" accessibility setting is on. Callers skip
   /// or shorten decorative animation so the app stays comfortable to use.

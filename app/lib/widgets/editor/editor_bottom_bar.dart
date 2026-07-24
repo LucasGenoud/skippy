@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/note.dart';
+import '../../util/motion.dart';
 
 /// The editor's bottom action strip: attachment/metadata buttons on the left,
 /// the edited stamp in the middle, undo/redo and the overflow menu on the
@@ -178,6 +179,7 @@ class EditorBottomBar extends StatelessWidget {
               action(icon: Icons.undo, tooltip: 'Undo', onPressed: onUndo),
               action(icon: Icons.redo, tooltip: 'Redo', onPressed: onRedo),
               PopupMenuButton<String>(
+                popUpAnimationStyle: Motion.menuFor(context),
                 icon: rewriting
                     ? const SizedBox(
                         key: ValueKey('editor-rewrite-progress'),

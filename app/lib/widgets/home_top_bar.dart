@@ -407,10 +407,8 @@ class _UserAvatarMenu extends StatelessWidget {
     final themeAction = _currentThemeAction(settings.themeMode);
 
     return PopupMenuButton<String>(
+      popUpAnimationStyle: Motion.menuFor(context),
       offset: const Offset(0, 48),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(kRadius),
-      ),
       tooltip: name,
       itemBuilder: (context) => [
         PopupMenuItem<String>(
@@ -664,6 +662,7 @@ class _SortButton extends StatelessWidget {
     final store = context.watch<NotesStore>();
     final scheme = Theme.of(context).colorScheme;
     return PopupMenuButton<SortMode>(
+      popUpAnimationStyle: Motion.menuFor(context),
       icon: const Icon(Icons.swap_vert),
       // Popup menus otherwise resolve their icon through a different theme
       // path than the neighboring IconButtons, which made this control read

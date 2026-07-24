@@ -15,6 +15,7 @@ import 'package:skippy/screens/home_screen.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/theme.dart';
+import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/animated_checklist.dart';
 import 'package:skippy/widgets/app_drawer.dart';
@@ -610,7 +611,7 @@ void main() {
 
   group('EditorScreen', () {
     testWidgets(
-      'markdown preview is selectable and tapping text edits source',
+      'markdown preview selects across blocks and double-clicking edits source',
       (tester) async {
         api.notes['n1'] = serverNote(
           'n1',
@@ -626,12 +627,28 @@ void main() {
         await tester.pump();
 
         final preview = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
-        expect(preview.selectable, isTrue);
-        expect(find.byType(SelectableText), findsWidgets);
+        expect(preview.selectable, isFalse);
+        expect(find.byType(SelectionArea), findsOneWidget);
 
-        await tester.tap(find.byType(SelectableText).first);
+        final previewPosition = tester.getCenter(find.byType(SelectionArea));
+
+        // A single click leaves preview open for native selection.
+        final singleClick = await tester.startGesture(previewPosition);
+        await singleClick.up();
         await tester.pump();
+        expect(find.byType(MarkdownBody), findsOneWidget);
 
+        final firstClick = await tester.startGesture(
+          previewPosition,
+          pointer: 2,
+        );
+        await firstClick.up(timeStamp: const Duration(milliseconds: 350));
+        final secondClick = await tester.startGesture(
+          previewPosition,
+          pointer: 3,
+        );
+        await secondClick.up(timeStamp: const Duration(milliseconds: 400));
+        await tester.pump();
         expect(find.byTooltip('Preview'), findsOneWidget);
         final source = tester
             .widgetList<EditableText>(find.byType(EditableText))
@@ -1236,9 +1253,17 @@ void main() {
             widget is PopupMenuButton<SortMode> && widget.tooltip == 'Sort by',
       );
       final popup = tester.widget<PopupMenuButton<SortMode>>(sortButton);
-      final scheme = Theme.of(tester.element(sortButton)).colorScheme;
+      final theme = Theme.of(tester.element(sortButton));
+      final scheme = theme.colorScheme;
 
       expect(popup.iconColor, scheme.onSurfaceVariant);
+      expect(popup.popUpAnimationStyle, Motion.menu);
+      expect(
+        theme.popupMenuTheme.menuPadding,
+        const EdgeInsets.symmetric(vertical: 4),
+      );
+      final shape = theme.popupMenuTheme.shape! as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(kMenuRadius));
     });
 
     testWidgets('wide layout adds space above the top bar and quick add', (
