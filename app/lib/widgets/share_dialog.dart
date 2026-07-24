@@ -182,3 +182,135 @@ class _ShareDialogState extends State<ShareDialog> {
     );
   }
 }
+
+/// Shares a set of owned notes with one person. A single-note dialog exposes
+/// its full collaborator roster; this focused form intentionally only adds a
+/// person to every eligible note in the current selection.
+class BulkShareDialog extends StatefulWidget {
+  final List<String> noteIds;
+  const BulkShareDialog({super.key, required this.noteIds});
+
+  static Future<void> show(BuildContext context, Iterable<String> noteIds) {
+    final ids = noteIds.toList(growable: false);
+    if (ids.isEmpty) return Future.value();
+    return showDialog<void>(
+      context: context,
+      builder: (_) => BulkShareDialog(noteIds: ids),
+    );
+  }
+
+  @override
+  State<BulkShareDialog> createState() => _BulkShareDialogState();
+}
+
+class _BulkShareDialogState extends State<BulkShareDialog> {
+  final _controller = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _share(List<String> noteIds) async {
+    final email = _controller.text.trim();
+    if (email.isEmpty || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    var shared = 0;
+    try {
+      final store = context.read<NotesStore>();
+      for (final id in noteIds) {
+        await store.addCollaborator(id, email);
+        shared++;
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      showAppSnack(
+        '$shared ${shared == 1 ? 'note' : 'notes'} shared',
+        icon: Icons.person_add_alt_outlined,
+      );
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.serverMessage);
+    } catch (_) {
+      if (mounted) setState(() => _error = "Can't reach the server right now");
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<NotesStore>();
+    final ownedIds = [
+      for (final id in widget.noteIds)
+        if (store.noteById(id)?.isOwnedBy(store.currentUserId) == true) id,
+    ];
+    final skipped = widget.noteIds.length - ownedIds.length;
+    final scheme = Theme.of(context).colorScheme;
+    final plural = ownedIds.length == 1 ? 'note' : 'notes';
+
+    return AlertDialog(
+      title: Text('Share ${ownedIds.length} $plural'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Everyone you add can edit these notes.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            if (skipped > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '$skipped shared ${skipped == 1 ? 'note is' : 'notes are'} excluded because only owners can share.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              enabled: ownedIds.isNotEmpty && !_busy,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                hintText: 'Add person by email',
+                prefixIcon: const Icon(Icons.person_add_alt_outlined),
+                errorText: _error,
+              ),
+              onSubmitted: (_) => _share(ownedIds),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: ownedIds.isEmpty || _busy ? null : () => _share(ownedIds),
+          icon: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.person_add_alt_outlined),
+          label: const Text('Share'),
+        ),
+      ],
+    );
+  }
+}

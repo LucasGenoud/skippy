@@ -12,8 +12,10 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
+import '../util/platform.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/color_picker.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/home_fabs.dart';
@@ -22,6 +24,7 @@ import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
 import '../widgets/quick_add_bar.dart';
+import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
@@ -200,6 +203,37 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedNotes(store).map((note) => note.id),
       );
 
+  Future<void> _setColorForSelected(NotesStore store) => ColorPickerSheet.show(
+    context,
+    selected: () {
+      final colors = {for (final note in _selectedNotes(store)) note.color};
+      return colors.length == 1 ? colors.single : 'default';
+    },
+    onSelect: (color) {
+      for (final note in _selectedNotes(store)) {
+        store.setColor(note.id, color);
+      }
+    },
+  );
+
+  void _setPinnedForSelected(NotesStore store, bool pinned) {
+    final notes = _selectedNotes(store);
+    for (final note in notes) {
+      if (note.pinned != pinned) store.togglePin(note.id);
+    }
+    if (notes.isNotEmpty) {
+      showAppSnack(
+        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} ${pinned ? 'pinned' : 'unpinned'}',
+        icon: pinned ? Icons.push_pin_outlined : Icons.push_pin,
+      );
+    }
+  }
+
+  Future<void> _shareSelected(NotesStore store) => BulkShareDialog.show(
+    context,
+    _selectedNotes(store).map((note) => note.id),
+  );
+
   void _setArchivedForSelected(NotesStore store, bool archived) {
     final notes = _selectedNotes(
       store,
@@ -367,6 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
         semanticActive && _semanticBusy && _semanticIds == null;
     final dragEnabled =
         !_selectionMode &&
+        !isTouchPrimaryPlatform &&
         !searching &&
         store.sortMode == SortMode.custom &&
         (_selection.view == NoteView.notes ||
@@ -465,6 +500,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             canArchive: _selection.view != NoteView.trash,
                             archiveSelected:
                                 _selection.view != NoteView.archive,
+                            pinSelected:
+                                _selectedNotes(store).isNotEmpty &&
+                                !_selectedNotes(
+                                  store,
+                                ).every((note) => note.pinned),
                             canRestore: _selection.view == NoteView.trash,
                             canTrash: _selection.view != NoteView.trash,
                             onCancelSelection: _cancelSelection,
@@ -478,6 +518,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             onTrashSelected: () => _trashSelected(store),
                             onAddLabelSelected: () =>
                                 _addLabelToSelected(store),
+                            onSetColorSelected: () =>
+                                _setColorForSelected(store),
+                            onPinSelected: () => _setPinnedForSelected(
+                              store,
+                              _selectedNotes(store).any((note) => !note.pinned),
+                            ),
+                            onShareSelected: () => _shareSelected(store),
                           ),
                         ),
                       ),

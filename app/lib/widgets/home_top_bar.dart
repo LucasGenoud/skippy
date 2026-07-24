@@ -19,6 +19,8 @@ import '../util/motion.dart';
       ThemeMode.dark => (icon: Icons.dark_mode_outlined, label: 'Dark'),
     };
 
+enum _SelectionAction { label, share, color, pin }
+
 /// The home screen's top bar: menu + branding, the search pill (with clear
 /// and semantic-search controls), and the quick-settings icons + avatar menu.
 /// Below 650px it collapses into a single search pill.
@@ -38,6 +40,7 @@ class HomeTopBar extends StatelessWidget {
   final bool allSelected;
   final bool canArchive;
   final bool archiveSelected;
+  final bool pinSelected;
   final bool canRestore;
   final bool canTrash;
   final VoidCallback onCancelSelection;
@@ -46,6 +49,9 @@ class HomeTopBar extends StatelessWidget {
   final VoidCallback onRestoreSelected;
   final VoidCallback onTrashSelected;
   final VoidCallback onAddLabelSelected;
+  final VoidCallback onSetColorSelected;
+  final VoidCallback onPinSelected;
+  final VoidCallback onShareSelected;
 
   const HomeTopBar({
     super.key,
@@ -64,6 +70,7 @@ class HomeTopBar extends StatelessWidget {
     required this.allSelected,
     required this.canArchive,
     required this.archiveSelected,
+    required this.pinSelected,
     required this.canRestore,
     required this.canTrash,
     required this.onCancelSelection,
@@ -72,6 +79,9 @@ class HomeTopBar extends StatelessWidget {
     required this.onRestoreSelected,
     required this.onTrashSelected,
     required this.onAddLabelSelected,
+    required this.onSetColorSelected,
+    required this.onPinSelected,
+    required this.onShareSelected,
   });
 
   @override
@@ -352,6 +362,7 @@ class HomeTopBar extends StatelessWidget {
   }
 
   Widget _selectionBar(BuildContext context, ColorScheme scheme) {
+    final narrow = MediaQuery.sizeOf(context).width < 650;
     final selectionLabel = selectedCount == 0
         ? 'Select notes'
         : '$selectedCount selected';
@@ -374,11 +385,81 @@ class HomeTopBar extends StatelessWidget {
         tooltip: allSelected ? 'Deselect all' : 'Select all',
         onPressed: onToggleSelectAll,
       ),
-      IconButton(
-        icon: const Icon(Icons.label_outline),
-        tooltip: 'Add label to selected notes',
-        onPressed: selectedCount == 0 ? null : onAddLabelSelected,
-      ),
+      if (narrow)
+        PopupMenuButton<_SelectionAction>(
+          popUpAnimationStyle: Motion.menuFor(context),
+          enabled: selectedCount > 0,
+          tooltip: 'More selected-note actions',
+          onSelected: (action) => switch (action) {
+            _SelectionAction.label => onAddLabelSelected(),
+            _SelectionAction.share => onShareSelected(),
+            _SelectionAction.color => onSetColorSelected(),
+            _SelectionAction.pin => onPinSelected(),
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: _SelectionAction.label,
+              child: ListTile(
+                leading: Icon(Icons.label_outline),
+                title: Text('Add label'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: _SelectionAction.share,
+              child: ListTile(
+                leading: Icon(Icons.person_add_alt_outlined),
+                title: Text('Share'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: _SelectionAction.color,
+              child: ListTile(
+                leading: Icon(Icons.palette_outlined),
+                title: Text('Change color'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuItem(
+              value: _SelectionAction.pin,
+              child: ListTile(
+                leading: Icon(
+                  pinSelected ? Icons.push_pin_outlined : Icons.push_pin,
+                ),
+                title: Text(pinSelected ? 'Pin notes' : 'Unpin notes'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+          child: const SizedBox(
+            width: 48,
+            height: 48,
+            child: Center(child: Icon(Icons.more_vert)),
+          ),
+        )
+      else ...[
+        IconButton(
+          icon: const Icon(Icons.label_outline),
+          tooltip: 'Add label to selected notes',
+          onPressed: selectedCount == 0 ? null : onAddLabelSelected,
+        ),
+        IconButton(
+          icon: const Icon(Icons.person_add_alt_outlined),
+          tooltip: 'Share selected notes',
+          onPressed: selectedCount == 0 ? null : onShareSelected,
+        ),
+        IconButton(
+          icon: const Icon(Icons.palette_outlined),
+          tooltip: 'Change selected note colors',
+          onPressed: selectedCount == 0 ? null : onSetColorSelected,
+        ),
+        IconButton(
+          icon: Icon(pinSelected ? Icons.push_pin_outlined : Icons.push_pin),
+          tooltip: pinSelected ? 'Pin selected notes' : 'Unpin selected notes',
+          onPressed: selectedCount == 0 ? null : onPinSelected,
+        ),
+      ],
       if (canArchive)
         IconButton(
           icon: Icon(

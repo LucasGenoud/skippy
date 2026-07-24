@@ -234,10 +234,10 @@ class _NoteTileState extends State<NoteTile> {
               : Colors.transparent);
     final desktopActions =
         !widget.selectionMode && !note.trashed && !isTouchPrimaryPlatform;
-    // Desktop keeps this compact control out of the way until the card is
-    // hovered. Touch has no hover state, so leave it available there.
+    // The compact control is for mouse users. Touch enters selection with a
+    // long press anywhere on the card, which is much easier to hit.
     final showSelectionControl =
-        widget.selectionMode || _hovered || isTouchPrimaryPlatform;
+        !isTouchPrimaryPlatform && (widget.selectionMode || _hovered);
     // The popup lives in an overlay, so a pointer travelling from the card to
     // its menu triggers MouseRegion.onExit. Keep the footer visible until that
     // menu closes instead of making the controls vanish underneath the cursor.
@@ -288,6 +288,9 @@ class _NoteTileState extends State<NoteTile> {
               }
               openNoteEditor(context, openFullscreen: open, noteId: note.id);
             },
+            onLongPress: (isTouchPrimaryPlatform || widget.selectionMode)
+                ? () => widget.onSelectionChanged?.call(!widget.selected)
+                : null,
             // The pin overlay is the only hover-dependent piece, and it sits
             // outside _NoteCardContent so hover flips never rebuild the card
             // body (markdown parse, image resolve).
@@ -304,7 +307,7 @@ class _NoteTileState extends State<NoteTile> {
                     note: note,
                     hovered: _hovered,
                     hidden: isRewriting,
-                    right: showSelectionControl ? 32 : 4,
+                    right: showSelectionControl ? 42 : 4,
                   ),
                 _SelectionButton(
                   selected: widget.selected,
@@ -725,8 +728,10 @@ class _SelectionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
-      top: 5,
-      right: 5,
+      top: 0,
+      left: 0,
+      width: 40,
+      height: 40,
       child: AnimatedOpacity(
         duration: Motion.fast,
         curve: Motion.standard,
@@ -740,34 +745,40 @@ class _SelectionButton extends StatelessWidget {
               shape: const CircleBorder(),
               child: InkWell(
                 onTap: onPressed,
-                customBorder: const CircleBorder(),
-                child: AnimatedContainer(
-                  duration: Motion.fast,
-                  curve: Motion.standard,
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: selected
-                        ? scheme.primary
-                        : scheme.surface.withValues(alpha: 0.92),
-                    border: Border.all(
-                      color: scheme.primary,
-                      width: selected ? 1.5 : 1,
+                borderRadius: BorderRadius.circular(20),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2, left: 2),
+                    child: AnimatedContainer(
+                      duration: Motion.fast,
+                      curve: Motion.standard,
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected
+                            ? scheme.primary
+                            : scheme.surface.withValues(alpha: 0.92),
+                        border: Border.all(
+                          color: scheme.primary,
+                          width: selected ? 1.25 : 1,
+                        ),
+                      ),
+                      child: AnimatedSwitcher(
+                        duration: Motion.fast,
+                        switchInCurve: Curves.easeOutBack,
+                        switchOutCurve: Curves.easeIn,
+                        child: selected
+                            ? Icon(
+                                Icons.check,
+                                key: const ValueKey('selected'),
+                                color: scheme.onPrimary,
+                                size: 11,
+                              )
+                            : const SizedBox(key: ValueKey('unselected')),
+                      ),
                     ),
-                  ),
-                  child: AnimatedSwitcher(
-                    duration: Motion.fast,
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
-                    child: selected
-                        ? Icon(
-                            Icons.check,
-                            key: const ValueKey('selected'),
-                            color: scheme.onPrimary,
-                            size: 15,
-                          )
-                        : const SizedBox(key: ValueKey('unselected')),
                   ),
                 ),
               ),

@@ -1255,18 +1255,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byTooltip('Select notes'), findsNothing);
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      addTearDown(mouse.removePointer);
-      await mouse.addPointer(
-        location: tester.getCenter(find.text('First note')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NoteTile).first,
-          matching: find.byTooltip('Select note'),
-        ),
-      );
+      await tester.longPress(find.text('First note'));
       await tester.pump();
       expect(find.text('1 selected'), findsOneWidget);
       expect(find.byTooltip('Archive selected notes'), findsOneWidget);
@@ -1274,6 +1263,29 @@ void main() {
       await tester.tap(find.text('Second note'));
       await tester.pump();
       expect(find.text('2 selected'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Pin selected notes'));
+      await tester.pump();
+      expect(store.noteById('n1')!.pinned, isTrue);
+      expect(store.noteById('n2')!.pinned, isTrue);
+
+      await tester.tap(find.byTooltip('Change selected note colors'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Red'));
+      await tester.pump();
+      expect(store.noteById('n1')!.color, 'red');
+      expect(store.noteById('n2')!.color, 'red');
+      await tester.tapAt(const Offset(8, 80));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Share selected notes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Share 2 notes'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).last, 'sam@example.test');
+      await tester.tap(find.widgetWithText(FilledButton, 'Share'));
+      await tester.pumpAndSettle();
+      expect(store.noteById('n1')!.collaborators.single.name, 'sam');
+      expect(store.noteById('n2')!.collaborators.single.name, 'sam');
 
       await tester.tap(find.byTooltip('Add label to selected notes'));
       await tester.pumpAndSettle();
