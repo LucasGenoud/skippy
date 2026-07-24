@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
 use sticky_notes_server::search::{
@@ -120,7 +121,41 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
             return None;
         }
     };
-    Some(Arc::new(SearchService::new(embedder, Arc::new(index))))
+    let idle_unload = embedder.idle_unload();
+    let service = Arc::new(SearchService::new(embedder, Arc::new(index)));
+    if let Some(idle) = idle_unload {
+        spawn_embedder_idle_unloader(service.clone(), idle);
+    }
+    Some(service)
+}
+
+/// Give the embedding model's memory back while nobody is searching. The ONNX
+/// session is the process's largest allocation and a personal server is idle
+/// most of the day; the next search reloads it from the local model cache.
+/// Checks four times per idle window, so the model is dropped within ~25% of
+/// it. Disable with STICKY_NOTES_EMBED_IDLE_SECS=0.
+fn spawn_embedder_idle_unloader(search: Arc<SearchService>, idle: Duration) {
+    let period = (idle / 4).max(Duration::from_secs(30));
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(period);
+        // interval fires immediately; the model has just been loaded.
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            let search = search.clone();
+            // Dropping the session frees gigabytes: not on the async runtime.
+            let unloaded = tokio::task::spawn_blocking(move || search.unload_idle_model())
+                .await
+                .unwrap_or(false);
+            if unloaded {
+                println!(
+                    "semantic search: embedding model unloaded after {}s idle \
+                     (reloads on the next search)",
+                    idle.as_secs()
+                );
+            }
+        }
+    });
 }
 
 /// Attachment blob storage wiring, from STICKY_NOTES_STORAGE:

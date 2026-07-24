@@ -318,6 +318,43 @@ void main() {
       },
     );
     testWidgets(
+      'the card menu copies a note without opening it',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Groceries',
+          kind: NoteKind.checklist,
+          items: [const ChecklistItem(id: 'i1', text: 'Milk', done: true)],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('More note options'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Make a copy'));
+        await tester.pumpAndSettle();
+
+        // What duplicate() copies is NotesStore's business (covered there);
+        // what matters here is that the card's menu reaches it.
+        final all = store.notesFor(ViewSelection.notes, '').others;
+        expect(all.length, 2);
+        expect(all.firstWhere((n) => n.id != 'n1').title, 'Groceries');
+        await flushTimers(tester);
+      },
+    );
+    testWidgets(
       'desktop note menu exposes enabled AI editing actions',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {

@@ -163,6 +163,11 @@ class _NoteTileState extends State<NoteTile> {
     }
   }
 
+  void _copy() {
+    context.read<NotesStore>().duplicate(widget.note.id);
+    showAppSnack('Note copied', icon: Icons.copy_outlined);
+  }
+
   void _delete() {
     final store = context.read<NotesStore>();
     if (!store.canTrash(widget.note.id)) return;
@@ -323,6 +328,7 @@ class _NoteTileState extends State<NoteTile> {
                   onLabel: _addLabel,
                   onImage: _addImage,
                   onArchive: _archive,
+                  onCopy: _copy,
                   onDelete: _delete,
                   onRewrite: _rewrite,
                   onMenuOpened: () => setState(() => _menuOpen = true),
@@ -858,6 +864,7 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onLabel;
   final VoidCallback onImage;
   final VoidCallback onArchive;
+  final VoidCallback onCopy;
   final VoidCallback onDelete;
   final ValueChanged<NoteRewriteMode> onRewrite;
   final VoidCallback onMenuOpened;
@@ -874,6 +881,7 @@ class _NoteActions extends StatelessWidget {
     required this.onLabel,
     required this.onImage,
     required this.onArchive,
+    required this.onCopy,
     required this.onDelete,
     required this.onRewrite,
     required this.onMenuOpened,
@@ -969,6 +977,7 @@ class _NoteActions extends StatelessWidget {
                   onSelected: (value) {
                     onMenuClosed();
                     if (value == 'share') onShare();
+                    if (value == 'copy') onCopy();
                     if (value == 'delete') onDelete();
                     if (value == 'concise') onRewrite(NoteRewriteMode.concise);
                     if (value == 'grammar') onRewrite(NoteRewriteMode.grammar);
@@ -1000,6 +1009,17 @@ class _NoteActions extends StatelessWidget {
                       child: ListTile(
                         leading: Icon(Icons.person_add_alt_outlined),
                         title: Text('Share'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    // Same label and icon as the editor's own "Make a copy",
+                    // in the menu rather than the action row: six controls
+                    // already share a card's width.
+                    const PopupMenuItem(
+                      value: 'copy',
+                      child: ListTile(
+                        leading: Icon(Icons.copy_all_outlined),
+                        title: Text('Make a copy'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),

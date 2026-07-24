@@ -9,6 +9,7 @@
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Once};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use sqlx::Row;
@@ -27,6 +28,63 @@ pub trait TextEmbedder: Send + Sync {
     fn model_name(&self) -> &str;
     /// Output vector dimensionality.
     fn dims(&self) -> usize;
+
+    /// Release whatever the embedder is holding if it hasn't been used
+    /// recently, reporting whether anything was actually freed. Called on a
+    /// timer; embedders with nothing heavy resident need not implement it.
+    fn unload_if_idle(&self) -> bool {
+        false
+    }
+}
+
+/// How long the model stays resident after its last use when
+/// `STICKY_NOTES_EMBED_IDLE_SECS` doesn't say otherwise.
+const DEFAULT_EMBED_IDLE: Duration = Duration::from_secs(15 * 60);
+
+/// When something was last used, and whether it has now been unused long
+/// enough to release. Split out from [`FastEmbedder`] so the policy can be
+/// tested without a multi-gigabyte ONNX session behind it.
+struct IdleTimer {
+    last_used: Mutex<Instant>,
+    /// `None` never expires.
+    after: Option<Duration>,
+}
+
+impl IdleTimer {
+    fn new(after: Option<Duration>) -> Self {
+        Self { last_used: Mutex::new(Instant::now()), after }
+    }
+
+    fn touch(&self) {
+        *self.last_used.lock().unwrap() = Instant::now();
+    }
+
+    fn expired(&self) -> bool {
+        let Some(after) = self.after else {
+            return false;
+        };
+        self.last_used.lock().unwrap().elapsed() >= after
+    }
+}
+
+/// `STICKY_NOTES_EMBED_IDLE_SECS` as a duration: `0` means never unload, an
+/// unparseable value falls back to the default rather than failing startup
+/// over a tuning knob.
+fn parse_idle_unload(raw: Option<&str>) -> Option<Duration> {
+    match raw.map(str::trim) {
+        None | Some("") => Some(DEFAULT_EMBED_IDLE),
+        Some(value) => match value.parse::<u64>() {
+            Ok(0) => None,
+            Ok(secs) => Some(Duration::from_secs(secs)),
+            Err(_) => {
+                eprintln!(
+                    "ignoring invalid STICKY_NOTES_EMBED_IDLE_SECS '{value}' \
+                     (want whole seconds, or 0 to keep the model loaded)"
+                );
+                Some(DEFAULT_EMBED_IDLE)
+            }
+        },
+    }
 }
 
 /// BAAI/bge-m3 (full precision) via fastembed, 1024-dim dense vectors. The
@@ -34,24 +92,56 @@ pub trait TextEmbedder: Send + Sync {
 /// default transformer CLS-pools and L2-normalizes each vector. We use full
 /// precision rather than the INT8-quantized build because quantization noise
 /// visibly scrambles the mid-tier ranking of short notes.
+///
+/// The loaded ONNX session is by far the server's largest allocation, and a
+/// personal instance spends most of its life idle between searches, so the
+/// model is dropped once it has gone [`idle_unload`] without use and rebuilt
+/// from the on-disk cache on the next embed. That costs seconds on the first
+/// search after a quiet spell; holding gigabytes through the quiet spell costs
+/// more.
 pub struct FastEmbedder {
-    model: Mutex<fastembed::TextEmbedding>,
+    /// `None` once unloaded — the next [`TextEmbedder::embed`] rebuilds it.
+    model: Mutex<Option<fastembed::TextEmbedding>>,
+    idle: IdleTimer,
 }
 
 pub const EMBEDDING_DIM: usize = 1024;
 
 impl FastEmbedder {
     pub fn init() -> anyhow::Result<Self> {
+        // Load once up front: it downloads the model on a first run and proves
+        // it's usable while startup can still disable search cleanly. From
+        // here on the idle unloader may drop and reload it freely.
+        let model = Self::load()?;
+        let after =
+            parse_idle_unload(std::env::var("STICKY_NOTES_EMBED_IDLE_SECS").ok().as_deref());
+        Ok(Self { model: Mutex::new(Some(model)), idle: IdleTimer::new(after) })
+    }
+
+    fn load() -> anyhow::Result<fastembed::TextEmbedding> {
         let options = fastembed::InitOptions::new(fastembed::EmbeddingModel::BGEM3);
-        let model = fastembed::TextEmbedding::try_new(options)?;
-        Ok(Self { model: Mutex::new(model) })
+        fastembed::TextEmbedding::try_new(options)
+    }
+
+    /// How long the model may sit unused before [`TextEmbedder::unload_if_idle`]
+    /// drops it; `None` when unloading is switched off.
+    pub fn idle_unload(&self) -> Option<Duration> {
+        self.idle.after
     }
 }
 
 impl TextEmbedder for FastEmbedder {
     fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
-        let mut model = self.model.lock().unwrap();
-        model.embed(texts, None).map_err(|e| anyhow::anyhow!("embed failed: {e}"))
+        let mut slot = self.model.lock().unwrap();
+        let model = match slot.as_mut() {
+            Some(model) => model,
+            None => slot.insert(Self::load()?),
+        };
+        let vectors = model.embed(texts, None).map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
+        // Stamped after the work, so a long batch counts as idle from when it
+        // finished rather than from when it started.
+        self.idle.touch();
+        Ok(vectors)
     }
 
     fn model_name(&self) -> &str {
@@ -60,6 +150,18 @@ impl TextEmbedder for FastEmbedder {
 
     fn dims(&self) -> usize {
         EMBEDDING_DIM
+    }
+
+    fn unload_if_idle(&self) -> bool {
+        if !self.idle.expired() {
+            return false;
+        }
+        // try_lock, never lock: a model someone is mid-embed on is in use by
+        // definition, and the unloader must not stall a search behind itself.
+        let Ok(mut slot) = self.model.try_lock() else {
+            return false;
+        };
+        slot.take().is_some()
     }
 }
 
@@ -338,6 +440,13 @@ impl SearchService {
         self.embedder.dims()
     }
 
+    /// Hand back the embedding model's memory if nothing has needed it for a
+    /// while (see [`TextEmbedder::unload_if_idle`]); reports whether it did.
+    /// Blocking — call it from a blocking task, not the async runtime.
+    pub fn unload_idle_model(&self) -> bool {
+        self.embedder.unload_if_idle()
+    }
+
     pub async fn search(
         &self,
         user_id: &str,
@@ -352,6 +461,68 @@ impl SearchService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_seconds_parse_with_zero_meaning_never_unload() {
+        assert_eq!(parse_idle_unload(Some("60")), Some(Duration::from_secs(60)));
+        assert_eq!(parse_idle_unload(Some(" 60 ")), Some(Duration::from_secs(60)));
+        // 0 pins the model in memory; unset and unparseable both take the default.
+        assert_eq!(parse_idle_unload(Some("0")), None);
+        assert_eq!(parse_idle_unload(None), Some(DEFAULT_EMBED_IDLE));
+        assert_eq!(parse_idle_unload(Some("")), Some(DEFAULT_EMBED_IDLE));
+        assert_eq!(parse_idle_unload(Some("ten minutes")), Some(DEFAULT_EMBED_IDLE));
+    }
+
+    #[test]
+    fn the_idle_timer_expires_only_after_a_quiet_window() {
+        let idle = IdleTimer::new(Some(Duration::ZERO));
+        assert!(idle.expired(), "a zero window is always past");
+
+        let idle = IdleTimer::new(Some(Duration::from_secs(600)));
+        assert!(!idle.expired(), "just used");
+
+        // Unloading off: no amount of quiet expires it.
+        let never = IdleTimer::new(None);
+        assert!(!never.expired());
+    }
+
+    /// An embedder that reports what the idle unloader asked of it.
+    struct CountingEmbedder {
+        unload_calls: Mutex<usize>,
+        idle: bool,
+    }
+
+    impl TextEmbedder for CountingEmbedder {
+        fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
+            Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
+        }
+        fn model_name(&self) -> &str {
+            "counting"
+        }
+        fn dims(&self) -> usize {
+            3
+        }
+        fn unload_if_idle(&self) -> bool {
+            *self.unload_calls.lock().unwrap() += 1;
+            self.idle
+        }
+    }
+
+    #[tokio::test]
+    async fn the_service_forwards_idle_unloads_to_the_embedder() {
+        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3").await.unwrap();
+        let embedder = Arc::new(CountingEmbedder { unload_calls: Mutex::new(0), idle: true });
+        let service = SearchService::new(embedder.clone(), Arc::new(index));
+
+        assert!(service.unload_idle_model(), "the embedder freed its model");
+        assert_eq!(*embedder.unload_calls.lock().unwrap(), 1);
+
+        // A busy embedder reports nothing freed, so the caller stays quiet.
+        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3").await.unwrap();
+        let busy = Arc::new(CountingEmbedder { unload_calls: Mutex::new(0), idle: false });
+        let service = SearchService::new(busy, Arc::new(index));
+        assert!(!service.unload_idle_model());
+    }
 
     #[tokio::test]
     async fn indexed_note_ids_lists_notes_once_and_tracks_removal() {
