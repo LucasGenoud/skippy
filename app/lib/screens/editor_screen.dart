@@ -1021,6 +1021,15 @@ class _EditorScreenState extends State<EditorScreen> {
           data: _contentController.text.isEmpty
               ? '*Nothing to preview*'
               : _contentController.text,
+          // MarkdownBody renders ordinary Text widgets by default, so preview
+          // text could neither be selected nor copied. Its selectable mode
+          // uses Flutter's native selection controls (mouse drag on desktop,
+          // long press on touch devices).
+          selectable: true,
+          // A simple tap is an intentional shortcut back to the source editor.
+          // Selection gestures still belong to the selectable text, so copying
+          // a passage does not force an edit-mode switch.
+          onTapText: trashed ? null : _editMarkdownFromPreview,
           onTapLink: (text, href, title) {
             if (href != null) {
               launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
@@ -1039,6 +1048,15 @@ class _EditorScreenState extends State<EditorScreen> {
       // so iOS doesn't raise the keyboard mid-animation.
       autofocus: false,
     );
+  }
+
+  void _editMarkdownFromPreview() {
+    setState(() => _previewMarkdown = false);
+    // The TextField only exists after the mode change has rebuilt. Requesting
+    // focus on the next frame keeps the shortcut reliable on every platform.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _contentFocus.requestFocus();
+    });
   }
 
   /// Audio note: the clip player on top, then the transcript — a live

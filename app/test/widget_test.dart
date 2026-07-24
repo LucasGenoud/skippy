@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
@@ -608,6 +609,43 @@ void main() {
   });
 
   group('EditorScreen', () {
+    testWidgets(
+      'markdown preview is selectable and tapping text edits source',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.markdown,
+          content: '**Selectable** preview',
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+
+        await tester.tap(find.byTooltip('Preview'));
+        await tester.pump();
+
+        final preview = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+        expect(preview.selectable, isTrue);
+        expect(find.byType(SelectableText), findsWidgets);
+
+        await tester.tap(find.byType(SelectableText).first);
+        await tester.pump();
+
+        expect(find.byTooltip('Preview'), findsOneWidget);
+        final source = tester
+            .widgetList<EditableText>(find.byType(EditableText))
+            .last;
+        expect(source.focusNode.hasFocus, isTrue);
+        await tester.enterText(
+          find.byType(TextField).last,
+          '**Edited** preview',
+        );
+        expect(store.noteById('n1')!.content, '**Edited** preview');
+        await flushTimers(tester);
+      },
+    );
+
     testWidgets('typing in a fresh editor creates the note; closing keeps it', (
       tester,
     ) async {
