@@ -586,7 +586,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   .clamp(2, density.maxColumns);
 
                                         return RefreshIndicator(
-                                          onRefresh: store.load,
+                                          // refresh, not load: the indicator
+                                          // draws its own spinner, so flipping
+                                          // `loading` would swap the grid for
+                                          // skeletons under the user's finger.
+                                          onRefresh: store.refresh,
                                           edgeOffset: 16,
                                           child: CustomScrollView(
                                             controller: _scrollController,

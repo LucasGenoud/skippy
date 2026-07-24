@@ -25,7 +25,10 @@ void main() {
         media('https://example.com', SharedMediaType.url),
       ]);
       expect(p, isA<SharedTextPayload>());
-      expect((p as SharedTextPayload).text, 'look at this\nhttps://example.com');
+      expect(
+        (p as SharedTextPayload).text,
+        'look at this\nhttps://example.com',
+      );
     });
 
     test('blank-only text yields nothing', () {

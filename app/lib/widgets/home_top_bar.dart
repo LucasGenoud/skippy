@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'app_logo.dart';
@@ -84,6 +86,10 @@ class HomeTopBar extends StatelessWidget {
     required this.onShareSelected,
   });
 
+  /// The bar's own height, and the search pill inside it.
+  static const double barHeight = 58;
+  static const double _pillHeight = 40;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -94,141 +100,140 @@ class HomeTopBar extends StatelessWidget {
     if (isNarrow) return _narrowBar(context, scheme);
 
     return Container(
-      height: 64,
+      height: barHeight,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       color: scheme.surface,
-      child: Row(
+      child: CustomMultiChildLayout(
+        delegate: _CentredBarLayout(gap: 16, maxCentre: 640),
         children: [
           // ── Left: Menu + Logo + App Name ──
-          IconButton(
-            icon: const Icon(Icons.menu),
-            tooltip: 'Main menu',
-            onPressed: onToggleSidebar,
-          ),
-          const SizedBox(width: 4),
-          const AppLogo(size: 30),
-          const SizedBox(width: 10),
-          Text(
-            'Skippy',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(width: 16),
-
-          // ── Center: Search Bar ──
-          Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: _SearchPill(
-                  focusNode: focusNode,
-                  height: 46,
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 14),
-                      Icon(
-                        Icons.search,
-                        color: scheme.onSurfaceVariant,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          onChanged: onQuery,
-                          textInputAction: TextInputAction.search,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          decoration: InputDecoration(
-                            hintText: 'Search your notes',
-                            hintStyle: TextStyle(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                            border: InputBorder.none,
-                            isCollapsed: true,
-                          ),
-                        ),
-                      ),
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: controller,
-                        builder: (context, value, _) => _fadeScale(
-                          child: value.text.isEmpty
-                              ? const SizedBox.shrink()
-                              : IconButton(
-                                  icon: const Icon(Icons.close, size: 20),
-                                  tooltip: 'Clear search',
-                                  onPressed: () {
-                                    controller.clear();
-                                    onQuery('');
-                                  },
-                                ),
-                        ),
-                      ),
-                      if (semanticAvailable) _semanticControl(scheme),
-                    ],
+          LayoutId(
+            id: _BarSlot.left,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.menu),
+                  tooltip: 'Main menu',
+                  onPressed: onToggleSidebar,
+                ),
+                const SizedBox(width: 4),
+                const AppLogo(size: 26),
+                const SizedBox(width: 10),
+                Text(
+                  'Skippy',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
                   ),
                 ),
+              ],
+            ),
+          ),
+
+          // ── Centre: Search Bar ──
+          LayoutId(
+            id: _BarSlot.centre,
+            child: _SearchPill(
+              focusNode: focusNode,
+              height: _pillHeight,
+              child: Row(
+                children: [
+                  const SizedBox(width: 14),
+                  Icon(Icons.search, color: scheme.onSurfaceVariant, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      onChanged: onQuery,
+                      textInputAction: TextInputAction.search,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      decoration: InputDecoration(
+                        hintText: 'Search your notes',
+                        hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+                        border: InputBorder.none,
+                        isCollapsed: true,
+                      ),
+                    ),
+                  ),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: controller,
+                    builder: (context, value, _) => _fadeScale(
+                      child: value.text.isEmpty
+                          ? const SizedBox.shrink()
+                          : IconButton(
+                              icon: const Icon(Icons.close, size: 20),
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                controller.clear();
+                                onQuery('');
+                              },
+                            ),
+                    ),
+                  ),
+                  if (semanticAvailable) _semanticControl(scheme),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: 16),
 
           // ── Right: Quick Settings & User Avatar Circle ──
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Notes chat: only when the user configured an LLM (and the
-              // server can do the retrieval side).
-              if (settings.notesChatAvailable)
+          LayoutId(
+            id: _BarSlot.right,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Notes chat: only when the user configured an LLM (and the
+                // server can do the retrieval side).
+                if (settings.notesChatAvailable)
+                  IconButton(
+                    icon: const Icon(Icons.forum_outlined),
+                    tooltip: 'Chat with your notes',
+                    onPressed: () => ChatScreen.open(context),
+                  ),
+                const _SortButton(),
                 IconButton(
-                  icon: const Icon(Icons.forum_outlined),
-                  tooltip: 'Chat with your notes',
-                  onPressed: () => ChatScreen.open(context),
-                ),
-              const _RefreshButton(),
-              const _SortButton(),
-              IconButton(
-                icon: Icon(
-                  listMode
-                      ? Icons.grid_view_outlined
-                      : Icons.view_agenda_outlined,
-                ),
-                tooltip: listMode ? 'Grid view' : 'List view',
-                onPressed: onToggleLayout,
-              ),
-              IconButton(
-                // The sun/moon rotates in as the theme flips — a nod to the
-                // day/night metaphor without slowing the switch down.
-                icon: AnimatedSwitcher(
-                  duration: Motion.base,
-                  switchInCurve: Motion.standard,
-                  transitionBuilder: (child, animation) => RotationTransition(
-                    turns: Tween<double>(
-                      begin: 0.85,
-                      end: 1,
-                    ).animate(animation),
-                    child: FadeTransition(opacity: animation, child: child),
+                  icon: Icon(
+                    listMode
+                        ? Icons.grid_view_outlined
+                        : Icons.view_agenda_outlined,
                   ),
-                  child: Icon(
-                    themeAction.icon,
-                    key: ValueKey(settings.themeMode),
-                  ),
+                  tooltip: listMode ? 'Grid view' : 'List view',
+                  onPressed: onToggleLayout,
                 ),
-                tooltip: 'Theme: ${themeAction.label} — tap to change',
-                onPressed: settings.cycleThemeMode,
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: 'Settings',
-                onPressed: () =>
-                    Navigator.of(context).push(SettingsScreen.route()),
-              ),
-              const SizedBox(width: 6),
-              const _UserAvatarMenu(),
-              const SizedBox(width: 4),
-            ],
+                IconButton(
+                  // The sun/moon rotates in as the theme flips — a nod to the
+                  // day/night metaphor without slowing the switch down.
+                  icon: AnimatedSwitcher(
+                    duration: Motion.base,
+                    switchInCurve: Motion.standard,
+                    transitionBuilder: (child, animation) => RotationTransition(
+                      turns: Tween<double>(
+                        begin: 0.85,
+                        end: 1,
+                      ).animate(animation),
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                    child: Icon(
+                      themeAction.icon,
+                      key: ValueKey(settings.themeMode),
+                    ),
+                  ),
+                  tooltip: 'Theme: ${themeAction.label} — tap to change',
+                  onPressed: settings.cycleThemeMode,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: 'Settings',
+                  onPressed: () =>
+                      Navigator.of(context).push(SettingsScreen.route()),
+                ),
+                const SizedBox(width: 6),
+                const _UserAvatarMenu(),
+                const SizedBox(width: 4),
+              ],
+            ),
           ),
         ],
       ),
@@ -273,8 +278,10 @@ class HomeTopBar extends StatelessWidget {
     final chatAvailable = context.watch<SettingsStore>().notesChatAvailable;
 
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      height: barHeight,
+      // Tighter than the desktop bar's inset on purpose: the pill here holds
+      // real buttons, and this leaves them their full 48px touch target.
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       color: scheme.surface,
       child: _SearchPill(
         focusNode: focusNode,
@@ -367,19 +374,6 @@ class HomeTopBar extends StatelessWidget {
         ? 'Select notes'
         : '$selectedCount selected';
     final controls = <Widget>[
-      IconButton(
-        icon: const Icon(Icons.close),
-        tooltip: 'Cancel selection',
-        onPressed: onCancelSelection,
-      ),
-      Expanded(
-        child: Text(
-          selectionLabel,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-      ),
       IconButton(
         icon: Icon(allSelected ? Icons.deselect_outlined : Icons.select_all),
         tooltip: allSelected ? 'Deselect all' : 'Select all',
@@ -483,13 +477,167 @@ class HomeTopBar extends StatelessWidget {
           onPressed: selectedCount == 0 ? null : onTrashSelected,
         ),
     ];
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: scheme.surface,
-      child: Row(children: controls),
+    return _SelectionBar(
+      label: selectionLabel,
+      onCancel: onCancelSelection,
+      actions: controls,
     );
   }
+}
+
+/// The bar in selection mode. Entering selection swaps the whole bar at once,
+/// which read as a flicker: the actions now drop in from above, staggered left
+/// to right, so the row announces itself as arriving. The entrance runs once
+/// per stint in selection mode — picking further notes only re-enables the
+/// icons already on screen, and replaying it on every tap would be noise.
+class _SelectionBar extends StatefulWidget {
+  final String label;
+  final VoidCallback onCancel;
+  final List<Widget> actions;
+
+  const _SelectionBar({
+    required this.label,
+    required this.onCancel,
+    required this.actions,
+  });
+
+  @override
+  State<_SelectionBar> createState() => _SelectionBarState();
+}
+
+class _SelectionBarState extends State<_SelectionBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _enter = AnimationController(
+    vsync: this,
+    duration: Motion.base,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _enter.forward();
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (Motion.reduced(context)) _enter.value = 1;
+
+    // The cancel button leads, then each action a beat later; the last one
+    // still lands within Motion.base.
+    final count = widget.actions.length + 1;
+    Widget dropIn(int index, Widget child) {
+      final step = count <= 1 ? 0.0 : 0.5 / (count - 1);
+      final start = step * index;
+      final animation = _enter.drive(
+        CurveTween(
+          curve: Interval(start, start + 0.5, curve: Motion.emphasized),
+        ),
+      );
+      return SlideTransition(
+        position: animation.drive(
+          Tween(begin: const Offset(0, -0.75), end: Offset.zero),
+        ),
+        child: FadeTransition(opacity: animation, child: child),
+      );
+    }
+
+    return Container(
+      height: HomeTopBar.barHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      color: scheme.surface,
+      child: Row(
+        children: [
+          dropIn(
+            0,
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Cancel selection',
+              onPressed: widget.onCancel,
+            ),
+          ),
+          Expanded(
+            // The count changes as you pick notes, so it fades rather than
+            // dropping — it's the one thing here that isn't a new control.
+            child: FadeTransition(
+              opacity: _enter,
+              child: Text(
+                widget.label,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          for (final (i, action) in widget.actions.indexed)
+            dropIn(i + 1, action),
+        ],
+      ),
+    );
+  }
+}
+
+enum _BarSlot { left, centre, right }
+
+/// Lays the desktop bar out as branding | search | actions, with the search
+/// pill centred on the *bar* rather than on the space left over between the
+/// two clusters. A plain Row can only do the latter, and since the action
+/// icons outweigh the branding the pill sat visibly right of centre.
+///
+/// The clusters keep their natural widths; the pill takes whatever is left
+/// once both are cleared. When that drops below [_minCentre] — a narrow
+/// window, or a long enough action row — centring is abandoned rather than
+/// squeezing the field to nothing, and the pill simply fills the gap.
+class _CentredBarLayout extends MultiChildLayoutDelegate {
+  /// Breathing room between the pill and each cluster.
+  final double gap;
+
+  /// The pill never grows past this, however wide the window gets.
+  final double maxCentre;
+
+  static const double _minCentre = 260;
+
+  _CentredBarLayout({required this.gap, required this.maxCentre});
+
+  @override
+  void performLayout(Size size) {
+    final loose = BoxConstraints.loose(size);
+    final left = layoutChild(_BarSlot.left, loose);
+    final right = layoutChild(_BarSlot.right, loose);
+
+    final side = math.max(left.width, right.width);
+    var width = math.min(maxCentre, size.width - 2 * (side + gap));
+    double x;
+    if (width >= _minCentre) {
+      x = (size.width - width) / 2;
+    } else {
+      width = math.max(0, size.width - left.width - right.width - 2 * gap);
+      x = left.width + gap;
+    }
+    final centre = layoutChild(
+      _BarSlot.centre,
+      BoxConstraints(minWidth: width, maxWidth: width, maxHeight: size.height),
+    );
+
+    double centred(Size child) =>
+        ((size.height - child.height) / 2).clamp(0.0, size.height);
+    positionChild(_BarSlot.left, Offset(0, centred(left)));
+    positionChild(_BarSlot.centre, Offset(x, centred(centre)));
+    positionChild(
+      _BarSlot.right,
+      Offset(size.width - right.width, centred(right)),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_CentredBarLayout old) =>
+      old.gap != gap || old.maxCentre != maxCentre;
 }
 
 /// Fade + scale between two states of a small control; the standard
@@ -786,28 +934,6 @@ class _SyncBadgeState extends State<_SyncBadge>
           child: Icon(icon, size: 13, color: color),
         ),
       ),
-    );
-  }
-}
-
-/// Desktop-only manual refresh: re-pulls notes/labels from the server (mobile
-/// relies on the live WebSocket). Shows a spinner while the pull is in flight.
-class _RefreshButton extends StatelessWidget {
-  const _RefreshButton();
-
-  @override
-  Widget build(BuildContext context) {
-    final refreshing = context.select<NotesStore, bool>((s) => s.refreshing);
-    return IconButton(
-      icon: refreshing
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.refresh),
-      tooltip: 'Refresh',
-      onPressed: refreshing ? null : () => context.read<NotesStore>().refresh(),
     );
   }
 }

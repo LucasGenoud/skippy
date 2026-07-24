@@ -30,10 +30,7 @@ class LlmConfigTile extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(summary),
-          if (managed) const ManagedNote(),
-        ],
+        children: [Text(summary), if (managed) const ManagedNote()],
       ),
       trailing: Icon(managed ? Icons.lock_outline : Icons.chevron_right),
       onTap: () => _LlmConfigDialog.show(context),
@@ -146,7 +143,9 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
                     : 'OpenAI-compatible endpoint, including /v1 '
                           '(Ollama, OpenAI, LM Studio, …)',
                 helperMaxLines: 2,
-                suffixIcon: urlManaged ? const Icon(Icons.lock_outline, size: 18) : null,
+                suffixIcon: urlManaged
+                    ? const Icon(Icons.lock_outline, size: 18)
+                    : null,
               ),
             ),
             const SizedBox(height: 12),
@@ -159,8 +158,12 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
                 // The server never sends a managed key's value, so show a
                 // masked placeholder rather than an empty field.
                 hintText: keyManaged ? '•••••• (set by the server)' : null,
-                helperText: keyManaged ? 'Set by the server' : 'Leave empty for Ollama',
-                suffixIcon: keyManaged ? const Icon(Icons.lock_outline, size: 18) : null,
+                helperText: keyManaged
+                    ? 'Set by the server'
+                    : 'Leave empty for Ollama',
+                suffixIcon: keyManaged
+                    ? const Icon(Icons.lock_outline, size: 18)
+                    : null,
               ),
             ),
             const SizedBox(height: 12),
@@ -171,7 +174,9 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
                 labelText: 'Model',
                 hintText: 'gpt-5-mini, llama3.1, …',
                 helperText: modelManaged ? 'Set by the server' : null,
-                suffixIcon: modelManaged ? const Icon(Icons.lock_outline, size: 18) : null,
+                suffixIcon: modelManaged
+                    ? const Icon(Icons.lock_outline, size: 18)
+                    : null,
               ),
             ),
             const SizedBox(height: 16),

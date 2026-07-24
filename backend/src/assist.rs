@@ -8,14 +8,16 @@ use crate::models::{Label, NoteRecord};
 
 /// Max note text sent in a labeling prompt.
 const LABELING_NOTE_CHARS: usize = 4_000;
-/// Max text per retrieved note in the chat system prompt.
-const CHAT_NOTE_CHARS: usize = 1_500;
 /// Max history turns forwarded to the model.
 const CHAT_HISTORY_TURNS: usize = 12;
 /// Max chars per history entry and per user message.
 const CHAT_MESSAGE_CHARS: usize = 4_000;
-/// How many retrieved notes make it into the chat prompt.
-pub const CHAT_CONTEXT_NOTES: usize = 6;
+/// How many retrieved notes make it into the chat prompt. This is the only
+/// bound on the notes side: a retrieved note is sent whole, here and in the
+/// write planner, because any cut still reads as a *complete* note and the
+/// model then answers confidently about a list whose tail it never saw.
+/// Long notes are the user's own, and one truthful answer beats a cheap one.
+pub const CHAT_CONTEXT_NOTES: usize = 8;
 /// How many recent user turns (including the new message) feed retrieval.
 const RETRIEVAL_QUERY_TURNS: usize = 3;
 /// Max chars each turn contributes to the retrieval query.
@@ -240,8 +242,8 @@ pub fn retrieval_query(history: &[(String, String)], message: &str) -> String {
 /// runaway model), and the per-entry length cap.
 const MAX_WRITE_ITEMS: usize = 50;
 const WRITE_ITEM_CHARS: usize = 200;
-/// Max text shown per candidate note in the write-planner prompt.
-const WRITE_CANDIDATE_CHARS: usize = 400;
+// Candidate notes are shown whole here too: the planner has to see everything
+// a list already holds, or it appends a duplicate of an entry it never saw.
 
 /// A concrete note edit the write planner resolved the user's request into.
 #[derive(Debug, PartialEq)]
@@ -284,10 +286,7 @@ pub fn write_plan_messages(
     }
     for (id, title, text) in candidates {
         let title = if title.trim().is_empty() { "Untitled" } else { title.trim() };
-        context.push_str(&format!(
-            "\n\n[id={id}] {title}\n{}",
-            cap(text, WRITE_CANDIDATE_CHARS)
-        ));
+        context.push_str(&format!("\n\n[id={id}] {title}\n{text}"));
     }
     with_conversation(vec![ChatMessage::system(context)], history, message)
 }
@@ -384,8 +383,10 @@ pub fn chat_messages(
          latest message; it is not their whole collection, and some notes may \
          be irrelevant — silently ignore those. Checklist items are marked \
          '- [x]' when checked off (done, already bought/handled) and '- [ ]' \
-         when still pending; treat only pending items as open tasks. Answer \
-         using the relevant notes and the conversation so far. Never claim an \
+         when still pending; treat only pending items as open tasks. Each note \
+         is shown in full, so a list you can see the end of is the whole list. \
+         Answer using the relevant notes and the conversation so far. Never \
+         claim an \
          earlier answer was wrong merely because the notes shown this turn \
          don't repeat it. If neither the notes nor the conversation covers \
          the question, say so plainly. Be concise.\n\nNotes:",
@@ -395,7 +396,7 @@ pub fn chat_messages(
     }
     for (n, (title, text)) in notes.iter().enumerate() {
         let title = if title.trim().is_empty() { "Untitled" } else { title.trim() };
-        context.push_str(&format!("\n\n[{}] {}\n{}", n + 1, title, cap(text, CHAT_NOTE_CHARS)));
+        context.push_str(&format!("\n\n[{}] {}\n{}", n + 1, title, text));
     }
     with_conversation(vec![ChatMessage::system(context)], history, message)
 }
@@ -522,6 +523,18 @@ mod tests {
             ..record
         };
         assert_eq!(note_prompt_text(&text_note), "hello");
+    }
+
+    #[test]
+    fn long_checklists_survive_the_chat_prompt() {
+        // 200 items is well past the old 1_500-char cap and still lands whole.
+        let list: Vec<String> = (0..200).map(|n| format!("- [ ] item {n}")).collect();
+        let text = list.join("\n");
+        let messages = chat_messages(&[("Groceries".into(), text.clone())], &[], "what's left?");
+        let prompt = &messages[0].content;
+        // The notes are the tail of the system prompt, so an intact list ends
+        // it — anything dropped would have left the truncation marker here.
+        assert!(prompt.trim_end().ends_with("- [ ] item 199"), "tail of the list was cut");
     }
 
     #[test]
@@ -701,7 +714,8 @@ mod tests {
 
     #[test]
     fn chat_messages_shape() {
-        let notes = [("Groceries".into(), "milk\neggs".into()), ("".into(), "x".repeat(2_000))];
+        let long = "x".repeat(20_000);
+        let notes = [("Groceries".into(), "milk\neggs".into()), ("".into(), long.clone())];
         let history = [
             ("user".into(), "hi".into()),
             ("assistant".into(), "hello".into()),
@@ -712,8 +726,8 @@ mod tests {
         assert_eq!(messages[0].role, "system");
         assert!(messages[0].content.contains("[1] Groceries"));
         assert!(messages[0].content.contains("[2] Untitled"));
-        // Second note text capped.
-        assert!(messages[0].content.len() < 2_000 + 600);
+        // However long the note, it reaches the model whole.
+        assert!(messages[0].content.contains(&long));
         assert_eq!(messages[1].role, "user");
         assert_eq!(messages[2].role, "assistant");
         assert_eq!(messages[3].content, "what do I need to buy?");

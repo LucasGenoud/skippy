@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 /// long-press so scrolling wins the gesture arena; mouse UIs get
 /// hover-revealed controls and instant drag.
 bool get isTouchPrimaryPlatform => switch (defaultTargetPlatform) {
-  TargetPlatform.android || TargetPlatform.iOS || TargetPlatform.fuchsia =>
-    true,
+  TargetPlatform.android ||
+  TargetPlatform.iOS ||
+  TargetPlatform.fuchsia => true,
   _ => false,
 };

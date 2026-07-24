@@ -34,20 +34,23 @@ sealed class ChatEvent {
 
   /// Returns null for frames of unknown type, so protocol additions never
   /// break older clients.
-  static ChatEvent? fromJson(Map<String, dynamic> json) => switch (json['type']) {
-    'sources' => ChatSourcesEvent([
-      for (final note in (json['notes'] as List? ?? []))
-        if (note is Map<String, dynamic>) ChatSource.fromJson(note),
-    ]),
-    'created' when json['note'] is Map<String, dynamic> => ChatCreatedEvent(
-      action: (json['action'] as String?) ?? 'create',
-      note: ChatSource.fromJson(json['note'] as Map<String, dynamic>),
-    ),
-    'delta' => ChatDeltaEvent((json['text'] as String?) ?? ''),
-    'done' => const ChatDoneEvent(),
-    'error' => ChatErrorEvent((json['message'] as String?) ?? 'unknown error'),
-    _ => null,
-  };
+  static ChatEvent? fromJson(Map<String, dynamic> json) =>
+      switch (json['type']) {
+        'sources' => ChatSourcesEvent([
+          for (final note in (json['notes'] as List? ?? []))
+            if (note is Map<String, dynamic>) ChatSource.fromJson(note),
+        ]),
+        'created' when json['note'] is Map<String, dynamic> => ChatCreatedEvent(
+          action: (json['action'] as String?) ?? 'create',
+          note: ChatSource.fromJson(json['note'] as Map<String, dynamic>),
+        ),
+        'delta' => ChatDeltaEvent((json['text'] as String?) ?? ''),
+        'done' => const ChatDoneEvent(),
+        'error' => ChatErrorEvent(
+          (json['message'] as String?) ?? 'unknown error',
+        ),
+        _ => null,
+      };
 }
 
 /// The turn created a new note or appended to one. Rendered as a chip that

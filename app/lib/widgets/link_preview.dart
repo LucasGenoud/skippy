@@ -195,7 +195,11 @@ class _Thumb extends StatelessWidget {
   final String? image;
   final String? favicon;
   final double size;
-  const _Thumb({required this.image, required this.favicon, required this.size});
+  const _Thumb({
+    required this.image,
+    required this.favicon,
+    required this.size,
+  });
 
   @override
   Widget build(BuildContext context) {

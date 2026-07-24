@@ -151,9 +151,9 @@ class _EmbeddingStatsTileState extends State<EmbeddingStatsTile> {
         children: [
           Text(
             'Embedding index',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
           child,
@@ -189,7 +189,10 @@ class _StatRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+                Text(
+                  value,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
                 if (hint != null)
                   Text(
                     hint!,
@@ -231,9 +234,9 @@ class _ReindexProgress extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '${p.done} / ${p.total} embedded',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ],

@@ -49,8 +49,8 @@ class NotesStore extends ChangeNotifier {
   bool loading = true;
   bool offline = false;
 
-  /// True while a manual [refresh] is re-pulling from the server (drives the
-  /// desktop refresh button's spin). Distinct from [loading], the first load.
+  /// True while a manual [refresh] is re-pulling from the server. Distinct
+  /// from [loading], the first load.
   bool refreshing = false;
   SortMode sortMode = SortMode.custom;
 
@@ -345,7 +345,7 @@ class NotesStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// A user-triggered re-pull (the desktop refresh button). Unlike [load] it
+  /// A user-triggered re-pull (pull-to-refresh). Unlike [load] it
   /// doesn't re-hydrate the cache or flip [loading], and it first drains any
   /// pending writes so the refetch reflects them. Skips clobbering when local
   /// changes are still in flight, matching [load].

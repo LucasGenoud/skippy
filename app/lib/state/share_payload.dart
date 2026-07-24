@@ -29,8 +29,7 @@ SharePayload? classifyShare(List<SharedMediaFile> media) {
 
   final files = media
       .where(
-        (m) =>
-            m.type != SharedMediaType.text && m.type != SharedMediaType.url,
+        (m) => m.type != SharedMediaType.text && m.type != SharedMediaType.url,
       )
       .toList();
   if (files.isNotEmpty) return SharedFilesPayload(files);

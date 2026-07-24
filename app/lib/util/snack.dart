@@ -106,11 +106,13 @@ void showAppSnack(
       scheme.secondaryContainer,
       scheme.onSecondaryContainer,
     ),
-    SnackKind.success => light
-        ? (const Color(0xFFD5EFDD), const Color(0xFF0E5A2B))
-        : (const Color(0xFF163521), const Color(0xFF9BE0AE)),
-    SnackKind.warning => light
-        ? (const Color(0xFFFBE9C7), const Color(0xFF7A5300))
-        : (const Color(0xFF3A2E12), const Color(0xFFF3C778)),
+    SnackKind.success =>
+      light
+          ? (const Color(0xFFD5EFDD), const Color(0xFF0E5A2B))
+          : (const Color(0xFF163521), const Color(0xFF9BE0AE)),
+    SnackKind.warning =>
+      light
+          ? (const Color(0xFFFBE9C7), const Color(0xFF7A5300))
+          : (const Color(0xFF3A2E12), const Color(0xFFF3C778)),
   };
 }

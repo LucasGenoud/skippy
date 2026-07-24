@@ -32,7 +32,10 @@ class MarkdownToolbar extends StatelessWidget {
       text: replaced,
       selection: selected.isEmpty
           ? TextSelection.collapsed(offset: inner)
-          : TextSelection(baseOffset: inner, extentOffset: inner + selected.length),
+          : TextSelection(
+              baseOffset: inner,
+              extentOffset: inner + selected.length,
+            ),
     );
     focusNode?.requestFocus();
   }

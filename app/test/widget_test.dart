@@ -1402,7 +1402,9 @@ void main() {
 
       expect(find.byTooltip('Select notes'), findsNothing);
       await tester.longPress(find.text('First note'));
-      await tester.pump();
+      // Settle: the selection bar's actions drop in from above, so they only
+      // sit under the taps below once that entrance has landed.
+      await tester.pumpAndSettle();
       expect(find.text('1 selected'), findsOneWidget);
       expect(find.byTooltip('Archive selected notes'), findsOneWidget);
 
@@ -1710,6 +1712,115 @@ void main() {
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
       expect(find.byType(NavigationDrawer), findsOneWidget);
+    });
+
+    testWidgets('the search field is centred on the bar, not on the gap', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      final bar = tester.getRect(find.byType(HomeTopBar));
+      // The pill is the nearest animated box around the search glyph.
+      final pill = tester.getRect(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.search),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      // Centred on the window. A plain Row can only centre it in what the two
+      // clusters leave behind, and the action icons outweigh the branding, so
+      // this used to sit tens of pixels right of centre.
+      expect((pill.center.dx - bar.center.dx).abs(), lessThan(1));
+      // …without running into either cluster.
+      expect(pill.left, greaterThan(tester.getRect(find.text('Skippy')).right));
+      expect(
+        pill.right,
+        lessThan(tester.getRect(find.byIcon(Icons.settings_outlined)).left),
+      );
+    });
+
+    testWidgets('selection actions drop in from above the bar', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'First note');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('First note'));
+      await tester.pump();
+      final bar = tester.getRect(find.byType(HomeTopBar));
+      final entering = tester.getRect(find.byTooltip('Pin selected notes'));
+      expect(
+        entering.center.dy,
+        lessThan(bar.top),
+        reason: 'the actions start above the bar and fall into it',
+      );
+
+      await tester.pumpAndSettle();
+      final landed = tester.getRect(find.byTooltip('Pin selected notes'));
+      expect(bar.contains(landed.center), isTrue);
+    });
+  });
+
+  group('theme switching', () {
+    testWidgets('the sidebar changes colour in step with the app', (
+      tester,
+    ) async {
+      var mode = ThemeMode.light;
+      late StateSetter setMode;
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: store,
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              setMode = setState;
+              return MaterialApp(
+                theme: buildTheme(Brightness.light),
+                darkTheme: buildTheme(Brightness.dark),
+                themeMode: mode,
+                home: Scaffold(
+                  body: AppSidebar(
+                    isOpen: true,
+                    selection: ViewSelection.notes,
+                    onSelect: (_) {},
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      setMode(() => mode = ThemeMode.dark);
+      await tester.pump();
+      // Mid cross-fade: MaterialApp lerps the theme itself, so anything that
+      // *also* animates its own colour is chasing a moving target and lands
+      // late. The rail must paint exactly what the theme says, right now.
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final scheme = Theme.of(
+        tester.element(find.byType(AppSidebar)),
+      ).colorScheme;
+      final dynamic fill = tester.renderObject(
+        find
+            .descendant(
+              of: find.byType(AppSidebar),
+              matching: find.byType(ColoredBox),
+            )
+            .first,
+      );
+      expect(fill.color, scheme.surface);
     });
   });
 

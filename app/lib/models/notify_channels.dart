@@ -58,7 +58,8 @@ const List<NotifyChannelSpec> kNotifyChannels = [
   NotifyChannelSpec(
     key: 'ntfy',
     label: 'ntfy',
-    blurb: 'Subscribe to the same topic in the ntfy app (ntfy.sh or self-hosted).',
+    blurb:
+        'Subscribe to the same topic in the ntfy app (ntfy.sh or self-hosted).',
     fields: [
       NotifyField(
         key: 'ntfy_url',
@@ -77,7 +78,8 @@ const List<NotifyChannelSpec> kNotifyChannels = [
   NotifyChannelSpec(
     key: 'telegram',
     label: 'Telegram',
-    blurb: 'Create a bot with @BotFather and send it /start so it can message you.',
+    blurb:
+        'Create a bot with @BotFather and send it /start so it can message you.',
     fields: [
       NotifyField(
         key: 'telegram_bot_token',

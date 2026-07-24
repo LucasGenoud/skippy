@@ -83,7 +83,11 @@ List<InlineSpan> buildLinkedSpans({
   for (final u in urls) {
     if (u.start > cursor) {
       spans.addAll(
-        highlightSpans(text.substring(cursor, u.start), query, highlight: highlight),
+        highlightSpans(
+          text.substring(cursor, u.start),
+          query,
+          highlight: highlight,
+        ),
       );
     }
     spans.add(
@@ -96,7 +100,9 @@ List<InlineSpan> buildLinkedSpans({
     cursor = u.end;
   }
   if (cursor < text.length) {
-    spans.addAll(highlightSpans(text.substring(cursor), query, highlight: highlight));
+    spans.addAll(
+      highlightSpans(text.substring(cursor), query, highlight: highlight),
+    );
   }
   return spans;
 }

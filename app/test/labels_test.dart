@@ -32,7 +32,12 @@ void main() {
         const MaterialApp(
           home: Scaffold(
             body: LabelGlyph(
-              label: Label(id: 'l', name: 'work', color: '#1A73E8', icon: 'work'),
+              label: Label(
+                id: 'l',
+                name: 'work',
+                color: '#1A73E8',
+                icon: 'work',
+              ),
             ),
           ),
         ),

@@ -15,10 +15,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: LinkedText(
-              text: 'https://example.com',
-              onOpen: opened.add,
-            ),
+            body: LinkedText(text: 'https://example.com', onOpen: opened.add),
           ),
         ),
       );
@@ -66,10 +63,7 @@ void main() {
       await tester.pumpWidget(
         harness(
           api,
-          LinkPreviewCard(
-            url: 'https://youtube.com',
-            onOpen: opened.add,
-          ),
+          LinkPreviewCard(url: 'https://youtube.com', onOpen: opened.add),
         ),
       );
       await tester.pumpAndSettle();

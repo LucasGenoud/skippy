@@ -195,16 +195,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      creating
-                          ? 'Create an account to start taking notes'
-                          : 'Welcome back — sign in to your notes',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
                     const SizedBox(height: 24),
                     // ── Form ──────────────────────────────────────────────
                     // Wrapped in a card on wide layouts; edge-to-edge on phones.

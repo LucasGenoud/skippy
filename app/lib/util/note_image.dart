@@ -168,9 +168,7 @@ class _RasterNoteImageState extends State<_RasterNoteImage> {
             ? constraints.maxWidth
             : 300.0;
         // Height the image would take at its natural aspect ratio, capped.
-        final natural = _aspect == null
-            ? _estimatedHeight
-            : width / _aspect!;
+        final natural = _aspect == null ? _estimatedHeight : width / _aspect!;
         final height = natural.clamp(0.0, widget.maxHeight);
 
         final dpr = MediaQuery.devicePixelRatioOf(context);

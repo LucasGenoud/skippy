@@ -32,10 +32,7 @@ void main() {
   final labels = const [Label(id: 'l1', name: 'travel')];
 
   test('filename is timestamped with the right extension', () {
-    expect(
-      exportFilename(ExportFormat.markdown, now),
-      'skippy-2026-07-13.md',
-    );
+    expect(exportFilename(ExportFormat.markdown, now), 'skippy-2026-07-13.md');
     expect(exportFilename(ExportFormat.json, now), 'skippy-2026-07-13.json');
   });
 

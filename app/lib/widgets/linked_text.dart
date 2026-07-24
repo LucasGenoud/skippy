@@ -65,7 +65,8 @@ class _LinkedTextState extends State<LinkedText> {
 
     // Drop recognizers for URLs that are no longer present.
     final live = findUrls(widget.text).map((u) => u.url).toSet();
-    for (final gone in _recognizers.keys.where((k) => !live.contains(k)).toList()) {
+    for (final gone
+        in _recognizers.keys.where((k) => !live.contains(k)).toList()) {
       _recognizers.remove(gone)!.dispose();
     }
 

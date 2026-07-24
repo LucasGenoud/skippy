@@ -21,7 +21,10 @@ class EmptyState extends StatelessWidget {
         curve: Motion.emphasized,
         builder: (context, t, child) => Opacity(
           opacity: t,
-          child: Transform.translate(offset: Offset(0, (1 - t) * 16), child: child),
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 16),
+            child: child,
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

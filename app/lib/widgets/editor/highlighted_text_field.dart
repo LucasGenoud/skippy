@@ -56,7 +56,8 @@ class LinkifyingController extends TextEditingController {
 
     // Drop recognizers for URLs no longer in the text.
     final live = findUrls(text).map((u) => u.url).toSet();
-    for (final gone in _recognizers.keys.where((k) => !live.contains(k)).toList()) {
+    for (final gone
+        in _recognizers.keys.where((k) => !live.contains(k)).toList()) {
       _recognizers.remove(gone)!.dispose();
     }
 

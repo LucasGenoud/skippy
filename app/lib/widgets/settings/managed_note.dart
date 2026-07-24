@@ -16,9 +16,9 @@ class ManagedNote extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             'Managed by the server',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),

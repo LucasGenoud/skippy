@@ -23,16 +23,24 @@ void main() {
     });
 
     test('trims trailing sentence punctuation', () {
-      expect(findUrls('visit https://example.com.').single.url,
-          'https://example.com');
-      expect(findUrls('(https://example.com)').single.url,
-          'https://example.com');
-      expect(findUrls('link: https://example.com!').single.url,
-          'https://example.com');
+      expect(
+        findUrls('visit https://example.com.').single.url,
+        'https://example.com',
+      );
+      expect(
+        findUrls('(https://example.com)').single.url,
+        'https://example.com',
+      );
+      expect(
+        findUrls('link: https://example.com!').single.url,
+        'https://example.com',
+      );
     });
 
     test('keeps balanced brackets inside the URL', () {
-      final u = findUrls('https://en.wikipedia.org/wiki/Dart_(language)').single;
+      final u = findUrls(
+        'https://en.wikipedia.org/wiki/Dart_(language)',
+      ).single;
       expect(u.url, 'https://en.wikipedia.org/wiki/Dart_(language)');
     });
 

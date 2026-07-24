@@ -38,8 +38,7 @@ class _SkippyAppState extends State<SkippyApp> {
   /// creates a note for it. Long-lived so a share that arrives before sign-in
   /// queues and replays once the store exists; inert on web.
   late final ShareIntake _shareIntake = ShareIntake(
-    showMessage: (msg) =>
-        showAppSnack(msg, icon: Icons.note_add_outlined),
+    showMessage: (msg) => showAppSnack(msg, icon: Icons.note_add_outlined),
   );
 
   /// Live above the MaterialApp so that pushed routes (editor, dialogs) can

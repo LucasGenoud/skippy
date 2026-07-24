@@ -96,9 +96,10 @@ class _GridPreview extends StatelessWidget {
         // preview stays within its frame.
         final effective = math.min(width.maxWidth, _refScreen);
         final innerW = screenW * (effective / _refScreen);
-        final columns = (effective / density.targetWidth)
-            .floor()
-            .clamp(2, density.maxColumns);
+        final columns = (effective / density.targetWidth).floor().clamp(
+          2,
+          density.maxColumns,
+        );
         const gap = 4.0;
         const unit = 22.0;
 

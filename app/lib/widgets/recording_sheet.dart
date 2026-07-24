@@ -56,7 +56,9 @@ class _RecordingSheetState extends State<RecordingSheet>
 
   Future<void> _begin() async {
     if (!audioRecordingSupported) {
-      setState(() => _error = 'Audio recording isn\'t supported on this device.');
+      setState(
+        () => _error = 'Audio recording isn\'t supported on this device.',
+      );
       return;
     }
     try {
@@ -255,7 +257,11 @@ class _MicPulse extends StatelessWidget {
   final double level;
   final bool ready;
 
-  const _MicPulse({required this.pulse, required this.level, required this.ready});
+  const _MicPulse({
+    required this.pulse,
+    required this.level,
+    required this.ready,
+  });
 
   @override
   Widget build(BuildContext context) {

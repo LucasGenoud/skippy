@@ -171,114 +171,123 @@ class AppSidebar extends StatelessWidget {
     final labels = store.labels;
     final scheme = Theme.of(context).colorScheme;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOutCubic,
-      width: isOpen ? 268 : 72,
+    // Only the width is implicitly animated. Handing the fill to
+    // AnimatedContainer too made light/dark switches visibly drag: the theme
+    // itself cross-fades over kThemeAnimationDuration, so the target colour
+    // moves every frame and the container keeps restarting a 250ms tween
+    // toward it — the rail finished long after the rest of the app. Painted
+    // straight from the scheme, it lands exactly with everything else.
+    return ColoredBox(
       color: scheme.surface,
-      child: ClipRect(
-        child: ListView(
-          padding: const EdgeInsets.only(top: 12, bottom: 24),
-          children: [
-            _SidebarItem(
-              icon: Icons.lightbulb_outline,
-              selectedIcon: Icons.lightbulb,
-              label: 'Notes',
-              isSelected: selection == ViewSelection.notes,
-              isOpen: isOpen,
-              onTap: () => onSelect(ViewSelection.notes),
-            ),
-            _SidebarItem(
-              icon: Icons.notifications_outlined,
-              selectedIcon: Icons.notifications,
-              label: 'Reminders',
-              isSelected: selection == ViewSelection.reminders,
-              isOpen: isOpen,
-              onTap: () => onSelect(ViewSelection.reminders),
-            ),
-            if (labels.isNotEmpty) ...[
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOutCubic,
+        width: isOpen ? 268 : 72,
+        child: ClipRect(
+          child: ListView(
+            padding: const EdgeInsets.only(top: 12, bottom: 24),
+            children: [
+              _SidebarItem(
+                icon: Icons.lightbulb_outline,
+                selectedIcon: Icons.lightbulb,
+                label: 'Notes',
+                isSelected: selection == ViewSelection.notes,
+                isOpen: isOpen,
+                onTap: () => onSelect(ViewSelection.notes),
+              ),
+              _SidebarItem(
+                icon: Icons.notifications_outlined,
+                selectedIcon: Icons.notifications,
+                label: 'Reminders',
+                isSelected: selection == ViewSelection.reminders,
+                isOpen: isOpen,
+                onTap: () => onSelect(ViewSelection.reminders),
+              ),
+              if (labels.isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 1, indent: 16, endIndent: 16),
+                ),
+                // Constant-height slot: the header fades with the rail's
+                // width animation instead of vanishing and jumping the
+                // label items up.
+                SizedBox(
+                  height: 28,
+                  child: AnimatedOpacity(
+                    opacity: isOpen ? 1 : 0,
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOutCubic,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
+                      child: Text(
+                        'LABELS',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.clip,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          letterSpacing: 1.1,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                for (final label in labels)
+                  _SidebarItem(
+                    // Reuse the label's own icon + colour (matching its chips);
+                    // a custom icon has no filled variant so it's used for both
+                    // states, while the default keeps the outline/filled pair.
+                    icon: label.icon != null
+                        ? labelIcon(label)
+                        : Icons.label_outline,
+                    selectedIcon: label.icon != null
+                        ? labelIcon(label)
+                        : Icons.label,
+                    iconColor: labelColorOrNull(label),
+                    label: label.name,
+                    isSelected:
+                        selection == ViewSelection(NoteView.label, label.id),
+                    isOpen: isOpen,
+                    onTap: () =>
+                        onSelect(ViewSelection(NoteView.label, label.id)),
+                    onAcceptNote: (noteId) =>
+                        _dropOnLabel(context, noteId, label),
+                  ),
+              ],
+              _SidebarItem(
+                icon: Icons.edit_outlined,
+                selectedIcon: Icons.edit,
+                label: labels.isEmpty ? 'Create labels' : 'Edit labels',
+                isSelected: false,
+                isOpen: isOpen,
+                onTap: () => EditLabelsDialog.show(context),
+              ),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Divider(height: 1, indent: 16, endIndent: 16),
               ),
-              // Constant-height slot: the header fades with the rail's
-              // width animation instead of vanishing and jumping the
-              // label items up.
-              SizedBox(
-                height: 28,
-                child: AnimatedOpacity(
-                  opacity: isOpen ? 1 : 0,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOutCubic,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
-                    child: Text(
-                      'LABELS',
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.clip,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            letterSpacing: 1.1,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ),
-                ),
+              _SidebarItem(
+                icon: Icons.archive_outlined,
+                selectedIcon: Icons.archive,
+                label: 'Archive',
+                isSelected: selection == ViewSelection.archive,
+                isOpen: isOpen,
+                onTap: () => onSelect(ViewSelection.archive),
+                onAcceptNote: (noteId) => _dropOnArchive(context, noteId),
               ),
-              for (final label in labels)
-                _SidebarItem(
-                  // Reuse the label's own icon + colour (matching its chips);
-                  // a custom icon has no filled variant so it's used for both
-                  // states, while the default keeps the outline/filled pair.
-                  icon: label.icon != null
-                      ? labelIcon(label)
-                      : Icons.label_outline,
-                  selectedIcon:
-                      label.icon != null ? labelIcon(label) : Icons.label,
-                  iconColor: labelColorOrNull(label),
-                  label: label.name,
-                  isSelected:
-                      selection == ViewSelection(NoteView.label, label.id),
-                  isOpen: isOpen,
-                  onTap: () =>
-                      onSelect(ViewSelection(NoteView.label, label.id)),
-                  onAcceptNote: (noteId) =>
-                      _dropOnLabel(context, noteId, label),
-                ),
+              _SidebarItem(
+                icon: Icons.delete_outline,
+                selectedIcon: Icons.delete,
+                label: 'Trash',
+                isSelected: selection == ViewSelection.trash,
+                isOpen: isOpen,
+                onTap: () => onSelect(ViewSelection.trash),
+                onAcceptNote: (noteId) => _dropOnTrash(context, noteId),
+                willAcceptNote: (noteId) =>
+                    context.read<NotesStore>().canTrash(noteId),
+              ),
             ],
-            _SidebarItem(
-              icon: Icons.edit_outlined,
-              selectedIcon: Icons.edit,
-              label: labels.isEmpty ? 'Create labels' : 'Edit labels',
-              isSelected: false,
-              isOpen: isOpen,
-              onTap: () => EditLabelsDialog.show(context),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Divider(height: 1, indent: 16, endIndent: 16),
-            ),
-            _SidebarItem(
-              icon: Icons.archive_outlined,
-              selectedIcon: Icons.archive,
-              label: 'Archive',
-              isSelected: selection == ViewSelection.archive,
-              isOpen: isOpen,
-              onTap: () => onSelect(ViewSelection.archive),
-              onAcceptNote: (noteId) => _dropOnArchive(context, noteId),
-            ),
-            _SidebarItem(
-              icon: Icons.delete_outline,
-              selectedIcon: Icons.delete,
-              label: 'Trash',
-              isSelected: selection == ViewSelection.trash,
-              isOpen: isOpen,
-              onTap: () => onSelect(ViewSelection.trash),
-              onAcceptNote: (noteId) => _dropOnTrash(context, noteId),
-              willAcceptNote: (noteId) =>
-                  context.read<NotesStore>().canTrash(noteId),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -368,9 +377,6 @@ class _SidebarItem extends StatelessWidget {
 
   Widget _buildItem(BuildContext context, {required bool dropTarget}) {
     final scheme = Theme.of(context).colorScheme;
-    final Color background = dropTarget
-        ? scheme.primaryContainer
-        : (isSelected ? scheme.secondaryContainer : Colors.transparent);
     final Color foreground = dropTarget
         ? scheme.onPrimaryContainer
         : (isSelected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant);
@@ -381,18 +387,9 @@ class _SidebarItem extends StatelessWidget {
       message: isOpen ? '' : label,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-        child: AnimatedContainer(
-          duration: Motion.fast,
-          curve: Motion.standard,
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(kRadius),
-            border: Border.all(
-              color: dropTarget ? scheme.primary : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
+        child: _RowHighlight(
+          selected: isSelected,
+          dropTarget: dropTarget,
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
@@ -415,7 +412,9 @@ class _SidebarItem extends StatelessWidget {
                           size: 24,
                           // A label's custom colour wins, except while it's a
                           // drop target (keep the highlight legible).
-                          color: dropTarget ? foreground : (iconColor ?? foreground),
+                          color: dropTarget
+                              ? foreground
+                              : (iconColor ?? foreground),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -441,6 +440,64 @@ class _SidebarItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A sidebar row's fill and border. Selection and drop-target both fade, but
+/// what animates is the *fraction*, not the colour: the endpoints are re-read
+/// from the live scheme on every frame. Animating the colours directly (what
+/// AnimatedContainer does) means chasing a target MaterialApp is already
+/// cross-fading, so a light/dark switch left the sidebar visibly trailing the
+/// rest of the app — the same reason [AppSidebar] paints its own fill.
+class _RowHighlight extends StatelessWidget {
+  final bool selected;
+  final bool dropTarget;
+  final Widget child;
+
+  const _RowHighlight({
+    required this.selected,
+    required this.dropTarget,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(kRadius);
+    return _fade(dropTarget, (drop) {
+      return _fade(selected, (sel) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: Color.lerp(
+              Color.lerp(Colors.transparent, scheme.secondaryContainer, sel),
+              scheme.primaryContainer,
+              drop,
+            ),
+            borderRadius: radius,
+            // Kept even at zero opacity: a border that appears only while
+            // dragging would inset the row and shift its contents.
+            border: Border.all(
+              color: Color.lerp(Colors.transparent, scheme.primary, drop)!,
+              width: 1.5,
+            ),
+          ),
+          child: ClipRRect(borderRadius: radius, child: child),
+        );
+      });
+    });
+  }
+
+  /// Hands [builder] an animated 0→1 stand-in for [on].
+  Widget _fade(bool on, Widget Function(double t) builder) {
+    final target = on ? 1.0 : 0.0;
+    return TweenAnimationBuilder<double>(
+      // begin == end: the fraction only ever moves because `end` changed, so
+      // a row that starts out selected doesn't fade in on first build.
+      tween: Tween<double>(begin: target, end: target),
+      duration: Motion.fast,
+      curve: Motion.standard,
+      builder: (context, t, _) => builder(t),
     );
   }
 }
