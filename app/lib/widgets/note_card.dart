@@ -232,8 +232,13 @@ class _NoteTileState extends State<NoteTile> {
         : (_hovered
               ? scheme.outlineVariant.withValues(alpha: 0.5)
               : Colors.transparent);
-    final desktopActions =
-        !widget.selectionMode && !note.trashed && !isTouchPrimaryPlatform;
+    // Two separate things: the footer slot the card always reserves (so its
+    // height never depends on hover or selection), and whether the action
+    // icons in that slot are live. Selection mode only silences the icons —
+    // reserving the slot regardless is what keeps cards from resizing when
+    // selection starts.
+    final actionsSlot = !note.trashed && !isTouchPrimaryPlatform;
+    final desktopActions = actionsSlot && !widget.selectionMode;
     // The compact control is for mouse users. Touch enters selection with a
     // long press anywhere on the card, which is much easier to hit.
     final showSelectionControl =
@@ -243,103 +248,113 @@ class _NoteTileState extends State<NoteTile> {
     // menu closes instead of making the controls vanish underneath the cursor.
     final actionsVisible = _hovered || _menuOpen;
 
+    // The selection badge straddles the card's top-left corner, so it hangs
+    // outside the card's box: it can't live in the OpenContainer's stack,
+    // which is clipped to the card shape.
+    final card = AnimatedContainer(
+      duration: Motion.fast,
+      curve: Motion.standard,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(kRadius),
+        boxShadow: [
+          // A whisper of shadow at rest lifts the card off the grey canvas;
+          // it deepens on hover for a tactile response.
+          BoxShadow(
+            color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.05),
+            blurRadius: _hovered ? 14 : 4,
+            offset: Offset(0, _hovered ? 5 : 1),
+          ),
+        ],
+      ),
+      child: OpenContainer<void>(
+        transitionDuration: Motion.slow,
+        transitionType: ContainerTransitionType.fade,
+        closedElevation: 0,
+        openElevation: 0,
+        closedColor: fill ?? scheme.surface,
+        middleColor: fill ?? scheme.surface,
+        openColor: fill ?? scheme.surface,
+        closedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadius),
+          // Painted on top of the card, never inset from it, so a selected
+          // card keeps exactly the footprint it had.
+          side: BorderSide(
+            color: widget.selected ? scheme.primary : borderColor,
+            width: widget.selected ? 2 : 1,
+          ),
+        ),
+        // Tap handling is ours: wide layouts open a centered modal
+        // instead of letting the container expand fullscreen.
+        tappable: false,
+        closedBuilder: (context, open) => InkWell(
+          borderRadius: BorderRadius.circular(kRadius),
+          onTap: () {
+            if (widget.selectionMode) {
+              widget.onSelectionChanged?.call(!widget.selected);
+              return;
+            }
+            openNoteEditor(context, openFullscreen: open, noteId: note.id);
+          },
+          onLongPress: widget.selectionMode
+              ? () => widget.onSelectionChanged?.call(!widget.selected)
+              : null,
+          // The pin overlay is the only hover-dependent piece, and it sits
+          // outside _NoteCardContent so hover flips never rebuild the card
+          // body (markdown parse, image resolve).
+          child: Stack(
+            children: [
+              _NoteCardContent(
+                note: note,
+                query: widget.query,
+                reserveActions: actionsSlot,
+                showLabelsInBody: !actionsSlot,
+              ),
+              _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
+              if (isRewriting) const _NoteRewriteProgress(),
+              if (desktopActions)
+                _NoteActions(
+                  note: note,
+                  visible: actionsVisible,
+                  rewriting: isRewriting,
+                  canDelete: context.read<NotesStore>().canTrash(note.id),
+                  onReminder: _editReminder,
+                  onShare: _share,
+                  onColor: _pickColor,
+                  onLabel: _addLabel,
+                  onImage: _addImage,
+                  onArchive: _archive,
+                  onDelete: _delete,
+                  onRewrite: _rewrite,
+                  onMenuOpened: () => setState(() => _menuOpen = true),
+                  onMenuClosed: () => setState(() => _menuOpen = false),
+                ),
+              // In selection mode the action icons are gone, so the reserved
+              // slot shows the labels for good instead of only at rest.
+              if (actionsSlot)
+                _NoteFooterLabels(
+                  note: note,
+                  visible: !(desktopActions && actionsVisible),
+                ),
+            ],
+          ),
+        ),
+        openBuilder: (context, close) => EditorScreen(noteId: note.id),
+      ),
+    );
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: AnimatedContainer(
-        duration: Motion.fast,
-        curve: Motion.standard,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(kRadius),
-          boxShadow: [
-            // A whisper of shadow at rest lifts the card off the grey canvas;
-            // it deepens on hover for a tactile response.
-            BoxShadow(
-              color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.05),
-              blurRadius: _hovered ? 14 : 4,
-              offset: Offset(0, _hovered ? 5 : 1),
-            ),
-          ],
-        ),
-        child: OpenContainer<void>(
-          transitionDuration: Motion.slow,
-          transitionType: ContainerTransitionType.fade,
-          closedElevation: 0,
-          openElevation: 0,
-          closedColor: fill ?? scheme.surface,
-          middleColor: fill ?? scheme.surface,
-          openColor: fill ?? scheme.surface,
-          closedShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(kRadius),
-            side: BorderSide(
-              color: widget.selected ? scheme.primary : borderColor,
-              width: widget.selected ? 2 : 1,
-            ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          card,
+          _SelectionButton(
+            selected: widget.selected,
+            visible: showSelectionControl,
+            onPressed: () => widget.onSelectionChanged?.call(!widget.selected),
           ),
-          // Tap handling is ours: wide layouts open a centered modal
-          // instead of letting the container expand fullscreen.
-          tappable: false,
-          closedBuilder: (context, open) => InkWell(
-            borderRadius: BorderRadius.circular(kRadius),
-            onTap: () {
-              if (widget.selectionMode) {
-                widget.onSelectionChanged?.call(!widget.selected);
-                return;
-              }
-              openNoteEditor(context, openFullscreen: open, noteId: note.id);
-            },
-            onLongPress: widget.selectionMode
-                ? () => widget.onSelectionChanged?.call(!widget.selected)
-                : null,
-            // The pin overlay is the only hover-dependent piece, and it sits
-            // outside _NoteCardContent so hover flips never rebuild the card
-            // body (markdown parse, image resolve).
-            child: Stack(
-              children: [
-                _NoteCardContent(
-                  note: note,
-                  query: widget.query,
-                  reserveActions: desktopActions,
-                  showLabelsInBody: !desktopActions,
-                ),
-                if (!widget.selectionMode)
-                  _PinButton(
-                    note: note,
-                    hovered: _hovered,
-                    hidden: isRewriting,
-                    right: showSelectionControl ? 42 : 4,
-                  ),
-                _SelectionButton(
-                  selected: widget.selected,
-                  visible: showSelectionControl,
-                  onPressed: () =>
-                      widget.onSelectionChanged?.call(!widget.selected),
-                ),
-                if (isRewriting) const _NoteRewriteProgress(),
-                if (desktopActions)
-                  _NoteActions(
-                    note: note,
-                    visible: actionsVisible,
-                    rewriting: isRewriting,
-                    canDelete: context.read<NotesStore>().canTrash(note.id),
-                    onReminder: _editReminder,
-                    onShare: _share,
-                    onColor: _pickColor,
-                    onLabel: _addLabel,
-                    onImage: _addImage,
-                    onArchive: _archive,
-                    onDelete: _delete,
-                    onRewrite: _rewrite,
-                    onMenuOpened: () => setState(() => _menuOpen = true),
-                    onMenuClosed: () => setState(() => _menuOpen = false),
-                  ),
-                if (desktopActions)
-                  _NoteFooterLabels(note: note, visible: !actionsVisible),
-              ],
-            ),
-          ),
-          openBuilder: (context, close) => EditorScreen(noteId: note.id),
-        ),
+        ],
       ),
     );
   }
@@ -661,15 +676,18 @@ class _NoteCardContent extends StatelessWidget {
 /// glance. Lives beside — not inside — [_NoteCardContent] so hover flips
 /// only touch this small overlay, never the card body.
 class _PinButton extends StatelessWidget {
+  /// Square tap target tucked into the corner. A default [IconButton] is
+  /// 48x48, which pushed the glyph far enough in to read as floating in the
+  /// middle of the card's top edge rather than sitting in its corner.
+  static const double _size = 32;
+
   final Note note;
   final bool hovered;
   final bool hidden;
-  final double right;
   const _PinButton({
     required this.note,
     required this.hovered,
     this.hidden = false,
-    this.right = 4,
   });
 
   @override
@@ -678,7 +696,9 @@ class _PinButton extends StatelessWidget {
     final show = !hidden && !note.trashed && (hovered || note.pinned);
     return Positioned(
       top: 4,
-      right: right,
+      right: 4,
+      width: _size,
+      height: _size,
       child: AnimatedOpacity(
         opacity: show ? 1 : 0,
         duration: Motion.fast,
@@ -686,6 +706,12 @@ class _PinButton extends StatelessWidget {
         child: IgnorePointer(
           ignoring: !show,
           child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(
+              width: _size,
+              height: _size,
+            ),
+            iconSize: 18,
             // A little scale-pop when the pin state flips, so the action
             // reads as tactile rather than an instant glyph swap.
             icon: AnimatedSwitcher(
@@ -697,7 +723,7 @@ class _PinButton extends StatelessWidget {
               child: Icon(
                 note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
                 key: ValueKey(note.pinned),
-                size: 20,
+                size: 18,
               ),
             ),
             color: scheme.onSurfaceVariant,
@@ -710,10 +736,23 @@ class _PinButton extends StatelessWidget {
   }
 }
 
-/// The small top-right affordance for entering or extending a selection.
-/// It shares the card's accent colour once selected and stays unobtrusive on
-/// desktop until the pointer is over the card.
+/// The badge for entering or extending a selection. It sits on top of the
+/// card's top-left corner — half over the card, half over the canvas — shares
+/// the card's accent colour once selected, and stays hidden on desktop until
+/// the pointer is over the card.
+///
+/// The tap target is the badge itself and nothing more: an oversized target
+/// around it would swallow clicks meant for the card's own corner.
 class _SelectionButton extends StatelessWidget {
+  /// Diameter of the badge, which is also the whole of its hit area.
+  static const double _size = 20;
+
+  /// How far the badge hangs past the card's corner. Enough to read as
+  /// sitting on the corner, small enough that the badge stays mostly over the
+  /// card — the sliver outside the card's box is drawn (the parent [Stack]
+  /// doesn't clip) but, like any overflow in Flutter, can't take a pointer.
+  static const double _overhang = 5;
+
   final bool selected;
   final bool visible;
   final VoidCallback onPressed;
@@ -728,10 +767,10 @@ class _SelectionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
-      top: 0,
-      left: 0,
-      width: 40,
-      height: 40,
+      top: -_overhang,
+      left: -_overhang,
+      width: _size,
+      height: _size,
       child: AnimatedOpacity(
         duration: Motion.fast,
         curve: Motion.standard,
@@ -741,45 +780,32 @@ class _SelectionButton extends StatelessWidget {
           child: Tooltip(
             message: selected ? 'Deselect note' : 'Select note',
             child: Material(
-              color: Colors.transparent,
-              shape: const CircleBorder(),
+              // Opaque: the badge overlaps the canvas as well as the card, so
+              // it has to read as one solid dot over both.
+              color: selected ? scheme.primary : scheme.surface,
+              shape: CircleBorder(
+                side: BorderSide(
+                  color: scheme.primary,
+                  width: selected ? 1.5 : 1,
+                ),
+              ),
+              elevation: 1,
+              animationDuration: Motion.fast,
               child: InkWell(
                 onTap: onPressed,
-                borderRadius: BorderRadius.circular(20),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 2),
-                    child: AnimatedContainer(
-                      duration: Motion.fast,
-                      curve: Motion.standard,
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: selected
-                            ? scheme.primary
-                            : scheme.surface.withValues(alpha: 0.92),
-                        border: Border.all(
-                          color: scheme.primary,
-                          width: selected ? 1.25 : 1,
-                        ),
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: Motion.fast,
-                        switchInCurve: Curves.easeOutBack,
-                        switchOutCurve: Curves.easeIn,
-                        child: selected
-                            ? Icon(
-                                Icons.check,
-                                key: const ValueKey('selected'),
-                                color: scheme.onPrimary,
-                                size: 11,
-                              )
-                            : const SizedBox(key: ValueKey('unselected')),
-                      ),
-                    ),
-                  ),
+                customBorder: const CircleBorder(),
+                child: AnimatedSwitcher(
+                  duration: Motion.fast,
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeIn,
+                  child: selected
+                      ? Icon(
+                          Icons.check,
+                          key: const ValueKey('selected'),
+                          color: scheme.onPrimary,
+                          size: 13,
+                        )
+                      : const SizedBox(key: ValueKey('unselected')),
                 ),
               ),
             ),
@@ -800,8 +826,9 @@ class _NoteRewriteProgress extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Positioned(
-      top: 16,
-      right: 16,
+      // Centred where the pin's glyph sits, so it stands in for it exactly.
+      top: 11,
+      right: 11,
       child: Semantics(
         label: 'AI editing note',
         child: SizedBox(

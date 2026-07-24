@@ -70,7 +70,7 @@ Web/desktop. Press **`?`** on the notes screen for the in-app cheat sheet (also 
 | `l` | Notes screen | New checklist |
 | `m` | Notes screen | New markdown note |
 | `/` or `Ctrl`/`⌘` `K` | Notes screen | Search |
-| `Esc` | Notes screen | Clear search |
+| `Esc` | Notes screen | Exit selection mode, else clear search |
 | `Ctrl`/`⌘` `G` | Notes screen | Toggle grid / list |
 | `?` | Notes screen | Shortcut help |
 | `Ctrl`/`⌘` `Z` · `Shift` + `Ctrl`/`⌘` `Z` | Editor | Undo · redo |

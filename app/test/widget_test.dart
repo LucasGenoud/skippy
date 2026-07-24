@@ -171,6 +171,97 @@ void main() {
     });
 
     testWidgets(
+      'selection mode keeps the card size and puts the badge on the corner',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Steady card',
+          content: 'Body',
+        );
+        await store.load();
+
+        Widget tile({required bool selectionMode, required bool selected}) =>
+            harness(
+              store,
+              SizedBox(
+                width: 240,
+                child: NoteTile(
+                  note: store.noteById('n1')!,
+                  selectionMode: selectionMode,
+                  selected: selected,
+                ),
+              ),
+            );
+
+        await tester.pumpWidget(tile(selectionMode: false, selected: false));
+        final atRest = tester.getRect(find.byType(NoteTile));
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pumpAndSettle();
+        // Hover alone must not move or resize the card either.
+        expect(tester.getRect(find.byType(NoteTile)), atRest);
+
+        final badge = find.byTooltip('Select note');
+        // The whole tap target is the badge: no invisible padding around it.
+        expect(tester.getSize(badge), const Size(20, 20));
+        // ...and it straddles the card's top-left corner rather than sitting
+        // inside it.
+        final badgeRect = tester.getRect(badge);
+        expect(badgeRect.left, lessThan(atRest.left));
+        expect(badgeRect.top, lessThan(atRest.top));
+        expect(badgeRect.center.dx, greaterThan(atRest.left));
+        expect(badgeRect.center.dy, greaterThan(atRest.top));
+
+        // Entering selection mode swaps the action icons for the labels, but
+        // the reserved footer stays, so the card doesn't jump or resize.
+        await tester.pumpWidget(tile(selectionMode: true, selected: false));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(find.byType(NoteTile)), atRest);
+
+        await tester.pumpWidget(tile(selectionMode: true, selected: true));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(find.byType(NoteTile)), atRest);
+        expect(find.byTooltip('Deselect note'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the pin sits in the card top-right corner',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', title: 'Pinned', pinned: true);
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+
+        final card = tester.getRect(find.byType(NoteTile));
+        final pin = tester.getRect(find.byTooltip('Unpin note'));
+        expect(pin.size, const Size(32, 32));
+        expect(card.right - pin.right, 4);
+        expect(pin.top - card.top, 4);
+
+        // Revealing the selection control must not shove the pin sideways.
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byTooltip('Select note'), findsOneWidget);
+        expect(tester.getRect(find.byTooltip('Unpin note')), pin);
+      },
+    );
+
+    testWidgets(
       'desktop hover reveals the reserved note action footer',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {
@@ -1357,6 +1448,66 @@ void main() {
       expect(store.noteById('n1')!.archived, isTrue);
       expect(store.noteById('n2')!.archived, isTrue);
       expect(find.byTooltip('Cancel selection'), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('deselecting the last note leaves selection mode', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'First note');
+      api.notes['n2'] = serverNote('n2', title: 'Second note');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('First note'));
+      await tester.pump();
+      await tester.tap(find.text('Second note'));
+      await tester.pump();
+      expect(find.text('2 selected'), findsOneWidget);
+
+      // Tapping the selected notes again empties the selection, which is what
+      // takes the screen back out of the mode — no Cancel needed.
+      await tester.tap(find.text('Second note'));
+      await tester.pump();
+      expect(find.text('1 selected'), findsOneWidget);
+      await tester.tap(find.text('First note'));
+      await tester.pump();
+      expect(find.byTooltip('Cancel selection'), findsNothing);
+      expect(find.textContaining('selected'), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('Escape leaves selection mode', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'First note');
+      api.notes['n2'] = serverNote('n2', title: 'Second note');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('First note'));
+      await tester.pump();
+      await tester.tap(find.text('Second note'));
+      await tester.pump();
+      expect(find.text('2 selected'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.byTooltip('Cancel selection'), findsNothing);
+      expect(find.textContaining('selected'), findsNothing);
+
+      // With nothing selected, Escape goes back to being the search's.
+      await tester.enterText(find.byType(TextField).first, 'First');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.text('First'), findsNothing);
       await flushTimers(tester);
     });
 

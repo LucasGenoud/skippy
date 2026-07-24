@@ -30,7 +30,7 @@ class ShortcutHelpDialog extends StatelessWidget {
           (['L'], 'New checklist'),
           (['M'], 'New markdown note'),
           (['/', '$mod K'], 'Search'),
-          (['Esc'], 'Clear search'),
+          (['Esc'], 'Exit selection / clear search'),
           (['$mod G'], 'Toggle grid / list'),
           (['?'], 'Show this help'),
         ],

@@ -177,6 +177,9 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         _selectedNoteIds.remove(id);
       }
+      // An empty selection has nothing to act on: deselecting the last note
+      // leaves the mode instead of stranding the user in an inert action bar.
+      _selectionMode = _selectedNoteIds.isNotEmpty;
     });
   }
 
@@ -188,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
       } else {
         _selectedNoteIds.addAll(ids);
       }
+      _selectionMode = _selectedNoteIds.isNotEmpty;
     });
   }
 
@@ -298,6 +302,17 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   void _focusSearch() => _searchFocus.requestFocus();
+
+  /// Escape backs out of whatever the screen is currently "in": selection
+  /// mode first (it's the more modal of the two), then the search.
+  void _escape() {
+    if (_selectionMode) {
+      _cancelSelection();
+      _pageFocus.requestFocus();
+      return;
+    }
+    _clearSearch();
+  }
 
   void _clearSearch() {
     _searchController.clear();
@@ -428,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _ToggleLayoutIntent(whileTyping: true),
         SingleActivator(LogicalKeyboardKey.keyG, meta: true):
             _ToggleLayoutIntent(whileTyping: true),
-        SingleActivator(LogicalKeyboardKey.escape): _ClearSearchIntent(
+        SingleActivator(LogicalKeyboardKey.escape): _EscapeIntent(
           whileTyping: true,
         ),
       },
@@ -440,9 +455,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _FocusSearchIntent: _HomeAction<_FocusSearchIntent>(
             onInvoke: (_) => _focusSearch(),
           ),
-          _ClearSearchIntent: _HomeAction<_ClearSearchIntent>(
-            onInvoke: (_) => _clearSearch(),
-          ),
+          _EscapeIntent: _HomeAction<_EscapeIntent>(onInvoke: (_) => _escape()),
           _ToggleLayoutIntent: _HomeAction<_ToggleLayoutIntent>(
             onInvoke: (_) => setState(() => _listMode = !_listMode),
           ),
@@ -981,8 +994,8 @@ class _FocusSearchIntent extends _HomeIntent {
   const _FocusSearchIntent({super.whileTyping});
 }
 
-class _ClearSearchIntent extends _HomeIntent {
-  const _ClearSearchIntent({super.whileTyping});
+class _EscapeIntent extends _HomeIntent {
+  const _EscapeIntent({super.whileTyping});
 }
 
 class _ToggleLayoutIntent extends _HomeIntent {
