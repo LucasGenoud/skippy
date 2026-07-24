@@ -323,7 +323,12 @@ class _EditorScreenState extends State<EditorScreen> {
     // row typing rides the same keystroke throttle as the text fields.
     _store.updateNoteContent(_noteId!, items: items, urgent: discrete);
     _afterChange(discrete: discrete);
-    setState(() {});
+    // Row typing doesn't rebuild the editor: the row's own controller already
+    // shows the character, and rebuilding here means rebuilding every other
+    // row (each a TextField) plus the attachments and bottom bar on every
+    // keystroke — the thing that makes a long checklist feel laggy. The
+    // store's throttled notify refreshes us within 200ms instead.
+    if (discrete) setState(() {});
   }
 
   String _addItem(String text) {

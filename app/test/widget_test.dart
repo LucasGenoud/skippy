@@ -957,6 +957,66 @@ void main() {
       },
     );
 
+    testWidgets('typing and hovering rebuild only what changed', (
+      tester,
+    ) async {
+      // A keystroke used to setState both the checklist and the editor, and a
+      // hover setState the checklist — so every row (each a TextField with its
+      // own gesture, focus and ink machinery) was rebuilt. On a 30-item list
+      // that was ~2700 widgets per character, which is what made writing one
+      // feel laggy. Only the field being typed in, the suggestion popup, and
+      // the hover wrappers should rebuild now.
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [
+          for (var i = 0; i < 30; i++)
+            ChecklistItem(id: 'i$i', text: 'item $i'),
+        ],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+
+      Future<int> rebuildsDuring(Future<void> Function() action) async {
+        var count = 0;
+        final printer = debugPrint;
+        debugPrint = (String? message, {int? wrapWidth}) => count++;
+        debugPrintRebuildDirtyWidgets = true;
+        await action();
+        debugPrintRebuildDirtyWidgets = false;
+        debugPrint = printer;
+        return count;
+      }
+
+      final row = find.widgetWithText(TextField, 'item 0');
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      final typing = await rebuildsDuring(() async {
+        await tester.enterText(row, 'item 0!');
+        await tester.pump();
+      });
+      expect(store.noteById('n1')!.items.first.text, 'item 0!');
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      final hovering = await rebuildsDuring(() async {
+        for (var i = 1; i < 6; i++) {
+          await mouse.moveTo(tester.getCenter(find.byType(TextField).at(i)));
+          await tester.pump();
+        }
+      });
+
+      // Measured at ~40 and ~660; the bounds are loose enough to absorb
+      // Flutter's own internals shifting, tight enough that reintroducing a
+      // list-wide setState (thousands) fails.
+      expect(typing, lessThan(300));
+      expect(hovering, lessThan(2000));
+      await flushTimers(tester);
+    });
+
     testWidgets(
       'checklist row keeps its first character across the focus handoff',
       (tester) async {

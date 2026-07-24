@@ -71,6 +71,12 @@ class _RowHandles {
   /// mere focus (except for the new-item row).
   bool typedSinceFocus = false;
 
+  /// Text this row has pushed up but not yet seen echoed back in
+  /// [AnimatedChecklist.items]. Typing in a row deliberately doesn't rebuild
+  /// the editor, so the list can lag a keystroke or two behind; until it
+  /// catches up, its older value must not overwrite what's in the field.
+  String? unacknowledged;
+
   _RowHandles(String text, {bool createdFromAddField = false})
     : controller = TextEditingController(text: text),
       focusNode = FocusNode(),
@@ -105,10 +111,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   // controller so wheel/trackpad input scrolls suggestions, never the note.
   final ScrollController _suggestionsScrollController = ScrollController();
 
+  /// Bumped whenever the popup's inputs change (the focused row's text, or
+  /// which row is focused). The popup listens to this instead of riding a
+  /// `setState`, so a keystroke rebuilds one overlay — not thirty rows, each
+  /// a TextField with its own gesture, focus and ink machinery.
+  final ValueNotifier<int> _popupRevision = ValueNotifier(0);
+
   List<String> _uncheckedOrder = [];
   String? _draggingId;
-  String? _hoveredId;
   String? _pendingFocusId;
+
+  /// Which row the pointer is over. A notifier, not plain state, for the same
+  /// reason as [_popupRevision]: see the note in `_itemRow`.
+  final ValueNotifier<String?> _hovered = ValueNotifier(null);
 
   /// A row just materialized by typing in the add field: it keeps its "typed"
   /// state when focus lands so its suggestion popup shows without a keystroke.
@@ -145,6 +160,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     }
     _newRow.dispose();
     _suggestionsScrollController.dispose();
+    _popupRevision.dispose();
+    _hovered.dispose();
     super.dispose();
   }
 
@@ -235,8 +252,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       }
       return KeyEventResult.ignored;
     };
-    // Reflect external (collaborator/undo) edits without fighting the caret.
-    if (!handles.focusNode.hasFocus && handles.controller.text != item.text) {
+    // Reflect external (collaborator/undo) edits without fighting the caret —
+    // or our own not-yet-echoed keystrokes.
+    if (handles.unacknowledged == item.text) handles.unacknowledged = null;
+    if (handles.unacknowledged == null &&
+        !handles.focusNode.hasFocus &&
+        handles.controller.text != item.text) {
       handles.controller.text = item.text;
     }
     return handles;
@@ -426,6 +447,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             offset: original.length,
           );
           handles.typedSinceFocus = false;
+          handles.unacknowledged = null;
         }
       }
       setState(() {});
@@ -444,13 +466,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           offset: text.length,
         );
         handles.typedSinceFocus = false;
+        handles.unacknowledged = text;
       }
       widget.onItemTextChanged(rowId, text);
     }
     setState(() {});
   }
 
-  Widget _buildPopup(BuildContext context) {
+  Widget _buildPopup(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: _popupRevision,
+    builder: (context, _, _) => _popupBody(context),
+  );
+
+  Widget _popupBody(BuildContext context) {
     final target = _popupTarget();
     if (target == null) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
@@ -552,70 +580,68 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final query = widget.highlightQuery.trim().toLowerCase();
     final matches = query.isNotEmpty && item.text.toLowerCase().contains(query);
     final focused = handles.focusNode.hasFocus;
-    final hovered = _hoveredId == item.id;
     // Touch has no hover: keep affordances visible. Desktop reveals them on
     // hover/focus, keeping the list visually calm.
-    final showControls =
+    bool showsControls(bool hovered) =>
         !widget.readOnly &&
         (isTouchPrimaryPlatform || hovered || focused || dragging);
 
+    // Hover changes twice per row the pointer crosses. Routing it through a
+    // notifier keeps that from rebuilding every row in the list — only these
+    // three wrappers rebuild, and the subtrees they wrap (the drag gesture,
+    // the remove button, the field) are passed straight through.
+    Widget onHover(
+      Widget child,
+      Widget Function(bool hovered, Widget child) build,
+    ) => ValueListenableBuilder<String?>(
+      valueListenable: _hovered,
+      child: child,
+      builder: (context, hoveredId, child) =>
+          build(hoveredId == item.id, child!),
+    );
+
     final row = MouseRegion(
-      onEnter: (_) => setState(() => _hoveredId = item.id),
-      onExit: (_) => setState(() {
-        if (_hoveredId == item.id) _hoveredId = null;
-      }),
-      child: Container(
-        decoration: BoxDecoration(
-          color: dragging
-              ? scheme.surfaceContainerHigh
-              : matches
-              ? scheme.tertiaryContainer.withValues(alpha: 0.55)
-              : hovered && !widget.readOnly
-              ? scheme.onSurface.withValues(alpha: 0.04)
-              : null,
-          borderRadius: BorderRadius.circular(kRadius),
-          boxShadow: [
-            if (dragging)
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-          ],
-        ),
+      onEnter: (_) => _hovered.value = item.id,
+      onExit: (_) {
+        if (_hovered.value == item.id) _hovered.value = null;
+      },
+      child: onHover(
         // Every row keeps the exact same height and widget shape whether
         // hovered or not: controls fade in with Opacity instead of being
         // added to the tree, so hovering never shifts the layout.
-        child: SizedBox(
+        SizedBox(
           height: _rowHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Opacity(
-                opacity: !item.done && showControls ? 1 : 0,
-                child: IgnorePointer(
-                  ignoring: item.done || widget.readOnly,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.grab,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragStart: (_) {
-                        final layout = _layout();
-                        _dragStart(item.id, layout.tops[item.id] ?? 0);
-                      },
-                      onVerticalDragUpdate: (details) =>
-                          _dragUpdate(details.delta.dy),
-                      onVerticalDragEnd: (_) => _dragEnd(),
-                      onVerticalDragCancel: _dragEnd,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Icon(
-                          Icons.drag_indicator,
-                          size: 20,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                        ),
+              onHover(
+                MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragStart: (_) {
+                      final layout = _layout();
+                      _dragStart(item.id, layout.tops[item.id] ?? 0);
+                    },
+                    onVerticalDragUpdate: (details) =>
+                        _dragUpdate(details.delta.dy),
+                    onVerticalDragEnd: (_) => _dragEnd(),
+                    onVerticalDragCancel: _dragEnd,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Icon(
+                        Icons.drag_indicator,
+                        size: 20,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
                       ),
                     ),
+                  ),
+                ),
+                (hovered, child) => Opacity(
+                  opacity: !item.done && showsControls(hovered) ? 1 : 0,
+                  child: IgnorePointer(
+                    ignoring: item.done || widget.readOnly,
+                    child: child,
                   ),
                 ),
               ),
@@ -668,8 +694,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                         );
                       }
                       handles.typedSinceFocus = true;
+                      handles.unacknowledged = effectiveText;
                       widget.onItemTextChanged(item.id, effectiveText);
-                      setState(() {});
+                      // Only the suggestion popup depends on what was typed;
+                      // the row itself is already showing it.
+                      _popupRevision.value++;
                     },
                     onSubmitted: (_) {
                       // Enter continues the list: new row right below this
@@ -684,25 +713,49 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   ),
                 ),
               ),
-              Opacity(
-                opacity: showControls ? 1 : 0,
-                child: IgnorePointer(
-                  ignoring: !showControls,
-                  child: IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    color: scheme.onSurfaceVariant,
-                    tooltip: 'Remove item',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 40,
-                      height: 40,
-                    ),
-                    onPressed: () => widget.onRemove(item.id),
+              onHover(
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  color: scheme.onSurfaceVariant,
+                  tooltip: 'Remove item',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
                   ),
+                  onPressed: () => widget.onRemove(item.id),
                 ),
+                (hovered, child) {
+                  final show = showsControls(hovered);
+                  return Opacity(
+                    opacity: show ? 1 : 0,
+                    child: IgnorePointer(ignoring: !show, child: child),
+                  );
+                },
               ),
             ],
           ),
+        ),
+        (hovered, child) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: dragging
+                ? scheme.surfaceContainerHigh
+                : matches
+                ? scheme.tertiaryContainer.withValues(alpha: 0.55)
+                : hovered && !widget.readOnly
+                ? scheme.onSurface.withValues(alpha: 0.04)
+                : null,
+            borderRadius: BorderRadius.circular(kRadius),
+            boxShadow: [
+              if (dragging)
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+            ],
+          ),
+          child: child,
         ),
       ),
     );
@@ -735,7 +788,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                 ),
                 onChanged: (text) {
                   if (text.trim().isEmpty) {
-                    setState(() {});
+                    _popupRevision.value++;
                     return;
                   }
                   // Focus hasn't finished moving to the row we just spawned and
@@ -744,8 +797,29 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   // keystroke. Without this, fast typing produces one item per
                   // character.
                   final adopting = _adoptingId;
-                  if (adopting != null && _itemById(adopting) != null) {
-                    final merged = (_itemById(adopting)?.text ?? '') + text;
+                  final row = adopting == null ? null : _itemById(adopting);
+                  if (adopting != null && row != null) {
+                    // Merge onto the row's *controller*, not onto its item
+                    // text: row typing doesn't rebuild the editor, so
+                    // widget.items can lag a keystroke or two behind and
+                    // merging onto that stale value would drop everything in
+                    // between. Push the result back into the controller so
+                    // the row shows it and the next leaked key appends to it.
+                    final handles = _handles[adopting];
+                    final merged =
+                        (handles?.controller.text ?? row.text) + text;
+                    if (handles != null) {
+                      handles.controller.value = TextEditingValue(
+                        text: merged,
+                        selection: TextSelection.collapsed(
+                          offset: merged.length,
+                        ),
+                      );
+                      if (handles.handoffPrefix != null) {
+                        handles.handoffPrefix = merged;
+                      }
+                      handles.unacknowledged = merged;
+                    }
                     widget.onItemTextChanged(adopting, merged);
                     _newRow.controller.clear();
                     _pendingFocusId = adopting;
