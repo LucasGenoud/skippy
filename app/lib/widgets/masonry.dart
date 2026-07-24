@@ -29,6 +29,10 @@ class AnimatedMasonry extends StatefulWidget {
   final bool dragEnabled;
   final ValueChanged<List<String>>? onReorder;
 
+  /// Touch long presses that end without movement select this note; moving
+  /// after the hold keeps the existing reorder behavior.
+  final ValueChanged<String>? onStationaryLongPress;
+
   /// The page-level scroll controller, used for edge auto-scroll while
   /// dragging.
   final ScrollController? scrollController;
@@ -41,6 +45,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.spacing = 8,
     this.dragEnabled = true,
     this.onReorder,
+    this.onStationaryLongPress,
     this.scrollController,
   });
 
@@ -74,6 +79,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   /// against committing order changes that came from elsewhere (e.g. a
   /// collaborator's update merged mid-drag).
   bool _dragChangedOrder = false;
+  bool _dragMoved = false;
   bool _ready = false;
 
   // Skip the glide animation for one frame after geometry changes (initial
@@ -168,6 +174,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   void _onDragStarted(String id) {
     HapticFeedback.mediumImpact();
     _dragChangedOrder = false;
+    _dragMoved = false;
     setState(() => _draggingId = id);
   }
 
@@ -221,16 +228,21 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     HapticFeedback.selectionClick();
   }
 
-  void _onDragEnd() {
+  void _onDragEnd({bool selectWhenStationary = false}) {
     _stopAutoScroll();
     _lastGlobalDragPoint = null;
-    if (_draggingId == null) return;
+    final draggingId = _draggingId;
+    if (draggingId == null) return;
+    final stationary = !_dragMoved;
     setState(() => _draggingId = null);
     final original = [for (final n in widget.notes) n.id];
     if (_dragChangedOrder && !listEquals(original, _orderIds)) {
       widget.onReorder?.call(List<String>.from(_orderIds));
     }
     _dragChangedOrder = false;
+    if (selectWhenStationary && stationary) {
+      widget.onStationaryLongPress?.call(draggingId);
+    }
   }
 
   // -------------------------------------------------------------------
@@ -315,15 +327,18 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     final ghost = Opacity(opacity: 0.30, child: child);
 
     // Mouse users get instant grab-and-drag (desktop scrolls with the wheel,
-    // so nothing competes for the gesture). Touch keeps a short hold so
-    // scrolling still wins the arena.
+    // so nothing competes for the gesture). On touch, moving after the hold
+    // reorders while releasing in place selects the card.
     if (!isTouchPrimaryPlatform) {
       return Draggable<String>(
         data: note.id,
         feedback: feedback,
         childWhenDragging: ghost,
         onDragStarted: () => _onDragStarted(note.id),
-        onDragUpdate: (details) => _onDragMove(details.globalPosition),
+        onDragUpdate: (details) {
+          _dragMoved = true;
+          _onDragMove(details.globalPosition);
+        },
         onDraggableCanceled: (velocity, offset) => _onDragEnd(),
         onDragEnd: (_) => _onDragEnd(),
         maxSimultaneousDrags: 1,
@@ -336,9 +351,13 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
       feedback: feedback,
       childWhenDragging: ghost,
       onDragStarted: () => _onDragStarted(note.id),
-      onDragUpdate: (details) => _onDragMove(details.globalPosition),
-      onDraggableCanceled: (velocity, offset) => _onDragEnd(),
-      onDragEnd: (_) => _onDragEnd(),
+      onDragUpdate: (details) {
+        if (details.delta != Offset.zero) _dragMoved = true;
+        if (_dragMoved) _onDragMove(details.globalPosition);
+      },
+      onDraggableCanceled: (velocity, offset) =>
+          _onDragEnd(selectWhenStationary: true),
+      onDragEnd: (_) => _onDragEnd(selectWhenStationary: true),
       maxSimultaneousDrags: 1,
       child: child,
     );

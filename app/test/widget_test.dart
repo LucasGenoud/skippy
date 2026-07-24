@@ -440,6 +440,61 @@ void main() {
         expect(reported!.toSet(), {'a', 'b', 'c', 'd'});
       },
     );
+
+    testWidgets('touch long-press selects in place but movement reorders', (
+      tester,
+    ) async {
+      final notes = [
+        serverNote('a', title: 'AAA', position: 1),
+        serverNote('b', title: 'BBB', position: 2),
+        serverNote('c', title: 'CCC', position: 3),
+        serverNote('d', title: 'DDD', position: 4),
+      ];
+      List<String>? reported;
+      String? selected;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: AnimatedMasonry(
+                notes: notes,
+                columns: 2,
+                onReorder: (ids) => reported = ids,
+                onStationaryLongPress: (id) => selected = id,
+                itemBuilder: (context, note) => SizedBox(
+                  height: 80,
+                  child: Card(child: Center(child: Text(note.title))),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final stationary = await tester.startGesture(
+        tester.getCenter(find.text('AAA')),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await stationary.up();
+      await tester.pumpAndSettle();
+      expect(selected, 'a');
+      expect(reported, isNull);
+
+      final drag = await tester.startGesture(
+        tester.getCenter(find.text('BBB')),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await drag.moveTo(
+        tester.getCenter(find.text('DDD')),
+        timeStamp: const Duration(milliseconds: 400),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(reported, isNotNull);
+      expect(reported!.toSet(), {'a', 'b', 'c', 'd'});
+    });
   });
 
   group('QuickAddBar', () {

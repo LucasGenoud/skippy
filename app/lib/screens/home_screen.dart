@@ -12,7 +12,6 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
-import '../util/platform.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/color_picker.dart';
@@ -401,7 +400,6 @@ class _HomeScreenState extends State<HomeScreen> {
         semanticActive && _semanticBusy && _semanticIds == null;
     final dragEnabled =
         !_selectionMode &&
-        !isTouchPrimaryPlatform &&
         !searching &&
         store.sortMode == SortMode.custom &&
         (_selection.view == NoteView.notes ||
@@ -851,6 +849,8 @@ class _HomeScreenState extends State<HomeScreen> {
               dragEnabled: dragEnabled,
               scrollController: _scrollController,
               onReorder: store.reorder,
+              onStationaryLongPress: (id) =>
+                  _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
               itemBuilder: (context, note) => NoteTile(
                 key: ValueKey(note.id),
                 note: note,

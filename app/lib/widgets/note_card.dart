@@ -288,7 +288,7 @@ class _NoteTileState extends State<NoteTile> {
               }
               openNoteEditor(context, openFullscreen: open, noteId: note.id);
             },
-            onLongPress: (isTouchPrimaryPlatform || widget.selectionMode)
+            onLongPress: widget.selectionMode
                 ? () => widget.onSelectionChanged?.call(!widget.selected)
                 : null,
             // The pin overlay is the only hover-dependent piece, and it sits
