@@ -37,6 +37,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _query = '';
   late bool _listMode = context.read<SettingsStore>().defaultListMode;
   bool _isSidebarOpen = true;
+  final Set<String> _selectedNoteIds = {};
+  bool _selectionMode = false;
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   final _scrollController = ScrollController();
@@ -154,7 +156,96 @@ class _HomeScreenState extends State<HomeScreen> {
       _selection = selection;
       _query = '';
       _searchController.clear();
+      _selectionMode = false;
+      _selectedNoteIds.clear();
     });
+  }
+
+  void _startSelection() => setState(() => _selectionMode = true);
+
+  void _cancelSelection() => setState(() {
+    _selectionMode = false;
+    _selectedNoteIds.clear();
+  });
+
+  void _toggleNoteSelection(String id, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedNoteIds.add(id);
+      } else {
+        _selectedNoteIds.remove(id);
+      }
+    });
+  }
+
+  void _toggleSelectAll(Iterable<Note> visibleNotes) {
+    final ids = {for (final note in visibleNotes) note.id};
+    setState(() {
+      if (ids.isNotEmpty && ids.every(_selectedNoteIds.contains)) {
+        _selectedNoteIds.removeAll(ids);
+      } else {
+        _selectedNoteIds.addAll(ids);
+      }
+    });
+  }
+
+  List<Note> _selectedNotes(NotesStore store) => [
+    for (final id in _selectedNoteIds)
+      if (store.noteById(id) case final Note note) note,
+  ];
+
+  void _setArchivedForSelected(NotesStore store, bool archived) {
+    final notes = _selectedNotes(
+      store,
+    ).where((note) => note.archived != archived).toList();
+    for (final note in notes) {
+      store.setArchived(note.id, archived);
+    }
+    _cancelSelection();
+    if (notes.isNotEmpty) {
+      showAppSnack(
+        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} ${archived ? 'archived' : 'unarchived'}',
+        icon: archived ? Icons.archive_outlined : Icons.unarchive_outlined,
+      );
+    }
+  }
+
+  void _restoreSelected(NotesStore store) {
+    final notes = _selectedNotes(store).where((note) => note.trashed).toList();
+    for (final note in notes) {
+      store.restoreFromTrash(note.id);
+    }
+    _cancelSelection();
+    if (notes.isNotEmpty) {
+      showAppSnack(
+        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} restored',
+        icon: Icons.restore_outlined,
+      );
+    }
+  }
+
+  void _trashSelected(NotesStore store) {
+    final notes = _selectedNotes(
+      store,
+    ).where((note) => store.canTrash(note.id)).toList();
+    final skipped = _selectedNoteIds.length - notes.length;
+    for (final note in notes) {
+      store.moveToTrash(note.id);
+    }
+    _cancelSelection();
+    if (notes.isNotEmpty) {
+      showAppSnack(
+        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} moved to Trash${skipped > 0 ? '; shared notes were skipped' : ''}',
+        icon: Icons.delete_outline,
+        kind: SnackKind.danger,
+      );
+    } else if (skipped > 0) {
+      showAppSnack(
+        'Only note owners can move notes to Trash',
+        icon: Icons.error_outline,
+        kind: SnackKind.warning,
+      );
+    }
   }
 
   // Keyboard shortcut callbacks. The bindings live in build();
@@ -261,6 +352,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (!note.trashed && !note.archived) note,
           ])
         : store.notesFor(_selection, _query);
+    final visibleNotes = [...sections.pinned, ...sections.others];
     // Loading indicator in the results area while the first semantic search
     // is in flight (no ranked results to show yet). On a refine the previous
     // results stay put and only the in-bar spinner signals the fetch, so the
@@ -268,6 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final semanticLoading =
         semanticActive && _semanticBusy && _semanticIds == null;
     final dragEnabled =
+        !_selectionMode &&
         !searching &&
         store.sortMode == SortMode.custom &&
         (_selection.view == NoteView.notes ||
@@ -356,6 +449,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             onToggleLayout: () =>
                                 setState(() => _listMode = !_listMode),
                             onToggleSidebar: _toggleSidebar,
+                            selectionMode: _selectionMode,
+                            selectedCount: _selectedNoteIds.length,
+                            allSelected:
+                                visibleNotes.isNotEmpty &&
+                                visibleNotes.every(
+                                  (note) => _selectedNoteIds.contains(note.id),
+                                ),
+                            canArchive: _selection.view != NoteView.trash,
+                            archiveSelected:
+                                _selection.view != NoteView.archive,
+                            canRestore: _selection.view == NoteView.trash,
+                            canTrash: _selection.view != NoteView.trash,
+                            onStartSelection: _startSelection,
+                            onCancelSelection: _cancelSelection,
+                            onToggleSelectAll: () =>
+                                _toggleSelectAll(visibleNotes),
+                            onArchiveSelected: () => _setArchivedForSelected(
+                              store,
+                              _selection.view != NoteView.archive,
+                            ),
+                            onRestoreSelected: () => _restoreSelected(store),
+                            onTrashSelected: () => _trashSelected(store),
                           ),
                         ),
                       ),
@@ -682,8 +797,15 @@ class _HomeScreenState extends State<HomeScreen> {
               dragEnabled: dragEnabled,
               scrollController: _scrollController,
               onReorder: store.reorder,
-              itemBuilder: (context, note) =>
-                  NoteTile(key: ValueKey(note.id), note: note, query: query),
+              itemBuilder: (context, note) => NoteTile(
+                key: ValueKey(note.id),
+                note: note,
+                query: query,
+                selectionMode: _selectionMode,
+                selected: _selectedNoteIds.contains(note.id),
+                onSelectionChanged: (selected) =>
+                    _toggleNoteSelection(note.id, selected),
+              ),
             ),
           ),
         ),

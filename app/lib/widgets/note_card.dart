@@ -33,7 +33,18 @@ class NoteTile extends StatefulWidget {
   /// The active search query, used to highlight matches. Empty when not
   /// searching.
   final String query;
-  const NoteTile({super.key, required this.note, this.query = ''});
+  final bool selectionMode;
+  final bool selected;
+  final ValueChanged<bool>? onSelectionChanged;
+
+  const NoteTile({
+    super.key,
+    required this.note,
+    this.query = '',
+    this.selectionMode = false,
+    this.selected = false,
+    this.onSelectionChanged,
+  });
 
   @override
   State<NoteTile> createState() => _NoteTileState();
@@ -221,7 +232,8 @@ class _NoteTileState extends State<NoteTile> {
         : (_hovered
               ? scheme.outlineVariant.withValues(alpha: 0.5)
               : Colors.transparent);
-    final desktopActions = !note.trashed && !isTouchPrimaryPlatform;
+    final desktopActions =
+        !widget.selectionMode && !note.trashed && !isTouchPrimaryPlatform;
     // The popup lives in an overlay, so a pointer travelling from the card to
     // its menu triggers MouseRegion.onExit. Keep the footer visible until that
     // menu closes instead of making the controls vanish underneath the cursor.
@@ -235,6 +247,9 @@ class _NoteTileState extends State<NoteTile> {
         curve: Motion.standard,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(kRadius),
+          border: widget.selected
+              ? Border.all(color: scheme.primary, width: 2)
+              : null,
           boxShadow: [
             // A whisper of shadow at rest lifts the card off the grey canvas;
             // it deepens on hover for a tactile response.
@@ -262,8 +277,13 @@ class _NoteTileState extends State<NoteTile> {
           tappable: false,
           closedBuilder: (context, open) => InkWell(
             borderRadius: BorderRadius.circular(kRadius),
-            onTap: () =>
-                openNoteEditor(context, openFullscreen: open, noteId: note.id),
+            onTap: () {
+              if (widget.selectionMode) {
+                widget.onSelectionChanged?.call(!widget.selected);
+                return;
+              }
+              openNoteEditor(context, openFullscreen: open, noteId: note.id);
+            },
             // The pin overlay is the only hover-dependent piece, and it sits
             // outside _NoteCardContent so hover flips never rebuild the card
             // body (markdown parse, image resolve).
@@ -275,7 +295,43 @@ class _NoteTileState extends State<NoteTile> {
                   reserveActions: desktopActions,
                   showLabelsInBody: !desktopActions,
                 ),
-                _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
+                if (!widget.selectionMode)
+                  _PinButton(
+                    note: note,
+                    hovered: _hovered,
+                    hidden: isRewriting,
+                  ),
+                if (widget.selectionMode)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: IgnorePointer(
+                      child: AnimatedContainer(
+                        duration: Motion.fast,
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: widget.selected
+                              ? scheme.primary
+                              : scheme.surface.withValues(alpha: 0.92),
+                          border: Border.all(
+                            color: widget.selected
+                                ? scheme.primary
+                                : scheme.outline,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: widget.selected
+                            ? Icon(
+                                Icons.check,
+                                color: scheme.onPrimary,
+                                size: 18,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
                 if (isRewriting) const _NoteRewriteProgress(),
                 if (desktopActions)
                   _NoteActions(

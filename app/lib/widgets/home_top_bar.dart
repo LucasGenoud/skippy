@@ -33,6 +33,19 @@ class HomeTopBar extends StatelessWidget {
   final VoidCallback onToggleSemantic;
   final VoidCallback onToggleLayout;
   final VoidCallback onToggleSidebar;
+  final bool selectionMode;
+  final int selectedCount;
+  final bool allSelected;
+  final bool canArchive;
+  final bool archiveSelected;
+  final bool canRestore;
+  final bool canTrash;
+  final VoidCallback onStartSelection;
+  final VoidCallback onCancelSelection;
+  final VoidCallback onToggleSelectAll;
+  final VoidCallback onArchiveSelected;
+  final VoidCallback onRestoreSelected;
+  final VoidCallback onTrashSelected;
 
   const HomeTopBar({
     super.key,
@@ -46,11 +59,25 @@ class HomeTopBar extends StatelessWidget {
     required this.onToggleSemantic,
     required this.onToggleLayout,
     required this.onToggleSidebar,
+    required this.selectionMode,
+    required this.selectedCount,
+    required this.allSelected,
+    required this.canArchive,
+    required this.archiveSelected,
+    required this.canRestore,
+    required this.canTrash,
+    required this.onStartSelection,
+    required this.onCancelSelection,
+    required this.onToggleSelectAll,
+    required this.onArchiveSelected,
+    required this.onRestoreSelected,
+    required this.onTrashSelected,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (selectionMode) return _selectionBar(context, scheme);
     final settings = context.watch<SettingsStore>();
     final themeAction = _currentThemeAction(settings.themeMode);
     final isNarrow = MediaQuery.sizeOf(context).width < 650;
@@ -152,6 +179,11 @@ class HomeTopBar extends StatelessWidget {
                 ),
               const _RefreshButton(),
               const _SortButton(),
+              IconButton(
+                icon: const Icon(Icons.select_all_outlined),
+                tooltip: 'Select notes',
+                onPressed: onStartSelection,
+              ),
               IconButton(
                 icon: Icon(
                   listMode
@@ -310,6 +342,11 @@ class HomeTopBar extends StatelessWidget {
                         tooltip: listMode ? 'Grid view' : 'List view',
                         onPressed: onToggleLayout,
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.select_all_outlined),
+                        tooltip: 'Select notes',
+                        onPressed: onStartSelection,
+                      ),
                       const _UserAvatarMenu(),
                       const SizedBox(width: 6),
                     ],
@@ -321,6 +358,60 @@ class HomeTopBar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _selectionBar(BuildContext context, ColorScheme scheme) {
+    final selectionLabel = selectedCount == 0
+        ? 'Select notes'
+        : '$selectedCount selected';
+    final controls = <Widget>[
+      IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Cancel selection',
+        onPressed: onCancelSelection,
+      ),
+      Expanded(
+        child: Text(
+          selectionLabel,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ),
+      IconButton(
+        icon: Icon(allSelected ? Icons.deselect_outlined : Icons.select_all),
+        tooltip: allSelected ? 'Deselect all' : 'Select all',
+        onPressed: onToggleSelectAll,
+      ),
+      if (canArchive)
+        IconButton(
+          icon: Icon(
+            archiveSelected ? Icons.archive_outlined : Icons.unarchive_outlined,
+          ),
+          tooltip: archiveSelected
+              ? 'Archive selected notes'
+              : 'Unarchive selected notes',
+          onPressed: selectedCount == 0 ? null : onArchiveSelected,
+        ),
+      if (canRestore)
+        IconButton(
+          icon: const Icon(Icons.restore_outlined),
+          tooltip: 'Restore selected notes',
+          onPressed: selectedCount == 0 ? null : onRestoreSelected,
+        ),
+      if (canTrash)
+        IconButton(
+          icon: Icon(Icons.delete_outline, color: scheme.error),
+          tooltip: 'Move selected notes to Trash',
+          onPressed: selectedCount == 0 ? null : onTrashSelected,
+        ),
+    ];
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      color: scheme.surface,
+      child: Row(children: controls),
     );
   }
 }

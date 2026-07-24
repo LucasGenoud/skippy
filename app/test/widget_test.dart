@@ -1241,6 +1241,36 @@ void main() {
   });
 
   group('home screen layout', () {
+    testWidgets('selects multiple masonry notes and archives them together', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'First note');
+      api.notes['n2'] = serverNote('n2', title: 'Second note');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Select notes'));
+      await tester.pump();
+      expect(find.text('Select notes'), findsOneWidget);
+      expect(find.byTooltip('Archive selected notes'), findsOneWidget);
+
+      await tester.tap(find.text('First note'));
+      await tester.tap(find.text('Second note'));
+      await tester.pump();
+      expect(find.text('2 selected'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Archive selected notes'));
+      await tester.pump();
+      expect(store.noteById('n1')!.archived, isTrue);
+      expect(store.noteById('n2')!.archived, isTrue);
+      expect(find.byTooltip('Cancel selection'), findsNothing);
+      await flushTimers(tester);
+    });
+
     testWidgets('sort control uses the themed top-bar icon color', (
       tester,
     ) async {
