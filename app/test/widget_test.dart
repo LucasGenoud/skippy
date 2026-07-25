@@ -1194,6 +1194,95 @@ void main() {
     );
 
     testWidgets(
+      'an empty row goes away on backspace even when the keypress never '
+      'arrives as a key event',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [
+            const ChecklistItem(id: 'a', text: 'Milk'),
+            const ChecklistItem(id: 'b', text: ''),
+          ],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final rows = find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(TextField),
+        );
+        await tester.tap(rows.at(1)); // the empty row
+        await tester.pump();
+
+        // Soft keyboards (and the browser's text input) report nothing at all
+        // when backspace lands in a field that is already empty, so a focused
+        // empty row holds a zero-width space for the keypress to delete —
+        // which reaches us as an ordinary edit down to the empty string.
+        final focused = tester
+            .widgetList<EditableText>(find.byType(EditableText))
+            .singleWhere((field) => field.focusNode.hasFocus);
+        expect(focused.controller.text, '\u200b');
+        tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.items.map((i) => i.text), ['Milk']);
+        final milk = tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(TextField, 'Milk'),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(milk.focusNode.hasFocus, isTrue);
+        expect(milk.controller.selection.baseOffset, 4);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
+      'the marker never reaches the note: typing in an empty row stores '
+      'exactly what was typed',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [const ChecklistItem(id: 'a', text: '')],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final row = find
+            .descendant(
+              of: find.byType(AnimatedChecklist),
+              matching: find.byType(TextField),
+            )
+            .first;
+        await tester.tap(row);
+        await tester.pump();
+
+        // A real keyboard appends to what the field already holds — marker
+        // included. It has to come back off before the text goes anywhere.
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: '\u200bEggs',
+            selection: TextSelection.collapsed(offset: 5),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(store.noteById('n1')!.items.single.text, 'Eggs');
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
       'checking an item moves it to the checked section, still visible',
       (tester) async {
         api.notes['n1'] = serverNote(

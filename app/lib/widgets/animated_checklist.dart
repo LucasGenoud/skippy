@@ -77,6 +77,10 @@ class _RowHandles {
   /// catches up, its older value must not overwrite what's in the field.
   String? unacknowledged;
 
+  /// What the user has actually written in this row: the field's text minus
+  /// the empty-row marker (see [_kEmptyRowMarker]).
+  String get text => _withoutMarker(controller.text);
+
   _RowHandles(String text, {bool createdFromAddField = false})
     : controller = TextEditingController(text: text),
       focusNode = FocusNode(),
@@ -94,6 +98,18 @@ class _RowHandles {
 
 const _kNewRowId = '__new__';
 const _kHeaderId = '__header__';
+
+/// Parked in an empty row while it holds focus, so backspace has something to
+/// delete. A field that is already empty absorbs the keypress silently on soft
+/// keyboards and in the browser's text input — nothing is deleted, so nothing
+/// is reported, and the row never learns it was asked to go away. With the
+/// marker in place the same keypress arrives as an ordinary edit (the text
+/// goes from the marker to nothing), which is the signal to remove the row.
+/// It is a zero-width space, so it never shows, and [_withoutMarker] keeps it
+/// from ever reaching the note.
+const _kEmptyRowMarker = '\u200b';
+
+String _withoutMarker(String text) => text.replaceAll(_kEmptyRowMarker, '');
 
 class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// Every item row (and the new-item row) is exactly this tall, so the list
@@ -217,13 +233,27 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         item.text,
         createdFromAddField: item.id == _typeCreatedId,
       );
+      h.controller.addListener(() {
+        // The marker is zero-width, so a tap at the very start of an empty row
+        // can drop the caret in front of it, where backspace would again have
+        // nothing to delete. Keep the caret on its far side.
+        if (h.controller.text != _kEmptyRowMarker) return;
+        final selection = h.controller.selection;
+        if (selection.isCollapsed && selection.baseOffset == 0) {
+          h.controller.selection = const TextSelection.collapsed(
+            offset: _kEmptyRowMarker.length,
+          );
+        }
+      });
       h.focusNode.addListener(() {
         if (h.focusNode.hasFocus) {
+          _armEmptyMarker(h);
           h.typedSinceFocus = item.id == _typeCreatedId;
           if (item.id == _typeCreatedId) _typeCreatedId = null;
           // Handoff from the add field landed: stop re-routing keystrokes.
           if (item.id == _adoptingId) _adoptingId = null;
         } else {
+          _clearEmptyMarker(h);
           // Single-line fields keep their horizontal offset after editing.
           // Once the row is no longer active, show its beginning again so a
           // long checklist item remains scannable on narrow/mobile layouts.
@@ -242,10 +272,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       return h;
     });
     // Backspace on an already-empty row deletes it and moves the caret up.
+    // Hardware keyboards get here first; where the keypress never surfaces as
+    // a key event, the empty-row marker catches it as an edit instead.
     handles.focusNode.onKeyEvent = (node, event) {
       if (event is KeyDownEvent &&
           event.logicalKey == LogicalKeyboardKey.backspace &&
-          handles.controller.text.isEmpty &&
+          handles.text.isEmpty &&
           !widget.readOnly) {
         _focusNeighborThenRemove(item.id);
         return KeyEventResult.handled;
@@ -261,6 +293,26 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       handles.controller.text = item.text;
     }
     return handles;
+  }
+
+  /// Park the marker in a row that is focused and empty, so the next backspace
+  /// is something the platform reports (see [_kEmptyRowMarker]).
+  void _armEmptyMarker(_RowHandles handles) {
+    if (widget.readOnly ||
+        !handles.focusNode.hasFocus ||
+        handles.controller.text.isNotEmpty) {
+      return;
+    }
+    handles.controller.value = const TextEditingValue(
+      text: _kEmptyRowMarker,
+      selection: TextSelection.collapsed(offset: _kEmptyRowMarker.length),
+    );
+  }
+
+  /// Take it back out: the row is no longer both focused and empty.
+  void _clearEmptyMarker(_RowHandles handles) {
+    if (handles.controller.text != _kEmptyRowMarker) return;
+    handles.controller.value = TextEditingValue.empty;
   }
 
   void _focusNeighborThenRemove(String itemId) {
@@ -415,9 +467,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       final h = entry.value;
       if (h.focusNode.hasFocus &&
           h.typedSinceFocus &&
-          h.controller.text.trim().isNotEmpty) {
+          h.text.trim().isNotEmpty) {
         final exclude = {...activeTexts}..remove(_itemById(entry.key)?.text);
-        final suggestions = widget.suggestionsFor(h.controller.text, exclude);
+        final suggestions = widget.suggestionsFor(h.text, exclude);
         if (suggestions.isEmpty) return null;
         return (rowId: entry.key, link: h.link, suggestions: suggestions);
       }
@@ -448,6 +500,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           );
           handles.typedSinceFocus = false;
           handles.unacknowledged = null;
+          // Restoring an empty row leaves it empty: keep backspace working.
+          _armEmptyMarker(handles);
         }
       }
       setState(() {});
@@ -484,7 +538,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final scheme = Theme.of(context).colorScheme;
     final query = target.rowId == _kNewRowId
         ? _newRow.controller.text.trim()
-        : (_handles[target.rowId]?.controller.text.trim() ?? '');
+        : (_handles[target.rowId]?.text.trim() ?? '');
 
     return CompositedTransformFollower(
       link: target.link,
@@ -680,12 +734,23 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                           false;
                       handles.handoffPrefix = null;
                       handles.handoffPrefixExpiresAt = null;
-                      var effectiveText = text;
+                      var effectiveText = _withoutMarker(text);
+                      if (effectiveText.isEmpty &&
+                          (handles.unacknowledged ?? item.text).isEmpty &&
+                          !widget.readOnly) {
+                        // The row was already empty, so what this keypress
+                        // deleted was the marker: backspace on an empty row.
+                        // Take the row with it.
+                        _focusNeighborThenRemove(item.id);
+                        return;
+                      }
                       if (prefix != null &&
                           prefixStillFresh &&
-                          text.isNotEmpty &&
-                          !text.startsWith(prefix)) {
-                        effectiveText = '$prefix$text';
+                          effectiveText.isNotEmpty &&
+                          !effectiveText.startsWith(prefix)) {
+                        effectiveText = '$prefix$effectiveText';
+                      }
+                      if (effectiveText != text) {
                         handles.controller.value = TextEditingValue(
                           text: effectiveText,
                           selection: TextSelection.collapsed(
@@ -693,6 +758,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                           ),
                         );
                       }
+                      // Emptied by this keystroke, not by the one before it:
+                      // re-arm so the next backspace removes the row.
+                      if (effectiveText.isEmpty) _armEmptyMarker(handles);
                       handles.typedSinceFocus = true;
                       handles.unacknowledged = effectiveText;
                       widget.onItemTextChanged(item.id, effectiveText);
@@ -806,8 +874,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     // between. Push the result back into the controller so
                     // the row shows it and the next leaked key appends to it.
                     final handles = _handles[adopting];
-                    final merged =
-                        (handles?.controller.text ?? row.text) + text;
+                    final merged = (handles?.text ?? row.text) + text;
                     if (handles != null) {
                       handles.controller.value = TextEditingValue(
                         text: merged,
