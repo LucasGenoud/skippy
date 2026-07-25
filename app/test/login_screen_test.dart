@@ -5,6 +5,7 @@ import 'package:skippy/api/api_client.dart';
 import 'package:skippy/screens/login_screen.dart';
 import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/theme.dart';
+import 'package:skippy/widgets/login_field.dart';
 
 Widget loginApp() => ChangeNotifierProvider(
   create: (_) => AuthStore(api: ApiClient(baseUrl: 'http://unused')),
@@ -14,20 +15,19 @@ Widget loginApp() => ChangeNotifierProvider(
   ),
 );
 
-/// The autofill hints on the password field, whichever mode is active.
-List<String>? passwordHints(WidgetTester tester) {
-  final field = tester.widget<TextField>(
-    find.ancestor(of: find.text('Password'), matching: find.byType(TextField)),
-  );
-  return field.autofillHints?.toList();
-}
+/// The login input labelled [label]. Read through [LoginField] rather than
+/// [TextField]: the web builds a DOM `<input>` instead, and the autofill
+/// identity has to be right on both.
+LoginField loginField(WidgetTester tester, String label) => tester.widget(
+  find.ancestor(of: find.text(label), matching: find.byType(LoginField)),
+);
 
-List<String>? emailHints(WidgetTester tester) {
-  final field = tester.widget<TextField>(
-    find.ancestor(of: find.text('Email'), matching: find.byType(TextField)),
-  );
-  return field.autofillHints?.toList();
-}
+/// The autofill hint on the password field, whichever mode is active.
+String passwordHint(WidgetTester tester) =>
+    loginField(tester, 'Password').autofillHint;
+
+String emailHint(WidgetTester tester) =>
+    loginField(tester, 'Email').autofillHint;
 
 void main() {
   testWidgets('sign-in mode hides confirm and uses current-password hint', (
@@ -43,8 +43,11 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
     // The account identifier is an email, but browsers recognize this as the
     // login half of a saved credential only when it is marked `username`.
-    expect(emailHints(tester), [AutofillHints.username]);
-    expect(passwordHints(tester), [AutofillHints.password]);
+    expect(emailHint(tester), AutofillHints.username);
+    expect(passwordHint(tester), AutofillHints.password);
+    // The web maps these onto `name`/`id`, which managers weigh too.
+    expect(loginField(tester, 'Email').fieldName, 'email');
+    expect(loginField(tester, 'Password').fieldName, 'password');
   });
 
   testWidgets('create-account mode reveals confirm and new-password hint', (
@@ -60,9 +63,9 @@ void main() {
     expect(find.text('Confirm password'), findsOneWidget);
     expect(find.text('Full name'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Create account'), findsOneWidget);
-    expect(emailHints(tester), [AutofillHints.email]);
+    expect(emailHint(tester), AutofillHints.email);
     // A new-password hint is what makes managers offer to generate/save.
-    expect(passwordHints(tester), [AutofillHints.newPassword]);
+    expect(passwordHint(tester), AutofillHints.newPassword);
   });
 
   testWidgets('mismatched passwords block submit with an inline error', (

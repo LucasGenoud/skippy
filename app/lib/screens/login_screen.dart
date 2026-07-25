@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/login_field.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -152,9 +153,6 @@ class _LoginScreenState extends State<LoginScreen> {
     // the banner carries the message) so the inputs themselves signal the error.
     final emailRejected = auth.errorStatus == 401 || auth.errorStatus == 409;
     final passwordRejected = auth.errorStatus == 401;
-    final rejectedBorder = OutlineInputBorder(
-      borderSide: BorderSide(color: scheme.error, width: 2),
-    );
     // On phones, drop the enclosing card and let the form span the full width
     // so the inputs get all the available space.
     final isWide = MediaQuery.sizeOf(context).width >= 600;
@@ -253,16 +251,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                       padding: const EdgeInsets.only(
                                         bottom: 16,
                                       ),
-                                      child: TextField(
+                                      child: LoginField(
                                         controller: _name,
                                         focusNode: _nameFocus,
+                                        label: 'Full name',
+                                        icon: Icons.badge_outlined,
+                                        autofillHint: AutofillHints.name,
+                                        fieldName: 'name',
                                         autofocus: true,
-                                        textInputAction: TextInputAction.next,
-                                        autofillHints: const [
-                                          AutofillHints.name,
-                                        ],
                                         textCapitalization:
                                             TextCapitalization.words,
+                                        errorText: _nameError,
                                         onChanged: (_) {
                                           if (_nameError != null) {
                                             setState(() => _nameError = null);
@@ -273,33 +272,29 @@ class _LoginScreenState extends State<LoginScreen> {
                                         },
                                         onSubmitted: (_) =>
                                             _emailFocus.requestFocus(),
-                                        decoration: InputDecoration(
-                                          labelText: 'Full name',
-                                          border: const OutlineInputBorder(),
-                                          prefixIcon: const Icon(
-                                            Icons.badge_outlined,
-                                          ),
-                                          errorText: _nameError,
-                                        ),
                                       ),
                                     )
                                   : const SizedBox.shrink(),
                             ),
-                            TextField(
+                            LoginField(
                               controller: _email,
                               focusNode: _emailFocus,
-                              autofocus: !creating,
-                              keyboardType: TextInputType.emailAddress,
-                              textInputAction: TextInputAction.next,
+                              label: 'Email',
+                              icon: Icons.email_outlined,
                               // Desktop password managers pair a
                               // `username` field with `current-password`.
                               // Our username happens to be an email address,
                               // but marking sign-in as email alone makes many
                               // browser managers treat it as a contact field
                               // instead of a saved-login identifier.
-                              autofillHints: creating
-                                  ? const [AutofillHints.email]
-                                  : const [AutofillHints.username],
+                              autofillHint: creating
+                                  ? AutofillHints.email
+                                  : AutofillHints.username,
+                              fieldName: 'email',
+                              autofocus: !creating,
+                              keyboardType: TextInputType.emailAddress,
+                              errorText: _emailError,
+                              rejected: emailRejected,
                               onChanged: (_) {
                                 if (_emailError != null) {
                                   setState(() => _emailError = null);
@@ -307,32 +302,33 @@ class _LoginScreenState extends State<LoginScreen> {
                                 if (auth.errorStatus != null) auth.clearError();
                               },
                               onSubmitted: (_) => _passwordFocus.requestFocus(),
-                              decoration: InputDecoration(
-                                labelText: 'Email',
-                                border: const OutlineInputBorder(),
-                                prefixIcon: const Icon(Icons.email_outlined),
-                                errorText: _emailError,
-                                enabledBorder: emailRejected
-                                    ? rejectedBorder
-                                    : null,
-                                focusedBorder: emailRejected
-                                    ? rejectedBorder
-                                    : null,
-                              ),
                             ),
                             const SizedBox(height: 16),
-                            TextField(
+                            LoginField(
                               controller: _password,
                               focusNode: _passwordFocus,
+                              label: 'Password',
+                              icon: Icons.lock_outline,
+                              autofillHint: creating
+                                  ? AutofillHints.newPassword
+                                  : AutofillHints.password,
+                              fieldName: 'password',
                               obscureText: _obscure,
                               textInputAction: creating
                                   ? TextInputAction.next
                                   : TextInputAction.done,
-                              autofillHints: [
-                                creating
-                                    ? AutofillHints.newPassword
-                                    : AutofillHints.password,
-                              ],
+                              errorText: _passwordError,
+                              rejected: passwordRejected,
+                              suffixIcon: IconButton(
+                                tooltip: _obscure ? 'Show' : 'Hide',
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                ),
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                              ),
                               onChanged: (_) {
                                 if (_passwordError != null) {
                                   setState(() => _passwordError = null);
@@ -342,28 +338,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               onSubmitted: (_) => creating
                                   ? _confirmFocus.requestFocus()
                                   : _submit(),
-                              decoration: InputDecoration(
-                                labelText: 'Password',
-                                border: const OutlineInputBorder(),
-                                prefixIcon: const Icon(Icons.lock_outline),
-                                errorText: _passwordError,
-                                enabledBorder: passwordRejected
-                                    ? rejectedBorder
-                                    : null,
-                                focusedBorder: passwordRejected
-                                    ? rejectedBorder
-                                    : null,
-                                suffixIcon: IconButton(
-                                  tooltip: _obscure ? 'Show' : 'Hide',
-                                  icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
-                                  ),
-                                  onPressed: () =>
-                                      setState(() => _obscure = !_obscure),
-                                ),
-                              ),
                             ),
                             // Confirm password — only when creating an account.
                             AnimatedSize(
@@ -373,23 +347,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: creating
                                   ? Padding(
                                       padding: const EdgeInsets.only(top: 16),
-                                      child: TextField(
+                                      child: LoginField(
                                         controller: _confirm,
                                         focusNode: _confirmFocus,
+                                        label: 'Confirm password',
+                                        icon: Icons.lock_outline,
+                                        autofillHint: AutofillHints.newPassword,
+                                        fieldName: 'confirm-password',
                                         obscureText: _obscure,
                                         textInputAction: TextInputAction.done,
-                                        autofillHints: const [
-                                          AutofillHints.newPassword,
-                                        ],
+                                        errorText: _confirmError,
                                         onSubmitted: (_) => _submit(),
-                                        decoration: InputDecoration(
-                                          labelText: 'Confirm password',
-                                          border: const OutlineInputBorder(),
-                                          prefixIcon: const Icon(
-                                            Icons.lock_outline,
-                                          ),
-                                          errorText: _confirmError,
-                                        ),
                                       ),
                                     )
                                   : const SizedBox.shrink(),
