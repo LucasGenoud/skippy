@@ -49,11 +49,9 @@ class WorkspaceMenu extends StatelessWidget {
             itemBuilder: (context) => [
               for (final workspace in store.workspaces)
                 // A plain item with our own check, not CheckedPopupMenuItem:
-                // that one fades a checkmark *in* on the row you tap (150ms)
-                // and leaves the outgoing row's check alone, so for the whole
-                // dismiss animation two workspaces looked selected. Drawn
-                // statically, the tick stays on the current workspace until
-                // the menu is gone.
+                // that one *fades* a checkmark in over 150ms on the row you
+                // tap and never clears the outgoing row's, so both read as
+                // selected for the whole dismiss. The tick here just moves.
                 PopupMenuItem(
                   value: 'open:${workspace.id}',
                   child: Row(
@@ -62,9 +60,20 @@ class WorkspaceMenu extends StatelessWidget {
                       // is the active one.
                       SizedBox(
                         width: 32,
-                        child: workspace.id == store.activeWorkspaceId
-                            ? const Icon(Icons.check, size: 18)
-                            : null,
+                        // Watched, not read: PopupMenuButton snapshots these
+                        // items when the menu opens, so without a listener of
+                        // its own the row could never restate itself. The
+                        // providers live above MaterialApp (see main.dart)
+                        // precisely so pushed routes like this one can. The
+                        // route is still mounted while it fades out, so the
+                        // tick lands on the new workspace the moment the
+                        // store flips.
+                        child: Consumer<NotesStore>(
+                          builder: (context, store, _) =>
+                              workspace.id == store.activeWorkspaceId
+                              ? const Icon(Icons.check, size: 18)
+                              : const SizedBox.shrink(),
+                        ),
                       ),
                       Expanded(
                         child: Text(

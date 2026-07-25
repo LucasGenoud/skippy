@@ -298,6 +298,53 @@ void main() {
       store.dispose();
     });
 
+    testWidgets('the tick moves to the new workspace as the menu dismisses', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // The name of the row the tick currently sits in.
+      String ticked() {
+        final row = find.ancestor(
+          of: find.byIcon(Icons.check),
+          matching: find.byType(PopupMenuItem<String>),
+        );
+        return tester
+            .widget<Text>(
+              find.descendant(of: row, matching: find.byType(Text)).first,
+            )
+            .data!;
+      }
+
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(WorkspaceMenu));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(ticked(), 'My notes');
+
+      await tester.tap(
+        find.ancestor(
+          of: find.text('Work'),
+          matching: find.byType(PopupMenuItem<String>),
+        ),
+      );
+      // A frame into the dismiss — while the menu is still on screen — the
+      // tick has already moved, and there is still only ever one of it.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(find.byType(PopupMenuItem<String>), findsWidgets);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(ticked(), 'Work');
+
+      await tester.pumpAndSettle();
+      store.dispose();
+    });
+
     testWidgets('switching away from a label view falls back to Notes', (
       tester,
     ) async {
