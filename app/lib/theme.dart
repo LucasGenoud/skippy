@@ -28,6 +28,13 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
   borderRadius: kBorderRadius,
 );
 
+/// The quietest line in the app. Chrome seams — the top bar's underline, the
+/// sidebar and drawer edges, the separators inside them — should read as a
+/// change of surface rather than a drawn rule, and `outlineVariant` at full
+/// strength is too present over spans this long.
+Color hairlineColor(ColorScheme scheme) =>
+    scheme.outlineVariant.withValues(alpha: 0.5);
+
 ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final light = brightness == Brightness.light;
   // Neutralize the seed's cast on surfaces — the design pairs a colored accent with
@@ -68,6 +75,26 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     drawerTheme: base.drawerTheme.copyWith(
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
+      // Material rounds the drawer's trailing edge to 16; that lone big curve
+      // reads as a different app next to everything else here. The side gives
+      // it the same seam the top bar draws — only the trailing edge is ever
+      // on screen, the other three sit under the device bezel.
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.horizontal(right: kRadiusCorner),
+        side: BorderSide(color: hairlineColor(scheme)),
+      ),
+      endShape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.horizontal(left: kRadiusCorner),
+        side: BorderSide(color: hairlineColor(scheme)),
+      ),
+    ),
+    // Every rule in the app, including the separators inside the drawer.
+    dividerTheme: base.dividerTheme.copyWith(color: hairlineColor(scheme)),
+    // The drawer's selection indicator defaults to a stadium (fully rounded)
+    // pill. Square it off to match the sidebar rail's own selection fill,
+    // which is hand-rolled at [kRadius] (see _RowHighlight in app_drawer.dart).
+    navigationDrawerTheme: base.navigationDrawerTheme.copyWith(
+      indicatorShape: kRoundedShape,
     ),
     // Near-square corners everywhere the theme reaches. Hand-rolled containers
     // in individual widgets use [kBorderRadius]/[kRoundedShape] to match.

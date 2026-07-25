@@ -48,11 +48,24 @@ class WorkspaceMenu extends StatelessWidget {
             onSelected: (value) => _onSelected(context, store, value),
             itemBuilder: (context) => [
               for (final workspace in store.workspaces)
-                CheckedPopupMenuItem(
+                // A plain item with our own check, not CheckedPopupMenuItem:
+                // that one fades a checkmark *in* on the row you tap (150ms)
+                // and leaves the outgoing row's check alone, so for the whole
+                // dismiss animation two workspaces looked selected. Drawn
+                // statically, the tick stays on the current workspace until
+                // the menu is gone.
+                PopupMenuItem(
                   value: 'open:${workspace.id}',
-                  checked: workspace.id == store.activeWorkspaceId,
                   child: Row(
                     children: [
+                      // Fixed slot, so names line up whether or not the row
+                      // is the active one.
+                      SizedBox(
+                        width: 32,
+                        child: workspace.id == store.activeWorkspaceId
+                            ? const Icon(Icons.check, size: 18)
+                            : null,
+                      ),
                       Expanded(
                         child: Text(
                           workspace.name,

@@ -287,7 +287,7 @@ void main() {
       await tester.tap(
         find.ancestor(
           of: find.text('Work'),
-          matching: find.byType(CheckedPopupMenuItem<String>),
+          matching: find.byType(PopupMenuItem<String>),
         ),
       );
       await tester.pumpAndSettle();

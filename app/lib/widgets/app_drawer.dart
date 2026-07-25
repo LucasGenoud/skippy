@@ -189,8 +189,15 @@ class AppSidebar extends StatelessWidget {
     // moves every frame and the container keeps restarting a 250ms tween
     // toward it — the rail finished long after the rest of the app. Painted
     // straight from the scheme, it lands exactly with everything else.
-    return ColoredBox(
-      color: scheme.surface,
+    //
+    // The trailing seam matches the drawer's on narrow layouts and the top
+    // bar's underline. DecoratedBox, not Container: a bordered Container
+    // insets its child, which would fight the width animation.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        border: Border(right: BorderSide(color: hairlineColor(scheme))),
+      ),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOutCubic,

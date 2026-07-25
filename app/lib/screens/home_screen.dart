@@ -556,7 +556,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Divider(
                       height: 1,
                       thickness: 1,
-                      color: Theme.of(context).colorScheme.outlineVariant,
+                      color: hairlineColor(Theme.of(context).colorScheme),
                     ),
                     Expanded(
                       // Home-indicator and landscape-notch insets; the top one

@@ -133,6 +133,71 @@ STICKY_NOTES_STORAGE=s3 docker compose up -d   # or set it in a .env file
 
 Garage bootstraps itself (`--single-node --default-bucket`): no CLI setup, credentials come from the compose file — change the default `GARAGE_RPC_SECRET` / `STICKY_NOTES_S3_ACCESS_KEY` / `STICKY_NOTES_S3_SECRET_KEY` for anything beyond a LAN toy. Pick one backend per deployment: switching doesn't migrate already-uploaded blobs.
 
+### Configuration
+
+Every environment variable the server reads. All are optional — an unset variable takes the default in the second column, and the server runs with none of them set. `docker-compose.yml` lists the same set (the optional ones commented out) so you can uncomment what you need.
+
+**Core**
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `STICKY_NOTES_ADDR` | `0.0.0.0:8787` | Listen address. |
+| `STICKY_NOTES_DB` | `sticky_notes.db` (`/data/sticky_notes.db` in the image) | SQLite database path. Created if missing. |
+| `STICKY_NOTES_UPLOADS` | `uploads` (`/data/uploads`) | Attachment directory. Disk storage only — ignored when `STICKY_NOTES_STORAGE=s3`. |
+| `STICKY_NOTES_WEB` | `../app/build/web` (`/app/web`) | Flutter web bundle to serve alongside the API. Silently skipped when the directory has no `index.html`. |
+| `STICKY_NOTES_PUBLIC_URL` | unset | The URL browsers should call. Stamped into `index.html` at startup as the app's default backend **and** used as the sole allowed CORS origin. Unset ⇒ same-origin, CORS open to any browser origin. |
+
+**Semantic search**
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `STICKY_NOTES_SEMANTIC` | unset | Set to exactly `off` to disable embeddings and semantic search. Any other value (or unset) leaves it on. |
+| `STICKY_NOTES_EMBED_IDLE_SECS` | `900` | Seconds the embedding model may sit unused before it's dropped from memory. `0` pins it loaded; an unparseable value logs a warning and falls back to the default. |
+| `HF_HOME` | unset (`/models` in the image) | Where fastembed/Hugging Face caches BGE-M3 (~2 GB, downloaded on first start). |
+
+**Audio transcription**
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `STICKY_NOTES_WHISPER_URL` | unset | Base URL of a Whisper ASR service. Probed once at startup; unset or unreachable ⇒ transcription stays off for the life of the process. |
+
+**Attachment storage**
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `STICKY_NOTES_STORAGE` | `disk` | `disk` or `s3`. Any other value aborts startup. |
+| `STICKY_NOTES_S3_URL` | — | **Required** when `s3`. Endpoint, e.g. `http://garage:3900`. |
+| `STICKY_NOTES_S3_ACCESS_KEY` | — | **Required** when `s3`. Needs permission to create buckets. |
+| `STICKY_NOTES_S3_SECRET_KEY` | — | **Required** when `s3`. |
+| `STICKY_NOTES_S3_REGION` | `garage` | SigV4 region. |
+| `STICKY_NOTES_S3_BUCKET_PREFIX` | `sticky-notes-` | Buckets are named `{prefix}{user-id}`. |
+
+Missing a required `s3` variable is a hard startup failure, not a silent downgrade to disk.
+
+**Notifications & link previews**
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `STICKY_NOTES_TELEGRAM_API` | `https://api.telegram.org` | Telegram Bot API base, for self-hosted bot-api servers or proxies. |
+| `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | unset (off) | `1`/`true`/`yes`/`on` lets link previews resolve private and loopback hosts. Off by default as an SSRF guard — only turn it on to preview links on your own LAN. |
+
+**Server-managed LLM settings**
+
+Each one overrides the per-user value and locks that field in the app's Settings. Booleans accept `true`/`1`/`on`/`yes` and `false`/`0`/`off`/`no`; an empty or unparseable value leaves the field user-owned.
+
+| Variable | Manages | Notes |
+| --- | --- | --- |
+| `STICKY_NOTES_LLM_BASE_URL` | `llm_base_url` | OpenAI-compatible endpoint, e.g. `http://ollama:11434/v1`. |
+| `STICKY_NOTES_LLM_API_KEY` | `llm_api_key` | **Secret** — drives the server, never sent to the app. |
+| `STICKY_NOTES_LLM_MODEL` | `llm_model` | |
+| `STICKY_NOTES_LLM_LABELING` | `llm_labeling` | Boolean. Auto-labeling on/off. |
+| `STICKY_NOTES_LLM_CHAT` | `llm_chat` | Boolean. Notes chat on/off. |
+| `STICKY_NOTES_LLM_WRITING` | `llm_writing` | Boolean. AI note editing on/off. |
+
+**Other services in the compose stack** (read by those images, not by this server): `ASR_MODEL` (`base`; `tiny`/`small`/`medium`/`large-v3`) and `ASR_ENGINE` (`faster_whisper`) on Whisper; `GARAGE_RPC_SECRET`, `GARAGE_DEFAULT_ACCESS_KEY`, `GARAGE_DEFAULT_SECRET_KEY`, `GARAGE_DEFAULT_BUCKET` on Garage — the access/secret pair must match the `STICKY_NOTES_S3_*` keys given to the server, which is why the compose file feeds both from the same variables.
+
+The Flutter app has one build-time knob rather than an environment variable: `--dart-define=API_BASE=<url>` sets the backend it targets by default (see [Local development](#local-development)).
+
 ### Local development
 
 Prereqs: Rust 1.88+ (edition 2024) and Flutter 3.44+ / Dart 3.12+.
@@ -147,15 +212,15 @@ docker compose up -d whisper
 STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
-Env vars: `STICKY_NOTES_DB` (SQLite path, default `sticky_notes.db`), `STICKY_NOTES_ADDR` (default `0.0.0.0:8787`), `STICKY_NOTES_UPLOADS` (attachment directory, default `uploads`), `STICKY_NOTES_WEB` (optional Flutter web bundle to serve), `STICKY_NOTES_SEMANTIC=off` (disable embeddings entirely), `STICKY_NOTES_PUBLIC_URL` (the backend URL the bundled web app should target by default — see below), `STICKY_NOTES_WHISPER_URL` (optional Whisper ASR service), `STICKY_NOTES_TELEGRAM_API` (Telegram Bot API base, default `https://api.telegram.org`), `STICKY_NOTES_UNFURL_ALLOW_PRIVATE=1` (allow link previews for private/loopback hosts; off by default for SSRF safety), and `STICKY_NOTES_EMBED_IDLE_SECS` (default `900`). BGE-M3 downloads to the fastembed/Hugging Face cache on first start.
+Every knob is an environment variable and every one is optional — see [Configuration](#configuration) for the full list with defaults. BGE-M3 downloads to the fastembed/Hugging Face cache on first start. The four settings worth understanding rather than just looking up:
 
 The loaded embedding model is the server's largest allocation by a wide margin, and a personal instance is idle most of the day, so it is **dropped after `STICKY_NOTES_EMBED_IDLE_SECS` without an embed** and reloaded from the local cache on the next search or note edit — trading a few seconds on that first request for gigabytes of resident memory in between. Set it to `0` to keep the model pinned (lowest latency, highest memory).
 
 Default backend URL for the bundled web app: when the binary also serves the Flutter web build, it normally targets its own origin. Behind a reverse proxy (e.g. `https://notes.example.com` on :443) that heuristic can miss, so set **`STICKY_NOTES_PUBLIC_URL`** to the URL browsers should call — the server stamps it into `index.html` at startup and the app uses it as the default, no rebuild needed. It also restricts HTTP CORS to that URL's origin (scheme, host, and port), rather than allowing every browser origin. Users can still switch servers from the login screen's server picker.
 
-Attachment storage: `STICKY_NOTES_STORAGE` (`disk` default, or `s3`). With `s3`, set `STICKY_NOTES_S3_URL` (endpoint, e.g. `http://localhost:3900`), `STICKY_NOTES_S3_ACCESS_KEY`, `STICKY_NOTES_S3_SECRET_KEY`, and optionally `STICKY_NOTES_S3_REGION` (default `garage`) and `STICKY_NOTES_S3_BUCKET_PREFIX` (default `sticky-notes-`, bucket names are `{prefix}{user-id}`). The access key needs permission to create buckets (Garage's auto-provisioned default key has it). Works against any S3-compatible store; for dev: `docker compose up -d garage`, then run with the compose file's key pair.
+Attachment storage (`STICKY_NOTES_STORAGE`) works against any S3-compatible store, not just the bundled Garage — the app creates one bucket per user on that user's first upload, so the access key needs permission to create buckets (Garage's auto-provisioned default key has it). For dev: `docker compose up -d garage`, then run with the compose file's key pair.
 
-Server-managed LLM config (optional): the LLM integration is normally per-user (each account sets its own endpoint/key/model in Settings). A self-hoster can instead **pin** any of these from the environment — `STICKY_NOTES_LLM_BASE_URL`, `STICKY_NOTES_LLM_API_KEY`, `STICKY_NOTES_LLM_MODEL`, `STICKY_NOTES_LLM_LABELING` (`true`/`false`), `STICKY_NOTES_LLM_CHAT` (`true`/`false`), `STICKY_NOTES_LLM_WRITING` (`true`/`false`). A set value overrides the user's copy and **locks** that field in Settings (shown as "Managed by the server"), so you can point everyone at one provider without exposing the key. Overrides are per-field — pin the endpoint + model and still let users bring their own key, or the reverse. The API key is a **secret**: it drives the server but its value is never sent to the app.
+Server-managed LLM config (optional): the LLM integration is normally per-user (each account sets its own endpoint/key/model in Settings). A self-hoster can instead **pin** any of the six `STICKY_NOTES_LLM_*` fields from the environment. A set value overrides the user's copy and **locks** that field in Settings (shown as "Managed by the server"), so you can point everyone at one provider without exposing the key. Overrides are per-field — pin the endpoint + model and still let users bring their own key, or the reverse. The API key is a **secret**: it drives the server but its value is never sent to the app.
 
 **Flutter app** — pick a device:
 

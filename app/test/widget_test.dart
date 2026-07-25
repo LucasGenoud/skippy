@@ -2117,15 +2117,24 @@ void main() {
       final scheme = Theme.of(
         tester.element(find.byType(AppSidebar)),
       ).colorScheme;
-      final dynamic fill = tester.renderObject(
-        find
-            .descendant(
-              of: find.byType(AppSidebar),
-              matching: find.byType(ColoredBox),
-            )
-            .first,
+      final decoration =
+          tester
+                  .widget<DecoratedBox>(
+                    find
+                        .descendant(
+                          of: find.byType(AppSidebar),
+                          matching: find.byType(DecoratedBox),
+                        )
+                        .first,
+                  )
+                  .decoration
+              as BoxDecoration;
+      expect(decoration.color, scheme.surface);
+      // The trailing seam is painted from the same live scheme.
+      expect(
+        (decoration.border! as Border).right.color,
+        hairlineColor(scheme),
       );
-      expect(fill.color, scheme.surface);
     });
   });
 

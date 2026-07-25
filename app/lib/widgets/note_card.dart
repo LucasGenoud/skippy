@@ -249,11 +249,26 @@ class _NoteTileState extends State<NoteTile> {
     final isRewriting = context.select<NotesStore, bool>(
       (store) => store.isRewritingNote(note.id),
     );
+    // A coloured card used to go borderless at rest, losing the crisp edge
+    // plain cards keep — worst on pale fills, which dissolve into the canvas.
+    // The border is the same palette entry from the *opposite* theme (the dark
+    // shade in light mode, the light one in dark mode), so it is always the
+    // card's own hue at contrasting depth, and it honours a custom palette for
+    // free. Lerped most of the way back toward the fill: at full strength it
+    // reads as an outline drawn around the card rather than the card's edge.
+    final counterFill = context.select<SettingsStore, Color?>(
+      (s) => s.resolveColor(
+        note.color,
+        brightness == Brightness.light ? Brightness.dark : Brightness.light,
+      ),
+    );
     final borderColor = fill == null
         ? scheme.outlineVariant
-        : (_hovered
-              ? scheme.outlineVariant.withValues(alpha: 0.5)
-              : Colors.transparent);
+        : Color.lerp(
+            fill,
+            counterFill ?? scheme.outlineVariant,
+            _hovered ? 0.55 : 0.35,
+          )!;
     // Two separate things: the footer slot the card always reserves (so its
     // height never depends on hover or selection), and whether the action
     // icons in that slot are live. Selection mode only silences the icons —
