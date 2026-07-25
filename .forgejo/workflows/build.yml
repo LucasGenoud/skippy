@@ -17,6 +17,20 @@ jobs:
       - name: Build and push
         run: |
           IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
-          docker build -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" .
+          # --no-cache: never reuse layers from a previous run.
+          # --pull: re-resolve the base images instead of trusting the local copy.
+          docker build --no-cache --pull -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" .
           docker push "$IMAGE:latest"
           docker push "$IMAGE:${{ github.sha }}"
+
+      - name: Drop older builds of this image
+        run: |
+          IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
+          # Scoped to this repository only: `reference` limits it to skippy tags,
+          # `before` limits it to builds older than the one we just pushed. Images
+          # a container is still running are refused by docker, hence `|| true`.
+          OLD=$(docker image ls -q \
+            --filter "reference=$IMAGE" \
+            --filter "before=$IMAGE:${{ github.sha }}" | sort -u)
+          [ -n "$OLD" ] && docker rmi $OLD || true
+          exit 0
