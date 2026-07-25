@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../models/workspace.dart';
 import '../state/notes_store.dart';
+import '../theme.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 
@@ -28,100 +29,132 @@ class WorkspaceMenu extends StatelessWidget {
     // between; the header stays put rather than flashing a placeholder name.
     final name = active?.name ?? 'Workspace';
 
-    return Tooltip(
-      message: compact ? name : '',
-      child: PopupMenuButton<String>(
-        popUpAnimationStyle: Motion.menuFor(context),
-        tooltip: 'Switch workspace',
-        position: PopupMenuPosition.under,
-        onSelected: (value) => _onSelected(context, store, value),
-        itemBuilder: (context) => [
-          for (final workspace in store.workspaces)
-            CheckedPopupMenuItem(
-              value: 'open:${workspace.id}',
-              checked: workspace.id == store.activeWorkspaceId,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      workspace.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (workspace.isShared ||
-                      !workspace.isOwnedBy(store.currentUserId))
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Icon(
-                        Icons.group_outlined,
-                        size: 18,
-                        color: scheme.onSurfaceVariant,
+    return Padding(
+      // Inset to the same 12px as the sidebar items below, so the card lines
+      // up with their selection pills.
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Material(
+        // An ink surface of the switcher's own. Without it both the card
+        // (an `Ink` decoration) and the tap ripple would paint onto the
+        // Scaffold's material, which the rail's opaque background covers —
+        // leaving no card at all. Transparent: the rail still shows through.
+        type: MaterialType.transparency,
+        child: Tooltip(
+          message: compact ? name : '',
+          child: PopupMenuButton<String>(
+            popUpAnimationStyle: Motion.menuFor(context),
+            tooltip: 'Switch workspace',
+            position: PopupMenuPosition.under,
+            onSelected: (value) => _onSelected(context, store, value),
+            itemBuilder: (context) => [
+              for (final workspace in store.workspaces)
+                CheckedPopupMenuItem(
+                  value: 'open:${workspace.id}',
+                  checked: workspace.id == store.activeWorkspaceId,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          workspace.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
+                      if (workspace.isShared ||
+                          !workspace.isOwnedBy(store.currentUserId))
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Icon(
+                            Icons.group_outlined,
+                            size: 18,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'create',
+                child: ListTile(
+                  leading: Icon(Icons.add),
+                  title: Text('New workspace'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'manage',
+                enabled: active != null,
+                child: const ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Manage workspace'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+            borderRadius: kBorderRadius,
+            // The switcher reads as a card of its own — the drawer and the
+            // rail it heads are plain surfaces, so a bordered, slightly
+            // raised tile marks it as the one thing here that opens a menu
+            // rather than navigating. `Ink`, not a Container: it paints into
+            // the material below the splash, so the tap ripple stays visible
+            // on top of the fill.
+            child: Ink(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: kBorderRadius,
+                border: Border.all(color: scheme.outlineVariant),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
                 ],
               ),
-            ),
-          const PopupMenuDivider(),
-          const PopupMenuItem(
-            value: 'create',
-            child: ListTile(
-              leading: Icon(Icons.add),
-              title: Text('New workspace'),
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-          PopupMenuItem(
-            value: 'manage',
-            enabled: active != null,
-            child: const ListTile(
-              leading: Icon(Icons.settings_outlined),
-              title: Text('Manage workspace'),
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-        ],
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 16,
-            vertical: 10,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: scheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 8 : 10,
+                  vertical: 8,
                 ),
-                child: Text(
-                  _initial(name),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: scheme.onSecondaryContainer,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: scheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _initial(name),
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                    if (!compact) ...[
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Icon(
+                        Icons.expand_more,
+                        size: 20,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (!compact) ...[
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Icon(
-                  Icons.expand_more,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -522,13 +555,3 @@ class MoveToWorkspaceSheet {
   }
 }
 
-/// A divider matching the sidebar's, so the switcher sits in its own band.
-class WorkspaceMenuDivider extends StatelessWidget {
-  const WorkspaceMenuDivider({super.key});
-
-  @override
-  Widget build(BuildContext context) => const Padding(
-    padding: EdgeInsets.symmetric(vertical: 4),
-    child: Divider(height: 1, indent: 16, endIndent: 16),
-  );
-}

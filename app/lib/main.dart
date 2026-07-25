@@ -107,6 +107,7 @@ class _SkippyAppState extends State<SkippyApp> {
       ],
       child: BackgroundGuard(
         onBackground: () => _store?.flushForBackground(),
+        onForeground: () => _store?.onResumed(),
         child: ListenableBuilder(
           listenable: Listenable.merge([?settings]),
           builder: (context, _) => MaterialApp(

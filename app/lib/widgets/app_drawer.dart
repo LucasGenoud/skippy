@@ -103,7 +103,9 @@ class AppDrawer extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          // The switcher brings its own horizontal inset (it draws a card, and
+          // that card lines up with the destination pills below).
+          padding: const EdgeInsets.only(bottom: 8),
           // The drawer route sits above dialogs, so close it before the menu
           // opens one.
           child: WorkspaceMenu(
@@ -198,7 +200,9 @@ class AppSidebar extends StatelessWidget {
             padding: const EdgeInsets.only(top: 12, bottom: 24),
             children: [
               WorkspaceMenu(compact: !isOpen),
-              const WorkspaceMenuDivider(),
+              // No divider: the switcher's own border already separates it
+              // from the views below.
+              const SizedBox(height: 8),
               _SidebarItem(
                 icon: Icons.lightbulb_outline,
                 selectedIcon: Icons.lightbulb,

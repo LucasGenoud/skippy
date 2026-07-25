@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// App-level guard for the fragile moment when the app goes to background.
+/// App-level guard for the fragile moments around a trip to the background.
 ///
-/// Two things happen here, both once per backgrounding:
+/// Two things happen on the way out, both once per backgrounding:
 ///
 /// * [onBackground] runs (the app flushes pending note edits — iOS hands a
 ///   suspended app only a short grace period and may kill it outright);
@@ -13,11 +13,24 @@ import 'package:flutter/material.dart';
 ///   (flutter/flutter#138403 and friends). Closing the editing session
 ///   before suspension sidesteps the whole family; the note itself is
 ///   already saved, so nothing is lost but the caret.
+///
+/// On the way back in, [onForeground] runs once — a suspended app's sockets
+/// and timers are dead, so whoever owns the network wants to know.
 class BackgroundGuard extends StatefulWidget {
   final VoidCallback? onBackground;
+
+  /// Called on `resumed`, and only after an actual trip to the background —
+  /// never for the `inactive` blips that a control-center swipe or an
+  /// incoming call produce.
+  final VoidCallback? onForeground;
   final Widget child;
 
-  const BackgroundGuard({super.key, this.onBackground, required this.child});
+  const BackgroundGuard({
+    super.key,
+    this.onBackground,
+    this.onForeground,
+    required this.child,
+  });
 
   @override
   State<BackgroundGuard> createState() => _BackgroundGuardState();
@@ -45,7 +58,13 @@ class _BackgroundGuardState extends State<BackgroundGuard>
     final background =
         state == AppLifecycleState.hidden || state == AppLifecycleState.paused;
     if (!background) {
-      _wentBackground = false;
+      // `inactive` is also on the path out (and fires on its own for
+      // interruptions that never suspend the app), so only `resumed` after a
+      // real trip counts as coming back.
+      if (_wentBackground && state == AppLifecycleState.resumed) {
+        _wentBackground = false;
+        widget.onForeground?.call();
+      }
       return;
     }
     if (_wentBackground) return;

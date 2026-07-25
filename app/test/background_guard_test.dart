@@ -7,11 +7,13 @@ void main() {
     'backgrounding unfocuses the field and fires the flush once per trip',
     (tester) async {
       var flushes = 0;
+      var returns = 0;
       final focus = FocusNode();
       await tester.pumpWidget(
         MaterialApp(
           home: BackgroundGuard(
             onBackground: () => flushes++,
+            onForeground: () => returns++,
             child: Scaffold(body: TextField(focusNode: focus)),
           ),
         ),
@@ -37,13 +39,18 @@ void main() {
       expect(focus.hasFocus, isFalse);
       expect(flushes, 1);
 
-      // Coming back re-arms the guard for the next trip.
+      // Coming back re-arms the guard for the next trip, and reports once.
       lifecycle(const [
         AppLifecycleState.hidden,
         AppLifecycleState.inactive,
         AppLifecycleState.resumed,
       ]);
       expect(flushes, 1);
+      expect(returns, 1);
+
+      // An interruption that never suspends the app is not a return trip.
+      lifecycle(const [AppLifecycleState.inactive, AppLifecycleState.resumed]);
+      expect(returns, 1);
       lifecycle(const [
         AppLifecycleState.inactive,
         AppLifecycleState.hidden,
@@ -57,6 +64,7 @@ void main() {
         AppLifecycleState.inactive,
         AppLifecycleState.resumed,
       ]);
+      expect(returns, 2);
       focus.dispose();
     },
   );

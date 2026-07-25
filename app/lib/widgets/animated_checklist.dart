@@ -89,7 +89,13 @@ class _RowHandles {
           ? DateTime.now().add(const Duration(milliseconds: 250))
           : null;
 
+  /// Set the moment the row goes away. Callbacks that outlive a row (the
+  /// deferred marker re-arm, the post-frame scroll reset) check it before
+  /// touching a controller or focus node that is no longer there.
+  bool disposed = false;
+
   void dispose() {
+    disposed = true;
     controller.dispose();
     focusNode.dispose();
     scrollController.dispose();
@@ -298,7 +304,21 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// Park the marker in a row that is focused and empty, so the next backspace
   /// is something the platform reports (see [_kEmptyRowMarker]).
   void _armEmptyMarker(_RowHandles handles) {
-    if (widget.readOnly ||
+    _parkMarker(handles);
+    // Once more after the frame: parking it is a write into a field the
+    // platform is also writing to (the marker goes in from inside the very
+    // keystroke that emptied the row, and focus lands a microtask after it is
+    // asked for), so a lost race would leave the row with nothing for the next
+    // backspace to delete — and no way to remove itself.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _parkMarker(handles);
+    });
+  }
+
+  /// Put the marker in, if the row is still there, focused and empty.
+  void _parkMarker(_RowHandles handles) {
+    if (handles.disposed ||
+        widget.readOnly ||
         !handles.focusNode.hasFocus ||
         handles.controller.text.isNotEmpty) {
       return;
@@ -311,13 +331,34 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   /// Take it back out: the row is no longer both focused and empty.
   void _clearEmptyMarker(_RowHandles handles) {
-    if (handles.controller.text != _kEmptyRowMarker) return;
+    if (handles.disposed || handles.controller.text != _kEmptyRowMarker) return;
     handles.controller.value = TextEditingValue.empty;
   }
 
+  /// The row a caret should fall back to when [itemId] goes away: the line
+  /// above it, or the add field when there is nothing above.
+  String _rowAbove(String itemId) {
+    final unchecked = _uncheckedOrder.indexOf(itemId);
+    if (unchecked >= 0) {
+      return unchecked > 0 ? _uncheckedOrder[unchecked - 1] : _kNewRowId;
+    }
+    // Checked rows live in their own section, below the add field.
+    final checked = _checkedItems;
+    final at = checked.indexWhere((item) => item.id == itemId);
+    return at > 0 ? checked[at - 1].id : _kNewRowId;
+  }
+
   void _focusNeighborThenRemove(String itemId) {
-    final index = _uncheckedOrder.indexOf(itemId);
-    _pendingFocusId = index > 0 ? _uncheckedOrder[index - 1] : _kNewRowId;
+    final target = _rowAbove(itemId);
+    _pendingFocusId = target;
+    // Hand the caret over *now*, inside the keypress that asked for it, rather
+    // than after the rebuild: browsers only keep the on-screen keyboard up for
+    // a focus move made within the gesture that triggered it, so a frame later
+    // the keyboard drops and the caret is stranded. The row above is a
+    // different field that is already on screen and ready to take focus;
+    // [_applyPendingFocus] still runs afterwards to place the caret in it.
+    final handles = target == _kNewRowId ? _newRow : _handles[target];
+    handles?.focusNode.requestFocus();
     widget.onRemove(itemId);
     setState(() {});
   }

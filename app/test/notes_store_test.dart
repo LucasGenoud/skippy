@@ -49,13 +49,26 @@ Note serverNote(
 Future<void> settle() =>
     Future<void>.delayed(const Duration(milliseconds: 600));
 
+/// Production waits 5s before calling an outage an outage (see
+/// [NotesStore.offlineGrace]); tests wait 20ms for the same behaviour.
+const testOfflineGrace = Duration(milliseconds: 20);
+
+NotesStore testStore(FakeApi api, {LocalCache? cache}) => NotesStore(
+  api: api,
+  cache: cache,
+  currentUserId: 'u-me',
+  offlineGrace: testOfflineGrace,
+);
+
 void main() {
   late FakeApi api;
   late NotesStore store;
 
   setUp(() {
     api = FakeApi();
-    store = NotesStore(api: api, currentUserId: 'u-me');
+    // A 20ms grace before a failure counts as "offline" keeps the production
+    // behaviour (see NotesStore.offlineGrace) without a 5s wait per test.
+    store = testStore(api);
   });
 
   tearDown(() => store.dispose());
@@ -444,6 +457,7 @@ void main() {
 
       api.failWith = Exception('network down');
       await store.checkConnectionNow();
+      await Future<void>.delayed(testOfflineGrace * 3);
       expect(store.offline, isTrue);
 
       api.failWith = null;
@@ -512,9 +526,11 @@ void main() {
       expect(store.hasPendingWork, isTrue);
       expect(store.syncStatus, SyncStatus.syncing);
 
-      // Server unreachable → offline wins over syncing.
+      // Server unreachable → offline wins over syncing, once the failure has
+      // outlasted the grace.
       api.failWith = ApiException(500, 'boom');
       await store.load();
+      await Future<void>.delayed(testOfflineGrace * 3);
       expect(store.offline, isTrue);
       expect(store.syncStatus, SyncStatus.offline);
     });
@@ -527,6 +543,7 @@ void main() {
 
         api.failWith = Exception('server unreachable');
         await store.checkConnectionNow();
+        await Future<void>.delayed(testOfflineGrace * 3);
         expect(store.offline, isTrue);
         expect(store.syncStatus, SyncStatus.offline);
 
@@ -536,6 +553,44 @@ void main() {
         expect(api.log, contains('checkConnection'));
       },
     );
+
+    test('a failure that recovers within the grace is never announced', () async {
+      await store.load();
+      store.startSync();
+
+      // One probe fails — the kind of blip a phone produces the instant its
+      // radio wakes up. Nothing is said about it...
+      api.failWith = Exception('radio still waking');
+      await store.checkConnectionNow();
+      expect(store.offline, isFalse);
+      expect(store.syncStatus, isNot(SyncStatus.offline));
+
+      // ...and the next probe, inside the grace, clears it for good.
+      api.failWith = null;
+      await store.checkConnectionNow();
+      await Future<void>.delayed(testOfflineGrace * 3);
+      expect(store.offline, isFalse);
+    });
+
+    test('resuming from the background drops a stale offline verdict', () async {
+      await store.load();
+
+      // The app went away while the server was unreachable.
+      api.failWith = Exception('network down');
+      await store.load();
+      await Future<void>.delayed(testOfflineGrace * 3);
+      expect(store.offline, isTrue);
+
+      // Coming back: the verdict is dropped immediately (it describes a
+      // connection nothing has tested since) and a fresh pull runs.
+      api.failWith = null;
+      api.notes['n9'] = serverNote('n9', title: 'added elsewhere');
+      final resumed = store.onResumed();
+      expect(store.offline, isFalse);
+      await resumed;
+      expect(store.noteById('n9')?.title, 'added elsewhere');
+      expect(store.offline, isFalse);
+    });
   });
 
   group('manual refresh', () {
@@ -735,7 +790,7 @@ void main() {
     test('edits are written to the local cache', () async {
       final cache = MemoryLocalCache();
       api.notes['n1'] = serverNote('n1', title: 'a');
-      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      final s = testStore(api, cache: cache);
       await s.load();
 
       s.setColor('n1', 'teal');
@@ -759,11 +814,15 @@ void main() {
       });
       api.failWith = Exception('offline');
 
-      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      final s = testStore(api, cache: cache);
       await s.load();
 
-      expect(s.offline, isTrue);
+      // Cached notes render straight away; the outage is only *announced*
+      // once it has outlasted the grace.
       expect(s.noteById('n1')?.title, 'cached'); // rendered with no network
+      expect(s.offline, isFalse);
+      await Future<void>.delayed(testOfflineGrace * 3);
+      expect(s.offline, isTrue);
       s.dispose();
     });
 
@@ -772,7 +831,7 @@ void main() {
 
       // Session 1: offline. Compose a note; it never reaches the server.
       api.failWith = Exception('offline');
-      final s1 = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      final s1 = testStore(api, cache: cache);
       await s1.load();
       final draft = s1.createDraft();
       s1.updateNoteContent(draft.id, title: 'written offline');
@@ -783,7 +842,7 @@ void main() {
 
       // Session 2: same cache, back online. The note pushes up on its own.
       api.failWith = null;
-      final s2 = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      final s2 = testStore(api, cache: cache);
       await s2.load();
       await settle();
       expect(api.notes[draft.id]?.title, 'written offline');
@@ -806,7 +865,7 @@ void main() {
         ],
       });
 
-      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      final s = testStore(api, cache: cache);
       await s.load();
       await settle();
 
@@ -831,7 +890,7 @@ void main() {
         ],
       });
 
-      final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      final s = testStore(api, cache: cache);
       await s.load();
       await settle();
 
@@ -846,7 +905,7 @@ void main() {
       () async {
         final cache = MemoryLocalCache();
         api.notes['n1'] = serverNote('n1', title: 'a');
-        final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+        final s = testStore(api, cache: cache);
         await s.load();
 
         s.updateNoteContent('n1', content: 'typed, then reloaded');
@@ -876,7 +935,7 @@ void main() {
       () async {
         final cache = MemoryLocalCache();
         api.notes['n1'] = serverNote('n1', title: 'a');
-        final s = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+        final s = testStore(api, cache: cache);
         await s.load();
 
         s.updateNoteContent('n1', content: 'typed, then backgrounded');

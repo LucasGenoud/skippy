@@ -53,7 +53,15 @@ class NotesStore extends ChangeNotifier {
   /// per-note by design).
   Map<String, List<String>> _checklistHistory = {};
   bool loading = true;
+
+  /// Whether to *tell the user* we can't reach the server. Deliberately lags
+  /// [_connectionDown]: see [_markConnectionDown].
   bool offline = false;
+
+  /// The last request out failed. Internal control flow (what may be awaited,
+  /// what to retry) reads this; the UI reads [offline].
+  bool _connectionDown = false;
+  Timer? _offlineConfirmTimer;
 
   /// True while a manual [refresh] is re-pulling from the server. Distinct
   /// from [loading], the first load.
@@ -95,11 +103,21 @@ class NotesStore extends ChangeNotifier {
   static const _connectionProbeInterval = Duration(seconds: 2);
   static const _syncOperationTimeout = Duration(seconds: 5);
 
+  static const _defaultOfflineGrace = Duration(seconds: 5);
+
+  /// How long a connection failure has to persist before the UI says so. A
+  /// phone waking from sleep routinely drops the first request or two while
+  /// its radio comes back, and being told the server is unreachable — a
+  /// second before it plainly is reachable — is worse than saying nothing.
+  /// Tests shorten it.
+  final Duration offlineGrace;
+
   NotesStore({
     required this.api,
     LocalCache? cache,
     this.currentUserId,
     this.onRemoteChange,
+    this.offlineGrace = _defaultOfflineGrace,
   }) : cache = cache ?? MemoryLocalCache();
 
   /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
@@ -182,7 +200,7 @@ class NotesStore extends ChangeNotifier {
   }) async {
     flushForBackground();
     await _drainQueue();
-    if (offline || _queue.isNotEmpty) {
+    if (_connectionDown || _queue.isNotEmpty) {
       throw const BackupRestoreException(
         'Connect to the server before restoring a backup',
         restoredNotes: 0,
@@ -376,6 +394,49 @@ class NotesStore extends ChangeNotifier {
       ? SyncStatus.offline
       : (_hasLocalChangesInFlight ? SyncStatus.syncing : SyncStatus.synced);
 
+  /// A request failed. The failure is recorded right away for the retry
+  /// machinery, but only surfaces to the user once it has lasted
+  /// [offlineGrace] — a blip that the next probe recovers from never shows.
+  void _markConnectionDown() {
+    if (_connectionDown) return;
+    _connectionDown = true;
+    _offlineConfirmTimer?.cancel();
+    _offlineConfirmTimer = Timer(offlineGrace, () {
+      _offlineConfirmTimer = null;
+      if (!_connectionDown || offline) return;
+      offline = true;
+      notifyListeners();
+    });
+  }
+
+  /// A request succeeded. Returns whether that changed anything the UI shows,
+  /// so callers can skip a redundant notification.
+  bool _markConnectionUp() {
+    _offlineConfirmTimer?.cancel();
+    _offlineConfirmTimer = null;
+    _connectionDown = false;
+    if (!offline) return false;
+    offline = false;
+    return true;
+  }
+
+  /// The app came back to the foreground. Everything it thought it knew about
+  /// the network is stale — a suspended app's socket is dead, its timers were
+  /// frozen, and the phone may have changed networks entirely — so drop any
+  /// offline verdict rather than greeting the user with a complaint about a
+  /// connection nothing has tested since. Then pull: the change socket was
+  /// down while we were away, so anything edited elsewhere is still missing.
+  Future<void> onResumed() async {
+    _offlineConfirmTimer?.cancel();
+    _offlineConfirmTimer = null;
+    _connectionDown = false;
+    if (offline) {
+      offline = false;
+      notifyListeners();
+    }
+    await refresh();
+  }
+
   Future<void> load() async {
     await _hydrate();
     var fetchAgain = false;
@@ -409,9 +470,9 @@ class NotesStore extends ChangeNotifier {
           _reloadPending = false;
           fetchAgain = true;
         }
-        offline = false;
+        _markConnectionUp();
       } catch (_) {
-        offline = true;
+        _markConnectionDown();
         _retryTimer?.cancel();
         _retryTimer = Timer(const Duration(seconds: 5), load);
       }
@@ -449,9 +510,9 @@ class NotesStore extends ChangeNotifier {
       } else {
         _reloadPending = true;
       }
-      offline = false;
+      _markConnectionUp();
     } catch (_) {
-      offline = true;
+      _markConnectionDown();
     } finally {
       refreshing = false;
       notifyListeners();
@@ -621,17 +682,13 @@ class NotesStore extends ChangeNotifier {
     _checkingConnection = true;
     try {
       await api.checkConnection();
-      final wasOffline = offline;
-      if (wasOffline) {
-        offline = false;
-        notifyListeners();
-        await retryNow();
-      }
+      final wasDown = _connectionDown;
+      if (_markConnectionUp()) notifyListeners();
+      // Recovered: push whatever was waiting, whether or not the outage
+      // lasted long enough for the user to ever hear about it.
+      if (wasDown) await retryNow();
     } catch (_) {
-      if (!offline) {
-        offline = true;
-        notifyListeners();
-      }
+      _markConnectionDown();
     } finally {
       _checkingConnection = false;
     }
@@ -1507,7 +1564,7 @@ class NotesStore extends ChangeNotifier {
   /// Wait for the serial queue to empty (used before await-based calls that
   /// depend on queued writes, like sharing right after creating).
   Future<void> _drainQueue() async {
-    while (_queue.isNotEmpty && !offline) {
+    while (_queue.isNotEmpty && !_connectionDown) {
       await _flush();
       if (_queue.isNotEmpty) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -1524,10 +1581,7 @@ class NotesStore extends ChangeNotifier {
         await _run(op).timeout(_syncOperationTimeout);
         _queue.removeAt(0);
         _persistNow();
-        if (offline) {
-          offline = false;
-          notifyListeners();
-        }
+        if (_markConnectionUp()) notifyListeners();
       } on ApiException catch (e) {
         // A 4xx will never succeed on retry; drop the op instead of wedging
         // the queue. 5xx are treated like network failures below.
@@ -1602,10 +1656,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   void _scheduleRetry() {
-    if (!offline) {
-      offline = true;
-      notifyListeners();
-    }
+    _markConnectionDown();
     _retryTimer?.cancel();
     _retryTimer = Timer(const Duration(seconds: 5), _flush);
   }
@@ -1622,6 +1673,7 @@ class NotesStore extends ChangeNotifier {
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _offlineConfirmTimer?.cancel();
     _syncReloadDebounce?.cancel();
     _connectionProbeTimer?.cancel();
     _syncSub?.cancel();

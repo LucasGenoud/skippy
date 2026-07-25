@@ -1243,6 +1243,98 @@ void main() {
     );
 
     testWidgets(
+      'the row above takes the caret within the keypress, before any rebuild',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [
+            const ChecklistItem(id: 'a', text: 'Milk'),
+            const ChecklistItem(id: 'b', text: ''),
+          ],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final rows = find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(TextField),
+        );
+        await tester.tap(rows.at(1)); // the empty row
+        await tester.pump();
+
+        EditableText milk() => tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(TextField, 'Milk'),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(milk().focusNode.hasFocus, isFalse);
+
+        tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        // No frame is pumped here on purpose. A browser only keeps the
+        // on-screen keyboard up for a focus move made inside the keypress that
+        // asked for it, so waiting for the rebuild would land the caret in a
+        // field the keyboard has already abandoned.
+        await tester.idle();
+        expect(milk().focusNode.hasFocus, isTrue);
+
+        await tester.pumpAndSettle();
+        expect(store.noteById('n1')!.items.map((i) => i.text), ['Milk']);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
+      'an empty checked row hands the caret to the checked row above it',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [
+            const ChecklistItem(id: 'a', text: 'Milk'),
+            const ChecklistItem(id: 'b', text: 'Eggs', done: true),
+            const ChecklistItem(id: 'c', text: '', done: true),
+          ],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Checked rows sit in their own section: the last field on screen is
+        // the empty checked one.
+        final rows = find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(TextField),
+        );
+        await tester.tap(rows.last);
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.items.map((i) => i.text), [
+          'Milk',
+          'Eggs',
+        ]);
+        final eggs = tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(TextField, 'Eggs'),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(eggs.focusNode.hasFocus, isTrue);
+        expect(eggs.controller.selection.baseOffset, 4);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
       'the marker never reaches the note: typing in an empty row stores '
       'exactly what was typed',
       (tester) async {
