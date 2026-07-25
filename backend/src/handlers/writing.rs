@@ -91,6 +91,7 @@ pub async fn rewrite_note(
             .collect()
     });
     let body = UpdateNote {
+        workspace_id: None,
         kind: None,
         title: Some(title),
         content: (record.kind != KIND_CHECKLIST).then_some(content),

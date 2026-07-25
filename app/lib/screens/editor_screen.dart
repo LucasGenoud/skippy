@@ -32,6 +32,7 @@ import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/share_dialog.dart';
+import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
@@ -959,6 +960,17 @@ class _EditorScreenState extends State<EditorScreen> {
                           onDuplicate: trashed || note == null || note.isEmpty
                               ? null
                               : _duplicateNote,
+                          onMoveToWorkspace:
+                              trashed ||
+                                  note == null ||
+                                  note.isEmpty ||
+                                  !isOwner ||
+                                  _store.workspaces.length < 2
+                              ? null
+                              : () => MoveToWorkspaceSheet.show(
+                                  context,
+                                  note.id,
+                                ),
                           // Copying to the clipboard reads the note; a trashed
                           // one is still readable, so this stays available.
                           onCopyToClipboard: note == null || note.isEmpty

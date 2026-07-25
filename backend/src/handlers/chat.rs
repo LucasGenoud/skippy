@@ -20,6 +20,19 @@ struct ChatRequest {
     message: String,
     #[serde(default)]
     history: Vec<ChatHistoryEntry>,
+    /// The workspace the client has open. Retrieval is limited to it and any
+    /// note the turn writes lands in it, so chat answers over what the user is
+    /// actually looking at. Absent means every note they can see.
+    #[serde(default)]
+    workspace_id: Option<String>,
+}
+
+/// Who a turn is being answered for: the asker, the provider they configured,
+/// and the workspace their client has open.
+struct TurnContext<'a> {
+    user_id: &'a str,
+    cfg: &'a crate::llm::LlmConfig,
+    workspace_id: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -104,6 +117,21 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     let history: Vec<(String, String)> =
         request.history.into_iter().map(|h| (h.role, h.content)).collect();
 
+    // Scope the turn to the open workspace. The vector index partitions by
+    // participant, not by workspace, so the narrowing happens over its hits.
+    let workspace_id =
+        request.workspace_id.as_deref().map(str::trim).filter(|w| !w.is_empty()).map(str::to_owned);
+    let allowed_notes = match &workspace_id {
+        Some(id) => match super::workspace_note_ids(&state, &user_id, id).await {
+            Ok(ids) => Some(ids),
+            Err(_) => {
+                send_error(&mut sink, "that workspace is not available").await;
+                return;
+            }
+        },
+        None => None,
+    };
+
     // Phase 1 — route: the model decides whether this turn needs notes at
     // all and, if so, writes the search query itself (resolving references
     // from the conversation, so "and the plants?" looks up plants and a bare
@@ -132,8 +160,11 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         crate::assist::RouteDecision::Direct => None,
     };
     if let Some(query) = retrieval {
+        // Over-fetch: trashed notes linger in the index, and a workspace filter
+        // drops the other workspaces' hits on top of that.
+        let overfetch = if allowed_notes.is_some() { 8 } else { 2 };
         let hits = match search
-            .search(&user_id, query, crate::assist::CHAT_CONTEXT_NOTES * 2)
+            .search(&user_id, query, crate::assist::CHAT_CONTEXT_NOTES * overfetch)
             .await
         {
             Ok(hits) => hits,
@@ -146,6 +177,9 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         for (note_id, _score) in hits {
             if notes.len() >= crate::assist::CHAT_CONTEXT_NOTES {
                 break;
+            }
+            if allowed_notes.as_ref().is_some_and(|ids| !ids.contains(&note_id)) {
+                continue;
             }
             let Ok(Some(record)) = state.repo.note_record(&note_id).await else { continue };
             if record.trashed {
@@ -163,7 +197,15 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     // through to answering over the retrieved notes, so a weak model can never
     // silently drop the turn (or, worse, touch a note it shouldn't).
     if matches!(decision, crate::assist::RouteDecision::Write(_))
-        && chat_write(&mut sink, &state, &user_id, &cfg, &notes, &history, message).await
+        && chat_write(
+            &mut sink,
+            &state,
+            &TurnContext { user_id: &user_id, cfg: &cfg, workspace_id: workspace_id.as_deref() },
+            &notes,
+            &history,
+            message,
+        )
+        .await
     {
         return;
     }
@@ -247,8 +289,7 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
 async fn chat_write<S>(
     sink: &mut S,
     state: &AppState,
-    user_id: &str,
-    cfg: &crate::llm::LlmConfig,
+    turn: &TurnContext<'_>,
     candidates: &[(String, String, String)], // (id, title, text)
     history: &[(String, String)],
     message: &str,
@@ -272,7 +313,7 @@ where
     let planner = crate::assist::write_plan_messages(candidates, history, message);
     let reply = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        state.llm.complete(cfg, planner),
+        state.llm.complete(turn.cfg, planner),
     )
     .await
     {
@@ -313,9 +354,12 @@ where
                 title,
                 content,
                 items: (!item_structs.is_empty()).then_some(item_structs),
+                // The note belongs where the user is looking; absent, the
+                // create pipeline falls back to their default workspace.
+                workspace_id: turn.workspace_id.map(str::to_owned),
                 ..Default::default()
             };
-            let view = match create_note_for_user(state, user_id, body).await {
+            let view = match create_note_for_user(state, turn.user_id, body).await {
                 Ok(view) => view,
                 Err(_) => {
                     send(sink, serde_json::json!({"type":"error","message":"could not create the note"})).await;
@@ -366,7 +410,7 @@ where
             if body.items.is_none() && body.content.is_none() {
                 return false; // nothing usable to add
             }
-            let view = match apply_note_update(state, user_id, &note_id, body).await {
+            let view = match apply_note_update(state, turn.user_id, &note_id, body).await {
                 Ok(view) => view,
                 Err(_) => {
                     send(sink, serde_json::json!({"type":"error","message":"could not update the note"})).await;

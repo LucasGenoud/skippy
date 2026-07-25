@@ -4,10 +4,35 @@ use async_trait::async_trait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
-use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row};
+use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row, workspace_from_row};
 use super::sqlite_schema;
 use super::{PurgedNote, RepoError, RepoResult, Repository};
 use crate::models::*;
+
+/// The workspaces a user belongs to: the ones they own plus the ones they were
+/// invited to. Binds the user id twice.
+const MY_WORKSPACES: &str = "SELECT id FROM workspaces WHERE owner_id = ?
+     UNION SELECT workspace_id FROM workspace_members WHERE user_id = ?";
+
+/// Predicate over the notes table (named by `alias`) for everything a user may
+/// see: their own notes, notes shared with them directly, and every note held
+/// by a workspace they belong to. Binds the user id four times.
+fn visible_notes(alias: &str) -> String {
+    format!(
+        "({alias}.owner_id = ?
+          OR {alias}.id IN (SELECT note_id FROM note_shares WHERE user_id = ?)
+          OR {alias}.workspace_id IN ({MY_WORKSPACES}))"
+    )
+}
+
+/// Drops every note/label pairing whose label no longer lives in the note's
+/// workspace. Set-based and idempotent, so a bulk move cleans up in one go.
+const PRUNE_MISMATCHED_LABELS: &str = "DELETE FROM note_labels
+     WHERE NOT EXISTS (
+         SELECT 1 FROM labels l
+         JOIN notes n ON n.id = note_labels.note_id
+         WHERE l.id = note_labels.label_id AND l.workspace_id = n.workspace_id
+     )";
 
 pub struct SqliteRepository {
     pool: SqlitePool,
@@ -32,6 +57,23 @@ impl SqliteRepository {
 }
 
 impl SqliteRepository {
+    /// Public display names for every account, keyed by id. One query beats a
+    /// lookup per row in the decoration paths, and the table is small.
+    async fn user_directory(&self) -> RepoResult<HashMap<String, UserPublic>> {
+        let mut users = HashMap::new();
+        for row in sqlx::query("SELECT id, name FROM users")
+            .fetch_all(&self.pool)
+            .await?
+        {
+            let user = UserPublic {
+                id: row.get("id"),
+                name: row.get("name"),
+            };
+            users.insert(user.id.clone(), user);
+        }
+        Ok(users)
+    }
+
     /// Decorate records into per-viewer views in bulk.
     async fn build_views(
         &self,
@@ -41,12 +83,16 @@ impl SqliteRepository {
         if records.is_empty() {
             return Ok(vec![]);
         }
-        // The viewer's labels per note.
+        // Labels per note. A label belongs to a workspace, so members all see
+        // the same set; someone who reached the note through a direct share
+        // instead is not in that workspace and sees none of them.
         let mut labels_by_note: HashMap<String, Vec<String>> = HashMap::new();
-        for row in sqlx::query(
+        for row in sqlx::query(&format!(
             "SELECT nl.note_id, nl.label_id FROM note_labels nl
-             JOIN labels l ON l.id = nl.label_id WHERE l.owner_id = ?",
-        )
+             JOIN labels l ON l.id = nl.label_id
+             WHERE l.workspace_id IN ({MY_WORKSPACES})"
+        ))
+        .bind(viewer_id)
         .bind(viewer_id)
         .fetch_all(&self.pool)
         .await?
@@ -92,18 +138,7 @@ impl SqliteRepository {
                     url: None,
                 });
         }
-        // Owner display names.
-        let mut owners: HashMap<String, UserPublic> = HashMap::new();
-        for row in sqlx::query("SELECT id, name FROM users")
-            .fetch_all(&self.pool)
-            .await?
-        {
-            let user = UserPublic {
-                id: row.get("id"),
-                name: row.get("name"),
-            };
-            owners.insert(user.id.clone(), user);
-        }
+        let owners = self.user_directory().await?;
 
         Ok(records
             .into_iter()
@@ -202,6 +237,10 @@ impl Repository for SqliteRepository {
                  SELECT id FROM notes WHERE owner_id = ?
                  UNION
                  SELECT note_id FROM note_shares WHERE user_id = ?
+             ), my_workspaces(workspace_id) AS (
+                 SELECT id FROM workspaces WHERE owner_id = ?
+                 UNION
+                 SELECT workspace_id FROM workspace_members WHERE user_id = ?
              ), participants(user_id) AS (
                  SELECT ?
                  UNION
@@ -210,9 +249,17 @@ impl Repository for SqliteRepository {
                  UNION
                  SELECT ns.user_id FROM note_shares ns
                  JOIN shared_notes sn ON sn.note_id = ns.note_id
+                 UNION
+                 SELECT w.owner_id FROM workspaces w
+                 JOIN my_workspaces mw ON mw.workspace_id = w.id
+                 UNION
+                 SELECT m.user_id FROM workspace_members m
+                 JOIN my_workspaces mw ON mw.workspace_id = m.workspace_id
              )
              SELECT user_id FROM participants",
         )
+        .bind(user_id)
+        .bind(user_id)
         .bind(user_id)
         .bind(user_id)
         .bind(user_id)
@@ -247,14 +294,224 @@ impl Repository for SqliteRepository {
         Ok(())
     }
 
+    // -- workspaces -----------------------------------------------------------
+
+    async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>> {
+        let rows = sqlx::query(&format!(
+            "SELECT * FROM workspaces WHERE id IN ({MY_WORKSPACES})
+             ORDER BY is_default DESC, created_at ASC"
+        ))
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let workspaces: Vec<Workspace> = rows.iter().map(workspace_from_row).collect();
+        if workspaces.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut members_by_workspace: HashMap<String, Vec<UserPublic>> = HashMap::new();
+        for row in sqlx::query(
+            "SELECT m.workspace_id, u.id, u.name FROM workspace_members m
+             JOIN users u ON u.id = m.user_id",
+        )
+        .fetch_all(&self.pool)
+        .await?
+        {
+            members_by_workspace
+                .entry(row.get("workspace_id"))
+                .or_default()
+                .push(UserPublic {
+                    id: row.get("id"),
+                    name: row.get("name"),
+                });
+        }
+        let users = self.user_directory().await?;
+
+        Ok(workspaces
+            .into_iter()
+            .map(|workspace| {
+                let mut members = members_by_workspace
+                    .get(&workspace.id)
+                    .cloned()
+                    .unwrap_or_default();
+                members.sort_by(|a, b| a.name.cmp(&b.name));
+                WorkspaceView {
+                    owner: users
+                        .get(&workspace.owner_id)
+                        .cloned()
+                        .unwrap_or(UserPublic {
+                            id: workspace.owner_id.clone(),
+                            name: "?".to_string(),
+                        }),
+                    members,
+                    id: workspace.id,
+                    name: workspace.name,
+                    is_default: workspace.is_default,
+                    created_at: workspace.created_at,
+                }
+            })
+            .collect())
+    }
+
+    async fn workspace(&self, workspace_id: &str) -> RepoResult<Option<Workspace>> {
+        let row = sqlx::query("SELECT * FROM workspaces WHERE id = ?")
+            .bind(workspace_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.as_ref().map(workspace_from_row))
+    }
+
+    async fn default_workspace(&self, user_id: &str) -> RepoResult<Option<Workspace>> {
+        let row = sqlx::query("SELECT * FROM workspaces WHERE owner_id = ? AND is_default = 1")
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.as_ref().map(workspace_from_row))
+    }
+
+    async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()> {
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO workspaces (id, owner_id, name, is_default, created_at)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&workspace.id)
+        .bind(&workspace.owner_id)
+        .bind(&workspace.name)
+        .bind(workspace.is_default as i64)
+        .bind(&workspace.created_at)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(RepoError::Conflict(
+                "workspace id already exists".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool> {
+        let result = sqlx::query("UPDATE workspaces SET name = ? WHERE id = ?")
+            .bind(name)
+            .bind(workspace_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<bool> {
+        let Some(workspace) = self.workspace(workspace_id).await? else {
+            return Ok(false);
+        };
+        // The default workspace is where notes are rehomed to; removing it
+        // would leave them nowhere to go.
+        if workspace.is_default {
+            return Ok(false);
+        }
+        let mut tx = self.pool.begin().await?;
+        // Every note goes home to its own owner's default workspace, so
+        // deleting a shared workspace never destroys another member's notes.
+        sqlx::query(
+            "UPDATE notes SET workspace_id = (
+                 SELECT w.id FROM workspaces w
+                 WHERE w.owner_id = notes.owner_id AND w.is_default = 1
+             )
+             WHERE workspace_id = ?",
+        )
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+        // The workspace's labels are its own; they go with it (note_labels
+        // cascades), exactly as deleting a label would.
+        let result = sqlx::query("DELETE FROM workspaces WHERE id = ?")
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(PRUNE_MISMATCHED_LABELS)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn rehome_own_notes(&self, workspace_id: &str, user_id: &str) -> RepoResult<Vec<String>> {
+        let rows = sqlx::query("SELECT id FROM notes WHERE workspace_id = ? AND owner_id = ?")
+            .bind(workspace_id)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await?;
+        let ids: Vec<String> = rows.iter().map(|r| r.get("id")).collect();
+        if ids.is_empty() {
+            return Ok(ids);
+        }
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "UPDATE notes SET workspace_id = (
+                 SELECT w.id FROM workspaces w
+                 WHERE w.owner_id = notes.owner_id AND w.is_default = 1
+             )
+             WHERE workspace_id = ? AND owner_id = ?",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(PRUNE_MISMATCHED_LABELS)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(ids)
+    }
+
+    async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>> {
+        let rows = sqlx::query(
+            "SELECT owner_id AS uid FROM workspaces WHERE id = ?
+             UNION SELECT user_id AS uid FROM workspace_members WHERE workspace_id = ?",
+        )
+        .bind(workspace_id)
+        .bind(workspace_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get("uid")).collect())
+    }
+
+    async fn is_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool> {
+        Ok(self
+            .workspace_member_ids(workspace_id)
+            .await?
+            .contains(&user_id.to_string()))
+    }
+
+    async fn add_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO workspace_members (workspace_id, user_id) VALUES (?, ?)",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn remove_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool> {
+        let result =
+            sqlx::query("DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?")
+                .bind(workspace_id)
+                .bind(user_id)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     // -- notes ---------------------------------------------------------------
 
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>> {
-        let rows = sqlx::query(
-            "SELECT * FROM notes WHERE owner_id = ?
-             OR id IN (SELECT note_id FROM note_shares WHERE user_id = ?)
-             ORDER BY position ASC",
-        )
+        let rows = sqlx::query(&format!(
+            "SELECT * FROM notes WHERE {} ORDER BY position ASC",
+            visible_notes("notes")
+        ))
+        .bind(user_id)
+        .bind(user_id)
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -285,12 +542,13 @@ impl Repository for SqliteRepository {
     async fn insert_note(&self, note: &NoteRecord) -> RepoResult<()> {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO notes
-             (id, owner_id, kind, title, content, items, color, pinned, archived, trashed,
-              position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+             (id, owner_id, workspace_id, kind, title, content, items, color, pinned, archived,
+              trashed, position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
         )
         .bind(&note.id)
         .bind(&note.owner_id)
+        .bind(&note.workspace_id)
         .bind(&note.kind)
         .bind(&note.title)
         .bind(&note.content)
@@ -315,9 +573,9 @@ impl Repository for SqliteRepository {
     async fn update_note(&self, note: &NoteRecord) -> RepoResult<()> {
         // trashed_at drives the 7-day purge; set it on the false->true edge.
         sqlx::query(
-            "UPDATE notes SET kind = ?, title = ?, content = ?, items = ?, color = ?,
-             pinned = ?, archived = ?, position = ?, reminder_at = ?, reminder_fired_at = ?,
-             updated_at = ?, last_editor_id = ?,
+            "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
+             color = ?, pinned = ?, archived = ?, position = ?, reminder_at = ?,
+             reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
              trashed_at = CASE
                  WHEN ? AND trashed = 0 THEN ?
                  WHEN NOT ? THEN NULL
@@ -326,6 +584,7 @@ impl Repository for SqliteRepository {
              trashed = ?
              WHERE id = ?",
         )
+        .bind(&note.workspace_id)
         .bind(&note.kind)
         .bind(&note.title)
         .bind(&note.content)
@@ -357,10 +616,12 @@ impl Repository for SqliteRepository {
     }
 
     async fn min_position_for_user(&self, user_id: &str) -> RepoResult<f64> {
-        let row = sqlx::query(
-            "SELECT COALESCE(MIN(position), 0.0) AS m FROM notes WHERE owner_id = ?
-             OR id IN (SELECT note_id FROM note_shares WHERE user_id = ?)",
-        )
+        let row = sqlx::query(&format!(
+            "SELECT COALESCE(MIN(position), 0.0) AS m FROM notes WHERE {}",
+            visible_notes("notes")
+        ))
+        .bind(user_id)
+        .bind(user_id)
         .bind(user_id)
         .bind(user_id)
         .fetch_one(&self.pool)
@@ -369,18 +630,21 @@ impl Repository for SqliteRepository {
     }
 
     async fn reorder_for_user(&self, user_id: &str, ids: &[String]) -> RepoResult<()> {
+        let statement = format!(
+            "UPDATE notes SET position = ? WHERE id = ? AND {}",
+            visible_notes("notes")
+        );
         let mut tx = self.pool.begin().await?;
         for (i, id) in ids.iter().enumerate() {
-            sqlx::query(
-                "UPDATE notes SET position = ? WHERE id = ? AND (owner_id = ?
-                 OR id IN (SELECT note_id FROM note_shares WHERE user_id = ?))",
-            )
-            .bind(((i + 1) as f64) * 1024.0)
-            .bind(id)
-            .bind(user_id)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query(&statement)
+                .bind(((i + 1) as f64) * 1024.0)
+                .bind(id)
+                .bind(user_id)
+                .bind(user_id)
+                .bind(user_id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -527,8 +791,14 @@ impl Repository for SqliteRepository {
     async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>> {
         let rows = sqlx::query(
             "SELECT owner_id AS uid FROM notes WHERE id = ?
-             UNION SELECT user_id AS uid FROM note_shares WHERE note_id = ?",
+             UNION SELECT user_id AS uid FROM note_shares WHERE note_id = ?
+             UNION SELECT w.owner_id AS uid FROM workspaces w
+                 JOIN notes n ON n.workspace_id = w.id WHERE n.id = ?
+             UNION SELECT m.user_id AS uid FROM workspace_members m
+                 JOIN notes n ON n.workspace_id = m.workspace_id WHERE n.id = ?",
         )
+        .bind(note_id)
+        .bind(note_id)
         .bind(note_id)
         .bind(note_id)
         .fetch_all(&self.pool)
@@ -564,9 +834,12 @@ impl Repository for SqliteRepository {
     // -- labels ---------------------------------------------------------------
 
     async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>> {
-        let rows = sqlx::query(
-            "SELECT id, name, color, icon FROM labels WHERE owner_id = ? ORDER BY name COLLATE NOCASE",
-        )
+        let rows = sqlx::query(&format!(
+            "SELECT id, workspace_id, name, color, icon FROM labels
+             WHERE workspace_id IN ({MY_WORKSPACES})
+             ORDER BY name COLLATE NOCASE"
+        ))
+        .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
@@ -574,6 +847,7 @@ impl Repository for SqliteRepository {
             .iter()
             .map(|r| Label {
                 id: r.get("id"),
+                workspace_id: r.get("workspace_id"),
                 name: r.get("name"),
                 color: r.get("color"),
                 icon: r.get("icon"),
@@ -581,12 +855,13 @@ impl Repository for SqliteRepository {
             .collect())
     }
 
-    async fn insert_label(&self, user_id: &str, label: &Label) -> RepoResult<()> {
+    async fn insert_label(&self, label: &Label) -> RepoResult<()> {
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO labels (id, owner_id, name, color, icon) VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO labels (id, workspace_id, name, color, icon)
+             VALUES (?, ?, ?, ?, ?)",
         )
         .bind(&label.id)
-        .bind(user_id)
+        .bind(&label.workspace_id)
         .bind(&label.name)
         .bind(&label.color)
         .bind(&label.icon)
@@ -606,13 +881,17 @@ impl Repository for SqliteRepository {
         color: Option<&str>,
         icon: Option<&str>,
     ) -> RepoResult<bool> {
-        let result = sqlx::query(
-            "UPDATE labels SET name = ?, color = ?, icon = ? WHERE id = ? AND owner_id = ?",
-        )
+        // Membership, not authorship: a workspace's labels belong to everyone
+        // in it.
+        let result = sqlx::query(&format!(
+            "UPDATE labels SET name = ?, color = ?, icon = ?
+             WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
+        ))
         .bind(name)
         .bind(color)
         .bind(icon)
         .bind(label_id)
+        .bind(user_id)
         .bind(user_id)
         .execute(&self.pool)
         .await?;
@@ -620,43 +899,53 @@ impl Repository for SqliteRepository {
     }
 
     async fn delete_label(&self, user_id: &str, label_id: &str) -> RepoResult<bool> {
-        let result = sqlx::query("DELETE FROM labels WHERE id = ? AND owner_id = ?")
-            .bind(label_id)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
+        let result = sqlx::query(&format!(
+            "DELETE FROM labels WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
+        ))
+        .bind(label_id)
+        .bind(user_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn set_note_labels(
-        &self,
-        note_id: &str,
-        user_id: &str,
-        label_ids: &[String],
-    ) -> RepoResult<()> {
+    async fn set_note_labels(&self, note_id: &str, label_ids: &[String]) -> RepoResult<()> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query(
-            "DELETE FROM note_labels WHERE note_id = ?
-             AND label_id IN (SELECT id FROM labels WHERE owner_id = ?)",
-        )
-        .bind(note_id)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("DELETE FROM note_labels WHERE note_id = ?")
+            .bind(note_id)
+            .execute(&mut *tx)
+            .await?;
         for label_id in label_ids {
-            // The ownership subquery keeps users from attaching labels that
-            // are not theirs.
+            // The workspace join keeps a stray id from attaching a label that
+            // belongs to some other workspace.
             sqlx::query(
                 "INSERT OR IGNORE INTO note_labels (note_id, label_id)
-                 SELECT ?, id FROM labels WHERE id = ? AND owner_id = ?",
+                 SELECT n.id, l.id FROM notes n
+                 JOIN labels l ON l.workspace_id = n.workspace_id
+                 WHERE n.id = ? AND l.id = ?",
             )
             .bind(note_id)
             .bind(label_id)
-            .bind(user_id)
             .execute(&mut *tx)
             .await?;
         }
         tx.commit().await?;
+        Ok(())
+    }
+
+    async fn prune_foreign_labels(&self, note_id: &str) -> RepoResult<()> {
+        sqlx::query(
+            "DELETE FROM note_labels WHERE note_id = ? AND label_id NOT IN (
+                 SELECT l.id FROM labels l
+                 JOIN notes n ON n.workspace_id = l.workspace_id
+                 WHERE n.id = ?
+             )",
+        )
+        .bind(note_id)
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -699,13 +988,15 @@ impl Repository for SqliteRepository {
     /// suggestions are scoped per note, and collaborators on e.g. a shared
     /// grocery list share its history.
     async fn checklist_history(&self, user_id: &str) -> RepoResult<Vec<HistoryEntry>> {
-        let rows = sqlx::query(
+        let rows = sqlx::query(&format!(
             "SELECT h.note_id, h.text, h.uses FROM checklist_history h
              JOIN notes n ON n.id = h.note_id
-             LEFT JOIN note_shares s ON s.note_id = n.id AND s.user_id = ?
-             WHERE n.owner_id = ? OR s.user_id IS NOT NULL
+             WHERE {}
              ORDER BY h.uses DESC, h.last_used_at DESC",
-        )
+            visible_notes("n")
+        ))
+        .bind(user_id)
+        .bind(user_id)
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)

@@ -113,8 +113,14 @@ class _ChatScreenState extends State<ChatScreen> {
       _input.clear();
     });
     final api = context.read<SettingsStore>().api;
+    // Answer over the workspace the user is looking at — and file anything the
+    // turn writes there too.
     _sub = api
-        .chat(message, history)
+        .chat(
+          message,
+          history,
+          workspaceId: context.read<NotesStore>().activeWorkspaceId,
+        )
         .listen(
           (event) => _handle(pending, event),
           onError: (Object _) =>

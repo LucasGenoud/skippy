@@ -73,6 +73,59 @@ pub struct AuthResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Workspaces
+
+/// Name given to the workspace every account starts with.
+pub const DEFAULT_WORKSPACE_NAME: &str = "My notes";
+
+/// A container for notes and labels. Every user gets one default workspace at
+/// registration and may create more. Membership is per workspace: a member
+/// sees every note it holds, and its labels are a taxonomy shared by everyone
+/// in it.
+#[derive(Debug, Clone)]
+pub struct Workspace {
+    pub id: String,
+    pub owner_id: String,
+    pub name: String,
+    /// The workspace created with the account. It cannot be deleted or left,
+    /// so a user always has somewhere for their notes to live.
+    pub is_default: bool,
+    pub created_at: String,
+}
+
+/// A workspace as served to one of its members, with the roster resolved to
+/// display names.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceView {
+    pub id: String,
+    pub name: String,
+    pub owner: UserPublic,
+    /// Everyone invited to the workspace, excluding the owner.
+    pub members: Vec<UserPublic>,
+    pub is_default: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWorkspace {
+    /// Client-generated id, so the optimistic UI can switch to a new workspace
+    /// before the request round-trips. Server generates one when absent.
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameWorkspace {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddMember {
+    pub email: String,
+}
+
+// ---------------------------------------------------------------------------
 // Notes
 
 pub const KIND_TEXT: &str = "text";
@@ -112,6 +165,9 @@ pub struct Attachment {
 pub struct NoteRecord {
     pub id: String,
     pub owner_id: String,
+    /// The workspace this note lives in. Everyone in that workspace can see
+    /// and edit it; per-note collaborators are an additional, narrower grant.
+    pub workspace_id: String,
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -136,13 +192,15 @@ pub struct NoteRecord {
     pub last_editor_id: Option<String>,
 }
 
-/// A note as served to a specific user: includes that user's labels and the
+/// A note as served to a specific user: the labels they can see, plus the
 /// sharing roster.
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteView {
     #[serde(flatten)]
     pub note: NoteFields,
-    /// Labels are personal: each participant sees only their own labels here.
+    /// Labels belong to the note's workspace, so its members all see the same
+    /// set. A user who reached the note through a per-note share is not in that
+    /// workspace and sees none of them.
     pub label_ids: Vec<String>,
     pub owner: UserPublic,
     pub collaborators: Vec<UserPublic>,
@@ -152,6 +210,7 @@ pub struct NoteView {
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteFields {
     pub id: String,
+    pub workspace_id: String,
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -171,6 +230,7 @@ impl NoteRecord {
     pub fn fields(&self) -> NoteFields {
         NoteFields {
             id: self.id.clone(),
+            workspace_id: self.workspace_id.clone(),
             kind: self.kind.clone(),
             title: self.title.clone(),
             content: self.content.clone(),
@@ -208,6 +268,9 @@ pub struct NoteVersion {
 #[derive(Debug, Clone, Serialize)]
 pub struct Label {
     pub id: String,
+    /// Labels belong to a workspace, not a user: every member shares the same
+    /// taxonomy, and a label applied to a note is visible to all of them.
+    pub workspace_id: String,
     pub name: String,
     /// Hex colour (`#RRGGBB`) for the label's chip/dot, or `None` for the
     /// theme default. Purely presentational — the server never interprets it.
@@ -238,6 +301,11 @@ pub struct CreateNote {
     /// request round-trips. Server generates one when absent.
     #[serde(default)]
     pub id: Option<String>,
+    /// Which workspace to file the note in. Absent means the caller's default
+    /// workspace — the API's deliberate default, relied on by the chat write
+    /// path and by any caller that has no workspace in hand.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
@@ -269,6 +337,9 @@ pub struct CreateNote {
 /// while an absent key leaves it untouched.
 #[derive(Debug, Deserialize, Default)]
 pub struct UpdateNote {
+    /// Moves the note to another workspace (owner only, and only into a
+    /// workspace they belong to).
+    pub workspace_id: Option<String>,
     pub kind: Option<String>,
     pub title: Option<String>,
     pub content: Option<String>,
@@ -290,6 +361,7 @@ impl UpdateNote {
         // Exhaustive destructuring: adding a field to UpdateNote without
         // deciding how it patches the record fails to compile.
         let UpdateNote {
+            workspace_id,
             kind,
             title,
             content,
@@ -302,6 +374,9 @@ impl UpdateNote {
             reminder_at,
             label_ids: _,
         } = self;
+        if let Some(v) = workspace_id {
+            record.workspace_id = v;
+        }
         if let Some(v) = kind {
             record.kind = v;
         }
@@ -356,6 +431,10 @@ pub struct ReorderRequest {
 pub struct LabelPayload {
     #[serde(default)]
     pub id: Option<String>,
+    /// Which workspace the label belongs to. Absent means the caller's default
+    /// workspace, mirroring note creation.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub color: Option<String>,

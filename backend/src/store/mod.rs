@@ -46,15 +46,40 @@ pub trait Repository: Send + Sync {
         email: &str,
         password_hash: &str,
     ) -> RepoResult<()>;
-    /// The account owner plus everyone who shares at least one note with them.
-    /// Used to refresh public display names after a profile change.
+    /// The account owner plus everyone who shares at least one note or
+    /// workspace with them. Used to refresh public display names after a
+    /// profile change.
     async fn account_audience(&self, user_id: &str) -> RepoResult<Vec<String>>;
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()>;
     async fn user_id_for_token(&self, token: &str) -> RepoResult<Option<String>>;
     async fn delete_session(&self, token: &str) -> RepoResult<()>;
 
+    // -- workspaces -----------------------------------------------------------
+    /// Every workspace the user owns or has been invited to, default first.
+    async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>>;
+    async fn workspace(&self, workspace_id: &str) -> RepoResult<Option<Workspace>>;
+    /// The workspace created with the account. Every user has exactly one, and
+    /// it is where notes land when no workspace is named.
+    async fn default_workspace(&self, user_id: &str) -> RepoResult<Option<Workspace>>;
+    async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()>;
+    async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool>;
+    /// Delete a workspace, first filing every note it held in the note owner's
+    /// own default workspace — deleting a workspace never destroys notes.
+    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<bool>;
+    /// The workspace's owner plus everyone invited to it.
+    async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>>;
+    async fn is_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;
+    async fn add_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<()>;
+    async fn remove_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;
+    /// Move every note `user_id` owns in `workspace_id` back to their default
+    /// workspace, so leaving a shared workspace takes their own notes with
+    /// them. Returns the ids that moved (their labels changed, so they need
+    /// reindexing).
+    async fn rehome_own_notes(&self, workspace_id: &str, user_id: &str) -> RepoResult<Vec<String>>;
+
     // -- notes ---------------------------------------------------------------
-    /// Every note the user owns or collaborates on, decorated for that user.
+    /// Every note the user can see — owned, shared with them directly, or held
+    /// by a workspace they belong to — decorated for that user.
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>>;
     async fn note_view(&self, note_id: &str, viewer_id: &str) -> RepoResult<Option<NoteView>>;
     async fn note_record(&self, note_id: &str) -> RepoResult<Option<NoteRecord>>;
@@ -103,14 +128,18 @@ pub trait Repository: Send + Sync {
     ) -> RepoResult<()>;
 
     // -- sharing ---------------------------------------------------------------
+    /// Everyone who can see the note: its owner, its direct collaborators, and
+    /// every member of the workspace holding it.
     async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>>;
     async fn is_participant(&self, note_id: &str, user_id: &str) -> RepoResult<bool>;
     async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()>;
     async fn remove_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<bool>;
 
     // -- labels ---------------------------------------------------------------
+    /// Every label in every workspace the user belongs to. Labels are a shared
+    /// workspace taxonomy, so members all see the same set.
     async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>>;
-    async fn insert_label(&self, user_id: &str, label: &Label) -> RepoResult<()>;
+    async fn insert_label(&self, label: &Label) -> RepoResult<()>;
     async fn update_label(
         &self,
         user_id: &str,
@@ -120,14 +149,12 @@ pub trait Repository: Send + Sync {
         icon: Option<&str>,
     ) -> RepoResult<bool>;
     async fn delete_label(&self, user_id: &str, label_id: &str) -> RepoResult<bool>;
-    /// Replace the viewer's own labels on a note (never touches labels other
-    /// participants attached).
-    async fn set_note_labels(
-        &self,
-        note_id: &str,
-        user_id: &str,
-        label_ids: &[String],
-    ) -> RepoResult<()>;
+    /// Replace a note's labels. Only labels from the note's own workspace are
+    /// accepted, so a move or a stray id can never attach a foreign label.
+    async fn set_note_labels(&self, note_id: &str, label_ids: &[String]) -> RepoResult<()>;
+    /// Drop labels that no longer belong to the note's workspace, after the
+    /// note has been moved.
+    async fn prune_foreign_labels(&self, note_id: &str) -> RepoResult<()>;
 
     // -- checklist history -------------------------------------------------------
     /// Remember item texts checked off in a note (upsert, bump use count).

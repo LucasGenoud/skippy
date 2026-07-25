@@ -23,6 +23,49 @@ class ViewSelection {
   int get hashCode => Object.hash(view, labelId);
 }
 
+/// Which workspace's notes a view shows.
+///
+/// A note shared with you directly can live in a workspace you're not a member
+/// of. It still has to appear somewhere, so those fall into the default
+/// workspace — the one place every account has.
+class WorkspaceScope {
+  /// The open workspace, or null to show every note the user can see.
+  final String? workspaceId;
+
+  /// Whether [workspaceId] is the user's default workspace, which also
+  /// collects notes from workspaces they don't belong to.
+  final bool isDefault;
+
+  /// The workspaces the user belongs to; a note filed outside all of them
+  /// reached them through a direct share.
+  final Set<String> known;
+
+  const WorkspaceScope({
+    required this.workspaceId,
+    required this.isDefault,
+    required this.known,
+  });
+
+  /// No filtering — used by exports, search, and tests that predate
+  /// workspaces.
+  const WorkspaceScope.all()
+    : workspaceId = null,
+      isDefault = false,
+      known = const {};
+
+  bool contains(Note note) => containsWorkspace(note.workspaceId);
+
+  /// Whether content filed in [id] shows in this scope. Content from a
+  /// workspace the user doesn't belong to — a directly shared note, or a
+  /// cache written before workspaces existed — surfaces in the default one.
+  bool containsWorkspace(String id) {
+    final active = workspaceId;
+    if (active == null) return true;
+    if (id == active) return true;
+    return isDefault && !known.contains(id);
+  }
+}
+
 class NoteSections {
   final List<Note> pinned;
   final List<Note> others;
@@ -43,12 +86,14 @@ NoteSections selectNotes({
   required String query,
   required SortMode sortMode,
   required String? currentUserId,
+  WorkspaceScope scope = const WorkspaceScope.all(),
 }) {
   final normalizedQuery = query.trim().toLowerCase();
   final labelsById = {for (final label in labels) label.id: label};
   final visible = notes
       .where(
         (note) =>
+            scope.contains(note) &&
             _isInView(note, selection, currentUserId) &&
             _matchesQuery(note, normalizedQuery, labelsById),
       )

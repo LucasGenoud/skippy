@@ -98,7 +98,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/versions.rs`: version timeline and restores.
 - `backend/src/handlers/attachments.rs`: multipart upload, signed serving, ranges, transcription trigger, deletion.
 - `backend/src/handlers/sharing.rs`: collaborator lookup, add/remove, and permission rules.
-- `backend/src/handlers/labels.rs`: personal labels and note-label membership.
+- `backend/src/handlers/workspaces.rs`: workspace CRUD, membership, and the default workspace every account starts with.
+- `backend/src/handlers/labels.rs`: workspace labels and note-label membership.
 - `backend/src/handlers/settings.rs`: opaque per-user settings document and managed descriptors.
 - `backend/src/handlers/search.rs`: semantic query, stats, and background reindex endpoints.
 - `backend/src/handlers/chat.rs`: streaming note-chat WebSocket and optional writes.
@@ -128,6 +129,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/main.dart`: dependency wiring, authentication gate, user-scoped stores, theme binding.
 - `app/lib/api/api_client.dart`: `Api` abstraction, HTTP implementation, uploads, downloads, and WebSockets. UI/state code should depend on `Api`, not directly on HTTP.
 - `app/lib/models/note.dart`: notes, checklist items, labels, collaborators, versions, attachments, settings-related value types.
+- `app/lib/models/workspace.dart`: workspace and its roster.
 - `app/lib/models/chat.dart`: chat frames, citations, tool/write states.
 - `app/lib/models/link_preview.dart`: unfurl response and cache model.
 - `app/lib/models/notify_channels.dart`: frontend notification connector registry.
@@ -151,6 +153,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/quick_add_bar.dart`: inline text, checklist, and markdown drafts plus image-note creation.
 - `app/lib/widgets/editor/`: extracted editor attachment, text-field, and bottom-bar pieces.
 - `app/lib/widgets/settings/`: extracted settings sections and shared managed/probe UI.
+- `app/lib/widgets/workspace_menu.dart`: workspace switcher, create/rename, roster management, and the move-a-note picker.
 - `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations.
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
@@ -168,15 +171,23 @@ Rust payloads in `backend/src/models.rs`, Dart models in `app/lib/models`, metho
 
 Supported note kinds are `text`, `markdown`, `checklist`, and `audio`. Audio transcript state is separately represented as none, pending, done, or failed. Do not infer transcription state only from whether transcript text is empty.
 
+`workspace_id` is optional on note and label creation and resolves to the caller's default workspace; that is a deliberate API default, not a compatibility shim. On the client, a note filed in a workspace the user does not belong to — reached through a per-note share — surfaces in their default workspace; `WorkspaceScope` in `state/note_collection.dart` is the single place that rule lives.
+
 ### Permissions and ownership
 
-Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. Owners control destructive sharing and note lifecycle actions; collaborators can edit and leave. Labels are personal even on shared notes. Pin, archive, reminder, color, and custom ordering are shared note state.
+Every note and label belongs to exactly one workspace. A participant is the note's owner, one of its direct collaborators, or a member of the workspace holding it; the repository derives all three, so a new note-related query gets workspace access for free by going through `participant_ids`/`is_participant` rather than reading `note_shares` directly.
+
+Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. Owners control destructive sharing and note lifecycle actions, including moving a note between workspaces; collaborators can edit and leave. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. A user's default workspace can never be deleted or left, because notes are rehomed there when a workspace goes away.
+
+Labels are a workspace's shared taxonomy, not personal state: every member sees and applies the same set. Someone who reached a note through a direct share is not in its workspace, so they see none of its labels and their `label_ids` patch is ignored rather than clearing what members attached. Pin, archive, reminder, color, and custom ordering are shared note state.
 
 Recheck the entire permission matrix when adding a note-related endpoint. Do not fetch a raw row first and bolt on an inconsistent permission check if an existing participant-scoped repository method can express the operation.
 
 ### Mutation side effects
 
-Note content edits drive version capture, semantic reindexing, automatic labeling, collaborator notification, and WebSocket fan-out. Organization-only edits should retain their deliberately smaller side-effect set. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
+Note content edits drive version capture, semantic reindexing, automatic labeling, collaborator notification, and WebSocket fan-out. Organization-only edits should retain their deliberately smaller side-effect set.
+
+Anything that changes who can see a note — a workspace roster change, a note moving workspaces, a workspace being deleted — must reindex the affected notes, because the vector index stores one row per participant. A move must also notify the workspace it left, not only the one it joined. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
 
 Checklist history is recorded on a transition to checked, shared with participants in that note, and capped at 500 records per note.
 
@@ -192,7 +203,7 @@ Every notification connector key in `kNotifyChannels` must match a backend conne
 
 ### Semantic search and chat
 
-Semantic search uses full-precision `BAAI/bge-m3` embeddings with 1024 dimensions. sqlite-vec stores participant-scoped rows so sharing changes visibility without leaking results. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
+Semantic search uses full-precision `BAAI/bge-m3` embeddings with 1024 dimensions. sqlite-vec stores participant-scoped rows so sharing changes visibility without leaking results. It partitions by participant and not by workspace, so a `workspace_id` filter on search or chat is applied over the index's hits and has to over-fetch to keep the ranked list full. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
 
 Chat retrieval and writes depend on the same optional embedding and LLM configuration paths. Stream frame types are shared conceptually between `handlers/chat.rs` and `models/chat.dart`; add unknown-frame resilience on the client when extending the protocol.
 
@@ -217,6 +228,10 @@ Audio-note creation and retranscription are asynchronous. Keep the note usable w
 5. Update `app/test/fake_api.dart` so frontend tests still compile.
 6. Add real-router backend coverage and client coverage for the caller.
 7. Update the README API sketch if the endpoint is public and important.
+
+### Add a workspace-scoped concept
+
+Decide first whether it is workspace state (shared by every member, like labels) or per-user state. Workspace state needs a `workspace_id` column, membership-scoped repository queries rather than owner-scoped ones, notification to the whole roster instead of one user, and a client filter through `WorkspaceScope` so switching workspaces switches it.
 
 ### Add a persisted note field
 

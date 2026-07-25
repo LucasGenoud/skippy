@@ -23,6 +23,10 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onRedo;
   final VoidCallback? onDelete;
   final VoidCallback? onDuplicate;
+
+  /// File the note in another workspace. Null when the viewer doesn't own it,
+  /// or there is nowhere else to put it.
+  final VoidCallback? onMoveToWorkspace;
   final VoidCallback? onCopyToClipboard;
   final VoidCallback? onHistory;
   final void Function(NoteKind target)? onConvert;
@@ -47,6 +51,7 @@ class EditorBottomBar extends StatelessWidget {
     this.onRedo,
     this.onDelete,
     this.onDuplicate,
+    this.onMoveToWorkspace,
     this.onCopyToClipboard,
     this.onHistory,
     this.onConvert,
@@ -199,6 +204,7 @@ class EditorBottomBar extends StatelessWidget {
                   if (value == 'archive') onArchive?.call();
                   if (value == 'delete') onDelete?.call();
                   if (value == 'duplicate') onDuplicate?.call();
+                  if (value == 'move') onMoveToWorkspace?.call();
                   if (value == 'clipboard') onCopyToClipboard?.call();
                   if (value == 'history') onHistory?.call();
                   if (value == 'concise') {
@@ -294,6 +300,13 @@ class EditorBottomBar extends StatelessWidget {
                     label: 'Duplicate',
                     enabled: onDuplicate != null,
                   ),
+                  if (onMoveToWorkspace != null)
+                    _menuItem(
+                      value: 'move',
+                      icon: Icons.drive_file_move_outlined,
+                      label: 'Move to workspace',
+                      enabled: true,
+                    ),
                   if (isOwner)
                     _menuItem(
                       value: 'delete',

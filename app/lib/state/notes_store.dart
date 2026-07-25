@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../models/workspace.dart';
 import '../util/backup.dart';
 import '../util/connectivity.dart';
 import 'local_cache.dart';
@@ -14,7 +15,7 @@ import 'note_conversion.dart';
 import 'pending_operation.dart';
 
 export 'note_collection.dart'
-    show NoteSections, NoteView, SortMode, ViewSelection;
+    show NoteSections, NoteView, SortMode, ViewSelection, WorkspaceScope;
 
 /// Coarse connectivity/sync state surfaced on the top-bar avatar.
 enum SyncStatus { synced, syncing, offline }
@@ -42,6 +43,11 @@ class NotesStore extends ChangeNotifier {
 
   List<Note> _notes = [];
   List<Label> _labels = [];
+  List<Workspace> _workspaces = [];
+
+  /// The workspace the UI is showing. Null until the first load resolves one
+  /// (the cached choice, or the default workspace).
+  String? _activeWorkspaceId;
 
   /// Previously checked item texts, keyed by note id (suggestions are
   /// per-note by design).
@@ -96,7 +102,70 @@ class NotesStore extends ChangeNotifier {
     this.onRemoteChange,
   }) : cache = cache ?? MemoryLocalCache();
 
-  List<Label> get labels => List.unmodifiable(_labels);
+  /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
+  /// so switching workspaces switches the whole sidebar.
+  List<Label> get labels {
+    final scope = workspaceScope;
+    return List.unmodifiable([
+      for (final label in _labels)
+        if (scope.containsWorkspace(label.workspaceId)) label,
+    ]);
+  }
+
+  /// Every workspace the user belongs to, default first.
+  List<Workspace> get workspaces => List.unmodifiable(_workspaces);
+
+  String? get activeWorkspaceId => _activeWorkspaceId;
+
+  Workspace? get activeWorkspace => workspaceById(_activeWorkspaceId);
+
+  Workspace? workspaceById(String? id) {
+    for (final workspace in _workspaces) {
+      if (workspace.id == id) return workspace;
+    }
+    return null;
+  }
+
+  Workspace? get defaultWorkspace {
+    for (final workspace in _workspaces) {
+      if (workspace.isDefault) return workspace;
+    }
+    return _workspaces.isEmpty ? null : _workspaces.first;
+  }
+
+  /// How the home screen narrows notes to the open workspace.
+  WorkspaceScope get workspaceScope => WorkspaceScope(
+    workspaceId: _activeWorkspaceId,
+    isDefault: _activeWorkspaceId != null &&
+        _activeWorkspaceId == defaultWorkspace?.id,
+    known: {for (final workspace in _workspaces) workspace.id},
+  );
+
+  /// Notes in the open workspace, whatever their view — used by the pickers
+  /// and counts that must agree with what the grid shows.
+  List<Note> get notesInActiveWorkspace {
+    final scope = workspaceScope;
+    return [
+      for (final note in _notes)
+        if (scope.contains(note)) note,
+    ];
+  }
+
+  void setActiveWorkspace(String id) {
+    if (_activeWorkspaceId == id || workspaceById(id) == null) return;
+    _activeWorkspaceId = id;
+    notifyListeners();
+    _persistNow();
+  }
+
+  /// Point at a workspace that still exists: the cached choice when it is
+  /// still ours, otherwise the default one. Called after every fetch, so a
+  /// workspace deleted (or left) on another device can't strand the view.
+  void _reconcileActiveWorkspace() {
+    if (_workspaces.isEmpty) return;
+    if (workspaceById(_activeWorkspaceId) != null) return;
+    _activeWorkspaceId = defaultWorkspace?.id;
+  }
 
   /// Notes for a data export: everything except trash, in display order.
   List<Note> get notesForExport =>
@@ -135,7 +204,7 @@ class NotesStore extends ChangeNotifier {
     try {
       for (final backupLabel in bundle.labels) {
         Label? label;
-        for (final existing in _labels) {
+        for (final existing in labels) {
           if (existing.name.toLowerCase() == backupLabel.name.toLowerCase()) {
             label = existing;
             break;
@@ -144,6 +213,7 @@ class NotesStore extends ChangeNotifier {
         if (label == null) {
           label = Label(
             id: _uuid.v4(),
+            workspaceId: _activeWorkspaceId ?? '',
             name: backupLabel.name,
             color: backupLabel.color,
             icon: backupLabel.icon,
@@ -151,6 +221,7 @@ class NotesStore extends ChangeNotifier {
           await api.createLabel(
             label.id,
             label.name,
+            workspaceId: label.workspaceId,
             color: label.color,
             icon: label.icon,
           );
@@ -182,6 +253,7 @@ class NotesStore extends ChangeNotifier {
         final noteId = backupNote.id;
         var note = Note(
           id: noteId,
+          workspaceId: _activeWorkspaceId ?? '',
           kind: backupNote.kind,
           title: backupNote.title,
           content: backupNote.content,
@@ -312,6 +384,7 @@ class NotesStore extends ChangeNotifier {
       final startedWithLocalChanges = _hasLocalChangesInFlight;
       final revisionAtStart = _localWriteRevision;
       try {
+        final workspaces = await api.fetchWorkspaces();
         final notes = await api.fetchNotes();
         final labels = await api.fetchLabels();
         final history = await api.fetchChecklistHistory();
@@ -324,6 +397,8 @@ class NotesStore extends ChangeNotifier {
             !_hasLocalChangesInFlight) {
           _notes = notes..sort((a, b) => a.position.compareTo(b.position));
           _labels = labels;
+          _workspaces = workspaces;
+          _reconcileActiveWorkspace();
           _checklistHistory = history;
           _reloadPending = false;
         } else if (_hasLocalChangesInFlight) {
@@ -361,12 +436,15 @@ class NotesStore extends ChangeNotifier {
     }
     if (_queue.isNotEmpty) _flush();
     try {
+      final workspaces = await api.fetchWorkspaces();
       final notes = await api.fetchNotes();
       final labels = await api.fetchLabels();
       final history = await api.fetchChecklistHistory();
       if (!_hasLocalChangesInFlight) {
         _notes = notes..sort((a, b) => a.position.compareTo(b.position));
         _labels = labels;
+        _workspaces = workspaces;
+        _reconcileActiveWorkspace();
         _checklistHistory = history;
       } else {
         _reloadPending = true;
@@ -402,6 +480,12 @@ class NotesStore extends ChangeNotifier {
           for (final j in (doc['labels'] as List? ?? const []))
             Label.fromJson((j as Map).cast<String, dynamic>()),
         ];
+        _workspaces = [
+          for (final j in (doc['workspaces'] as List? ?? const []))
+            Workspace.fromJson((j as Map).cast<String, dynamic>()),
+        ];
+        _activeWorkspaceId = doc['active_workspace'] as String?;
+        _reconcileActiveWorkspace();
         _checklistHistory = {
           for (final e in (doc['history'] as Map? ?? const {}).entries)
             e.key as String: (e.value as List).cast<String>(),
@@ -417,7 +501,7 @@ class NotesStore extends ChangeNotifier {
       // Corrupt/unreadable cache: start empty rather than fail to open.
     }
     _hydrated = true;
-    if (_notes.isNotEmpty || _labels.isNotEmpty) {
+    if (_notes.isNotEmpty || _labels.isNotEmpty || _workspaces.isNotEmpty) {
       loading = false;
       notifyListeners();
     }
@@ -444,6 +528,10 @@ class NotesStore extends ChangeNotifier {
           if (!(_drafts.contains(n.id) && n.isEmpty)) n.toJson(),
       ],
       'labels': [for (final l in _labels) l.toJson()],
+      'workspaces': [for (final w in _workspaces) w.toJson()],
+      // Which workspace to reopen in. Deliberately local rather than a synced
+      // setting: it is where this device was, not a preference.
+      'active_workspace': _activeWorkspaceId,
       'history': _checklistHistory,
       'queue': ops,
     };
@@ -559,6 +647,7 @@ class NotesStore extends ChangeNotifier {
     query: query,
     sortMode: sortMode,
     currentUserId: currentUserId,
+    scope: workspaceScope,
   );
 
   void setSortMode(SortMode mode) {
@@ -573,6 +662,7 @@ class NotesStore extends ChangeNotifier {
     final now = DateTime.now();
     final note = Note(
       id: _uuid.v4(),
+      workspaceId: _activeWorkspaceId ?? '',
       kind: kind,
       position: _frontPosition(),
       createdAt: now,
@@ -900,6 +990,7 @@ class NotesStore extends ChangeNotifier {
     final now = DateTime.now();
     final copy = Note(
       id: _uuid.v4(),
+      workspaceId: source.workspaceId,
       kind: source.kind,
       title: source.title,
       content: source.content,
@@ -960,6 +1051,164 @@ class NotesStore extends ChangeNotifier {
       _enqueueContentPatch(id);
     }
     _persistNow();
+  }
+
+  // ---------------------------------------------------------------------
+  // Workspaces
+
+  /// Create a workspace and switch to it. Optimistic like note creation: the
+  /// switch happens now and the write drains through the queue.
+  Workspace createWorkspace(String name) {
+    final workspace = Workspace(
+      id: _uuid.v4(),
+      name: name.trim(),
+      owner: currentUserId == null
+          ? null
+          : UserRef(id: currentUserId!, name: ''),
+    );
+    _workspaces = [..._workspaces, workspace];
+    _activeWorkspaceId = workspace.id;
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.workspaceCreate,
+        id: workspace.id,
+        data: {'name': workspace.name},
+      ),
+    );
+    return workspace;
+  }
+
+  void renameWorkspace(String id, String name) {
+    final i = _workspaces.indexWhere((w) => w.id == id);
+    if (i == -1) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    _workspaces[i] = _workspaces[i].copyWith(name: trimmed);
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.workspaceRename,
+        id: id,
+        data: {'name': trimmed},
+      ),
+    );
+  }
+
+  /// Whether [id] can be deleted: you own it and it isn't your default one.
+  bool canDeleteWorkspace(String id) {
+    final workspace = workspaceById(id);
+    return workspace != null &&
+        !workspace.isDefault &&
+        workspace.isOwnedBy(currentUserId);
+  }
+
+  /// Delete a workspace. Its notes are not destroyed — the server files each
+  /// one in its own owner's default workspace — so they are moved locally the
+  /// same way rather than removed.
+  void deleteWorkspace(String id) {
+    if (!canDeleteWorkspace(id)) return;
+    _rehomeNotesLocally(id, (note) => note.isOwnedBy(currentUserId));
+    // Whatever is still filed here belonged to a member; it goes home with
+    // them and off our shelf.
+    _notes.removeWhere((note) => note.workspaceId == id);
+    _labels.removeWhere((label) => label.workspaceId == id);
+    _workspaces.removeWhere((workspace) => workspace.id == id);
+    _reconcileActiveWorkspace();
+    notifyListeners();
+    _enqueue(PendingOp(PendingOpKind.workspaceDelete, id: id));
+  }
+
+  /// Leave a workspace someone else owns. Notes you own there follow you to
+  /// your default workspace; the rest disappear from your shelf.
+  void leaveWorkspace(String id) {
+    final me = currentUserId;
+    final workspace = workspaceById(id);
+    if (me == null || workspace == null || workspace.isOwnedBy(me)) return;
+    _rehomeNotesLocally(id, (note) => note.isOwnedBy(me));
+    _notes.removeWhere((note) => note.workspaceId == id);
+    _labels.removeWhere((label) => label.workspaceId == id);
+    _workspaces.removeWhere((w) => w.id == id);
+    _reconcileActiveWorkspace();
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.leaveWorkspace,
+        id: id,
+        data: {'userId': me},
+      ),
+    );
+  }
+
+  /// Move the notes matching [keep] out of a workspace that is going away and
+  /// into the default one, dropping the labels they leave behind.
+  void _rehomeNotesLocally(String workspaceId, bool Function(Note) keep) {
+    final home = defaultWorkspace?.id ?? '';
+    final leavingLabels = {
+      for (final label in _labels)
+        if (label.workspaceId == workspaceId) label.id,
+    };
+    for (var i = 0; i < _notes.length; i++) {
+      final note = _notes[i];
+      if (note.workspaceId != workspaceId || !keep(note)) continue;
+      _notes[i] = note.copyWith(
+        workspaceId: home,
+        labelIds: note.labelIds.difference(leavingLabels),
+      );
+    }
+  }
+
+  /// Await-based (not queued): the dialog wants immediate success/failure.
+  /// Throws [ApiException] with a friendly `serverMessage` on rejection.
+  Future<void> addWorkspaceMember(String workspaceId, String email) async {
+    // The workspace has to exist on the server before anyone can be added.
+    await _drainQueue();
+    final updated = await api.addWorkspaceMember(workspaceId, email);
+    final i = _workspaces.indexWhere((w) => w.id == workspaceId);
+    if (i != -1) {
+      _workspaces[i] = _workspaces[i].copyWith(members: updated.members);
+      notifyListeners();
+    }
+  }
+
+  void removeWorkspaceMember(String workspaceId, String userId) {
+    if (userId == currentUserId) {
+      leaveWorkspace(workspaceId);
+      return;
+    }
+    final i = _workspaces.indexWhere((w) => w.id == workspaceId);
+    if (i == -1) return;
+    _workspaces[i] = _workspaces[i].copyWith(
+      members: _workspaces[i].members.where((m) => m.id != userId).toList(),
+    );
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.leaveWorkspace,
+        id: workspaceId,
+        data: {'userId': userId},
+      ),
+    );
+  }
+
+  /// File a note in another workspace. Owner-only, matching the server: a move
+  /// changes who can see the note. Labels from the old workspace are dropped,
+  /// since a label belongs to one workspace's taxonomy.
+  void moveNoteToWorkspace(String noteId, String workspaceId) {
+    final note = noteById(noteId);
+    if (note == null ||
+        note.workspaceId == workspaceId ||
+        !note.isOwnedBy(currentUserId) ||
+        workspaceById(workspaceId) == null) {
+      return;
+    }
+    final kept = {
+      for (final id in note.labelIds)
+        if (labelById(id)?.workspaceId == workspaceId) id,
+    };
+    _patch(noteId, note.copyWith(workspaceId: workspaceId, labelIds: kept), {
+      'workspace_id': workspaceId,
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -1168,7 +1417,7 @@ class NotesStore extends ChangeNotifier {
   /// actually have locally (never trashed ones). Throws on server errors so
   /// the UI can fall back to keyword search.
   Future<List<Note>> semanticSearch(String query) async {
-    final ids = await api.semanticSearch(query);
+    final ids = await api.semanticSearch(query, workspaceId: _activeWorkspaceId);
     return [
       for (final id in ids)
         if (noteById(id) case final Note note)
@@ -1182,6 +1431,7 @@ class NotesStore extends ChangeNotifier {
   Label createLabel(String name, {String? color, String? icon}) {
     final label = Label(
       id: _uuid.v4(),
+      workspaceId: _activeWorkspaceId ?? '',
       name: name.trim(),
       color: color,
       icon: icon,
@@ -1193,7 +1443,12 @@ class NotesStore extends ChangeNotifier {
       PendingOp(
         PendingOpKind.labelCreate,
         id: label.id,
-        data: {'name': label.name, 'color': color, 'icon': icon},
+        data: {
+          'name': label.name,
+          'workspaceId': label.workspaceId,
+          'color': color,
+          'icon': icon,
+        },
       ),
     );
     return label;
@@ -1206,7 +1461,13 @@ class NotesStore extends ChangeNotifier {
     final i = _labels.indexWhere((l) => l.id == id);
     if (i == -1) return;
     final newName = (name ?? _labels[i].name).trim();
-    _labels[i] = Label(id: id, name: newName, color: color, icon: icon);
+    _labels[i] = Label(
+      id: id,
+      workspaceId: _labels[i].workspaceId,
+      name: newName,
+      color: color,
+      icon: icon,
+    );
     _labels.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
@@ -1308,6 +1569,7 @@ class NotesStore extends ChangeNotifier {
         return api.createLabel(
           op.id!,
           op.data['name'] as String,
+          workspaceId: op.data['workspaceId'] as String? ?? '',
           color: op.data['color'] as String?,
           icon: op.data['icon'] as String?,
         );
@@ -1320,6 +1582,14 @@ class NotesStore extends ChangeNotifier {
         );
       case PendingOpKind.labelDelete:
         return api.deleteLabel(op.id!);
+      case PendingOpKind.workspaceCreate:
+        return api.createWorkspace(op.id!, op.data['name'] as String);
+      case PendingOpKind.workspaceRename:
+        return api.renameWorkspace(op.id!, op.data['name'] as String);
+      case PendingOpKind.workspaceDelete:
+        return api.deleteWorkspace(op.id!);
+      case PendingOpKind.leaveWorkspace:
+        return api.removeWorkspaceMember(op.id!, op.data['userId'] as String);
       case PendingOpKind.removeCollaborator:
         return api.removeCollaborator(op.id!, op.data['userId'] as String);
       case PendingOpKind.deleteAttachment:

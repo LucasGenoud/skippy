@@ -383,10 +383,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// A label belongs to one workspace, so switching workspaces (or deleting
+  /// the label elsewhere) would otherwise leave the grid parked on a label
+  /// that no longer exists. Fall back to Notes.
+  void _dropStaleLabelView(NotesStore store) {
+    if (_selection.view != NoteView.label) return;
+    if (store.labels.any((label) => label.id == _selection.labelId)) return;
+    // Called from build; defer so the reset lands in its own frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _selection = ViewSelection.notes);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();
+    _dropStaleLabelView(store);
     final wideLayout = MediaQuery.sizeOf(context).width >= 600;
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.

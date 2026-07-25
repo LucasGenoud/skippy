@@ -160,6 +160,10 @@ impl AppState {
             return;
         }
         let Ok(labels) = self.repo.labels_for_user(user_id).await else { return };
+        // Only the taxonomy of the note's own workspace is on offer — a label
+        // from another workspace could not be attached anyway.
+        let labels: Vec<Label> =
+            labels.into_iter().filter(|l| l.workspace_id == record.workspace_id).collect();
         if labels.is_empty() {
             return;
         }
@@ -188,7 +192,7 @@ impl AppState {
         if union.len() == current.len() {
             return;
         }
-        if self.repo.set_note_labels(note_id, user_id, &union).await.is_ok() {
+        if self.repo.set_note_labels(note_id, &union).await.is_ok() {
             self.notify_note(note_id).await;
         }
     }

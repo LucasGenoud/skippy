@@ -10,6 +10,7 @@ import '../models/chat.dart';
 import '../models/link_preview.dart';
 import '../models/note.dart';
 import '../models/search_stats.dart';
+import '../models/workspace.dart';
 import '../util/runtime_config.dart';
 
 class ApiException implements Exception {
@@ -66,6 +67,19 @@ abstract class Api {
     String? newPassword,
   });
 
+  // workspaces
+  /// Every workspace the user owns or was invited to, default first.
+  Future<List<Workspace>> fetchWorkspaces();
+  Future<Workspace> createWorkspace(String id, String name);
+  Future<Workspace> renameWorkspace(String id, String name);
+  Future<void> deleteWorkspace(String id);
+
+  /// Invite someone by email; returns the workspace with its new roster.
+  Future<Workspace> addWorkspaceMember(String workspaceId, String email);
+
+  /// Remove a member, or leave the workspace by passing your own id.
+  Future<void> removeWorkspaceMember(String workspaceId, String userId);
+
   // notes
   Future<List<Note>> fetchNotes();
   Future<void> createNote(Note note, {bool preserveTimestamps = false});
@@ -94,6 +108,7 @@ abstract class Api {
   Future<void> createLabel(
     String id,
     String name, {
+    required String workspaceId,
     String? color,
     String? icon,
   });
@@ -128,9 +143,14 @@ abstract class Api {
   Future<Map<String, dynamic>> fetchSettings();
   Future<void> putSettings(Map<String, dynamic> settings);
 
-  /// Meaning-based search; returns note ids ranked by similarity.
+  /// Meaning-based search; returns note ids ranked by similarity. Pass
+  /// [workspaceId] to keep results inside the open workspace.
   /// Throws [ApiException] (503) when the server has it disabled.
-  Future<List<String>> semanticSearch(String query, {int limit = 20});
+  Future<List<String>> semanticSearch(
+    String query, {
+    int limit = 20,
+    String? workspaceId,
+  });
 
   /// Which optional, service-backed features this server has enabled. Drives
   /// whether the audio recorder and semantic-search toggle appear at all.
@@ -182,8 +202,13 @@ abstract class Api {
 
   /// One notes-chat turn: sends [message] with prior [history] and emits the
   /// server's frames (sources, streamed deltas, then done/error). The stream
-  /// closes after the terminal event.
-  Stream<ChatEvent> chat(String message, List<ChatMessage> history);
+  /// closes after the terminal event. [workspaceId] scopes retrieval — and any
+  /// note the turn writes — to the workspace the user has open.
+  Stream<ChatEvent> chat(
+    String message,
+    List<ChatMessage> history, {
+    String? workspaceId,
+  });
 }
 
 class ApiClient implements Api {
@@ -316,6 +341,69 @@ class ApiClient implements Api {
     return AuthUser.fromJson(data as Map<String, dynamic>);
   }
 
+  // -- workspaces ------------------------------------------------------------
+
+  @override
+  Future<List<Workspace>> fetchWorkspaces() async {
+    final data =
+        _decode(await _client.get(_uri('/workspaces'), headers: _headers()))
+            as List;
+    return data
+        .map((j) => Workspace.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<Workspace> createWorkspace(String id, String name) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/workspaces'),
+        headers: _headers(),
+        body: jsonEncode({'id': id, 'name': name}),
+      ),
+    );
+    return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<Workspace> renameWorkspace(String id, String name) async {
+    final data = _decode(
+      await _client.patch(
+        _uri('/workspaces/$id'),
+        headers: _headers(),
+        body: jsonEncode({'name': name}),
+      ),
+    );
+    return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> deleteWorkspace(String id) async {
+    _decode(await _client.delete(_uri('/workspaces/$id'), headers: _headers()));
+  }
+
+  @override
+  Future<Workspace> addWorkspaceMember(String workspaceId, String email) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/workspaces/$workspaceId/members'),
+        headers: _headers(),
+        body: jsonEncode({'email': email}),
+      ),
+    );
+    return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> removeWorkspaceMember(String workspaceId, String userId) async {
+    _decode(
+      await _client.delete(
+        _uri('/workspaces/$workspaceId/members/$userId'),
+        headers: _headers(),
+      ),
+    );
+  }
+
   // -- notes ---------------------------------------------------------------
 
   @override
@@ -333,6 +421,7 @@ class ApiClient implements Api {
         headers: _headers(),
         body: jsonEncode({
           'id': note.id,
+          if (note.workspaceId.isNotEmpty) 'workspace_id': note.workspaceId,
           'kind': note.kind.wire,
           'title': note.title,
           'content': note.content,
@@ -452,6 +541,7 @@ class ApiClient implements Api {
   Future<void> createLabel(
     String id,
     String name, {
+    required String workspaceId,
     String? color,
     String? icon,
   }) async {
@@ -462,6 +552,7 @@ class ApiClient implements Api {
         // Empty strings clear the field server-side; null omits it.
         body: jsonEncode({
           'id': id,
+          if (workspaceId.isNotEmpty) 'workspace_id': workspaceId,
           'name': name,
           'color': color ?? '',
           'icon': icon ?? '',
@@ -587,10 +678,19 @@ class ApiClient implements Api {
   }
 
   @override
-  Future<List<String>> semanticSearch(String query, {int limit = 20}) async {
-    final uri = _uri(
-      '/search',
-    ).replace(queryParameters: {'q': query, 'limit': '$limit'});
+  Future<List<String>> semanticSearch(
+    String query, {
+    int limit = 20,
+    String? workspaceId,
+  }) async {
+    final uri = _uri('/search').replace(
+      queryParameters: {
+        'q': query,
+        'limit': '$limit',
+        if (workspaceId != null && workspaceId.isNotEmpty)
+          'workspace_id': workspaceId,
+      },
+    );
     final data = _decode(await _client.get(uri, headers: _headers())) as List;
     return [for (final hit in data) (hit as Map)['note_id'] as String];
   }
@@ -760,7 +860,11 @@ class ApiClient implements Api {
   }
 
   @override
-  Stream<ChatEvent> chat(String message, List<ChatMessage> history) {
+  Stream<ChatEvent> chat(
+    String message,
+    List<ChatMessage> history, {
+    String? workspaceId,
+  }) {
     // One WebSocket per turn: the server answers a single request per
     // connection, which keeps both ends free of reconnect bookkeeping. A
     // turn's latency is dominated by the model anyway.
@@ -788,6 +892,8 @@ class ApiClient implements Api {
           jsonEncode({
             'message': message,
             'history': [for (final m in history) m.toJson()],
+            if (workspaceId != null && workspaceId.isNotEmpty)
+              'workspace_id': workspaceId,
           }),
         );
         channel!.stream.listen(

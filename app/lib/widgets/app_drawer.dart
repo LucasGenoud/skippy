@@ -9,6 +9,7 @@ import '../util/label_style.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'labels_sheet.dart';
+import 'workspace_menu.dart';
 
 class AppDrawer extends StatelessWidget {
   final ViewSelection selection;
@@ -100,6 +101,15 @@ class AppDrawer extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          // The drawer route sits above dialogs, so close it before the menu
+          // opens one.
+          child: WorkspaceMenu(
+            onBeforeAction: () => Navigator.of(context).pop(),
+          ),
+        ),
         destinations[0].$2,
         destinations[1].$2,
         const Padding(
@@ -187,6 +197,8 @@ class AppSidebar extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.only(top: 12, bottom: 24),
             children: [
+              WorkspaceMenu(compact: !isOpen),
+              const WorkspaceMenuDivider(),
               _SidebarItem(
                 icon: Icons.lightbulb_outline,
                 selectedIcon: Icons.lightbulb,

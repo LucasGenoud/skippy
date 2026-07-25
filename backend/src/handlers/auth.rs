@@ -63,6 +63,9 @@ pub async fn register(
         password_hash: hash_password(&request.password)?,
     };
     state.repo.create_user(&user).await?;
+    // Every account starts with a workspace; notes have nowhere to live
+    // without one.
+    super::create_default_workspace(&state, &user.id).await?;
     let token = new_id();
     state.repo.create_session(&token, &user.id).await?;
     Ok((

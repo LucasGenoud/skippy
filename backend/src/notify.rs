@@ -367,6 +367,7 @@ mod tests {
 
     fn record(title: &str, content: &str, items: Vec<ChecklistItem>) -> NoteRecord {
         NoteRecord {
+            workspace_id: "w1".to_string(),
             id: "n1".into(),
             owner_id: "u1".into(),
             kind: "text".into(),

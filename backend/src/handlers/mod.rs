@@ -15,6 +15,7 @@ mod settings;
 mod sharing;
 mod unfurl;
 mod versions;
+mod workspaces;
 mod writing;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
@@ -32,6 +33,10 @@ pub use settings::{get_settings, put_settings};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use unfurl::unfurl;
 pub use versions::{list_note_versions, restore_note_version};
+pub use workspaces::{
+    add_workspace_member, create_default_workspace, create_workspace, delete_workspace,
+    list_workspaces, remove_workspace_member, rename_workspace,
+};
 pub use writing::rewrite_note;
 
 use axum::Json;
@@ -71,6 +76,51 @@ async fn require_participant(
         return Err(ApiError::NotFound);
     }
     Ok(record)
+}
+
+/// Ids of the notes a user can see in one workspace. Used to narrow retrieval
+/// (search, chat) to the workspace the client has open, which the vector index
+/// cannot express on its own: it partitions by participant, not by workspace.
+pub(super) async fn workspace_note_ids(
+    state: &AppState,
+    user_id: &str,
+    workspace_id: &str,
+) -> ApiResult<std::collections::HashSet<String>> {
+    Ok(state
+        .repo
+        .notes_for_user(user_id)
+        .await?
+        .into_iter()
+        .filter(|view| view.note.workspace_id == workspace_id)
+        .map(|view| view.note.id)
+        .collect())
+}
+
+/// Resolve the workspace a request targets: the one it names — which the
+/// caller must belong to — or, when it names none, their default workspace.
+/// Absent is a deliberate default rather than an error, so callers with no
+/// workspace in hand (the chat write path, scripted creates) still work.
+async fn resolve_workspace(
+    state: &AppState,
+    user_id: &str,
+    requested: Option<&str>,
+) -> ApiResult<String> {
+    match requested.map(str::trim).filter(|id| !id.is_empty()) {
+        Some(id) => {
+            if !state.repo.is_workspace_member(id, user_id).await? {
+                return Err(ApiError::NotFound);
+            }
+            Ok(id.to_string())
+        }
+        // `ensure_workspaces` repairs an account that somehow has none, so a
+        // note always has somewhere to live.
+        None => Ok(workspaces::ensure_workspaces(state, user_id)
+            .await?
+            .into_iter()
+            .find(|w| w.is_default)
+            .ok_or(ApiError::NotFound)?
+            .id),
+    }
 }
 
 pub async fn health() -> Json<serde_json::Value> {

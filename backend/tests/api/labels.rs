@@ -1,14 +1,18 @@
-//! Label CRUD and per-user scoping.
+//! Label CRUD and workspace scoping.
 
 use crate::helpers::*;
 
+/// Labels belong to a workspace, so a direct collaborator — who is a
+/// participant on the note but not a member of the workspace holding it —
+/// neither sees the workspace's labels nor can change them.
 #[tokio::test]
-async fn labels_are_personal_even_on_shared_notes() {
+async fn labels_stay_inside_their_workspace_on_directly_shared_notes() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
     let (bob, _) = register(&app, "bob").await;
 
-    // Create labels; duplicates conflict per-owner but not across users.
+    // Create labels; duplicates conflict within a workspace but not across
+    // two people's separate default workspaces.
     let (status, ada_label) = send(
         &app,
         "POST",
@@ -60,6 +64,8 @@ async fn labels_are_personal_even_on_shared_notes() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["label_ids"], json!([ada_label_id]));
+    // Bob's own label is in his workspace, not the note's, so tagging with it
+    // is silently a no-op — and it must not clear what Ada attached.
     let (status, view) = send(
         &app,
         "PATCH",
@@ -69,13 +75,13 @@ async fn labels_are_personal_even_on_shared_notes() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(view["label_ids"], json!([bob_label_id]));
-    // Ada still sees only her label.
+    // The workspace's labels are not Bob's to see.
+    assert_eq!(view["label_ids"], json!([]));
     let (_, view) = send(&app, "GET", &format!("/api/notes/{id}"), Some(&ada), None).await;
     assert_eq!(view["label_ids"], json!([ada_label_id]));
 
-    // Bob can't attach Ada's label — it is silently not his to use.
-    let (status, view) = send(
+    // Nor can he reach for Ada's label id directly.
+    let (status, _) = send(
         &app,
         "PATCH",
         &format!("/api/notes/{id}"),
@@ -84,7 +90,8 @@ async fn labels_are_personal_even_on_shared_notes() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(view["label_ids"], json!([]));
+    let (_, view) = send(&app, "GET", &format!("/api/notes/{id}"), Some(&ada), None).await;
+    assert_eq!(view["label_ids"], json!([ada_label_id]));
 }
 
 #[tokio::test]

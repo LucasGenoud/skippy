@@ -159,6 +159,22 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
             get(handlers::me).patch(handlers::update_account),
         )
         .route(
+            "/workspaces",
+            get(handlers::list_workspaces).post(handlers::create_workspace),
+        )
+        .route(
+            "/workspaces/{id}",
+            axum::routing::patch(handlers::rename_workspace).delete(handlers::delete_workspace),
+        )
+        .route(
+            "/workspaces/{id}/members",
+            post(handlers::add_workspace_member),
+        )
+        .route(
+            "/workspaces/{id}/members/{user_id}",
+            axum::routing::delete(handlers::remove_workspace_member),
+        )
+        .route(
             "/notes",
             get(handlers::list_notes).post(handlers::create_note),
         )

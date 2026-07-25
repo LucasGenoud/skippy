@@ -18,8 +18,9 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - **Version history** groups content edits into sessions, attributes collaborator edits, and supports reversible restores
 
 **Organization**
+- **Workspaces**: every account starts with a default workspace and can create more, switching from the header of the drawer/sidebar. Notes, labels, archive, trash, search, and chat are all scoped to the open one, and a note can be moved between workspaces from its menu.
 - An 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
-- Flat labels (create/rename/delete; filter from the drawer)
+- Flat labels per workspace (create/rename/delete; filter from the drawer)
 - Pinning, archive, trash (auto-purged after 7 days)
 - **Drag-to-reorder** with animated reflow, edge auto-scroll, haptics
 - Grid / single-column list toggle; responsive density and width presets support up to 8 columns
@@ -38,7 +39,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 
 **Optional AI integration**
 - Each user can configure an OpenAI-compatible endpoint, API key, and model; Ollama, LM Studio, vLLM, and hosted providers can use the same path
-- **Automatic labeling** asks the configured model which existing personal labels apply after content edits; it never invents or removes labels
+- **Automatic labeling** asks the configured model which of the note's workspace labels apply after content edits; it never invents or removes labels
 - **Opt-in AI note editing** can clean up and shorten a note or correct grammar and syntax; it only appears after an AI provider is configured and the feature is enabled in Settings
 - **Notes chat** retrieves semantically relevant notes, streams answers over WebSocket, cites source notes, and can create or append notes after a model-planned write
 - Self-hosters can pin and lock any LLM field or feature toggle with server environment variables; managed secrets are never sent to the app
@@ -49,9 +50,10 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 
 **Collaboration**
 - User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings
-- Share notes with other users by email; everyone can edit, only the owner can trash/delete/share
+- Share a single note with other users by email; everyone can edit, only the owner can trash/delete/share
+- **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, or changes the roster; members can leave. Deleting a workspace (or leaving one) never destroys notes — each goes back to its own owner's default workspace.
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
-- Labels stay personal — each participant tags a shared note with their own labels
+- Labels are a workspace's shared taxonomy: everyone in it sees and applies the same set. Someone who only has a per-note share is not in that workspace and sees none of them.
 
 **Platform integration**
 - Web drag-and-drop and file picking; native file/image pickers on mobile
@@ -235,15 +237,17 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `GET /health`, `/capabilities` | Health and optional-service detection |
 | `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
 | `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH /auth/me` | Accounts, profile changes & sessions |
-| `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` clears) |
+| `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces (the default one cannot be deleted) |
+| `POST /workspaces/{id}/members`, `DELETE /workspaces/{id}/members/{user_id}` | Workspace roster; removing yourself leaves it |
+| `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` clears; `workspace_id` moves the note) |
 | `POST /notes/{id}/rewrite` | Opt-in LLM cleanup/concise or grammar-only note edit |
 | `POST /notes/reorder` | Persist drag order (renumbers the given ids) |
 | `GET /notes/{id}/versions`, `POST /notes/{id}/versions/{version_id}/restore` | Version timeline and reversible restore |
 | `POST /notes/{id}/collaborators`, `DELETE /notes/{id}/collaborators/{user_id}` | Sharing |
 | `POST /notes/{id}/attachments`, `DELETE /attachments/{id}`, `GET /files/{id}?exp=…&sig=…` | Attachments and signed, expiring media/download access |
-| `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per-user) |
+| `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per workspace, shared by its members) |
 | `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
-| `GET /search?q=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
+| `GET /search?q=…&workspace_id=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
 | `GET /search/stats`, `POST /search/reindex`, `GET /search/reindex/status` | Embedding diagnostics and background reindexing |
 | `POST /notes/{id}/transcribe` | Re-run Whisper on an audio note's clip (retry; 503 when disabled) |
 | `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
@@ -256,5 +260,6 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 
 - **Co-editing is last-write-wins** at note granularity (no CRDT). The WS nudge keeps everyone fresh; a reorder mid-drag from another device is never committed as your drag.
 - **Pin/archive/order are shared** on a shared note (global for simplicity).
+- **Workspace membership is flat**: an owner plus members who can all edit. No viewer/admin roles — the permission matrix stays small enough to reason about on every note endpoint.
 - Client-generated UUIDs let notes be created offline and synced later; the server returns 409 Conflict if an id is reused.
 - Checklist history records on the *check-off* transition and is shared by collaborators on that note, capped at 500 entries per note.

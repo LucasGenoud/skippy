@@ -19,3 +19,4 @@ mod settings;
 mod sharing;
 mod unfurl;
 mod versions;
+mod workspaces;

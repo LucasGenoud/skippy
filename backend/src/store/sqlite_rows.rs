@@ -1,12 +1,13 @@
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::models::{NoteRecord, NoteVersion, User};
+use crate::models::{NoteRecord, NoteVersion, User, Workspace};
 
 pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let items_json: String = row.get("items");
     NoteRecord {
         id: row.get("id"),
         owner_id: row.get("owner_id"),
+        workspace_id: row.get("workspace_id"),
         kind: row.get("kind"),
         title: row.get("title"),
         content: row.get("content"),
@@ -35,6 +36,16 @@ pub(super) fn version_from_row(row: &SqliteRow) -> NoteVersion {
         content: row.get("content"),
         items: serde_json::from_str(&items_json).unwrap_or_default(),
         edited_by: row.get("edited_by"),
+        created_at: row.get("created_at"),
+    }
+}
+
+pub(super) fn workspace_from_row(row: &SqliteRow) -> Workspace {
+    Workspace {
+        id: row.get("id"),
+        owner_id: row.get("owner_id"),
+        name: row.get("name"),
+        is_default: row.get::<i64, _>("is_default") != 0,
         created_at: row.get("created_at"),
     }
 }

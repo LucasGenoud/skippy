@@ -15,6 +15,7 @@ import '../util/mime.dart';
 import '../util/note_export.dart';
 import '../util/snack.dart';
 import 'color_picker.dart';
+import 'workspace_menu.dart';
 import 'labels_sheet.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
@@ -164,6 +165,9 @@ class _NoteTileState extends State<NoteTile> {
       );
     }
   }
+
+  void _moveToWorkspace() =>
+      MoveToWorkspaceSheet.show(context, widget.note.id);
 
   void _duplicate() {
     context.read<NotesStore>().duplicate(widget.note.id);
@@ -342,6 +346,12 @@ class _NoteTileState extends State<NoteTile> {
                   onImage: _addImage,
                   onArchive: _archive,
                   onDuplicate: _duplicate,
+                  onMoveToWorkspace: _moveToWorkspace,
+                  canMove:
+                      widget.note.isOwnedBy(
+                        context.read<NotesStore>().currentUserId,
+                      ) &&
+                      context.read<NotesStore>().workspaces.length > 1,
                   onCopyToClipboard: _copyToClipboard,
                   onDelete: _delete,
                   onRewrite: _rewrite,
@@ -879,6 +889,11 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onImage;
   final VoidCallback onArchive;
   final VoidCallback onDuplicate;
+
+  /// Moving a note changes who can see it, so it is the owner's call — and
+  /// there has to be somewhere else to move it to.
+  final VoidCallback onMoveToWorkspace;
+  final bool canMove;
   final VoidCallback onCopyToClipboard;
   final VoidCallback onDelete;
   final ValueChanged<NoteRewriteMode> onRewrite;
@@ -897,6 +912,8 @@ class _NoteActions extends StatelessWidget {
     required this.onImage,
     required this.onArchive,
     required this.onDuplicate,
+    required this.onMoveToWorkspace,
+    required this.canMove,
     required this.onCopyToClipboard,
     required this.onDelete,
     required this.onRewrite,
@@ -994,6 +1011,7 @@ class _NoteActions extends StatelessWidget {
                     onMenuClosed();
                     if (value == 'share') onShare();
                     if (value == 'duplicate') onDuplicate();
+                    if (value == 'move') onMoveToWorkspace();
                     if (value == 'clipboard') onCopyToClipboard();
                     if (value == 'delete') onDelete();
                     if (value == 'concise') onRewrite(NoteRewriteMode.concise);
@@ -1047,6 +1065,15 @@ class _NoteActions extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
+                    if (canMove)
+                      const PopupMenuItem(
+                        value: 'move',
+                        child: ListTile(
+                          leading: Icon(Icons.drive_file_move_outlined),
+                          title: Text('Move to workspace'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     PopupMenuItem(
                       value: 'delete',
                       enabled: canDelete,

@@ -116,6 +116,10 @@ class Attachment {
 
 class Note {
   final String id;
+
+  /// The workspace holding this note. Everyone in that workspace can see it;
+  /// per-note collaborators are an additional, narrower grant.
+  final String workspaceId;
   final NoteKind kind;
   final String title;
   final String content;
@@ -139,6 +143,7 @@ class Note {
 
   const Note({
     required this.id,
+    this.workspaceId = '',
     this.kind = NoteKind.text,
     this.title = '',
     this.content = '',
@@ -185,6 +190,7 @@ class Note {
   static const _sentinelDate = 'sticky-notes-unset';
 
   Note copyWith({
+    String? workspaceId,
     NoteKind? kind,
     String? title,
     String? content,
@@ -203,6 +209,7 @@ class Note {
   }) {
     return Note(
       id: id,
+      workspaceId: workspaceId ?? this.workspaceId,
       kind: kind ?? this.kind,
       title: title ?? this.title,
       content: content ?? this.content,
@@ -228,6 +235,7 @@ class Note {
   factory Note.fromJson(Map<String, dynamic> json) {
     return Note(
       id: json['id'] as String,
+      workspaceId: json['workspace_id'] as String? ?? '',
       kind: NoteKind.fromWire(json['kind'] as String?),
       title: json['title'] as String? ?? '',
       content: json['content'] as String? ?? '',
@@ -269,6 +277,7 @@ class Note {
   /// cached note reads back identically to one fetched from the server.
   Map<String, dynamic> toJson() => {
     'id': id,
+    'workspace_id': workspaceId,
     'kind': kind.wire,
     'title': title,
     'content': content,
@@ -343,6 +352,10 @@ class NoteVersion {
 
 class Label {
   final String id;
+
+  /// The workspace this label belongs to. Labels are a shared taxonomy: every
+  /// member of that workspace sees and uses the same set.
+  final String workspaceId;
   final String name;
 
   /// Hex colour (`#RRGGBB`) for the label's chip/dot, or null for the theme
@@ -351,10 +364,17 @@ class Label {
   final String? color;
   final String? icon;
 
-  const Label({required this.id, required this.name, this.color, this.icon});
+  const Label({
+    required this.id,
+    required this.name,
+    this.workspaceId = '',
+    this.color,
+    this.icon,
+  });
 
   factory Label.fromJson(Map<String, dynamic> json) => Label(
     id: json['id'] as String,
+    workspaceId: json['workspace_id'] as String? ?? '',
     name: json['name'] as String,
     color: json['color'] as String?,
     icon: json['icon'] as String?,
@@ -362,6 +382,7 @@ class Label {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'workspace_id': workspaceId,
     'name': name,
     if (color != null) 'color': color,
     if (icon != null) 'icon': icon,
@@ -369,6 +390,7 @@ class Label {
 
   Label copyWith({String? name, String? color, String? icon}) => Label(
     id: id,
+    workspaceId: workspaceId,
     name: name ?? this.name,
     color: color ?? this.color,
     icon: icon ?? this.icon,

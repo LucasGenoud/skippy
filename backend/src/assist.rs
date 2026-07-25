@@ -441,7 +441,13 @@ mod tests {
     use super::*;
 
     fn label(id: &str, name: &str) -> Label {
-        Label { id: id.into(), name: name.into(), color: None, icon: None }
+        Label {
+            id: id.into(),
+            workspace_id: "w1".to_string(),
+            name: name.into(),
+            color: None,
+            icon: None,
+        }
     }
 
     #[test]
@@ -491,6 +497,7 @@ mod tests {
     fn note_prompt_text_keeps_checklist_state() {
         use crate::models::ChecklistItem;
         let record = NoteRecord {
+            workspace_id: "w1".to_string(),
             id: "n1".into(),
             owner_id: "u1".into(),
             kind: "checklist".into(),

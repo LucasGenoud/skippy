@@ -6,6 +6,7 @@ import 'package:skippy/models/chat.dart';
 import 'package:skippy/models/link_preview.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/models/search_stats.dart';
+import 'package:skippy/models/workspace.dart';
 
 /// In-memory [Api] for tests: mirrors the server's semantics closely enough
 /// to exercise the store (patch merging, label sets, history), with failure
@@ -13,6 +14,17 @@ import 'package:skippy/models/search_stats.dart';
 class FakeApi implements Api {
   final Map<String, Note> notes = {};
   final Map<String, Label> labels = {};
+
+  /// Workspaces keyed by id. Seeded with the default one every account has, so
+  /// tests that predate workspaces still get a coherent world.
+  final Map<String, Workspace> workspaces = {
+    'w-default': const Workspace(
+      id: 'w-default',
+      name: 'My notes',
+      owner: UserRef(id: 'u-me', name: 'Me Example'),
+      isDefault: true,
+    ),
+  };
 
   /// Edit history per note id, newest first (tests seed this directly).
   final Map<String, List<NoteVersion>> versions = {};
@@ -53,6 +65,16 @@ class FakeApi implements Api {
   );
 
   void pushChangeEvent() => _events.add(null);
+
+  /// Id of the default workspace, where the server files anything created
+  /// without one named.
+  String get defaultWorkspaceId =>
+      workspaces.values.firstWhere((w) => w.isDefault).id;
+
+  /// A note's effective workspace. Fixtures often build notes directly without
+  /// one; the server would have filed those in the default workspace.
+  String _workspaceOf(Note note) =>
+      note.workspaceId.isEmpty ? defaultWorkspaceId : note.workspaceId;
 
   Future<T> _run<T>(String op, T Function() body) async {
     log.add(op);
@@ -111,6 +133,78 @@ class FakeApi implements Api {
   });
 
   @override
+  Future<List<Workspace>> fetchWorkspaces() => _run('fetchWorkspaces', () {
+    final list = workspaces.values.toList()
+      ..sort((a, b) {
+        if (a.isDefault != b.isDefault) return a.isDefault ? -1 : 1;
+        return a.name.compareTo(b.name);
+      });
+    return list;
+  });
+
+  @override
+  Future<Workspace> createWorkspace(String id, String name) =>
+      _run('createWorkspace:$name', () {
+        final workspace = Workspace(
+          id: id,
+          name: name,
+          owner: UserRef(id: account.id, name: account.name),
+        );
+        workspaces[id] = workspace;
+        return workspace;
+      });
+
+  @override
+  Future<Workspace> renameWorkspace(String id, String name) =>
+      _run('renameWorkspace:$id', () {
+        final existing = workspaces[id];
+        if (existing == null) throw ApiException(404, '{"error":"not found"}');
+        return workspaces[id] = existing.copyWith(name: name);
+      });
+
+  @override
+  Future<void> deleteWorkspace(String id) => _run('deleteWorkspace:$id', () {
+    final home = workspaces.values.firstWhere((w) => w.isDefault).id;
+    if (workspaces.remove(id) == null) {
+      throw ApiException(404, '{"error":"not found"}');
+    }
+    // The server rehomes rather than destroys; mirror that so store tests see
+    // the same end state.
+    labels.removeWhere((_, label) => label.workspaceId == id);
+    for (final note in notes.values.toList()) {
+      if (note.workspaceId == id) {
+        notes[note.id] = note.copyWith(workspaceId: home, labelIds: const {});
+      }
+    }
+  });
+
+  @override
+  Future<Workspace> addWorkspaceMember(String workspaceId, String email) =>
+      _run('addWorkspaceMember:$workspaceId:$email', () {
+        final existing = workspaces[workspaceId];
+        if (existing == null) throw ApiException(404, '{"error":"not found"}');
+        if (!email.contains('@')) {
+          throw ApiException(400, '{"error":"no account for \'$email\'"}');
+        }
+        return workspaces[workspaceId] = existing.copyWith(
+          members: [
+            ...existing.members,
+            UserRef(id: 'u-$email', name: email.split('@').first),
+          ],
+        );
+      });
+
+  @override
+  Future<void> removeWorkspaceMember(String workspaceId, String userId) =>
+      _run('removeWorkspaceMember:$workspaceId:$userId', () {
+        final existing = workspaces[workspaceId];
+        if (existing == null) throw ApiException(404, '{"error":"not found"}');
+        workspaces[workspaceId] = existing.copyWith(
+          members: existing.members.where((m) => m.id != userId).toList(),
+        );
+      });
+
+  @override
   Future<List<Note>> fetchNotes() => _run('fetchNotes', () {
     final list = notes.values.toList()
       ..sort((a, b) => a.position.compareTo(b.position));
@@ -123,7 +217,9 @@ class FakeApi implements Api {
         if (notes.containsKey(note.id)) {
           throw ApiException(409, '{"error":"note id already exists"}');
         }
-        notes[note.id] = note;
+        notes[note.id] = note.workspaceId.isEmpty
+            ? note.copyWith(workspaceId: defaultWorkspaceId)
+            : note;
       });
 
   @override
@@ -143,6 +239,7 @@ class FakeApi implements Api {
                     ChecklistItem.fromJson(j as Map<String, dynamic>),
                 ]
               : null,
+          workspaceId: fields['workspace_id'] as String?,
           color: fields['color'] as String?,
           pinned: fields['pinned'] as bool?,
           archived: fields['archived'] as bool?,
@@ -267,11 +364,13 @@ class FakeApi implements Api {
   Future<void> createLabel(
     String id,
     String name, {
+    required String workspaceId,
     String? color,
     String? icon,
   }) => _run('createLabel:$name', () {
     labels[id] = Label(
       id: id,
+      workspaceId: workspaceId,
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       icon: (icon ?? '').isEmpty ? null : icon,
@@ -287,6 +386,7 @@ class FakeApi implements Api {
   }) => _run('updateLabel:$id', () {
     labels[id] = Label(
       id: id,
+      workspaceId: labels[id]?.workspaceId ?? '',
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       icon: (icon ?? '').isEmpty ? null : icon,
@@ -367,10 +467,12 @@ class FakeApi implements Api {
   Future<List<String>> semanticSearch(
     String query, {
     int limit = 20,
+    String? workspaceId,
   }) => _run('semanticSearch:$query', () {
     final terms = query.toLowerCase().split(RegExp(r'\s+'));
     final scored = <(String, int)>[];
     for (final note in notes.values) {
+      if (workspaceId != null && _workspaceOf(note) != workspaceId) continue;
       final text =
           '${note.title} ${note.content} ${note.items.map((i) => i.text).join(' ')}'
               .toLowerCase();
@@ -481,10 +583,18 @@ class FakeApi implements Api {
   /// History sent with the most recent [chat] call.
   List<ChatMessage>? lastChatHistory;
 
+  /// Workspace sent with the most recent [chat] call.
+  String? lastChatWorkspaceId;
+
   @override
-  Stream<ChatEvent> chat(String message, List<ChatMessage> history) {
+  Stream<ChatEvent> chat(
+    String message,
+    List<ChatMessage> history, {
+    String? workspaceId,
+  }) {
     log.add('chat:$message');
     lastChatHistory = history;
+    lastChatWorkspaceId = workspaceId;
     final fail = failWith;
     if (fail != null) return Stream.error(fail);
     return Stream.fromIterable(chatScript);

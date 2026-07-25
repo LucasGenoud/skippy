@@ -14,7 +14,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
 use super::versions::{VERSION_SESSION_GAP_SECS, seconds_since, version_of};
-use super::{CHANGED_MSG, new_id, now, require_participant};
+use super::{CHANGED_MSG, new_id, now, require_participant, resolve_workspace};
 
 const TRASH_RETENTION_DAYS: i64 = 7;
 
@@ -38,6 +38,18 @@ fn validate_update(record: &NoteRecord, user_id: &str, body: &UpdateNote) -> Api
     if body.trashed.is_some() && record.owner_id != user_id {
         return Err(ApiError::Forbidden(
             "only the owner can trash or restore a note",
+        ));
+    }
+    // Moving a note changes who can see it, which is the owner's call — the
+    // same reasoning as trashing.
+    if body
+        .workspace_id
+        .as_ref()
+        .is_some_and(|id| *id != record.workspace_id)
+        && record.owner_id != user_id
+    {
+        return Err(ApiError::Forbidden(
+            "only the owner can move a note to another workspace",
         ));
     }
     if let Some(kind) = &body.kind {
@@ -129,6 +141,7 @@ pub async fn create_note_for_user(
     let kind = body.kind.unwrap_or_else(|| KIND_TEXT.to_string());
     validate_kind(&kind)?;
     validate_reminder(&body.reminder_at)?;
+    let workspace_id = resolve_workspace(state, user_id, body.workspace_id.as_deref()).await?;
     let restored_created = validate_restore_timestamp(body.created_at.as_deref())?;
     let restored_updated = validate_restore_timestamp(body.updated_at.as_deref())?;
     let id = match body.id {
@@ -146,6 +159,7 @@ pub async fn create_note_for_user(
     let record = NoteRecord {
         id: id.clone(),
         owner_id: user_id.to_string(),
+        workspace_id,
         kind,
         title: body.title,
         content: body.content,
@@ -165,10 +179,7 @@ pub async fn create_note_for_user(
     };
     state.repo.insert_note(&record).await?;
     if let Some(label_ids) = body.label_ids
-        && let Err(error) = state
-            .repo
-            .set_note_labels(&record.id, user_id, &label_ids)
-            .await
+        && let Err(error) = state.repo.set_note_labels(&record.id, &label_ids).await
     {
         let _ = state.repo.delete_note(&record.id).await;
         return Err(error.into());
@@ -242,6 +253,20 @@ pub async fn apply_note_update(
     let mut record = require_participant(state, id, user_id).await?;
     let old_items = record.items.clone();
     validate_update(&record, user_id, &body)?;
+    // A move must land in a workspace the mover belongs to; anything else is
+    // treated as a stray id rather than a way to file notes out of reach.
+    let moving_to = match &body.workspace_id {
+        Some(target) if *target != record.workspace_id => {
+            Some(resolve_workspace(state, user_id, Some(target)).await?)
+        }
+        _ => None,
+    };
+    // A move takes the note out of one roster and into another, so the people
+    // losing sight of it have to be told before that happens.
+    let audience_before_move = match moving_to {
+        Some(_) => state.repo.participant_ids(id).await?,
+        None => Vec::new(),
+    };
     let content_changed = changes_content(&body, &record);
     reset_delivered_reminder_if_rescheduled(&body, &mut record);
     let label_ids = body.label_ids.take();
@@ -272,8 +297,22 @@ pub async fn apply_note_update(
         state.repo.record_checked_items(id, &newly_checked).await?;
     }
 
-    if let Some(label_ids) = label_ids {
-        state.repo.set_note_labels(id, user_id, &label_ids).await?;
+    // A moved note leaves its old workspace's labels behind — they are that
+    // workspace's taxonomy, not this note's. Runs before the patch's own
+    // label_ids so an explicit set still wins.
+    if moving_to.is_some() {
+        state.repo.prune_foreign_labels(id).await?;
+    }
+    // Labels belong to the note's workspace. Someone who reached the note
+    // through a direct share is not in that workspace and sees none of them,
+    // so their patch must not be able to clear them either.
+    if let Some(label_ids) = label_ids
+        && state
+            .repo
+            .is_workspace_member(&record.workspace_id, user_id)
+            .await?
+    {
+        state.repo.set_note_labels(id, &label_ids).await?;
     }
     state.index_note_later(id);
     // Only content edits re-run auto-labeling; organizational patches
@@ -282,6 +321,7 @@ pub async fn apply_note_update(
         state.label_note_later(id, user_id);
     }
     state.notify_note(id).await;
+    state.hub.notify(&audience_before_move, CHANGED_MSG);
     let mut view = state
         .repo
         .note_view(id, user_id)

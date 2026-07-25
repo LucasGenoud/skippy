@@ -24,6 +24,10 @@ pub struct SearchParams {
     q: String,
     #[serde(default)]
     limit: Option<usize>,
+    /// Restrict results to one workspace, so search matches what the open
+    /// workspace shows. Absent searches everything the caller can see.
+    #[serde(default)]
+    workspace_id: Option<String>,
 }
 
 /// Meaning-based note search. Returns ranked note ids with scores; the
@@ -41,10 +45,23 @@ pub async fn semantic_search(
         return Ok(Json(serde_json::json!([])));
     }
     let limit = params.limit.unwrap_or(20).min(50);
+    let workspace = params.workspace_id.as_deref().map(str::trim).filter(|w| !w.is_empty());
+    // The vector index is scoped by participant, not by workspace, so a
+    // workspace filter is applied afterwards — over-fetch to keep the ranked
+    // list full once the other workspaces' hits drop out.
+    let fetch = if workspace.is_some() { (limit * 4).min(200) } else { limit };
+    let allowed = match workspace {
+        Some(workspace_id) => {
+            Some(crate::handlers::workspace_note_ids(&state, &user_id, workspace_id).await?)
+        }
+        None => None,
+    };
     let hits: Vec<_> = search
-        .search(&user_id, query, limit)
+        .search(&user_id, query, fetch)
         .await?
         .into_iter()
+        .filter(|(note_id, _)| allowed.as_ref().is_none_or(|ids| ids.contains(note_id)))
+        .take(limit)
         .map(|(note_id, score)| serde_json::json!({"note_id": note_id, "score": score}))
         .collect();
     Ok(Json(serde_json::json!(hits)))

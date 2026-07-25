@@ -14,9 +14,25 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workspaces (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workspace_members (
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (workspace_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Deliberately no ON DELETE action: deleting a workspace files its notes
+    -- in their own owner's default workspace first, so the reference is always
+    -- cleared before the row goes. A cascade here would destroy notes instead.
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     kind TEXT NOT NULL DEFAULT 'text',
     title TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
@@ -51,11 +67,11 @@ CREATE TABLE IF NOT EXISTS note_shares (
 );
 CREATE TABLE IF NOT EXISTS labels (
     id TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     color TEXT,
     icon TEXT,
-    UNIQUE (owner_id, name COLLATE NOCASE)
+    UNIQUE (workspace_id, name COLLATE NOCASE)
 );
 CREATE TABLE IF NOT EXISTS note_labels (
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -86,8 +102,15 @@ CREATE TABLE IF NOT EXISTS app_meta (
     value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_id);
+CREATE INDEX IF NOT EXISTS idx_notes_workspace ON notes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);
 CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE);
+-- One default workspace per account, enforced rather than assumed: it is the
+-- fallback every note is filed in and rehomed to.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
+    ON workspaces(owner_id) WHERE is_default = 1;
 "#;
 
 const ADDITIVE_MIGRATIONS: &[&str] = &[
@@ -98,8 +121,6 @@ const ADDITIVE_MIGRATIONS: &[&str] = &[
     "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
     "ALTER TABLE labels ADD COLUMN color TEXT",
     "ALTER TABLE labels ADD COLUMN icon TEXT",
-    "ALTER TABLE users ADD COLUMN name TEXT",
-    "ALTER TABLE users ADD COLUMN email TEXT",
 ];
 
 /// Creates the current schema and upgrades databases written by older builds.
@@ -124,12 +145,6 @@ async fn migrate_user_accounts(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::query(
         "UPDATE users SET email = lower(username) || '@local.invalid'
          WHERE email IS NULL OR trim(email) = ''",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email
-         ON users(email COLLATE NOCASE)",
     )
     .execute(pool)
     .await?;
