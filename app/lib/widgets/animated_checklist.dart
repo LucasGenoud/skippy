@@ -172,6 +172,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _popup.show();
+      // Ask for focus outright rather than leaning on the add row's
+      // `autofocus`. Flutter only honours autofocus when nothing in the
+      // enclosing scope is focused yet — true inside the editor's own route,
+      // but not on the home page, where the shortcut plumbing's page focus
+      // already holds it and the quick-add checklist opened with no caret.
+      if (mounted && widget.autofocusNew) _newRow.focusNode.requestFocus();
     });
   }
 
@@ -889,7 +895,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               child: TextField(
                 controller: _newRow.controller,
                 focusNode: _newRow.focusNode,
-                autofocus: widget.autofocusNew,
+                // Focus is requested from initState instead — see there.
                 decoration: const InputDecoration(
                   hintText: 'List item',
                   border: InputBorder.none,
