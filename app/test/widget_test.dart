@@ -1070,6 +1070,64 @@ void main() {
       },
     );
 
+    testWidgets(
+      'machine-speed typing into the add row lands on a single item',
+      (tester) async {
+        // Injected input (simctl-style, and a fast enough human on iOS) puts
+        // every keystroke in before a single frame is built: the row spawned
+        // by the first character does not exist in `items` yet, and each
+        // report carries the whole accumulated value rather than the one
+        // character that leaked back into the cleared add field.
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(TextField, 'List item'));
+        await tester.pump();
+
+        const word = 'Pancake flour';
+        for (var i = 1; i <= word.length; i++) {
+          tester.testTextInput.updateEditingValue(
+            TextEditingValue(
+              text: word.substring(0, i),
+              selection: TextSelection.collapsed(offset: i),
+            ),
+          );
+        }
+        // Not a single frame in between: the whole word arrives first.
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.items.map((i) => i.text), [word]);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets('an IME batch of several characters adds one item', (
+      tester,
+    ) async {
+      // Soft keyboards commit a whole composed word in one edit. The first
+      // one materializes the row; the next one arrives accumulated, before
+      // focus has moved off the add field.
+      api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+
+      tester.testTextInput.enterText('Pancake');
+      await tester.idle();
+      tester.testTextInput.enterText('Pancake flour');
+      await tester.pumpAndSettle();
+
+      expect(store.noteById('n1')!.items.map((i) => i.text), ['Pancake flour']);
+      await flushTimers(tester);
+    });
+
     testWidgets('typing and hovering rebuild only what changed', (
       tester,
     ) async {
@@ -2180,10 +2238,7 @@ void main() {
               as BoxDecoration;
       expect(decoration.color, scheme.surface);
       // The trailing seam is painted from the same live scheme.
-      expect(
-        (decoration.border! as Border).right.color,
-        hairlineColor(scheme),
-      );
+      expect((decoration.border! as Border).right.color, hairlineColor(scheme));
     });
   });
 
