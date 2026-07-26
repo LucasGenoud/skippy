@@ -102,6 +102,31 @@ class _RowHandles {
   }
 }
 
+/// A row the add field spawned and is handing focus to, tracked until focus
+/// lands on it. Keystrokes that leak back into the (cleared) add field before
+/// then are merged in here instead of each spawning an item of their own.
+///
+/// It carries the row's text rather than reading it back from
+/// [AnimatedChecklist.items] or the row's own handles, because typing can
+/// outrun the frame: injected input, and a fast enough typist on iOS, gets
+/// several keystrokes in before a single rebuild, and until that rebuild the
+/// row exists nowhere but here.
+class _Adoption {
+  final String id;
+
+  /// What the row holds, as far as the add field knows.
+  String text;
+
+  /// The last add-field value already merged in. Text input clients disagree
+  /// about what a leaked keystroke reports: some send only the new character,
+  /// the cleared field being all they have; others send the whole accumulated
+  /// value, their own buffer not yet caught up with the clear. See
+  /// [_AnimatedChecklistState._mergeIntoAdoptedRow].
+  String consumed;
+
+  _Adoption(this.id, String seed) : text = seed, consumed = seed;
+}
+
 const _kNewRowId = '__new__';
 const _kHeaderId = '__header__';
 
@@ -154,8 +179,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// The row the add field just spawned and is handing focus to. Focus moves a
   /// couple of frames later, so a fast typist's next keystrokes can still land
   /// in the (now-cleared) add field before then; while this is set they are
-  /// appended to that row instead of each spawning its own new item.
-  String? _adoptingId;
+  /// merged into that row instead of each spawning its own new item.
+  _Adoption? _adopting;
+
+  /// Whether [_adopting]'s row has shown up in a rebuild yet — see
+  /// [didUpdateWidget].
+  bool _adoptionSeen = false;
   double _dragY = 0;
   bool _snapFrame = true;
   bool _showChecked = true;
@@ -168,7 +197,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     // A fresh visit to the add field starts a new item, so drop any stale
     // adoption left over from a handoff that never landed focus.
     _newRow.focusNode.addListener(() {
-      if (_newRow.focusNode.hasFocus) _adoptingId = null;
+      if (_newRow.focusNode.hasFocus) _adopting = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _popup.show();
@@ -208,6 +237,17 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       ];
     }
     final ids = {for (final item in widget.items) item.id};
+    // An adopted row that is missing from a rebuild that once contained it is
+    // gone for good (removed, or the note was swapped out), so stop merging
+    // keystrokes into it. Its mere absence proves nothing on its own: the
+    // adoption starts before the rebuild that first shows the row.
+    if (_adopting case final adopting?) {
+      if (ids.contains(adopting.id)) {
+        _adoptionSeen = true;
+      } else if (_adoptionSeen) {
+        _adopting = null;
+      }
+    }
     final stale = _handles.keys.where((id) => !ids.contains(id)).toList();
     for (final id in stale) {
       _handles.remove(id)?.dispose();
@@ -263,7 +303,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           h.typedSinceFocus = item.id == _typeCreatedId;
           if (item.id == _typeCreatedId) _typeCreatedId = null;
           // Handoff from the add field landed: stop re-routing keystrokes.
-          if (item.id == _adoptingId) _adoptingId = null;
+          if (item.id == _adopting?.id) _adopting = null;
         } else {
           _clearEmptyMarker(h);
           // Single-line fields keep their horizontal offset after editing.
@@ -525,6 +565,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   }
 
   void _applySuggestion(String rowId, String text) {
+    // Picking from the add field's popup starts something of its own, so any
+    // handoff still in flight from an earlier keystroke is over: later
+    // keystrokes belong to the fresh add field, not to that row.
+    if (rowId == _kNewRowId) _adopting = null;
     // If a checked item with this exact text already exists, uncheck it
     // instead of creating a duplicate.
     final existingChecked = widget.items
@@ -902,42 +946,18 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   isDense: true,
                 ),
                 onChanged: (text) {
-                  if (text.trim().isEmpty) {
-                    _popupRevision.value++;
+                  // Focus hasn't finished moving to the row we just spawned and
+                  // a keystroke leaked back into the (cleared) add field: merge
+                  // it into that row instead of spawning a new item per
+                  // keystroke. Without this, fast typing produces one item per
+                  // character. Checked before the empty-text guard below: mid
+                  // word, a leaked space is real content, not an empty field.
+                  if (_adopting case final adopting?) {
+                    _mergeIntoAdoptedRow(adopting, text);
                     return;
                   }
-                  // Focus hasn't finished moving to the row we just spawned and
-                  // a keystroke leaked back into the (cleared) add field:
-                  // append it to that row instead of spawning a new item per
-                  // keystroke. Without this, fast typing produces one item per
-                  // character.
-                  final adopting = _adoptingId;
-                  final row = adopting == null ? null : _itemById(adopting);
-                  if (adopting != null && row != null) {
-                    // Merge onto the row's *controller*, not onto its item
-                    // text: row typing doesn't rebuild the editor, so
-                    // widget.items can lag a keystroke or two behind and
-                    // merging onto that stale value would drop everything in
-                    // between. Push the result back into the controller so
-                    // the row shows it and the next leaked key appends to it.
-                    final handles = _handles[adopting];
-                    final merged = (handles?.text ?? row.text) + text;
-                    if (handles != null) {
-                      handles.controller.value = TextEditingValue(
-                        text: merged,
-                        selection: TextSelection.collapsed(
-                          offset: merged.length,
-                        ),
-                      );
-                      if (handles.handoffPrefix != null) {
-                        handles.handoffPrefix = merged;
-                      }
-                      handles.unacknowledged = merged;
-                    }
-                    widget.onItemTextChanged(adopting, merged);
-                    _newRow.controller.clear();
-                    _pendingFocusId = adopting;
-                    setState(() {});
+                  if (text.trim().isEmpty) {
+                    _popupRevision.value++;
                     return;
                   }
                   // The first keystroke turns the add field into a real item,
@@ -947,7 +967,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   final newId = widget.onAdd(text);
                   _newRow.controller.clear();
                   _typeCreatedId = newId;
-                  _adoptingId = newId;
+                  _adopting = _Adoption(newId, text);
+                  _adoptionSeen = false;
                   _pendingFocusId = newId;
                   setState(() {});
                 },
@@ -964,6 +985,43 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         ],
       ),
     );
+  }
+
+  /// Fold a keystroke that leaked back into the add field into the row that
+  /// field just spawned (see [_Adoption]).
+  void _mergeIntoAdoptedRow(_Adoption adopting, String text) {
+    if (text.isEmpty) return;
+    // What arrives is either just the new character — the field really was
+    // cleared, so that is all the client has — or the whole accumulated value,
+    // because the client's own buffer hasn't caught up with the clear. Only
+    // the second kind extends what was already taken, and only by growing;
+    // treating it as a character would re-add the prefix, which is how
+    // "Pancake flour" became thirteen items, one per keystroke.
+    final accumulated =
+        text.length > adopting.consumed.length &&
+        text.startsWith(adopting.consumed);
+    final merged =
+        adopting.text +
+        (accumulated ? text.substring(adopting.consumed.length) : text);
+    adopting.consumed = text;
+    adopting.text = merged;
+    // Push the result into the row so it shows it, if the row exists yet: the
+    // rebuild that creates it may still be a frame away, and then the item
+    // list — which onItemTextChanged has already been given — is what the row
+    // is built from.
+    final handles = _handles[adopting.id];
+    if (handles != null) {
+      handles.controller.value = TextEditingValue(
+        text: merged,
+        selection: TextSelection.collapsed(offset: merged.length),
+      );
+      if (handles.handoffPrefix != null) handles.handoffPrefix = merged;
+      handles.unacknowledged = merged;
+    }
+    widget.onItemTextChanged(adopting.id, merged);
+    _newRow.controller.clear();
+    _pendingFocusId = adopting.id;
+    setState(() {});
   }
 
   Widget _checkedHeader(int count) {
