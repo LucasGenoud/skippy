@@ -596,6 +596,64 @@ void main() {
       },
     );
 
+    testWidgets(
+      'reordering moves tiles without rebuilding any of them',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        // Twelve notes — the size at which the grid started dropping frames on
+        // slower devices, because every reorder step rebuilt every card (twice:
+        // once for the tile, once for its unused drag feedback).
+        final notes = [
+          for (var i = 0; i < 12; i++)
+            serverNote('n$i', title: 'Note $i', position: i.toDouble()),
+        ];
+        final builds = <String, int>{};
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: AnimatedMasonry(
+                  notes: notes,
+                  columns: 2,
+                  onReorder: (_) {},
+                  itemBuilder: (context, note) {
+                    builds[note.id] = (builds[note.id] ?? 0) + 1;
+                    return SizedBox(
+                      height: 80,
+                      child: Card(child: Center(child: Text(note.title))),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('Note 0')),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        // The lifted card builds one more time — that copy is the feedback
+        // following the pointer, and it is the only extra build a drag costs.
+        final afterLift = Map<String, int>.from(builds);
+
+        var elapsed = 400;
+        for (final target in ['Note 3', 'Note 7', 'Note 11', 'Note 5']) {
+          await gesture.moveTo(
+            tester.getCenter(find.text(target)),
+            timeStamp: Duration(milliseconds: elapsed += 100),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        // Four reorder steps over twelve cards: not one of them was rebuilt.
+        expect(builds, afterLift);
+      },
+    );
+
     testWidgets('touch long-press selects in place but movement reorders', (
       tester,
     ) async {

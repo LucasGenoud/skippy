@@ -75,6 +75,30 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   List<String> _orderIds = [];
   String? _draggingId;
 
+  // Tile widgets, kept between our own rebuilds. A note card is expensive to
+  // build (markdown, linkified spans, image resolution, an OpenContainer
+  // each), while a reorder changes where cards go, not what they are — so the
+  // same widget instances are handed back and the framework skips their
+  // subtrees outright (`Element.updateChild` short-circuits on an identical
+  // widget). Dragging is exactly this case: the grid setStates on every step
+  // and nothing about the cards themselves has changed.
+  //
+  // The cache is dropped whenever the note object changes, and wholesale on
+  // every parent rebuild ([didUpdateWidget]) — the parent's [itemBuilder] can
+  // read state of its own (selection, search query), so anything that could
+  // make it produce a different card also empties this.
+  final Map<String, Widget> _tiles = {};
+  final Map<String, Note> _tileNotes = {};
+
+  Widget _tileFor(Note note) {
+    final cached = _tiles[note.id];
+    if (cached != null && identical(_tileNotes[note.id], note)) return cached;
+    final built = widget.itemBuilder(context, note);
+    _tiles[note.id] = built;
+    _tileNotes[note.id] = note;
+    return built;
+  }
+
   /// Whether the user actually moved anything during this drag. Guards
   /// against committing order changes that came from elsewhere (e.g. a
   /// collaborator's update merged mid-drag).
@@ -136,10 +160,32 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
           if (!existing.contains(id)) id,
       ];
     }
-    _heights.removeWhere((id, _) => !ids.contains(id));
+    final live = ids.toSet();
+    _heights.removeWhere((id, _) => !live.contains(id));
+    _tiles.clear();
+    _tileNotes.clear();
+    _invalidateLayout();
   }
 
+  // The packed layout only changes when the order, the heights, or the
+  // geometry do — not when a finger moves. Dragging asks for it on every
+  // pointer sample, so hand back the last one instead of rebuilding the slot
+  // map dozens of times a second.
+  _Layout? _layout;
+  double _layoutWidth = -1;
+
+  void _invalidateLayout() => _layout = null;
+
   _Layout _computeLayout(double maxWidth) {
+    final cached = _layout;
+    if (cached != null && _layoutWidth == maxWidth) return cached;
+    final layout = _packLayout(maxWidth);
+    _layout = layout;
+    _layoutWidth = maxWidth;
+    return layout;
+  }
+
+  _Layout _packLayout(double maxWidth) {
     final columns = widget.columns;
     final spacing = widget.spacing;
     final columnWidth = (maxWidth - spacing * (columns - 1)) / columns;
@@ -162,6 +208,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     if ((_heights[id] ?? -1) == height) return;
     setState(() {
       _heights[id] = height;
+      _invalidateLayout();
       if (!_ready && _orderIds.every((id) => _heights.containsKey(id))) {
         _ready = true;
       }
@@ -223,6 +270,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     setState(() {
       _orderIds.removeAt(from);
       _orderIds.insert(targetIndex!, draggingId);
+      _invalidateLayout();
     });
     _dragChangedOrder = true;
     HapticFeedback.selectionClick();
@@ -317,12 +365,20 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   // -------------------------------------------------------------------
 
   Widget _buildTile(Note note, _Layout layout) {
-    final child = widget.itemBuilder(context, note);
+    final child = _tileFor(note);
     if (!widget.dragEnabled || widget.onReorder == null) return child;
 
-    final feedback = _DragFeedback(
-      width: layout.columnWidth,
-      child: widget.itemBuilder(context, note),
+    // Built through a Builder so the second copy of the card only comes into
+    // existence when a drag actually lifts one. Eagerly building feedback for
+    // every tile doubled the cost of every grid rebuild — and rebuilds happen
+    // on each reorder step, which is exactly when the frame budget is tight.
+    // It must be its own instance rather than the cached child: both are
+    // mounted at once during a drag.
+    final feedback = Builder(
+      builder: (context) => _DragFeedback(
+        width: layout.columnWidth,
+        child: widget.itemBuilder(context, note),
+      ),
     );
     final ghost = Opacity(opacity: 0.30, child: child);
 
@@ -373,6 +429,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
           _lastWidth = width;
           _lastColumns = widget.columns;
           _snapFrame = true;
+          _invalidateLayout();
         }
         final layout = _computeLayout(width);
         final notesById = {for (final n in widget.notes) n.id: n};
@@ -454,6 +511,10 @@ class _TileEntrance extends StatelessWidget {
       child: child,
       builder: (context, child) {
         final raw = ((animation.value - start) / (end - start)).clamp(0.0, 1.0);
+        // Entrance over: hand back the bare tile. Leaving the opacity and
+        // transform in place would keep a compositing layer per tile alive for
+        // the rest of the session, for an animation that already finished.
+        if (raw == 1) return child!;
         final t = Motion.standard.transform(raw);
         return Opacity(
           opacity: t,
@@ -480,7 +541,13 @@ class _DragFeedback extends StatelessWidget {
       tween: Tween(begin: 0, end: 1),
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOut,
-      builder: (context, t, _) {
+      // The lifted card is repositioned on every pointer sample. Without a
+      // boundary of its own, each of those moves repaints the whole card *and*
+      // its blurred shadow; with one, the rasterized layer is simply moved.
+      child: RepaintBoundary(
+        child: Material(type: MaterialType.transparency, child: child),
+      ),
+      builder: (context, t, child) {
         return Transform.scale(
           scale: 1 + 0.04 * t,
           child: Container(
@@ -495,7 +562,7 @@ class _DragFeedback extends StatelessWidget {
                 ),
               ],
             ),
-            child: Material(type: MaterialType.transparency, child: child),
+            child: child,
           ),
         );
       },
