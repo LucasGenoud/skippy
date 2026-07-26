@@ -3,6 +3,7 @@ import '../../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
+import '../form_dialog.dart';
 
 /// One row in the note-color palette list: light/dark swatches, the name, and
 /// edit/remove actions.
@@ -73,8 +74,8 @@ class PaletteEditDialog extends StatefulWidget {
 
   static Future<void> show(BuildContext context, PaletteEntry? entry) {
     final settings = context.read<SettingsStore>();
-    return showDialog<void>(
-      context: context,
+    return showFormDialog<void>(
+      context,
       builder: (_) => ChangeNotifierProvider.value(
         value: settings,
         child: PaletteEditDialog(entry: entry),
@@ -147,40 +148,35 @@ class _PaletteEditDialogState extends State<PaletteEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FormDialog(
       title: Text(widget.entry == null ? 'Add color' : 'Edit color'),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _name,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _ShadeEditor(
-                label: 'Light theme shade',
-                color: _light,
-                swatches: _lightSwatches,
-                onChanged: (c) => setState(() => _light = c),
-              ),
-              const SizedBox(height: 16),
-              _ShadeEditor(
-                label: 'Dark theme shade',
-                color: _dark,
-                swatches: _darkSwatches,
-                onChanged: (c) => setState(() => _dark = c),
-              ),
-            ],
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
           ),
-        ),
+          const SizedBox(height: 16),
+          _ShadeEditor(
+            label: 'Light theme shade',
+            color: _light,
+            swatches: _lightSwatches,
+            onChanged: (c) => setState(() => _light = c),
+          ),
+          const SizedBox(height: 16),
+          _ShadeEditor(
+            label: 'Dark theme shade',
+            color: _dark,
+            swatches: _darkSwatches,
+            onChanged: (c) => setState(() => _dark = c),
+          ),
+        ],
       ),
       actions: [
         TextButton(

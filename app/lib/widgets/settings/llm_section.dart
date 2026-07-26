@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
+import '../form_dialog.dart';
 import 'managed_note.dart';
 import 'probe_row.dart';
 
@@ -52,8 +53,8 @@ class _LlmConfigDialog extends StatefulWidget {
 
   static Future<void> show(BuildContext context) {
     final settings = context.read<SettingsStore>();
-    return showDialog<void>(
-      context: context,
+    return showFormDialog<void>(
+      context,
       builder: (_) => ChangeNotifierProvider.value(
         value: settings,
         child: const _LlmConfigDialog(),
@@ -124,72 +125,69 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
     final urlManaged = settings.isManaged('llm_base_url');
     final keyManaged = settings.isManaged('llm_api_key');
     final modelManaged = settings.isManaged('llm_model');
-    return AlertDialog(
+    return FormDialog(
       title: const Text('AI provider'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _url,
-              enabled: !urlManaged,
-              decoration: InputDecoration(
-                labelText: 'Server URL',
-                hintText: 'http://localhost:11434/v1',
-                helperText: urlManaged
-                    ? 'Set by the server'
-                    : 'OpenAI-compatible endpoint, including /v1 '
-                          '(Ollama, OpenAI, LM Studio, …)',
-                helperMaxLines: 2,
-                suffixIcon: urlManaged
-                    ? const Icon(Icons.lock_outline, size: 18)
-                    : null,
-              ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _url,
+            enabled: !urlManaged,
+            decoration: InputDecoration(
+              labelText: 'Server URL',
+              hintText: 'http://localhost:11434/v1',
+              helperText: urlManaged
+                  ? 'Set by the server'
+                  : 'OpenAI-compatible endpoint, including /v1 '
+                        '(Ollama, OpenAI, LM Studio, …)',
+              helperMaxLines: 2,
+              suffixIcon: urlManaged
+                  ? const Icon(Icons.lock_outline, size: 18)
+                  : null,
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _key,
-              enabled: !keyManaged,
-              obscureText: !keyManaged,
-              decoration: InputDecoration(
-                labelText: 'API key',
-                // The server never sends a managed key's value, so show a
-                // masked placeholder rather than an empty field.
-                hintText: keyManaged ? '•••••• (set by the server)' : null,
-                helperText: keyManaged
-                    ? 'Set by the server'
-                    : 'Leave empty for Ollama',
-                suffixIcon: keyManaged
-                    ? const Icon(Icons.lock_outline, size: 18)
-                    : null,
-              ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _key,
+            enabled: !keyManaged,
+            obscureText: !keyManaged,
+            decoration: InputDecoration(
+              labelText: 'API key',
+              // The server never sends a managed key's value, so show a
+              // masked placeholder rather than an empty field.
+              hintText: keyManaged ? '•••••• (set by the server)' : null,
+              helperText: keyManaged
+                  ? 'Set by the server'
+                  : 'Leave empty for Ollama',
+              suffixIcon: keyManaged
+                  ? const Icon(Icons.lock_outline, size: 18)
+                  : null,
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _model,
-              enabled: !modelManaged,
-              decoration: InputDecoration(
-                labelText: 'Model',
-                hintText: 'gpt-5-mini, llama3.1, …',
-                helperText: modelManaged ? 'Set by the server' : null,
-                suffixIcon: modelManaged
-                    ? const Icon(Icons.lock_outline, size: 18)
-                    : null,
-              ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _model,
+            enabled: !modelManaged,
+            decoration: InputDecoration(
+              labelText: 'Model',
+              hintText: 'gpt-5-mini, llama3.1, …',
+              helperText: modelManaged ? 'Set by the server' : null,
+              suffixIcon: modelManaged
+                  ? const Icon(Icons.lock_outline, size: 18)
+                  : null,
             ),
-            const SizedBox(height: 16),
-            ProbeRow(
-              testing: _testing,
-              result: _testResult,
-              onTest: _test,
-              icon: Icons.bolt_outlined,
-              label: 'Test connection',
-              successText: 'Connected',
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          ProbeRow(
+            testing: _testing,
+            result: _testResult,
+            onTest: _test,
+            icon: Icons.bolt_outlined,
+            label: 'Test connection',
+            successText: 'Connected',
+          ),
+        ],
       ),
       actions: [
         TextButton(

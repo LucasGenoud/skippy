@@ -19,6 +19,11 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A cross-platform notes app.">
+  <!-- Without this, mobile browsers lay the page out at 980px and scale it
+       down, so the app's width-based mobile layouts never kick in on a phone.
+       viewport-fit=cover goes with the translucent status bar below. -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">

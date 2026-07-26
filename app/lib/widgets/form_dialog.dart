@@ -1,0 +1,107 @@
+import 'package:flutter/material.dart';
+
+/// Phone-sized viewport, matching the breakpoint the home screen uses.
+bool isNarrowScreen(BuildContext context) =>
+    MediaQuery.sizeOf(context).width < 600;
+
+/// Presents a [FormDialog] the way the viewport wants it: a centred dialog on
+/// wide screens, a pushed full-screen page on phones — where a floating box
+/// with several text fields fights the keyboard and wastes the screen.
+Future<T?> showFormDialog<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+}) {
+  if (isNarrowScreen(context)) {
+    return Navigator.of(context).push<T>(
+      MaterialPageRoute(
+        builder: (context) =>
+            _FormDialogMode(fullScreen: true, child: builder(context)),
+        fullscreenDialog: true,
+      ),
+    );
+  }
+  return showDialog<T>(
+    context: context,
+    builder: (context) =>
+        _FormDialogMode(fullScreen: false, child: builder(context)),
+  );
+}
+
+/// How the enclosing route was opened. [FormDialog] obeys this rather than
+/// re-measuring, so rotating a phone to landscape — which crosses the width
+/// threshold — can't leave a page route rendering a floating dialog.
+class _FormDialogMode extends InheritedWidget {
+  final bool fullScreen;
+
+  const _FormDialogMode({required this.fullScreen, required super.child});
+
+  static bool? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_FormDialogMode>()?.fullScreen;
+
+  @override
+  bool updateShouldNotify(_FormDialogMode oldWidget) =>
+      oldWidget.fullScreen != fullScreen;
+}
+
+/// A settings form rendered as an [AlertDialog] on wide screens and as a
+/// full-screen page on phones (close button in the app bar, [actions] pinned
+/// to the bottom above the keyboard).
+///
+/// Only worth it for editors with input in them; short confirmations are fine
+/// as plain dialogs everywhere.
+class FormDialog extends StatelessWidget {
+  final Widget title;
+  final Widget content;
+
+  /// Width of the dialog body on wide screens; ignored full-screen.
+  final double width;
+
+  /// Buttons for the dialog footer, in the usual cancel-then-confirm order.
+  final List<Widget> actions;
+
+  /// Whether [content] needs to be wrapped in a scroll view. Pass false when
+  /// it scrolls internally (e.g. to keep a row pinned below the scrolling
+  /// part).
+  final bool scrollable;
+
+  const FormDialog({
+    super.key,
+    required this.title,
+    required this.content,
+    required this.actions,
+    this.width = 420,
+    this.scrollable = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // The fallback covers a FormDialog shown outside [showFormDialog].
+    if (!(_FormDialogMode.of(context) ?? isNarrowScreen(context))) {
+      return AlertDialog(
+        title: title,
+        content: SizedBox(width: width, child: content),
+        actions: actions,
+        scrollable: scrollable,
+      );
+    }
+    // In a `fullscreenDialog` route the app bar's leading button is a close
+    // "X" automatically, so Cancel in [actions] is a second way out, not the
+    // only one.
+    return Scaffold(
+      appBar: AppBar(title: title),
+      body: SafeArea(
+        top: false,
+        child: scrollable
+            ? SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                child: content,
+              )
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: content,
+              ),
+      ),
+      persistentFooterButtons: actions,
+    );
+  }
+}

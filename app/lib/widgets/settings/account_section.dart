@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../api/api_client.dart';
 import '../../state/auth_store.dart';
 import '../../util/snack.dart';
+import '../form_dialog.dart';
 
 enum _AccountField { name, email, password }
 
@@ -42,8 +43,8 @@ class AccountSection extends StatelessWidget {
   }
 
   void _open(BuildContext context, _AccountField field) {
-    showDialog<void>(
-      context: context,
+    showFormDialog<void>(
+      context,
       builder: (_) => _EditAccountDialog(field: field),
     );
   }
@@ -161,99 +162,97 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
   Widget build(BuildContext context) {
     final changingPassword = widget.field == _AccountField.password;
     final needsCurrentPassword = widget.field != _AccountField.name;
-    return AlertDialog(
+    return FormDialog(
       title: Text(_title),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (needsCurrentPassword) ...[
-              TextField(
-                controller: _currentPassword,
-                autofocus: true,
-                obscureText: _obscure,
-                autofillHints: const [AutofillHints.password],
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Current password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_outline),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+      width: 400,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (needsCurrentPassword) ...[
             TextField(
-              controller: _value,
-              autofocus: !needsCurrentPassword,
-              obscureText: changingPassword && _obscure,
-              keyboardType: widget.field == _AccountField.email
-                  ? TextInputType.emailAddress
-                  : null,
-              textCapitalization: widget.field == _AccountField.name
-                  ? TextCapitalization.words
-                  : TextCapitalization.none,
-              autofillHints: switch (widget.field) {
-                _AccountField.name => const [AutofillHints.name],
-                _AccountField.email => const [AutofillHints.email],
-                _AccountField.password => const [AutofillHints.newPassword],
-              },
-              textInputAction: changingPassword
-                  ? TextInputAction.next
-                  : TextInputAction.done,
-              onSubmitted: (_) {
-                if (!changingPassword) _save();
-              },
-              decoration: InputDecoration(
-                labelText: switch (widget.field) {
-                  _AccountField.name => 'Full name',
-                  _AccountField.email => 'New email',
-                  _AccountField.password => 'New password',
-                },
-                border: const OutlineInputBorder(),
-                prefixIcon: Icon(switch (widget.field) {
-                  _AccountField.name => Icons.badge_outlined,
-                  _AccountField.email => Icons.email_outlined,
-                  _AccountField.password => Icons.password_outlined,
-                }),
+              controller: _currentPassword,
+              autofocus: true,
+              obscureText: _obscure,
+              autofillHints: const [AutofillHints.password],
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Current password',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock_outline),
               ),
             ),
-            if (changingPassword) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _confirmPassword,
-                obscureText: _obscure,
-                autofillHints: const [AutofillHints.newPassword],
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _save(),
-                decoration: InputDecoration(
-                  labelText: 'Confirm new password',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.password_outlined),
-                  suffixIcon: IconButton(
-                    tooltip: _obscure ? 'Show passwords' : 'Hide passwords',
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                  ),
-                ),
-              ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            ],
+            const SizedBox(height: 16),
           ],
-        ),
+          TextField(
+            controller: _value,
+            autofocus: !needsCurrentPassword,
+            obscureText: changingPassword && _obscure,
+            keyboardType: widget.field == _AccountField.email
+                ? TextInputType.emailAddress
+                : null,
+            textCapitalization: widget.field == _AccountField.name
+                ? TextCapitalization.words
+                : TextCapitalization.none,
+            autofillHints: switch (widget.field) {
+              _AccountField.name => const [AutofillHints.name],
+              _AccountField.email => const [AutofillHints.email],
+              _AccountField.password => const [AutofillHints.newPassword],
+            },
+            textInputAction: changingPassword
+                ? TextInputAction.next
+                : TextInputAction.done,
+            onSubmitted: (_) {
+              if (!changingPassword) _save();
+            },
+            decoration: InputDecoration(
+              labelText: switch (widget.field) {
+                _AccountField.name => 'Full name',
+                _AccountField.email => 'New email',
+                _AccountField.password => 'New password',
+              },
+              border: const OutlineInputBorder(),
+              prefixIcon: Icon(switch (widget.field) {
+                _AccountField.name => Icons.badge_outlined,
+                _AccountField.email => Icons.email_outlined,
+                _AccountField.password => Icons.password_outlined,
+              }),
+            ),
+          ),
+          if (changingPassword) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _confirmPassword,
+              obscureText: _obscure,
+              autofillHints: const [AutofillHints.newPassword],
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+              decoration: InputDecoration(
+                labelText: 'Confirm new password',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.password_outlined),
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? 'Show passwords' : 'Hide passwords',
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ],
+        ],
       ),
       actions: [
         TextButton(

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
 import '../../theme.dart';
+import '../form_dialog.dart';
 
 /// A handful of pleasant seeds to pick from, the amber ([kDefaultAccent])
 /// first so the out-of-the-box state reads as selected. Any hex is reachable
@@ -122,8 +123,8 @@ class _AccentCustomDialog extends StatefulWidget {
 
   static Future<void> show(BuildContext context, Color initial) {
     final settings = context.read<SettingsStore>();
-    return showDialog<void>(
-      context: context,
+    return showFormDialog<void>(
+      context,
       builder: (_) => ChangeNotifierProvider.value(
         value: settings,
         child: _AccentCustomDialog(initial: initial),
@@ -178,86 +179,84 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
       seedColor: _color,
       brightness: Theme.of(context).brightness,
     ).primary;
-    return AlertDialog(
+    return FormDialog(
       title: const Text('Custom accent'),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.add,
-                    size: 20,
-                    color: scheme.brightness == Brightness.dark
-                        ? Colors.black
-                        : Colors.white,
+      width: 380,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: primary,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.add,
+                  size: 20,
+                  color: scheme.brightness == Brightness.dark
+                      ? Colors.black
+                      : Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Preview of the accent this seed produces.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Preview of the accent this seed produces.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final c in _board)
-                  InkWell(
-                    onTap: () => _select(c),
-                    customBorder: const CircleBorder(),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: c,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: c == _color
-                              ? scheme.onSurface
-                              : scheme.outlineVariant,
-                          width: c == _color ? 2.5 : 1,
-                        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final c in _board)
+                InkWell(
+                  onTap: () => _select(c),
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: c == _color
+                            ? scheme.onSurface
+                            : scheme.outlineVariant,
+                        width: c == _color ? 2.5 : 1,
                       ),
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: 130,
-              child: TextField(
-                controller: _hex,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                  labelText: 'Hex',
                 ),
-                onChanged: (value) {
-                  final parsed = PaletteEntry.hexToColor(value);
-                  if (parsed != null) setState(() => _color = parsed);
-                },
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 130,
+            child: TextField(
+              controller: _hex,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                labelText: 'Hex',
               ),
+              onChanged: (value) {
+                final parsed = PaletteEntry.hexToColor(value);
+                if (parsed != null) setState(() => _color = parsed);
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
       actions: [
         TextButton(

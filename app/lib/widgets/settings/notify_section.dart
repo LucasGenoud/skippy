@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/notify_channels.dart';
 import '../../state/settings_store.dart';
+import '../form_dialog.dart';
 import 'probe_row.dart';
 
 /// Summary row for the user's notification channels; taps into the config
@@ -38,8 +39,8 @@ class _NotifyConfigDialog extends StatefulWidget {
 
   static Future<void> show(BuildContext context) {
     final settings = context.read<SettingsStore>();
-    return showDialog<void>(
-      context: context,
+    return showFormDialog<void>(
+      context,
       builder: (_) => ChangeNotifierProvider.value(
         value: settings,
         child: const _NotifyConfigDialog(),
@@ -103,68 +104,67 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
+    return FormDialog(
       title: const Text('Notification channels'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Fields scroll; the probe row below stays pinned and visible.
-            Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final channel in kNotifyChannels) ...[
-                      if (channel != kNotifyChannels.first)
-                        const SizedBox(height: 20),
-                      Text(
-                        channel.label,
-                        style: Theme.of(context).textTheme.titleSmall,
+      // The fields scroll inside the dialog, so it manages its own scrolling.
+      scrollable: false,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Fields scroll; the probe row below stays pinned and visible.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final channel in kNotifyChannels) ...[
+                    if (channel != kNotifyChannels.first)
+                      const SizedBox(height: 20),
+                    Text(
+                      channel.label,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      channel.blurb,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        channel.blurb,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                    ),
+                    for (final field in channel.fields) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _fields[field.key],
+                        obscureText: field.obscure,
+                        // Re-evaluate the probe button's enabled state.
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: field.mandatory
+                              ? field.label
+                              : '${field.label} (optional)',
+                          hintText: field.hint,
+                          helperText: field.helper,
+                          helperMaxLines: 2,
                         ),
                       ),
-                      for (final field in channel.fields) ...[
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _fields[field.key],
-                          obscureText: field.obscure,
-                          // Re-evaluate the probe button's enabled state.
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            labelText: field.mandatory
-                                ? field.label
-                                : '${field.label} (optional)',
-                            hintText: field.hint,
-                            helperText: field.helper,
-                            helperMaxLines: 2,
-                          ),
-                        ),
-                      ],
                     ],
                   ],
-                ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            ProbeRow(
-              testing: _testing,
-              result: _testResult,
-              onTest: _anyConfigured ? _test : null,
-              icon: Icons.notifications_active_outlined,
-              label: 'Send test',
-              successText: 'Sent — check your device',
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          ProbeRow(
+            testing: _testing,
+            result: _testResult,
+            onTest: _anyConfigured ? _test : null,
+            icon: Icons.notifications_active_outlined,
+            label: 'Send test',
+            successText: 'Sent — check your device',
+          ),
+        ],
       ),
       actions: [
         TextButton(
