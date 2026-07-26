@@ -743,13 +743,20 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Note mutations (all optimistic)
 
-  Note createDraft({NoteKind kind = NoteKind.text}) {
+  /// [labelIds] files the note from birth — what a note composed while a label
+  /// view is open needs, so it doesn't vanish out of the view it was written
+  /// in. They ride along on the create request, so a draft never loses them.
+  Note createDraft({
+    NoteKind kind = NoteKind.text,
+    Set<String> labelIds = const {},
+  }) {
     final now = DateTime.now();
     final note = Note(
       id: _uuid.v4(),
       workspaceId: _activeWorkspaceId ?? '',
       kind: kind,
       position: _frontPosition(),
+      labelIds: labelIds,
       createdAt: now,
       updatedAt: now,
       owner: currentUserId == null
@@ -1410,8 +1417,11 @@ class NotesStore extends ChangeNotifier {
   /// Drag-and-drop onto the grid: one new note holding all [files].
   /// Returns the note id, or null when nothing uploaded (the empty draft is
   /// discarded rather than left as a phantom note).
-  Future<String?> createNoteWithFiles(List<DroppedFile> files) async {
-    final note = createDraft();
+  Future<String?> createNoteWithFiles(
+    List<DroppedFile> files, {
+    Set<String> labelIds = const {},
+  }) async {
+    final note = createDraft(labelIds: labelIds);
     var uploaded = 0;
     for (final file in files) {
       try {
@@ -1465,8 +1475,12 @@ class NotesStore extends ChangeNotifier {
   /// shown as transcribing immediately (optimistic); uploading the clip makes
   /// the server run Whisper and fill in the transcript. Returns the note id,
   /// or null when the upload failed (the empty draft is discarded).
-  Future<String?> createAudioNote(Uint8List bytes, String mime) async {
-    final note = createDraft(kind: NoteKind.audio);
+  Future<String?> createAudioNote(
+    Uint8List bytes,
+    String mime, {
+    Set<String> labelIds = const {},
+  }) async {
+    final note = createDraft(kind: NoteKind.audio, labelIds: labelIds);
     // Surface the transcribing animation before the round-trip completes.
     _replace(note.copyWith(transcriptStatus: 'pending'));
     final ext = switch (mime.split(';').first.trim()) {

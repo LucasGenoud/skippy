@@ -293,12 +293,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Keyboard shortcut callbacks. The bindings live in build();
   // widgets/shortcut_help.dart and the README document the full set.
+  /// Labels a note composed right now should start with: the label being
+  /// filtered on, so it stays in view instead of dropping out of the list the
+  /// moment it's written. Empty in every other view.
+  Set<String> get _composeLabelIds =>
+      _selection.view == NoteView.label && _selection.labelId != null
+      ? {_selection.labelId!}
+      : const {};
+
   void _newNote(NoteKind kind) => openNoteEditor(
     context,
     kind: kind,
-    openFullscreen: () => Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => EditorScreen(kind: kind))),
+    labelIds: _composeLabelIds,
+    openFullscreen: () => Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditorScreen(kind: kind, labelIds: _composeLabelIds),
+      ),
+    ),
   );
 
   void _focusSearch() => _searchFocus.requestFocus();
@@ -343,14 +354,17 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     if (accepted.isEmpty) return;
-    final id = await store.createNoteWithFiles(accepted);
+    final labelIds = _composeLabelIds;
+    final id = await store.createNoteWithFiles(accepted, labelIds: labelIds);
     if (id == null) {
       showAppSnack(
         "Couldn't upload the dropped files",
         icon: Icons.error_outline,
         kind: SnackKind.danger,
       );
-    } else if (_selection != ViewSelection.notes) {
+    } else if (_selection != ViewSelection.notes && labelIds.isEmpty) {
+      // A note dropped into a label view lands *in* that view, so only the
+      // views that can't hold a new note need the "went to Notes" nudge.
       showAppSnack('Note created in Notes', icon: Icons.lightbulb_outline);
     }
   }
@@ -641,9 +655,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   ),
                                                 ),
                                               ),
-                                              // Inline quick add: wide screens, main notes view only.
-                                              if (_selection ==
-                                                      ViewSelection.notes &&
+                                              // Inline quick add: wide screens,
+                                              // in the views you compose into
+                                              // (all notes, or a label — where
+                                              // it files the note for you).
+                                              if ((_selection.view ==
+                                                          NoteView.notes ||
+                                                      _selection.view ==
+                                                          NoteView.label) &&
                                                   !searching &&
                                                   width >= 600)
                                                 SliverToBoxAdapter(
@@ -653,15 +672,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                                           const BoxConstraints(
                                                             maxWidth: 600,
                                                           ),
-                                                      child: const Padding(
+                                                      child: Padding(
                                                         padding:
-                                                            EdgeInsets.fromLTRB(
+                                                            const EdgeInsets.fromLTRB(
                                                               16,
                                                               16,
                                                               16,
                                                               24,
                                                             ),
-                                                        child: QuickAddBar(),
+                                                        child: QuickAddBar(
+                                                          labelIds:
+                                                              _composeLabelIds,
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
@@ -769,10 +791,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                       },
                                     ),
                                   ),
-                                  const Positioned(
+                                  Positioned(
                                     right: 16,
                                     bottom: 16,
-                                    child: NewNoteFabs(),
+                                    child: NewNoteFabs(
+                                      labelIds: _composeLabelIds,
+                                    ),
                                   ),
                                 ],
                               ),

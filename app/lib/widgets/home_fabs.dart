@@ -14,7 +14,12 @@ import 'recording_sheet.dart';
 /// FABs that morph into the editor via container transform: a mini one for a
 /// new checklist, the main one for a new text note.
 class NewNoteFabs extends StatelessWidget {
-  const NewNoteFabs({super.key});
+  /// Labels every note these buttons create — set when a label view is open,
+  /// so writing a note there keeps it in the view you wrote it in. This is the
+  /// only way to compose into a label on a phone (no quick-add bar there).
+  final Set<String> labelIds;
+
+  const NewNoteFabs({super.key, this.labelIds = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -47,8 +52,12 @@ class NewNoteFabs extends StatelessWidget {
               customBorder: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(kRadius),
               ),
-              onTap: () =>
-                  openNoteEditor(context, openFullscreen: open, kind: kind),
+              onTap: () => openNoteEditor(
+                context,
+                openFullscreen: open,
+                kind: kind,
+                labelIds: labelIds,
+              ),
               child: SizedBox(
                 width: size,
                 height: size,
@@ -56,7 +65,7 @@ class NewNoteFabs extends StatelessWidget {
               ),
             ),
             openBuilder: (context, close) =>
-                EditorScreen(noteId: null, kind: kind),
+                EditorScreen(noteId: null, kind: kind, labelIds: labelIds),
           ),
         ),
       );
@@ -66,7 +75,10 @@ class NewNoteFabs extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (showAudio) ...[const _AudioNoteFab(), const SizedBox(height: 12)],
+        if (showAudio) ...[
+          _AudioNoteFab(labelIds: labelIds),
+          const SizedBox(height: 12),
+        ],
         fab(
           size: 44,
           icon: Icons.article_outlined,
@@ -102,13 +114,18 @@ class NewNoteFabs extends StatelessWidget {
 /// note that transcribes itself. Only shown when the server offers
 /// transcription and the user has the feature enabled.
 class _AudioNoteFab extends StatelessWidget {
-  const _AudioNoteFab();
+  final Set<String> labelIds;
+  const _AudioNoteFab({this.labelIds = const {}});
 
   Future<void> _record(BuildContext context) async {
     final store = context.read<NotesStore>();
     final clip = await RecordingSheet.show(context);
     if (clip == null) return;
-    final id = await store.createAudioNote(clip.bytes, clip.mime);
+    final id = await store.createAudioNote(
+      clip.bytes,
+      clip.mime,
+      labelIds: labelIds,
+    );
     if (id == null) showAppSnack("Couldn't save the recording");
   }
 

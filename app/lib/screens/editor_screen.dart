@@ -56,11 +56,16 @@ class EditorScreen extends StatefulWidget {
   /// directly.
   final bool modal;
 
+  /// Labels a new note starts with — the view it was composed in (a label
+  /// filter) files it automatically. Ignored when [noteId] is given.
+  final Set<String> labelIds;
+
   const EditorScreen({
     super.key,
     this.noteId,
     this.kind = NoteKind.text,
     this.modal = false,
+    this.labelIds = const {},
   });
 
   @override
@@ -83,6 +88,7 @@ Future<void> openNoteEditor(
   required VoidCallback openFullscreen,
   String? noteId,
   NoteKind kind = NoteKind.text,
+  Set<String> labelIds = const {},
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
   // composer). Without this the enclosing FocusScope remembers that field
@@ -109,7 +115,12 @@ Future<void> openNoteEditor(
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(kRadius),
-          child: EditorScreen(noteId: noteId, kind: kind, modal: true),
+          child: EditorScreen(
+            noteId: noteId,
+            kind: kind,
+            modal: true,
+            labelIds: labelIds,
+          ),
         ),
       ),
     ),
@@ -207,7 +218,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _ensureNote() {
     if (_noteId != null) return;
-    _noteId = _store.createDraft(kind: widget.kind).id;
+    _noteId = _store
+        .createDraft(kind: widget.kind, labelIds: widget.labelIds)
+        .id;
   }
 
   void _finalize() {
@@ -380,6 +393,12 @@ class _EditorScreenState extends State<EditorScreen> {
     _ensureNote();
     _store.setColor(_noteId!, color);
     setState(() {});
+  }
+
+  Future<void> _editLabels() async {
+    _ensureNote();
+    await LabelsSheet.show(context, _noteId!);
+    if (mounted) setState(() {});
   }
 
   void _archiveAndClose() {
@@ -938,9 +957,10 @@ class _EditorScreenState extends State<EditorScreen> {
                                   selected: () => _note?.color ?? 'default',
                                   onSelect: _setColor,
                                 ),
-                          onLabels: trashed || note == null || note.isEmpty
-                              ? null
-                              : () => LabelsSheet.show(context, note.id),
+                          // Labelling is available from the first moment, like
+                          // colour and pin: filing a note is often the first
+                          // thing you do, and the draft materializes on demand.
+                          onLabels: trashed ? null : _editLabels,
                           onReminder: trashed ? null : _editReminder,
                           onImage: trashed || _uploading ? null : _pickImage,
                           onAttach: trashed || _uploading ? null : _pickFile,

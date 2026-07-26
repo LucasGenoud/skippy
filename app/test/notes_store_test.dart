@@ -515,6 +515,43 @@ void main() {
     );
   });
 
+  group('composing inside a label', () {
+    test('a draft born with a label keeps it through the create', () async {
+      await store.load();
+      final label = store.createLabel('Recipes');
+
+      final draft = store.createDraft(labelIds: {label.id});
+      expect(store.noteById(draft.id)!.labelIds, {label.id});
+      // Before it has content it is only local; nothing has gone up yet.
+      expect(api.notes, isEmpty);
+
+      store.updateNoteContent(draft.id, content: 'Pancakes');
+      await settle();
+
+      // The label rides on the create request — a draft is never PATCHed, so
+      // sending it later was never an option.
+      expect(api.notes[draft.id]!.labelIds, {label.id});
+      // And it shows in the view it was written in.
+      final inLabel = store.notesFor(
+        ViewSelection(NoteView.label, label.id),
+        '',
+      );
+      expect(inLabel.others.single.id, draft.id);
+    });
+
+    test('an audio note started in a label view is filed under it', () async {
+      await store.load();
+      final label = store.createLabel('Ideas');
+      final id = await store.createAudioNote(
+        Uint8List(8),
+        'audio/webm',
+        labelIds: {label.id},
+      );
+      expect(store.noteById(id!)!.labelIds, {label.id});
+      await settle();
+    });
+  });
+
   group('sync status', () {
     test('reflects synced / syncing / offline', () async {
       await store.load();

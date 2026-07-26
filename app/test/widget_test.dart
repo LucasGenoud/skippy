@@ -891,6 +891,55 @@ void main() {
       expect(api.notes[visible.single.id]!.content, 'hello world');
     });
 
+    testWidgets('labels can be set on a note before it has any content', (
+      tester,
+    ) async {
+      await store.load();
+      store.createLabel('Work');
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: null)));
+      await tester.pump();
+
+      // Filing a note is often the first thing you do, so the button is live
+      // on an empty note — no typing required first.
+      final labels = find.widgetWithIcon(IconButton, Icons.label_outline);
+      expect(
+        tester.widget<IconButton>(labels).onPressed,
+        isNotNull,
+        reason: 'the Labels button must never be greyed out on a new note',
+      );
+
+      await tester.tap(labels);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work'));
+      await tester.pump();
+
+      final draft = store.notesFor(ViewSelection.notes, '').others.single;
+      expect(draft.labelIds, hasLength(1));
+      await flushTimers(tester);
+    });
+
+    testWidgets('a note started in a label view is filed under it', (
+      tester,
+    ) async {
+      await store.load();
+      final label = store.createLabel('Recipes');
+      await tester.pumpWidget(
+        harness(store, EditorScreen(noteId: null, labelIds: {label.id})),
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Note'),
+        'Pancakes',
+      );
+      await tester.pump();
+
+      final note = store.notesFor(ViewSelection.notes, '').others.single;
+      expect(note.labelIds, {label.id});
+      await flushTimers(tester);
+      // ...and the label survives the trip to the server, which for a draft
+      // happens on the create request, not a later patch.
+      expect(api.notes[note.id]!.labelIds, {label.id});
+    });
+
     testWidgets('untouched new editor leaves no note behind', (tester) async {
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: null)));

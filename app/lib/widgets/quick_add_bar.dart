@@ -20,7 +20,11 @@ import 'markdown_toolbar.dart';
 /// empty composer just collapses). The image icon creates an image note
 /// straight from the file dialog.
 class QuickAddBar extends StatefulWidget {
-  const QuickAddBar({super.key});
+  /// Labels the composed note starts with — set when a label view is open, so
+  /// what you write there stays there.
+  final Set<String> labelIds;
+
+  const QuickAddBar({super.key, this.labelIds = const {}});
 
   @override
   State<QuickAddBar> createState() => _QuickAddBarState();
@@ -98,7 +102,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
     if (!_expanded) return;
     if (_hasContent) {
       final store = context.read<NotesStore>();
-      final note = store.createDraft(kind: _kind);
+      final note = store.createDraft(kind: _kind, labelIds: widget.labelIds);
       if (_kind == NoteKind.checklist) {
         store.updateNoteContent(
           note.id,
@@ -178,7 +182,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
           mime: picked.mimeType ?? mimeFromName(picked.name),
           bytes: bytes,
         ),
-      ]);
+      ], labelIds: widget.labelIds);
       if (id == null) showAppSnack("Couldn't upload the image");
     } catch (_) {
       showAppSnack("Couldn't upload the image");
