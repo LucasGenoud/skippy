@@ -18,7 +18,10 @@ export 'note_collection.dart'
     show NoteSections, NoteView, SortMode, ViewSelection, WorkspaceScope;
 
 /// Coarse connectivity/sync state surfaced on the top-bar avatar.
-enum SyncStatus { synced, syncing, offline }
+///
+/// [connecting] and [syncing] both spin: the difference is whether we are still
+/// establishing that the server is there, or already talking to it.
+enum SyncStatus { synced, syncing, connecting, offline }
 
 /// Optimistic-first store: every mutation updates local state immediately and
 /// is synced to the backend through a serial queue that retries on network
@@ -62,6 +65,11 @@ class NotesStore extends ChangeNotifier {
   /// what to retry) reads this; the UI reads [offline].
   bool _connectionDown = false;
   Timer? _offlineConfirmTimer;
+
+  /// The server has answered at least once since launch. Until it has, the
+  /// indicator says "connecting" rather than claiming everything is saved —
+  /// the notes on screen came from the local cache, not from the server.
+  bool _connectedOnce = false;
 
   /// True while a manual [refresh] is re-pulling from the server. Distinct
   /// from [loading], the first load.
@@ -388,11 +396,24 @@ class NotesStore extends ChangeNotifier {
   /// Whether there are local edits not yet acknowledged by the server.
   bool get hasPendingWork => _hasLocalChangesInFlight;
 
-  /// Coarse connectivity/sync state for the UI indicator. Offline wins (nothing
-  /// can sync); otherwise pending local work reads as syncing; else all saved.
-  SyncStatus get syncStatus => offline
-      ? SyncStatus.offline
-      : (_hasLocalChangesInFlight ? SyncStatus.syncing : SyncStatus.synced);
+  /// Still trying to reach the server: either it has never answered this
+  /// session (a cold start renders from cache long before the first request
+  /// resolves) or a request just failed and the outage hasn't yet outlasted
+  /// [offlineGrace]. This is what keeps the indicator spinning between "opened
+  /// the app" and a verdict either way.
+  bool get _connecting =>
+      !_connectedOnce || _connectionDown || loading || refreshing;
+
+  /// Coarse connectivity/sync state for the UI indicator. A confirmed outage
+  /// wins (nothing can sync at all); reaching the server comes next, since
+  /// until that lands we can't honestly claim local work is being pushed; then
+  /// pending local work; else everything is saved on the server.
+  SyncStatus get syncStatus => switch (this) {
+    _ when offline => SyncStatus.offline,
+    _ when _connecting => SyncStatus.connecting,
+    _ when _hasLocalChangesInFlight => SyncStatus.syncing,
+    _ => SyncStatus.synced,
+  };
 
   /// A request failed. The failure is recorded right away for the retry
   /// machinery, but only surfaces to the user once it has lasted
@@ -414,10 +435,13 @@ class NotesStore extends ChangeNotifier {
   bool _markConnectionUp() {
     _offlineConfirmTimer?.cancel();
     _offlineConfirmTimer = null;
+    // Reaching the server ends the connecting phase as well as any outage, and
+    // both of those are visible on the indicator.
+    final changed = _connectionDown || !_connectedOnce || offline;
     _connectionDown = false;
-    if (!offline) return false;
+    _connectedOnce = true;
     offline = false;
-    return true;
+    return changed;
   }
 
   /// The app came back to the foreground. Everything it thought it knew about
@@ -673,6 +697,10 @@ class NotesStore extends ChangeNotifier {
       _connectionProbeInterval,
       (_) => checkConnectionNow(),
     );
+    // Probe straight away too. The health endpoint answers (or times out) long
+    // before a full note fetch would, so this is what settles "connecting" into
+    // connected-or-offline on launch instead of waiting for the first tick.
+    checkConnectionNow();
   }
 
   /// Probe immediately (also exposed for deterministic tests and explicit

@@ -540,6 +540,9 @@ void main() {
       () async {
         await store.load();
         store.startSync();
+        // startSync probes immediately (that's what settles "connecting" on
+        // launch); let it land before taking the server away.
+        await pumpEventQueue();
 
         api.failWith = Exception('server unreachable');
         await store.checkConnectionNow();
@@ -557,6 +560,7 @@ void main() {
     test('a failure that recovers within the grace is never announced', () async {
       await store.load();
       store.startSync();
+      await pumpEventQueue(); // launch probe
 
       // One probe fails — the kind of blip a phone produces the instant its
       // radio wakes up. Nothing is said about it...
@@ -570,6 +574,36 @@ void main() {
       await store.checkConnectionNow();
       await Future<void>.delayed(testOfflineGrace * 3);
       expect(store.offline, isFalse);
+    });
+
+    test('cached notes open as "connecting", never as "saved"', () async {
+      final cache = MemoryLocalCache();
+      await cache.write('u-me', {
+        'notes': [serverNote('n1', title: 'cached').toJson()],
+        'labels': <dynamic>[],
+        'history': <String, dynamic>{},
+        'queue': <dynamic>[],
+      });
+      api.failWith = Exception('offline');
+      final s = testStore(api, cache: cache);
+
+      final loaded = s.load();
+      // The cache paints first, and while the server hasn't answered the badge
+      // must not claim everything is saved — nothing has been checked yet.
+      expect(s.syncStatus, SyncStatus.connecting);
+      await loaded;
+      expect(s.noteById('n1')?.title, 'cached');
+      expect(s.syncStatus, SyncStatus.connecting);
+
+      // Still nothing after the grace: now it's a confirmed outage.
+      await Future<void>.delayed(testOfflineGrace * 3);
+      expect(s.syncStatus, SyncStatus.offline);
+
+      // Reconnecting settles it the other way.
+      api.failWith = null;
+      await s.checkConnectionNow();
+      expect(s.syncStatus, SyncStatus.synced);
+      s.dispose();
     });
 
     test('resuming from the background drops a stale offline verdict', () async {

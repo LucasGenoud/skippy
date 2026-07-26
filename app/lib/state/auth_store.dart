@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -95,25 +96,65 @@ class AuthStore extends ChangeNotifier {
       return;
     }
     api.token = saved;
+    final cached = _cachedUser(prefs);
+    if (cached != null) {
+      // Open on the cached session immediately: the notes cache is keyed by
+      // user id, so this is what lets the app paint real notes on launch with
+      // no network at all. The token is still checked — just off the critical
+      // path, in [_verifySession].
+      user = cached;
+      status = AuthStatus.signedIn;
+      notifyListeners();
+      unawaited(_verifySession(prefs));
+      return;
+    }
+    // No cached profile (a session saved by an older build, or a write that
+    // never landed): the server has to say who this token belongs to before
+    // the per-user cache can be keyed, so this one call is worth waiting for.
     try {
       user = await api.me();
       await prefs.setString(_userKey, jsonEncode(user!.toJson()));
       status = AuthStatus.signedIn;
-    } on ApiException {
-      // Token revoked or expired; anything else (network) keeps the token and
-      // signs in optimistically so the app works offline.
-      api.token = null;
-      await prefs.remove(_tokenKey);
-      await prefs.remove(_userKey);
-      status = AuthStatus.signedOut;
+    } on ApiException catch (e) {
+      if (_isRejection(e)) {
+        api.token = null;
+        await prefs.remove(_tokenKey);
+        await prefs.remove(_userKey);
+        status = AuthStatus.signedOut;
+      } else {
+        status = AuthStatus.signedIn;
+      }
     } catch (_) {
-      // Network unreachable: stay signed in with the last-known user so the
-      // per-user offline cache (keyed by user id) loads.
-      user = _cachedUser(prefs) ?? user;
+      // Unreachable: stay signed in so the app is usable offline.
       status = AuthStatus.signedIn;
     }
     notifyListeners();
   }
+
+  /// Confirm a restored token after the UI is already up, and refresh the
+  /// stored profile. Only an outright rejection signs the user out — being
+  /// unable to reach the server is exactly the case the cached session exists
+  /// for, and must never cost someone access to their notes.
+  Future<void> _verifySession(SharedPreferences prefs) async {
+    try {
+      final fresh = await api.me();
+      if (api.token == null) return; // signed out while the check was in flight
+      user = fresh;
+      await prefs.setString(_userKey, jsonEncode(fresh.toJson()));
+      notifyListeners();
+    } on ApiException catch (e) {
+      // A 401 already tripped `onUnauthorized`; clearing again is harmless and
+      // covers a 403 the interceptor doesn't watch for.
+      if (_isRejection(e)) await _clearSession();
+    } catch (_) {
+      // Offline: keep the session exactly as it is.
+    }
+  }
+
+  /// Whether the server actively refused this session, as opposed to failing
+  /// to answer (5xx, timeouts) — which says nothing about the token.
+  bool _isRejection(ApiException e) =>
+      e.statusCode == 401 || e.statusCode == 403;
 
   AuthUser? _cachedUser(SharedPreferences prefs) {
     final raw = prefs.getString(_userKey);

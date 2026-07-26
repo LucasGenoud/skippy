@@ -211,8 +211,32 @@ abstract class Api {
   });
 }
 
+/// Wraps a client so no request can hang forever. A phone that is "connected"
+/// to a network with no route to the server (captive portal, VPN gone, server
+/// down) never gets a TCP reset — the socket just sits there until the OS gives
+/// up, which can take a minute or more. Without a ceiling the app would wait
+/// that long before it could say anything about being offline.
+class _TimeoutClient extends http.BaseClient {
+  final http.Client _inner;
+  final Duration timeout;
+
+  _TimeoutClient(this._inner, this.timeout);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request).timeout(timeout);
+
+  @override
+  void close() => _inner.close();
+}
+
 class ApiClient implements Api {
   static const connectionProbeTimeout = Duration(seconds: 3);
+
+  /// Ceiling on any ordinary request. Generous enough for a slow mobile link,
+  /// short enough that a dead connection is a fast failure rather than a hang.
+  /// Attachment uploads bypass it (see [_uploadClient]).
+  static const requestTimeout = Duration(seconds: 15);
 
   /// Resolution order: --dart-define=API_BASE (compile-time), then the URL the
   /// server injected into the page (STICKY_NOTES_PUBLIC_URL env var), then
@@ -228,7 +252,11 @@ class ApiClient implements Api {
   }
 
   String baseUrl;
-  final http.Client _client = http.Client();
+
+  /// Uploads stream real bytes and can legitimately outlast [requestTimeout]
+  /// on a slow link, so they go out unbounded.
+  final http.Client _uploadClient;
+  late final http.Client _client = _TimeoutClient(_uploadClient, requestTimeout);
 
   /// Session token; set by the auth store after sign-in.
   String? token;
@@ -236,7 +264,11 @@ class ApiClient implements Api {
   /// Invoked when the server rejects our session (expired/revoked token).
   VoidCallback? onUnauthorized;
 
-  ApiClient({String? baseUrl}) : baseUrl = baseUrl ?? defaultBaseUrl();
+  /// [httpClient] is a test seam (a stubbed or never-answering client stands in
+  /// for the network); production leaves it null.
+  ApiClient({String? baseUrl, http.Client? httpClient})
+    : baseUrl = baseUrl ?? defaultBaseUrl(),
+      _uploadClient = httpClient ?? http.Client();
 
   Uri _uri(String path) => Uri.parse('$baseUrl/api$path');
 
@@ -630,7 +662,7 @@ class ApiClient implements Api {
               contentType: MediaType.parse(mime),
             ),
           );
-    final streamed = await _client.send(request);
+    final streamed = await _uploadClient.send(request);
     final res = await http.Response.fromStream(streamed);
     final data = _decode(res);
     return Attachment.fromJson(data as Map<String, dynamic>);

@@ -885,7 +885,8 @@ class _SyncBadgeState extends State<_SyncBadge>
   }
 
   void _syncSpin() {
-    if (widget.status == SyncStatus.syncing) {
+    if (widget.status == SyncStatus.syncing ||
+        widget.status == SyncStatus.connecting) {
       _spin.repeat();
     } else {
       _spin.stop();
@@ -907,6 +908,11 @@ class _SyncBadgeState extends State<_SyncBadge>
         Icons.cloud_off_rounded,
         scheme.error,
         'Offline — changes will sync when you reconnect',
+      ),
+      SyncStatus.connecting => (
+        Icons.sync_rounded,
+        scheme.primary,
+        'Connecting to the server…',
       ),
       SyncStatus.syncing => (
         Icons.sync_rounded,

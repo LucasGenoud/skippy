@@ -952,9 +952,30 @@ class _ViewHeader extends StatelessWidget {
   }
 }
 
-class _OfflineBanner extends StatelessWidget {
-  final VoidCallback onRetry;
+/// Shown once an outage is confirmed: says what the user is looking at (their
+/// own cached notes), that edits aren't lost, and offers an immediate retry
+/// rather than leaving them to wait out the background one.
+class _OfflineBanner extends StatefulWidget {
+  final Future<void> Function() onRetry;
   const _OfflineBanner({required this.onRetry});
+
+  @override
+  State<_OfflineBanner> createState() => _OfflineBannerState();
+}
+
+class _OfflineBannerState extends State<_OfflineBanner> {
+  bool _retrying = false;
+
+  Future<void> _retry() async {
+    if (_retrying) return;
+    setState(() => _retrying = true);
+    try {
+      await widget.onRetry();
+    } finally {
+      // The banner is gone the moment the retry succeeds, so guard the setState.
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -976,13 +997,23 @@ class _OfflineBanner extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              "Can't reach the server — changes will sync automatically",
+              "Can't reach the server — showing your saved notes. "
+              'Changes sync when the connection is back.',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
+          TextButton(
+            onPressed: _retrying ? null : _retry,
+            child: _retrying
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Retry'),
+          ),
         ],
       ),
     );
