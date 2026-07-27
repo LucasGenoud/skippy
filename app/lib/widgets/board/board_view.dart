@@ -119,8 +119,12 @@ class _BoardViewState extends State<BoardView> {
             controller: _boardController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            itemCount: board.columns.length,
+            // One past the columns: the tail tile. The empty state's "Add a
+            // column" button disappears with the first stage, so without this
+            // the column editor would be unreachable on a board that has one.
+            itemCount: board.columns.length + 1,
             itemBuilder: (context, index) {
+              if (index == board.columns.length) return const _AddColumnTile();
               final column = board.columns[index];
               return Container(
                 width: BoardView._columnWidth,
@@ -208,6 +212,47 @@ class _BoardViewState extends State<BoardView> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The board's tail on wide screens: opens the column editor.
+///
+/// Sits where the next column would go, which is where you reach for it. Drawn
+/// as an outline rather than a filled column so it reads as an invitation and
+/// not as a column holding nothing.
+class _AddColumnTile extends StatelessWidget {
+  const _AddColumnTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: BoardView._columnWidth,
+      margin: const EdgeInsets.only(right: 12),
+      child: InkWell(
+        onTap: () => EditStagesDialog.show(context),
+        borderRadius: kBorderRadius,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: kBorderRadius,
+            border: Border.all(color: hairlineColor(scheme)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add, size: 18, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Text(
+                'Add column',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -370,6 +415,43 @@ class _StageStripState extends State<_StageStrip> {
                   ),
                 ),
               ),
+            // Last in the strip, after the columns it adds to. The phone hides
+            // the column headers, so this is its only route to the editor —
+            // rename and delete arrive with it.
+            const _AddColumnChip(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The strip's trailing chip: opens the column editor.
+class _AddColumnChip extends StatelessWidget {
+  const _AddColumnChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => EditStagesDialog.show(context),
+      borderRadius: kBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          borderRadius: kBorderRadius,
+          border: Border.all(color: hairlineColor(scheme)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.add, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              'Add column',
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant),
+            ),
           ],
         ),
       ),

@@ -9,6 +9,7 @@ import 'package:skippy/widgets/board/board_column_view.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/board/move_to_stage_sheet.dart';
 import 'package:skippy/util/snack.dart';
+import 'package:skippy/widgets/form_dialog.dart';
 import 'package:skippy/widgets/note_card.dart';
 
 import 'fake_api.dart';
@@ -588,5 +589,62 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Show 5 more'), findsNothing);
     await flushTimers(tester);
+  });
+
+  /// The empty state's "Add a column" button vanishes with the first stage, so
+  /// a board that already has columns needs its own way to the editor. Every
+  /// other test here starts from a board that is already set up and so never
+  /// asked whether a second column could be added at all.
+  group('adding a column to a board that already has some', () {
+    /// Walks the two dialogs: pick "Add column", name it, confirm, close.
+    Future<void> addColumnNamed(WidgetTester tester, String name) async {
+      expect(find.text('Edit columns'), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FormDialog),
+          matching: find.text('Add column'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), name);
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('from the tile at the end of a wide board', (tester) async {
+      await setViewport(tester, const Size(1600, 900));
+      await store.load();
+      await tester.pumpWidget(boardApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add column'));
+      await tester.pumpAndSettle();
+      await addColumnNamed(tester, 'Blocked');
+
+      expect(store.stages.map((stage) => stage.name), contains('Blocked'));
+      // And the board grew a column, not just the store a stage.
+      expect(find.text('Blocked'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('from the trailing chip in the phone strip', (tester) async {
+      await setViewport(tester, const Size(390, 780));
+      await store.load();
+      await tester.pumpWidget(boardApp(store));
+      await tester.pumpAndSettle();
+
+      // The chip sits past the last column, off the end of a phone strip.
+      await tester.drag(find.text('Todo'), const Offset(-240, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add column'));
+      await tester.pumpAndSettle();
+      await addColumnNamed(tester, 'Blocked');
+
+      expect(store.stages.map((stage) => stage.name), contains('Blocked'));
+      expect(find.text('Blocked'), findsOneWidget);
+      await flushTimers(tester);
+    });
   });
 }
