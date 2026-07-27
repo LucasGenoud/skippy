@@ -35,11 +35,17 @@ services:
       # STICKY_NOTES_WEB: /app/web            # bundled Flutter web build
 
       # ── Semantic search ─────────────────────────────────────────────────
-      # STICKY_NOTES_SEMANTIC: "off"          # disable embeddings + search
-      # Seconds idle before the embedding model (the largest allocation by
-      # far) is unloaded; 0 keeps it pinned in memory.
-      # STICKY_NOTES_EMBED_IDLE_SECS: "900"
-      # HF_HOME: /models                      # model cache (model_cache volume)
+      # Embeddings come from an external OpenAI-compatible API (Ollama,
+      # OpenAI, LM Studio, ...) — the server holds no model, so its memory
+      # stays flat. Unset ⇒ semantic search (and notes chat) stay off.
+      # Probed once at startup; unreachable then ⇒ off for the whole process.
+      # For an Ollama on the host: http://host.docker.internal:11434/v1
+      STICKY_NOTES_EMBED_URL: ${STICKY_NOTES_EMBED_URL:-}
+      # The embedding model to ask for; `ollama pull bge-m3` matches the
+      # default. Changing it re-embeds every note on the next start.
+      STICKY_NOTES_EMBED_MODEL: ${STICKY_NOTES_EMBED_MODEL:-bge-m3}
+      # Optional; omit for Ollama, needed for OpenAI.
+      STICKY_NOTES_EMBED_API_KEY: ${STICKY_NOTES_EMBED_API_KEY:-}
 
       # ── Audio transcription ─────────────────────────────────────────────
       # Probed once at startup; unreachable then ⇒ off for the whole process.
@@ -74,7 +80,6 @@ services:
       # STICKY_NOTES_LLM_WRITING: "true"      # AI note editing
     volumes:
       - app_data:/data # SQLite DB + uploaded files
-      - model_cache:/models # embedding model (downloaded on first start)
     depends_on:
       # Wait until Whisper's HTTP server actually answers, not just until its
       # container starts — otherwise the server probes a not-yet-ready Whisper
@@ -145,7 +150,6 @@ services:
 
 volumes:
   app_data:
-  model_cache:
   whisper_cache:
   garage_meta:
   garage_data:

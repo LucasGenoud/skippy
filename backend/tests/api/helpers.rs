@@ -34,14 +34,15 @@ pub async fn state() -> AppState {
 }
 
 /// Deterministic bag-of-words embedder: shared tokens => similar vectors.
-/// Lets the search pipeline be tested without the real ONNX model.
+/// Lets the search pipeline be tested without an embeddings server.
 pub struct HashEmbedder;
 
 /// Dimension of HashEmbedder vectors; the vector index is created to match.
 pub const HASH_EMBED_DIMS: usize = 64;
 
+#[async_trait]
 impl TextEmbedder for HashEmbedder {
-    fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
+    async fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
         Ok(texts
             .into_iter()
             .map(|text| {

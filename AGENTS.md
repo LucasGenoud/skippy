@@ -112,7 +112,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/store/sqlite_schema.rs`: schema creation and additive startup migrations.
 - `backend/src/store/sqlite_rows.rs`: SQL row structs and conversion into domain models.
 - `backend/src/files.rs`: independent `FileStore` seam, disk and S3 implementations, signing helpers.
-- `backend/src/search.rs`: BGE-M3 embeddings, sqlite-vec tables, indexing and search implementation.
+- `backend/src/search.rs`: embeddings API client, sqlite-vec tables, indexing and search implementation.
 - `backend/src/transcribe.rs`: Whisper service interface and HTTP implementation.
 - `backend/src/assist.rs`: effective LLM settings, prompts, assistant routing, and structured-output parsing.
 - `backend/src/llm.rs`: OpenAI-compatible completion and streaming client.
@@ -203,7 +203,7 @@ Every notification connector key in `kNotifyChannels` must match a backend conne
 
 ### Semantic search and chat
 
-Semantic search uses full-precision `BAAI/bge-m3` embeddings with 1024 dimensions. sqlite-vec stores participant-scoped rows so sharing changes visibility without leaking results. It partitions by participant and not by workspace, so a `workspace_id` filter on search or chat is applied over the index's hits and has to over-fetch to keep the ranked list full. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
+Embeddings come from an external OpenAI-compatible API (`STICKY_NOTES_EMBED_URL`), never from a model loaded in-process — keep it that way, since an in-process model dominates the server's memory. The vector width is probed at startup rather than hardcoded, and `{model}:{dims}` is the index signature: change either and `SqliteVectorIndex::connect` drops the table so the startup reindex re-embeds. sqlite-vec stores participant-scoped rows so sharing changes visibility without leaking results. It partitions by participant and not by workspace, so a `workspace_id` filter on search or chat is applied over the index's hits and has to over-fetch to keep the ranked list full. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
 
 Chat retrieval and writes depend on the same optional embedding and LLM configuration paths. Stream frame types are shared conceptually between `handlers/chat.rs` and `models/chat.dart`; add unknown-frame resilience on the client when extending the protocol.
 

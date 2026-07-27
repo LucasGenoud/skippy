@@ -26,7 +26,6 @@ async-trait = "0.1"
 argon2 = "0.5"
 rand_core = { version = "0.6", features = ["getrandom"] }
 futures = "0.3"
-fastembed = "5.17.2"
 # vec0 virtual table for the semantic-search index; registered process-wide
 # via sqlite3_auto_extension, so libsqlite3-sys must stay the version sqlx uses.
 sqlite-vec = "0.1"

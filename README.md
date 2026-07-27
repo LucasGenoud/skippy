@@ -26,7 +26,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Grid / single-column list toggle; responsive density and width presets support up to 8 columns
 - **Sort by** custom order / recently edited / recently added / oldest
 - Library-wide instant search + **find-in-note** with match highlighting
-- **Semantic search** (meaning-ranking toggle in the search bar): notes are embedded locally with the full-precision **BAAI/bge-m3** ONNX model (1024 dimensions, no external AI service) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension, with one visibility-scoped row per note participant and no separate vector database.
+- **Semantic search** (meaning-ranking toggle in the search bar): notes are embedded by a self-hostable **OpenAI-compatible embeddings API** (Ollama, LM Studio, ...) and ranked by meaning — "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension, with one visibility-scoped row per note participant and no separate vector database. The server runs no model of its own, so its memory footprint doesn't depend on the model you choose.
 - **Audio notes** (mic button, when transcription is enabled): record a voice clip in a focused overlay with a live level meter, then it's transcribed locally by a self-hosted **Whisper** service — no external AI. The clip stays playable in the note and the transcript is editable, searchable, and exportable text.
 - **Feature detection**: semantic search and audio notes each have a Settings toggle, and disappear entirely when their backing service isn't running (`GET /api/capabilities`).
 
@@ -91,7 +91,7 @@ sticky_notes/
 │   │   ├── store/        Repository trait, SQLite implementation/schema/rows
 │   │   ├── models.rs     domain, request, and response types
 │   │   ├── files.rs      FileStore trait, disk/S3 backends, signed file URLs
-│   │   ├── search.rs     BGE-M3 embeddings + sqlite-vec index
+│   │   ├── search.rs     embeddings API client + sqlite-vec index
 │   │   ├── assist.rs     LLM settings, prompts, routing, and reply parsing
 │   │   ├── llm.rs        OpenAI-compatible completion and streaming client
 │   │   ├── notify.rs     reminder scheduler + ntfy/Telegram connectors
@@ -151,9 +151,9 @@ Every environment variable the server reads. All are optional — an unset varia
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `STICKY_NOTES_SEMANTIC` | unset | Set to exactly `off` to disable embeddings and semantic search. Any other value (or unset) leaves it on. |
-| `STICKY_NOTES_EMBED_IDLE_SECS` | `900` | Seconds the embedding model may sit unused before it's dropped from memory. `0` pins it loaded; an unparseable value logs a warning and falls back to the default. |
-| `HF_HOME` | unset (`/models` in the image) | Where fastembed/Hugging Face caches BGE-M3 (~2 GB, downloaded on first start). |
+| `STICKY_NOTES_EMBED_URL` | unset | Base URL of an OpenAI-compatible embeddings API, e.g. `http://ollama:11434/v1`. Probed once at startup; unset or unreachable ⇒ semantic search stays off for the life of the process. |
+| `STICKY_NOTES_EMBED_MODEL` | `bge-m3` | Embedding model to request. Changing it (or its vector width) rebuilds the index and re-embeds every note. |
+| `STICKY_NOTES_EMBED_API_KEY` | unset | Bearer token for the embeddings API. Omit for Ollama; required for OpenAI. |
 
 **Audio transcription**
 
@@ -212,9 +212,9 @@ docker compose up -d whisper
 STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
-Every knob is an environment variable and every one is optional — see [Configuration](#configuration) for the full list with defaults. BGE-M3 downloads to the fastembed/Hugging Face cache on first start. The four settings worth understanding rather than just looking up:
+Every knob is an environment variable and every one is optional — see [Configuration](#configuration) for the full list with defaults. The four settings worth understanding rather than just looking up:
 
-The loaded embedding model is the server's largest allocation by a wide margin, and a personal instance is idle most of the day, so it is **dropped after `STICKY_NOTES_EMBED_IDLE_SECS` without an embed** and reloaded from the local cache on the next search or note edit — trading a few seconds on that first request for gigabytes of resident memory in between. Set it to `0` to keep the model pinned (lowest latency, highest memory).
+Embeddings run **outside** this process, on any OpenAI-compatible endpoint (`STICKY_NOTES_EMBED_URL`) — typically an Ollama you already run: `ollama pull bge-m3`, then point the server at `http://…:11434/v1`. The server therefore holds no model weights and its memory stays flat no matter how large the embedding model is; the cost of a big model lands on the machine actually running it. Leave the URL unset and semantic search (and with it notes chat, which retrieves through the same index) simply stays off. The vector width is discovered from the endpoint at startup, so switching models needs no code change — the index notices the new signature and re-embeds.
 
 Default backend URL for the bundled web app: when the binary also serves the Flutter web build, it normally targets its own origin. Behind a reverse proxy (e.g. `https://notes.example.com` on :443) that heuristic can miss, so set **`STICKY_NOTES_PUBLIC_URL`** to the URL browsers should call — the server stamps it into `index.html` at startup and the app uses it as the default, no rebuild needed. It also restricts HTTP CORS to that URL's origin (scheme, host, and port), rather than allowing every browser origin. Users can still switch servers from the login screen's server picker.
 

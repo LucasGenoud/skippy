@@ -1,15 +1,17 @@
-//! Semantic search: notes are embedded locally (no external AI services) and
-//! indexed in a vector store.
+//! Semantic search: notes are embedded by an external OpenAI-compatible
+//! embeddings API (Ollama, OpenAI, LM Studio, ...) and indexed in a vector
+//! store. Nothing about the model runs in this process — the server holds no
+//! weights, so its memory footprint stays flat regardless of model size.
 //!
-//! The only backend is [`SqliteVectorIndex`], a zero-infrastructure index
-//! built on the sqlite-vec extension (vec0 virtual table): KNN happens inside
-//! SQLite, one row per (note, participant) so visibility filtering is part of
-//! the query. [`VectorIndex`] stays a trait so another store can be swapped
-//! in later.
+//! The only index backend is [`SqliteVectorIndex`], a zero-infrastructure
+//! index built on the sqlite-vec extension (vec0 virtual table): KNN happens
+//! inside SQLite, one row per (note, participant) so visibility filtering is
+//! part of the query. [`VectorIndex`] stays a trait so another store can be
+//! swapped in later.
 
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex, Once};
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Once};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use sqlx::Row;
@@ -20,149 +22,131 @@ use crate::models::NoteRecord;
 // ---------------------------------------------------------------------------
 // Embeddings
 
-/// Text -> vector. A trait so tests can inject a deterministic fake instead
-/// of downloading the ONNX model.
+/// Text -> vector. A trait so tests can inject a deterministic fake instead of
+/// standing up an embeddings server.
+#[async_trait]
 pub trait TextEmbedder: Send + Sync {
-    fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>>;
+    async fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>>;
     /// Human-readable model identifier, shown in the search-index diagnostics.
     fn model_name(&self) -> &str;
     /// Output vector dimensionality.
     fn dims(&self) -> usize;
+}
 
-    /// Release whatever the embedder is holding if it hasn't been used
-    /// recently, reporting whether anything was actually freed. Called on a
-    /// timer; embedders with nothing heavy resident need not implement it.
-    fn unload_if_idle(&self) -> bool {
-        false
+/// How long a single embeddings request may take. Generous: a cold Ollama
+/// loads the model on the first call, which can take a while.
+const EMBED_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Where to reach the embeddings API, from the environment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmbedConfig {
+    /// Base URL including the version prefix, e.g. `http://ollama:11434/v1`.
+    pub base_url: String,
+    /// May be empty (Ollama); the Authorization header is omitted then.
+    pub api_key: String,
+    pub model: String,
+}
+
+impl EmbedConfig {
+    /// Read the config from `STICKY_NOTES_EMBED_*`. `None` (no URL set)
+    /// disables semantic search entirely.
+    pub fn from_env() -> Option<Self> {
+        let base_url = non_empty_env("STICKY_NOTES_EMBED_URL")?;
+        Some(Self {
+            base_url,
+            api_key: non_empty_env("STICKY_NOTES_EMBED_API_KEY").unwrap_or_default(),
+            // Sensible default for a self-hosted Ollama; `ollama pull bge-m3`
+            // matches the model the local embedder used to run.
+            model: non_empty_env("STICKY_NOTES_EMBED_MODEL")
+                .unwrap_or_else(|| "bge-m3".to_string()),
+        })
     }
 }
 
-/// How long the model stays resident after its last use when
-/// `STICKY_NOTES_EMBED_IDLE_SECS` doesn't say otherwise.
-const DEFAULT_EMBED_IDLE: Duration = Duration::from_secs(15 * 60);
-
-/// When something was last used, and whether it has now been unused long
-/// enough to release. Split out from [`FastEmbedder`] so the policy can be
-/// tested without a multi-gigabyte ONNX session behind it.
-struct IdleTimer {
-    last_used: Mutex<Instant>,
-    /// `None` never expires.
-    after: Option<Duration>,
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
-impl IdleTimer {
-    fn new(after: Option<Duration>) -> Self {
-        Self { last_used: Mutex::new(Instant::now()), after }
-    }
-
-    fn touch(&self) {
-        *self.last_used.lock().unwrap() = Instant::now();
-    }
-
-    fn expired(&self) -> bool {
-        let Some(after) = self.after else {
-            return false;
-        };
-        self.last_used.lock().unwrap().elapsed() >= after
-    }
-}
-
-/// `STICKY_NOTES_EMBED_IDLE_SECS` as a duration: `0` means never unload, an
-/// unparseable value falls back to the default rather than failing startup
-/// over a tuning knob.
-fn parse_idle_unload(raw: Option<&str>) -> Option<Duration> {
-    match raw.map(str::trim) {
-        None | Some("") => Some(DEFAULT_EMBED_IDLE),
-        Some(value) => match value.parse::<u64>() {
-            Ok(0) => None,
-            Ok(secs) => Some(Duration::from_secs(secs)),
-            Err(_) => {
-                eprintln!(
-                    "ignoring invalid STICKY_NOTES_EMBED_IDLE_SECS '{value}' \
-                     (want whole seconds, or 0 to keep the model loaded)"
-                );
-                Some(DEFAULT_EMBED_IDLE)
-            }
-        },
-    }
-}
-
-/// BAAI/bge-m3 (full precision) via fastembed, 1024-dim dense vectors. The
-/// model is fetched to a local cache on first use and runs on CPU. fastembed's
-/// default transformer CLS-pools and L2-normalizes each vector. We use full
-/// precision rather than the INT8-quantized build because quantization noise
-/// visibly scrambles the mid-tier ranking of short notes.
+/// Embeddings over `POST {base}/embeddings`, the OpenAI-compatible shape that
+/// Ollama, OpenAI, LM Studio and vLLM all speak.
 ///
-/// The loaded ONNX session is by far the server's largest allocation, and a
-/// personal instance spends most of its life idle between searches, so the
-/// model is dropped once it has gone [`idle_unload`] without use and rebuilt
-/// from the on-disk cache on the next embed. That costs seconds on the first
-/// search after a quiet spell; holding gigabytes through the quiet spell costs
-/// more.
-pub struct FastEmbedder {
-    /// `None` once unloaded — the next [`TextEmbedder::embed`] rebuilds it.
-    model: Mutex<Option<fastembed::TextEmbedding>>,
-    idle: IdleTimer,
+/// The vector width is discovered once at startup by embedding a probe string
+/// rather than hardcoded, because it is a property of whichever model the
+/// deployment points at. That probe doubles as the reachability check that
+/// lets [`connect`](Self::connect) fail cleanly and leave search switched off.
+pub struct ApiEmbedder {
+    client: reqwest::Client,
+    config: EmbedConfig,
+    dims: usize,
 }
 
-pub const EMBEDDING_DIM: usize = 1024;
-
-impl FastEmbedder {
-    pub fn init() -> anyhow::Result<Self> {
-        // Load once up front: it downloads the model on a first run and proves
-        // it's usable while startup can still disable search cleanly. From
-        // here on the idle unloader may drop and reload it freely.
-        let model = Self::load()?;
-        let after =
-            parse_idle_unload(std::env::var("STICKY_NOTES_EMBED_IDLE_SECS").ok().as_deref());
-        Ok(Self { model: Mutex::new(Some(model)), idle: IdleTimer::new(after) })
-    }
-
-    fn load() -> anyhow::Result<fastembed::TextEmbedding> {
-        let options = fastembed::InitOptions::new(fastembed::EmbeddingModel::BGEM3);
-        fastembed::TextEmbedding::try_new(options)
-    }
-
-    /// How long the model may sit unused before [`TextEmbedder::unload_if_idle`]
-    /// drops it; `None` when unloading is switched off.
-    pub fn idle_unload(&self) -> Option<Duration> {
-        self.idle.after
+impl ApiEmbedder {
+    /// Probe the endpoint and capture the model's vector width. Any failure
+    /// here (unreachable, bad key, unknown model) disables semantic search.
+    pub async fn connect(config: EmbedConfig) -> anyhow::Result<Self> {
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .expect("reqwest client");
+        // dims is unknown until the probe answers; it is only read after.
+        let mut embedder = Self { client, config, dims: 0 };
+        let probe = embedder.embed(vec!["probe".to_string()]).await?;
+        embedder.dims = probe
+            .first()
+            .map(Vec::len)
+            .filter(|d| *d > 0)
+            .ok_or_else(|| anyhow::anyhow!("embeddings endpoint returned no vector"))?;
+        Ok(embedder)
     }
 }
 
-impl TextEmbedder for FastEmbedder {
-    fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
-        let mut slot = self.model.lock().unwrap();
-        let model = match slot.as_mut() {
-            Some(model) => model,
-            None => slot.insert(Self::load()?),
-        };
-        let vectors = model.embed(texts, None).map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
-        // Stamped after the work, so a long batch counts as idle from when it
-        // finished rather than from when it started.
-        self.idle.touch();
-        Ok(vectors)
+#[async_trait]
+impl TextEmbedder for ApiEmbedder {
+    async fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
+        let url = format!("{}/embeddings", self.config.base_url.trim_end_matches('/'));
+        let mut req = self
+            .client
+            .post(&url)
+            .timeout(EMBED_TIMEOUT)
+            .json(&serde_json::json!({ "model": self.config.model, "input": texts }));
+        if !self.config.api_key.is_empty() {
+            req = req.bearer_auth(&self.config.api_key);
+        }
+        let response = req.send().await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            // Truncated, and never echoes the API key back into logs.
+            let body = body.chars().take(300).collect::<String>();
+            anyhow::bail!("embeddings endpoint returned {status}: {body}");
+        }
+        parse_embeddings(&response.json().await?)
     }
 
     fn model_name(&self) -> &str {
-        "BAAI/bge-m3"
+        &self.config.model
     }
 
     fn dims(&self) -> usize {
-        EMBEDDING_DIM
+        self.dims
     }
+}
 
-    fn unload_if_idle(&self) -> bool {
-        if !self.idle.expired() {
-            return false;
-        }
-        // try_lock, never lock: a model someone is mid-embed on is in use by
-        // definition, and the unloader must not stall a search behind itself.
-        let Ok(mut slot) = self.model.try_lock() else {
-            return false;
-        };
-        slot.take().is_some()
-    }
+/// Pull the vectors out of an OpenAI-shaped embeddings response:
+/// `{"data": [{"embedding": [...]}, ...]}`, ordered as the inputs were.
+fn parse_embeddings(body: &serde_json::Value) -> anyhow::Result<Vec<Vec<f32>>> {
+    let data = body["data"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("embeddings response has no 'data' array"))?;
+    data.iter()
+        .map(|entry| {
+            entry["embedding"]
+                .as_array()
+                .map(|v| v.iter().filter_map(|n| n.as_f64().map(|f| f as f32)).collect::<Vec<_>>())
+                .filter(|v: &Vec<f32>| !v.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("embeddings response entry has no 'embedding'"))
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -215,11 +199,11 @@ pub struct SqliteVectorIndex {
 }
 
 impl SqliteVectorIndex {
-    /// `dims` must match the embedder's output (see [`EMBEDDING_DIM`]); tests
-    /// pass the fake embedder's smaller dimension. `model_signature` identifies
-    /// the embedding model+dimension that produced the vectors (e.g.
-    /// `"BAAI/bge-m3:1024"`); when it changes, the stored vectors are stale and
-    /// the index is rebuilt.
+    /// `dims` must match the embedder's output ([`TextEmbedder::dims`], probed
+    /// at startup); tests pass the fake embedder's smaller dimension.
+    /// `model_signature` identifies the embedding model+dimension that produced
+    /// the vectors (e.g. `"bge-m3:1024"`); when it changes, the stored vectors
+    /// are stale and the index is rebuilt.
     pub async fn connect(
         path: &str,
         dims: usize,
@@ -368,14 +352,24 @@ impl VectorIndex for SqliteVectorIndex {
 // ---------------------------------------------------------------------------
 // Service
 
+/// Ceiling on embeds in flight at once. Indexing is fire-and-forget, one task
+/// per edited note, so a bulk reindex would otherwise open a request per note
+/// simultaneously and bury a small self-hosted endpoint.
+const MAX_CONCURRENT_EMBEDS: usize = 4;
+
 pub struct SearchService {
     embedder: Arc<dyn TextEmbedder>,
     index: Arc<dyn VectorIndex>,
+    embed_slots: tokio::sync::Semaphore,
 }
 
 impl SearchService {
     pub fn new(embedder: Arc<dyn TextEmbedder>, index: Arc<dyn VectorIndex>) -> Self {
-        Self { embedder, index }
+        Self {
+            embedder,
+            index,
+            embed_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_EMBEDS),
+        }
     }
 
     /// The searchable/embeddable plain text of a note: title, content, and
@@ -394,10 +388,8 @@ impl SearchService {
     }
 
     async fn embed_one(&self, text: String) -> anyhow::Result<Vec<f32>> {
-        let embedder = self.embedder.clone();
-        // fastembed is CPU-bound and synchronous; keep it off the async runtime.
-        let mut vectors =
-            tokio::task::spawn_blocking(move || embedder.embed(vec![text])).await??;
+        let _slot = self.embed_slots.acquire().await?;
+        let mut vectors = self.embedder.embed(vec![text]).await?;
         vectors.pop().ok_or_else(|| anyhow::anyhow!("embedder returned nothing"))
     }
 
@@ -440,13 +432,6 @@ impl SearchService {
         self.embedder.dims()
     }
 
-    /// Hand back the embedding model's memory if nothing has needed it for a
-    /// while (see [`TextEmbedder::unload_if_idle`]); reports whether it did.
-    /// Blocking — call it from a blocking task, not the async runtime.
-    pub fn unload_idle_model(&self) -> bool {
-        self.embedder.unload_if_idle()
-    }
-
     pub async fn search(
         &self,
         user_id: &str,
@@ -463,65 +448,83 @@ mod tests {
     use super::*;
 
     #[test]
-    fn idle_seconds_parse_with_zero_meaning_never_unload() {
-        assert_eq!(parse_idle_unload(Some("60")), Some(Duration::from_secs(60)));
-        assert_eq!(parse_idle_unload(Some(" 60 ")), Some(Duration::from_secs(60)));
-        // 0 pins the model in memory; unset and unparseable both take the default.
-        assert_eq!(parse_idle_unload(Some("0")), None);
-        assert_eq!(parse_idle_unload(None), Some(DEFAULT_EMBED_IDLE));
-        assert_eq!(parse_idle_unload(Some("")), Some(DEFAULT_EMBED_IDLE));
-        assert_eq!(parse_idle_unload(Some("ten minutes")), Some(DEFAULT_EMBED_IDLE));
+    fn embeddings_are_read_back_in_input_order() {
+        let body = serde_json::json!({
+            "data": [
+                {"embedding": [1.0, 2.0, 3.0]},
+                {"embedding": [4.0, 5.0, 6.0]},
+            ]
+        });
+        assert_eq!(
+            parse_embeddings(&body).unwrap(),
+            vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]
+        );
     }
 
     #[test]
-    fn the_idle_timer_expires_only_after_a_quiet_window() {
-        let idle = IdleTimer::new(Some(Duration::ZERO));
-        assert!(idle.expired(), "a zero window is always past");
-
-        let idle = IdleTimer::new(Some(Duration::from_secs(600)));
-        assert!(!idle.expired(), "just used");
-
-        // Unloading off: no amount of quiet expires it.
-        let never = IdleTimer::new(None);
-        assert!(!never.expired());
+    fn a_malformed_embeddings_response_is_an_error_not_an_empty_vector() {
+        // Silently accepting these would index zero/short vectors and quietly
+        // poison ranking, so each shape must fail loudly instead.
+        assert!(parse_embeddings(&serde_json::json!({"error": "no such model"})).is_err());
+        assert!(parse_embeddings(&serde_json::json!({"data": [{"embedding": []}]})).is_err());
+        assert!(parse_embeddings(&serde_json::json!({"data": [{"object": "embedding"}]})).is_err());
     }
 
-    /// An embedder that reports what the idle unloader asked of it.
-    struct CountingEmbedder {
-        unload_calls: Mutex<usize>,
-        idle: bool,
+    /// Records the high-water mark of concurrent `embed` calls.
+    struct ConcurrencyProbe {
+        in_flight: std::sync::Mutex<usize>,
+        peak: std::sync::Mutex<usize>,
     }
 
-    impl TextEmbedder for CountingEmbedder {
-        fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
-            Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
+    #[async_trait]
+    impl TextEmbedder for ConcurrencyProbe {
+        async fn embed(&self, texts: Vec<String>) -> anyhow::Result<Vec<Vec<f32>>> {
+            {
+                let mut n = self.in_flight.lock().unwrap();
+                *n += 1;
+                let mut peak = self.peak.lock().unwrap();
+                *peak = (*peak).max(*n);
+            }
+            // Long enough that every permitted caller overlaps here.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            *self.in_flight.lock().unwrap() -= 1;
+            Ok(texts.iter().map(|_| vec![1.0, 0.0, 0.0]).collect())
         }
         fn model_name(&self) -> &str {
-            "counting"
+            "probe"
         }
         fn dims(&self) -> usize {
             3
         }
-        fn unload_if_idle(&self) -> bool {
-            *self.unload_calls.lock().unwrap() += 1;
-            self.idle
-        }
     }
 
     #[tokio::test]
-    async fn the_service_forwards_idle_unloads_to_the_embedder() {
-        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3").await.unwrap();
-        let embedder = Arc::new(CountingEmbedder { unload_calls: Mutex::new(0), idle: true });
-        let service = SearchService::new(embedder.clone(), Arc::new(index));
+    async fn a_burst_of_indexing_does_not_flood_the_embeddings_endpoint() {
+        // Indexing is one spawned task per note, so without the semaphore a
+        // bulk reindex would hit the endpoint with every note at once.
+        let probe = Arc::new(ConcurrencyProbe {
+            in_flight: std::sync::Mutex::new(0),
+            peak: std::sync::Mutex::new(0),
+        });
+        let index = SqliteVectorIndex::connect(":memory:", 3, "probe:3").await.unwrap();
+        let service = Arc::new(SearchService::new(probe.clone(), Arc::new(index)));
 
-        assert!(service.unload_idle_model(), "the embedder freed its model");
-        assert_eq!(*embedder.unload_calls.lock().unwrap(), 1);
+        let mut tasks = Vec::new();
+        for i in 0..20 {
+            let service = service.clone();
+            tasks.push(tokio::spawn(async move {
+                service.search("u1", &format!("query {i}"), 5).await
+            }));
+        }
+        for task in tasks {
+            task.await.unwrap().unwrap();
+        }
 
-        // A busy embedder reports nothing freed, so the caller stays quiet.
-        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3").await.unwrap();
-        let busy = Arc::new(CountingEmbedder { unload_calls: Mutex::new(0), idle: false });
-        let service = SearchService::new(busy, Arc::new(index));
-        assert!(!service.unload_idle_model());
+        let peak = *probe.peak.lock().unwrap();
+        assert!(
+            peak <= MAX_CONCURRENT_EMBEDS,
+            "{peak} concurrent embeds exceeded the {MAX_CONCURRENT_EMBEDS} limit"
+        );
     }
 
     #[tokio::test]

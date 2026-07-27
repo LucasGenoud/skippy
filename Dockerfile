@@ -13,33 +13,24 @@ COPY app/ ./
 RUN flutter build web --wasm --release
 
 # --- 2. Rust server ----------------------------------------------------------
-# trixie: the prebuilt ONNX runtime (ort) needs libstdc++ from GCC 13+.
 FROM rust:trixie AS server
 WORKDIR /src
 COPY backend/ ./
-# ort (ONNX runtime used for embeddings) may ship a dynamic lib next to the
-# binary; collect whatever exists so the runtime stage can copy it (find is a
-# no-op success when nothing matches).
-RUN cargo build --release \
-    && mkdir /out \
-    && cp target/release/sticky-notes-server /out/ \
-    && find target -name "libonnxruntime*.so*" -exec cp {} /out/ \;
+RUN cargo build --release
 
 # --- 3. Runtime ----------------------------------------------------------------
 FROM debian:trixie-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libssl3t64 \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=server /out/ /app/
+COPY --from=server /src/target/release/sticky-notes-server /app/
 COPY --from=web /src/build/web /app/web
 
 ENV STICKY_NOTES_WEB=/app/web \
     STICKY_NOTES_DB=/data/sticky_notes.db \
-    STICKY_NOTES_UPLOADS=/data/uploads \
-    LD_LIBRARY_PATH=/app \
-    HF_HOME=/models
+    STICKY_NOTES_UPLOADS=/data/uploads
 
-VOLUME ["/data", "/models"]
+VOLUME ["/data"]
 EXPOSE 8787
 CMD ["/app/sticky-notes-server"]
