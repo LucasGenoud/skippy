@@ -15,6 +15,7 @@ import '../util/motion.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/board/board_view.dart';
+import '../widgets/board/move_to_stage_sheet.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/file_drop.dart';
@@ -206,6 +207,16 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
         _selectedNotes(store).map((note) => note.id),
       );
+
+  /// Bulk-file the selection into a column, then leave selection mode — the
+  /// selection was a means to the move, not a state to stay in.
+  Future<void> _moveSelectedToStage(NotesStore store) async {
+    await MoveToStageSheet.showForNotes(
+      context,
+      _selectedNotes(store).map((note) => note.id),
+    );
+    if (mounted) _cancelSelection();
+  }
 
   Future<void> _setColorForSelected(NotesStore store) => ColorPickerSheet.show(
     context,
@@ -423,11 +434,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _semanticAvailable && settings.semanticSearchAvailable;
     final searching = _query.trim().isNotEmpty;
     // Semantic mode replaces keyword filtering with the server's ranking.
+    // The board ranks the same way the grid does; it just keeps the ranked
+    // cards in their columns instead of flattening them into a result list.
     final semanticActive =
         _semantic &&
         semanticAvailable &&
         searching &&
-        _selection.view == NoteView.notes;
+        (_selection.view == NoteView.notes ||
+            _selection.view == NoteView.board);
     final sections = semanticActive && _semanticIds != null
         ? NoteSections(const [], [
             for (final id in _semanticIds!)
@@ -558,6 +572,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             onTrashSelected: () => _trashSelected(store),
                             onAddLabelSelected: () =>
                                 _addLabelToSelected(store),
+                            onMoveToStageSelected: () =>
+                                _moveSelectedToStage(store),
+                            canMoveToStage:
+                                _selection.view == NoteView.board,
                             onSetColorSelected: () =>
                                 _setColorForSelected(store),
                             onPinSelected: () => _setPinnedForSelected(
@@ -596,7 +614,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                   // nesting an opposing scroll inside it.
                                   if (_selection.view == NoteView.board)
                                     Positioned.fill(
-                                      child: BoardView(query: _query),
+                                      child: BoardView(
+                                        query: _query,
+                                        rankedIds:
+                                            semanticActive &&
+                                                _semanticIds != null
+                                            ? _semanticIds!.toSet()
+                                            : null,
+                                        selectionMode: _selectionMode,
+                                        selectedIds: _selectedNoteIds,
+                                        onSelectionChanged:
+                                            _toggleNoteSelection,
+                                      ),
                                     )
                                   else
                                   Positioned.fill(

@@ -69,8 +69,14 @@ Board buildBoard({
   WorkspaceScope scope = const WorkspaceScope.all(),
   String query = '',
   bool showAllUnassigned = false,
+  Set<String>? rankedIds,
 }) {
-  final normalizedQuery = query.trim().toLowerCase();
+  // Semantic search replaces the keyword filter with the server's ranking, so
+  // only what it returned stays on the board. The ranking itself is global,
+  // while a card's place is its column — so ranked cards keep stage order
+  // rather than being re-sorted into a flat relevance list, which would stop
+  // the result being a board.
+  final normalizedQuery = rankedIds == null ? query.trim().toLowerCase() : '';
   final ordered = stages.toList()
     ..sort((a, b) => a.position.compareTo(b.position));
   final known = {for (final stage in ordered) stage.id};
@@ -81,6 +87,7 @@ Board buildBoard({
   };
   for (final note in notes) {
     if (!_isOnBoard(note) || !scope.contains(note)) continue;
+    if (rankedIds != null && !rankedIds.contains(note.id)) continue;
     if (!_matchesQuery(note, normalizedQuery)) continue;
     // A stage the client hasn't caught up on yet — deleted elsewhere, or from
     // a workspace this note was just moved out of — reads as unassigned rather

@@ -3,10 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/state/notes_store.dart';
+import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/widgets/board/board_column_view.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/board/move_to_stage_sheet.dart';
+import 'package:skippy/util/snack.dart';
+import 'package:skippy/widgets/note_card.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
@@ -17,7 +20,12 @@ Widget boardApp(NotesStore store) => MultiProvider(
     ChangeNotifierProvider.value(value: store),
     ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
   ],
-  child: const MaterialApp(home: Scaffold(body: BoardView())),
+  child: MaterialApp(
+    // showAppSnack posts through this key; without it the Undo action in a
+    // move confirmation would never render.
+    scaffoldMessengerKey: scaffoldMessengerKey,
+    home: const Scaffold(body: BoardView()),
+  ),
 );
 
 /// Flush the store's debounce so no timers leak out of the test. A bare
@@ -347,6 +355,191 @@ void main() {
       expect(find.byType(BoardView), findsOneWidget);
       await flushTimers(tester);
     });
+  });
+
+  group('selection', () {
+    /// Selection was dead on the board: cards were built without any of the
+    /// selection props, so the top bar's action row had nothing to act on.
+    testWidgets('a long press selects a card instead of lifting it', (
+      tester,
+    ) async {
+      await setViewport(tester, const Size(1200, 900));
+      api.notes['n1'] = serverNote('n1', title: 'card one');
+      await store.load();
+
+      final selected = <String>{};
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider(create: (_) => SettingsStore(api: api)),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) => BoardView(
+                  selectionMode: selected.isNotEmpty,
+                  selectedIds: selected,
+                  onSelectionChanged: (id, on) => setState(
+                    () => on ? selected.add(id) : selected.remove(id),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Hold without moving: the grid's rule is that this selects.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('card one')),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(selected, {'n1'});
+      // And the card now renders in its selected state.
+      expect(
+        tester.widget<NoteTile>(find.byType(NoteTile)).selected,
+        isTrue,
+      );
+      await flushTimers(tester);
+    });
+
+    /// The point of selecting on a board: file them all at once.
+    testWidgets('the sheet moves every selected note into one column', (
+      tester,
+    ) async {
+      await setViewport(tester, const Size(1200, 900));
+      api.notes['a'] = serverNote('a', title: 'card a');
+      api.notes['b'] = serverNote(
+        'b',
+        title: 'card b',
+      ).copyWith(stageId: 'todo');
+      await store.load();
+      await tester.pumpWidget(boardApp(store));
+      await tester.pumpAndSettle();
+
+      MoveToStageSheet.showForNotes(
+        tester.element(find.byType(BoardView)),
+        ['a', 'b'],
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Move 2 notes to column'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ListTile, 'Doing'));
+      await tester.pumpAndSettle();
+
+      expect(store.noteById('a')!.stageId, 'doing');
+      expect(store.noteById('b')!.stageId, 'doing');
+      // The confirmation outlives the test otherwise, and its deferred
+      // post-frame show fires into the next one.
+      scaffoldMessengerKey.currentState?.clearSnackBars();
+      await flushTimers(tester);
+    });
+
+    /// Undo has to put each note back where it personally came from, not into
+    /// one shared previous column.
+    testWidgets('undo returns each note to its own column', (tester) async {
+      await setViewport(tester, const Size(1200, 900));
+      api.notes['a'] = serverNote('a', title: 'card a');
+      api.notes['b'] = serverNote(
+        'b',
+        title: 'card b',
+      ).copyWith(stageId: 'todo');
+      await store.load();
+      await tester.pumpWidget(boardApp(store));
+      await tester.pumpAndSettle();
+
+      MoveToStageSheet.showForNotes(
+        tester.element(find.byType(BoardView)),
+        ['a', 'b'],
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Doing'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(store.noteById('a')!.stageId, isNull);
+      expect(store.noteById('b')!.stageId, 'todo');
+      scaffoldMessengerKey.currentState?.clearSnackBars();
+      await flushTimers(tester);
+    });
+  });
+
+  /// Semantic search bypassed the board entirely: it built its columns from a
+  /// keyword match and never saw the server's ranking.
+  testWidgets('semantic results filter the board, keeping stage order', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['hit'] = serverNote('hit', title: 'wifi password').copyWith(
+      stageId: 'todo',
+      stagePosition: 2048,
+    );
+    api.notes['also'] = serverNote('also', title: 'router notes').copyWith(
+      stageId: 'todo',
+      stagePosition: 1024,
+    );
+    api.notes['miss'] = serverNote('miss', title: 'buy milk');
+    await store.load();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider(create: (_) => SettingsStore(api: api)),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            // Ranked worst-first on purpose: the board must keep stage order
+            // rather than adopt the ranking's.
+            body: BoardView(rankedIds: {'hit', 'also'}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('wifi password'), findsOneWidget);
+    expect(find.text('router notes'), findsOneWidget);
+    expect(find.text('buy milk'), findsNothing);
+    // Stage order, not rank order.
+    expect(
+      tester.getCenter(find.text('router notes')).dy,
+      lessThan(tester.getCenter(find.text('wifi password')).dy),
+    );
+    await flushTimers(tester);
+  });
+
+  /// A column needs its own way to start a note, or filing one there means
+  /// creating it loose and moving it.
+  testWidgets('the column header composes a note already in that column', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add a note to Doing'));
+    await tester.pumpAndSettle();
+
+    // The editor opens carrying the column. The draft itself stays unwritten
+    // until there is content — an empty one is never persisted — so what this
+    // pins is that composing here files the note in this column.
+    final editor = tester.widget<EditorScreen>(find.byType(EditorScreen));
+    expect(editor.stageId, 'doing');
+
+    // Close it inside the test: the editor snacks from dispose(), and a tree
+    // torn down at teardown has no messenger left for that to land in.
+    Navigator.of(tester.element(find.byType(EditorScreen))).pop();
+    await tester.pumpAndSettle();
+    scaffoldMessengerKey.currentState?.clearSnackBars();
+    await flushTimers(tester);
   });
 
   /// The unassigned column is capped so a mature workspace does not open onto

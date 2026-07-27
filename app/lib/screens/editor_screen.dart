@@ -60,12 +60,16 @@ class EditorScreen extends StatefulWidget {
   /// filter) files it automatically. Ignored when [noteId] is given.
   final Set<String> labelIds;
 
+  /// Board column a note composed from that column starts in.
+  final String? stageId;
+
   const EditorScreen({
     super.key,
     this.noteId,
     this.kind = NoteKind.text,
     this.modal = false,
     this.labelIds = const {},
+    this.stageId,
   });
 
   @override
@@ -89,6 +93,7 @@ Future<void> openNoteEditor(
   String? noteId,
   NoteKind kind = NoteKind.text,
   Set<String> labelIds = const {},
+  String? stageId,
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
   // composer). Without this the enclosing FocusScope remembers that field
@@ -120,6 +125,7 @@ Future<void> openNoteEditor(
             kind: kind,
             modal: true,
             labelIds: labelIds,
+            stageId: stageId,
           ),
         ),
       ),
@@ -219,7 +225,11 @@ class _EditorScreenState extends State<EditorScreen> {
   void _ensureNote() {
     if (_noteId != null) return;
     _noteId = _store
-        .createDraft(kind: widget.kind, labelIds: widget.labelIds)
+        .createDraft(
+          kind: widget.kind,
+          labelIds: widget.labelIds,
+          stageId: widget.stageId,
+        )
         .id;
   }
 

@@ -780,14 +780,20 @@ class NotesStore extends ChangeNotifier {
   Note createDraft({
     NoteKind kind = NoteKind.text,
     Set<String> labelIds = const {},
+    String? stageId,
   }) {
     final now = DateTime.now();
+    final workspaceId = _activeWorkspaceId ?? '';
     final note = Note(
       id: _uuid.v4(),
-      workspaceId: _activeWorkspaceId ?? '',
+      workspaceId: workspaceId,
       kind: kind,
       position: _frontPosition(),
       labelIds: labelIds,
+      // A note composed inside a board column belongs to it from birth, the
+      // same way one composed in a label view arrives already filed.
+      stageId: stageId,
+      stagePosition: _endOfStage(stageId, workspaceId),
       createdAt: now,
       updatedAt: now,
       owner: currentUserId == null

@@ -21,7 +21,7 @@ import '../util/motion.dart';
       ThemeMode.dark => (icon: Icons.dark_mode_outlined, label: 'Dark'),
     };
 
-enum _SelectionAction { label, share, color, pin }
+enum _SelectionAction { stage, label, share, color, pin }
 
 /// The home screen's top bar: menu + branding, the search pill (with clear
 /// and semantic-search controls), and the quick-settings icons + avatar menu.
@@ -51,6 +51,11 @@ class HomeTopBar extends StatelessWidget {
   final VoidCallback onRestoreSelected;
   final VoidCallback onTrashSelected;
   final VoidCallback onAddLabelSelected;
+
+  /// Bulk-file the selection into a board column. Only offered on the board,
+  /// where columns are the thing on screen.
+  final VoidCallback onMoveToStageSelected;
+  final bool canMoveToStage;
   final VoidCallback onSetColorSelected;
   final VoidCallback onPinSelected;
   final VoidCallback onShareSelected;
@@ -81,6 +86,8 @@ class HomeTopBar extends StatelessWidget {
     required this.onRestoreSelected,
     required this.onTrashSelected,
     required this.onAddLabelSelected,
+    required this.onMoveToStageSelected,
+    required this.canMoveToStage,
     required this.onSetColorSelected,
     required this.onPinSelected,
     required this.onShareSelected,
@@ -386,11 +393,21 @@ class HomeTopBar extends StatelessWidget {
           tooltip: 'More selected-note actions',
           onSelected: (action) => switch (action) {
             _SelectionAction.label => onAddLabelSelected(),
+            _SelectionAction.stage => onMoveToStageSelected(),
             _SelectionAction.share => onShareSelected(),
             _SelectionAction.color => onSetColorSelected(),
             _SelectionAction.pin => onPinSelected(),
           },
           itemBuilder: (context) => [
+            if (canMoveToStage)
+              const PopupMenuItem(
+                value: _SelectionAction.stage,
+                child: ListTile(
+                  leading: Icon(Icons.view_kanban_outlined),
+                  title: Text('Move to column'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
             const PopupMenuItem(
               value: _SelectionAction.label,
               child: ListTile(
@@ -433,6 +450,12 @@ class HomeTopBar extends StatelessWidget {
           ),
         )
       else ...[
+        if (canMoveToStage)
+          IconButton(
+            icon: const Icon(Icons.view_kanban_outlined),
+            tooltip: 'Move selected notes to a column',
+            onPressed: selectedCount == 0 ? null : onMoveToStageSelected,
+          ),
         IconButton(
           icon: const Icon(Icons.label_outline),
           tooltip: 'Add label to selected notes',

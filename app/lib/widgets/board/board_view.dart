@@ -22,7 +22,24 @@ class BoardView extends StatefulWidget {
   /// The active search query, forwarded to cards for match highlighting.
   final String query;
 
-  const BoardView({super.key, this.query = ''});
+  /// Note ids the server ranked for a semantic search, or null when the board
+  /// is filtering by keyword. Only these cards stay on the board.
+  final Set<String>? rankedIds;
+
+  /// Selection state, owned by the home screen so the top bar's action row
+  /// works the same here as it does over the grid.
+  final bool selectionMode;
+  final Set<String> selectedIds;
+  final void Function(String noteId, bool selected)? onSelectionChanged;
+
+  const BoardView({
+    super.key,
+    this.query = '',
+    this.rankedIds,
+    this.selectionMode = false,
+    this.selectedIds = const {},
+    this.onSelectionChanged,
+  });
 
   /// Below this the board pages instead of laying columns side by side. Matches
   /// the breakpoint the rest of the app uses for its phone layout.
@@ -66,6 +83,7 @@ class _BoardViewState extends State<BoardView> {
       scope: store.workspaceScope,
       query: widget.query,
       showAllUnassigned: _showAllUnassigned,
+      rankedIds: widget.rankedIds,
     );
 
     if (board.hasNoStages) return _NoStagesYet(hasNotes: !board.isEmpty);
@@ -116,6 +134,9 @@ class _BoardViewState extends State<BoardView> {
                   column: column,
                   query: widget.query,
                   onShowAll: column.isUnassigned ? _showAll : null,
+                  selectionMode: widget.selectionMode,
+                  selectedIds: widget.selectedIds,
+                  onSelectionChanged: widget.onSelectionChanged,
                 ),
               );
             },
@@ -175,8 +196,13 @@ class _BoardViewState extends State<BoardView> {
                 column: column,
                 query: widget.query,
                 onShowAll: column.isUnassigned ? _showAll : null,
-                // The strip above already names the column and counts it.
+                selectionMode: widget.selectionMode,
+                selectedIds: widget.selectedIds,
+                onSelectionChanged: widget.onSelectionChanged,
+                // The strip above already names the column and counts it,
+                // but the add button has nowhere else to live on a phone.
                 showHeader: false,
+                onAddCard: () => addCardToStage(context, column.stage?.id),
               );
             },
           ),

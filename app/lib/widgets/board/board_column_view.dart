@@ -5,6 +5,7 @@ import '../../models/note.dart';
 import '../../state/board_layout.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
+import '../../screens/editor_screen.dart';
 import '../../theme.dart';
 import '../../util/snack.dart';
 import '../masonry.dart';
@@ -40,10 +41,19 @@ class BoardColumnView extends StatefulWidget {
   /// names in its page strip instead, so it turns this off.
   final bool showHeader;
 
-  /// Whether cards in this column can be picked up. The phone board turns this
-  /// off: there, cards move by being dropped on the stage strip, and a
-  /// long-press drag inside a horizontally paging view fights the page swipe.
+  /// Whether cards in this column can be picked up. Selection mode turns it
+  /// off, matching the grid: a long press means "select" then, not "lift".
   final bool dragEnabled;
+
+  /// Selection state, owned by the home screen so the top bar's action row
+  /// works over the board exactly as it does over the grid.
+  final bool selectionMode;
+  final Set<String> selectedIds;
+  final void Function(String noteId, bool selected)? onSelectionChanged;
+
+  /// Compose a note already filed in this column. Supplied by the phone
+  /// layout, which hides the header the button normally lives in.
+  final VoidCallback? onAddCard;
 
   const BoardColumnView({
     super.key,
@@ -52,6 +62,10 @@ class BoardColumnView extends StatefulWidget {
     this.onShowAll,
     this.showHeader = true,
     this.dragEnabled = true,
+    this.selectionMode = false,
+    this.selectedIds = const {},
+    this.onSelectionChanged,
+    this.onAddCard,
   });
 
   @override
@@ -120,6 +134,15 @@ class _BoardColumnViewState extends State<BoardColumnView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.showHeader) _BoardColumnHeader(column: widget.column),
+            if (!widget.showHeader && widget.onAddCard != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: widget.onAddCard,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add note'),
+                ),
+              ),
             Expanded(child: _body()),
           ],
         ),
@@ -142,11 +165,24 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             notes: widget.column.notes,
             columns: 1,
             spacing: 8,
-            dragEnabled: widget.dragEnabled,
+            // A long press selects rather than lifts while selecting, the
+            // same rule the grid follows.
+            dragEnabled: widget.dragEnabled && !widget.selectionMode,
             scrollController: _scrollController,
             onReorder: _reorderWithin,
-            itemBuilder: (context, note) =>
-                NoteTile(key: ValueKey(note.id), note: note, query: widget.query),
+            onStationaryLongPress: (id) => widget.onSelectionChanged?.call(
+              id,
+              !widget.selectedIds.contains(id),
+            ),
+            itemBuilder: (context, note) => NoteTile(
+              key: ValueKey(note.id),
+              note: note,
+              query: widget.query,
+              selectionMode: widget.selectionMode,
+              selected: widget.selectedIds.contains(note.id),
+              onSelectionChanged: (selected) =>
+                  widget.onSelectionChanged?.call(note.id, selected),
+            ),
           ),
           if (widget.column.hiddenCount > 0)
             _ShowAllTile(
@@ -157,6 +193,20 @@ class _BoardColumnViewState extends State<BoardColumnView> {
       ),
     );
   }
+}
+
+/// Compose a note already filed in [stageId] (null for Unassigned).
+///
+/// Mirrors how the home screen composes into a label view: the draft is filed
+/// from birth rather than created loose and moved afterwards.
+Future<void> addCardToStage(BuildContext context, String? stageId) {
+  return openNoteEditor(
+    context,
+    stageId: stageId,
+    openFullscreen: () => Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => EditorScreen(stageId: stageId)),
+    ),
+  );
 }
 
 /// Tints a column while a card from elsewhere hovers over it, so the drop
@@ -219,6 +269,12 @@ class _BoardColumnHeader extends StatelessWidget {
             style: Theme.of(
               context,
             ).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            tooltip: 'Add a note to ${column.title}',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => addCardToStage(context, column.stage?.id),
           ),
           if (column.stage case final Stage stage)
             IconButton(
