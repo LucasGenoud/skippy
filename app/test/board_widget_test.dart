@@ -542,6 +542,34 @@ void main() {
     await flushTimers(tester);
   });
 
+  /// Cards were invisible on a freshly opened board: the masonry's entrance
+  /// holds every tile at opacity 0 until all heights are measured, and on the
+  /// board that never resolved — the column showed its count but no cards, and
+  /// only a resize or a rebuild brought them back. Every other test here
+  /// settles first, which is exactly why they all missed it.
+  testWidgets('cards are visible on the board\'s very first frame', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['n1'] = serverNote('n1', title: 'card one');
+    await store.load();
+
+    await tester.pumpWidget(boardApp(store));
+    // One frame only — deliberately no pumpAndSettle.
+    await tester.pump();
+
+    final faded = tester
+        .widgetList<Opacity>(find.byType(Opacity))
+        .where((o) => o.opacity == 0);
+    expect(
+      faded,
+      isEmpty,
+      reason: 'a board card must not be painted fully transparent',
+    );
+    await tester.pumpAndSettle();
+    await flushTimers(tester);
+  });
+
   /// The unassigned column is capped so a mature workspace does not open onto
   /// a column holding every note it has.
   testWidgets('the unassigned column caps its preview and can expand', (

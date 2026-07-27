@@ -168,6 +168,9 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             // A long press selects rather than lifts while selecting, the
             // same rule the grid follows.
             dragEnabled: widget.dragEnabled && !widget.selectionMode,
+            // Board cards must be visible on the first frame; see the flag's
+            // doc on why the grid's cascade is the wrong default here.
+            staggeredEntrance: false,
             scrollController: _scrollController,
             onReorder: _reorderWithin,
             onStationaryLongPress: (id) => widget.onSelectionChanged?.call(

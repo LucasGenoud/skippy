@@ -37,6 +37,16 @@ class AnimatedMasonry extends StatefulWidget {
   /// dragging.
   final ScrollController? scrollController;
 
+  /// Whether tiles cascade in on first appearance.
+  ///
+  /// The cascade holds every tile invisible until all their heights are
+  /// measured, which is fail-closed for what is only decoration: anything that
+  /// delays or drops a measurement leaves the content blank rather than
+  /// unanimated. The grid accepts that trade for its entrance. The board does
+  /// not — its cards are already grouped into columns, so it renders them
+  /// opaque from the first frame.
+  final bool staggeredEntrance;
+
   const AnimatedMasonry({
     super.key,
     required this.notes,
@@ -47,6 +57,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.onReorder,
     this.onStationaryLongPress,
     this.scrollController,
+    this.staggeredEntrance = true,
   });
 
   @override
@@ -134,6 +145,9 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
       vsync: this,
       duration: const Duration(milliseconds: 420),
     );
+    // Skip straight to "arrived" so tiles never depend on the entrance having
+    // run in order to be seen.
+    if (!widget.staggeredEntrance) _entranceController.value = 1;
   }
 
   @override
@@ -443,7 +457,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
         // Kick the one-shot entrance off once every tile has been measured
         // (before that, tiles sit at the controller's 0 value — invisible —
         // while their heights settle).
-        if (_ready && !_entranceStarted) {
+        if (widget.staggeredEntrance && _ready && !_entranceStarted) {
           _entranceStarted = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
