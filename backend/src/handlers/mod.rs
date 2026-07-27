@@ -13,6 +13,7 @@ mod probes;
 mod search;
 mod settings;
 mod sharing;
+mod stages;
 mod unfurl;
 mod versions;
 mod workspaces;
@@ -31,6 +32,7 @@ pub use probes::{llm_test, notify_test};
 pub use search::{reindex_search, reindex_status, search_stats, semantic_search};
 pub use settings::{get_settings, put_settings};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
+pub use stages::{create_stage, delete_stage, list_stages, update_stage};
 pub use unfurl::unfurl;
 pub use versions::{list_note_versions, restore_note_version};
 pub use workspaces::{

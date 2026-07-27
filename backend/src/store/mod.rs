@@ -156,6 +156,31 @@ pub trait Repository: Send + Sync {
     /// note has been moved.
     async fn prune_foreign_labels(&self, note_id: &str) -> RepoResult<()>;
 
+    // -- stages (board columns) ------------------------------------------------
+    /// Every stage in every workspace the user belongs to, board order first.
+    /// Stages are shared workspace state like labels, but an entirely separate
+    /// system: nothing here reads or writes labels.
+    async fn stages_for_user(&self, user_id: &str) -> RepoResult<Vec<Stage>>;
+    async fn insert_stage(&self, stage: &Stage) -> RepoResult<()>;
+    async fn update_stage(
+        &self,
+        user_id: &str,
+        stage_id: &str,
+        name: &str,
+        color: Option<&str>,
+        position: Option<f64>,
+    ) -> RepoResult<bool>;
+    /// Delete a stage, first sending the notes it held back to unassigned —
+    /// removing a column never removes notes.
+    async fn delete_stage(&self, user_id: &str, stage_id: &str) -> RepoResult<bool>;
+    /// Where a newly created column goes: to the right of the existing ones.
+    async fn max_stage_position(&self, workspace_id: &str) -> RepoResult<f64>;
+    /// Clear a note's stage when the stage does not belong to the note's
+    /// workspace — after a move, or when a stray id was patched in. The
+    /// single-stage counterpart of [`Repository::prune_foreign_labels`], and
+    /// the reason a foreign stage id can never stick.
+    async fn prune_foreign_stage(&self, note_id: &str) -> RepoResult<()>;
+
     // -- checklist history -------------------------------------------------------
     /// Remember item texts checked off in a note (upsert, bump use count).
     /// Scoped per note: suggestions never leak from one note to another.

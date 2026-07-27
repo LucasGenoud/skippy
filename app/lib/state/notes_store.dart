@@ -46,6 +46,7 @@ class NotesStore extends ChangeNotifier {
 
   List<Note> _notes = [];
   List<Label> _labels = [];
+  List<Stage> _stages = [];
   List<Workspace> _workspaces = [];
 
   /// The workspace the UI is showing. Null until the first load resolves one
@@ -136,6 +137,24 @@ class NotesStore extends ChangeNotifier {
       for (final label in _labels)
         if (scope.containsWorkspace(label.workspaceId)) label,
     ]);
+  }
+
+  /// Board columns of the open workspace, left to right. Like [labels] these
+  /// are workspace state, but an independent one: a note has any number of
+  /// labels and at most one stage.
+  List<Stage> get stages {
+    final scope = workspaceScope;
+    return List.unmodifiable([
+      for (final stage in _stages)
+        if (scope.containsWorkspace(stage.workspaceId)) stage,
+    ]);
+  }
+
+  Stage? stageById(String? id) {
+    for (final stage in _stages) {
+      if (stage.id == id) return stage;
+    }
+    return null;
   }
 
   /// Every workspace the user belongs to, default first.
@@ -472,6 +491,7 @@ class NotesStore extends ChangeNotifier {
         final workspaces = await api.fetchWorkspaces();
         final notes = await api.fetchNotes();
         final labels = await api.fetchLabels();
+        final stages = await api.fetchStages();
         final history = await api.fetchChecklistHistory();
         final writesChangedDuringFetch = revisionAtStart != _localWriteRevision;
         // A write can enter and leave the queue entirely while these requests
@@ -482,6 +502,7 @@ class NotesStore extends ChangeNotifier {
             !_hasLocalChangesInFlight) {
           _notes = notes..sort((a, b) => a.position.compareTo(b.position));
           _labels = labels;
+          _stages = stages;
           _workspaces = workspaces;
           _reconcileActiveWorkspace();
           _checklistHistory = history;
@@ -524,10 +545,12 @@ class NotesStore extends ChangeNotifier {
       final workspaces = await api.fetchWorkspaces();
       final notes = await api.fetchNotes();
       final labels = await api.fetchLabels();
+      final stages = await api.fetchStages();
       final history = await api.fetchChecklistHistory();
       if (!_hasLocalChangesInFlight) {
         _notes = notes..sort((a, b) => a.position.compareTo(b.position));
         _labels = labels;
+        _stages = stages;
         _workspaces = workspaces;
         _reconcileActiveWorkspace();
         _checklistHistory = history;
@@ -565,6 +588,10 @@ class NotesStore extends ChangeNotifier {
           for (final j in (doc['labels'] as List? ?? const []))
             Label.fromJson((j as Map).cast<String, dynamic>()),
         ];
+        _stages = [
+          for (final j in (doc['stages'] as List? ?? const []))
+            Stage.fromJson((j as Map).cast<String, dynamic>()),
+        ]..sort((a, b) => a.position.compareTo(b.position));
         _workspaces = [
           for (final j in (doc['workspaces'] as List? ?? const []))
             Workspace.fromJson((j as Map).cast<String, dynamic>()),
@@ -586,7 +613,10 @@ class NotesStore extends ChangeNotifier {
       // Corrupt/unreadable cache: start empty rather than fail to open.
     }
     _hydrated = true;
-    if (_notes.isNotEmpty || _labels.isNotEmpty || _workspaces.isNotEmpty) {
+    if (_notes.isNotEmpty ||
+        _labels.isNotEmpty ||
+        _stages.isNotEmpty ||
+        _workspaces.isNotEmpty) {
       loading = false;
       notifyListeners();
     }
@@ -613,6 +643,7 @@ class NotesStore extends ChangeNotifier {
           if (!(_drafts.contains(n.id) && n.isEmpty)) n.toJson(),
       ],
       'labels': [for (final l in _labels) l.toJson()],
+      'stages': [for (final s in _stages) s.toJson()],
       'workspaces': [for (final w in _workspaces) w.toJson()],
       // Which workspace to reopen in. Deliberately local rather than a synced
       // setting: it is where this device was, not a preference.
@@ -1205,6 +1236,7 @@ class NotesStore extends ChangeNotifier {
     // them and off our shelf.
     _notes.removeWhere((note) => note.workspaceId == id);
     _labels.removeWhere((label) => label.workspaceId == id);
+    _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((workspace) => workspace.id == id);
     _reconcileActiveWorkspace();
     notifyListeners();
@@ -1220,6 +1252,7 @@ class NotesStore extends ChangeNotifier {
     _rehomeNotesLocally(id, (note) => note.isOwnedBy(me));
     _notes.removeWhere((note) => note.workspaceId == id);
     _labels.removeWhere((label) => label.workspaceId == id);
+    _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((w) => w.id == id);
     _reconcileActiveWorkspace();
     notifyListeners();
@@ -1233,7 +1266,8 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Move the notes matching [keep] out of a workspace that is going away and
-  /// into the default one, dropping the labels they leave behind.
+  /// into the default one, dropping the labels and the board column they leave
+  /// behind — both belong to the workspace, not to the note.
   void _rehomeNotesLocally(String workspaceId, bool Function(Note) keep) {
     final home = defaultWorkspace?.id ?? '';
     final leavingLabels = {
@@ -1246,6 +1280,7 @@ class NotesStore extends ChangeNotifier {
       _notes[i] = note.copyWith(
         workspaceId: home,
         labelIds: note.labelIds.difference(leavingLabels),
+        stageId: null,
       );
     }
   }
@@ -1594,6 +1629,115 @@ class NotesStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
+  // Stages (board columns)
+  //
+  // Deliberately parallel to labels rather than sharing code with them: the
+  // two are independent systems, and keeping them as two obvious blocks costs
+  // less than one abstraction both have to be read through.
+
+  Stage createStage(String name, {String? color}) {
+    final workspaceId = _activeWorkspaceId ?? '';
+    final stage = Stage(
+      id: _uuid.v4(),
+      workspaceId: workspaceId,
+      name: name.trim(),
+      color: color,
+      position: _nextStagePosition(workspaceId),
+    );
+    _stages = [..._stages, stage]
+      ..sort((a, b) => a.position.compareTo(b.position));
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.stageCreate,
+        id: stage.id,
+        data: {
+          'name': stage.name,
+          'workspaceId': workspaceId,
+          'color': color,
+          'position': stage.position,
+        },
+      ),
+    );
+    return stage;
+  }
+
+  /// A new column goes to the right of the board, matching the server.
+  double _nextStagePosition(String workspaceId) {
+    var max = 0.0;
+    for (final stage in _stages) {
+      if (stage.workspaceId == workspaceId && stage.position > max) {
+        max = stage.position;
+      }
+    }
+    return max + 1024.0;
+  }
+
+  /// Rename and/or recolour a column. Passing null for [color] clears it, the
+  /// same "set, not merge" rule [updateLabel] uses. [position] moves the
+  /// column; omitting it leaves the board's order alone.
+  void updateStage(String id, {String? name, String? color, double? position}) {
+    final i = _stages.indexWhere((s) => s.id == id);
+    if (i == -1) return;
+    final newName = (name ?? _stages[i].name).trim();
+    _stages[i] = Stage(
+      id: id,
+      workspaceId: _stages[i].workspaceId,
+      name: newName,
+      color: color,
+      position: position ?? _stages[i].position,
+    );
+    _stages.sort((a, b) => a.position.compareTo(b.position));
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.stageUpdate,
+        id: id,
+        data: {'name': newName, 'color': color, 'position': position},
+      ),
+    );
+  }
+
+  /// Delete a column. Its notes are not destroyed — they go back to unassigned,
+  /// locally and on the server.
+  void deleteStage(String id) {
+    _stages.removeWhere((s) => s.id == id);
+    for (var i = 0; i < _notes.length; i++) {
+      if (_notes[i].stageId == id) {
+        _notes[i] = _notes[i].copyWith(stageId: null);
+      }
+    }
+    notifyListeners();
+    _enqueue(PendingOp(PendingOpKind.stageDelete, id: id));
+  }
+
+  /// Move a note to [stageId] (null for unassigned), placing it at the end of
+  /// that column.
+  ///
+  /// One patch carries both fields, so a move is a single queued write rather
+  /// than a stage change chased by a reorder. Labels are untouched: a card
+  /// changing column says nothing about its taxonomy.
+  void setNoteStage(String noteId, String? stageId) {
+    final note = noteById(noteId);
+    if (note == null || note.stageId == stageId) return;
+    final position = _endOfStage(stageId, note.workspaceId);
+    _patch(noteId, note.copyWith(stageId: stageId, stagePosition: position), {
+      'stage_id': stageId,
+      'stage_position': position,
+    });
+  }
+
+  /// One slot past the last card of [stageId] in [workspaceId].
+  double _endOfStage(String? stageId, String workspaceId) {
+    var max = 0.0;
+    for (final note in _notes) {
+      if (note.workspaceId != workspaceId || note.stageId != stageId) continue;
+      if (note.stagePosition > max) max = note.stagePosition;
+    }
+    return max + 1024.0;
+  }
+
+  // ---------------------------------------------------------------------
   // Sync queue
 
   void _enqueue(PendingOp op) {
@@ -1678,6 +1822,23 @@ class NotesStore extends ChangeNotifier {
         );
       case PendingOpKind.labelDelete:
         return api.deleteLabel(op.id!);
+      case PendingOpKind.stageCreate:
+        return api.createStage(
+          op.id!,
+          op.data['name'] as String,
+          workspaceId: op.data['workspaceId'] as String? ?? '',
+          color: op.data['color'] as String?,
+          position: (op.data['position'] as num?)?.toDouble(),
+        );
+      case PendingOpKind.stageUpdate:
+        return api.updateStage(
+          op.id!,
+          op.data['name'] as String,
+          color: op.data['color'] as String?,
+          position: (op.data['position'] as num?)?.toDouble(),
+        );
+      case PendingOpKind.stageDelete:
+        return api.deleteStage(op.id!);
       case PendingOpKind.workspaceCreate:
         return api.createWorkspace(op.id!, op.data['name'] as String);
       case PendingOpKind.workspaceRename:

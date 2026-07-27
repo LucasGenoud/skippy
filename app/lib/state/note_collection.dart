@@ -1,6 +1,9 @@
 import '../models/note.dart';
 
-enum NoteView { notes, reminders, archive, trash, label }
+/// [board] is a view like the others rather than a third state of the
+/// grid/list toggle: it is incompatible with trash, archive, reminders and
+/// label views, and has its own empty state and compose target.
+enum NoteView { notes, board, reminders, archive, trash, label }
 
 enum SortMode { custom, edited, newest, oldest }
 
@@ -11,6 +14,7 @@ class ViewSelection {
   const ViewSelection(this.view, [this.labelId]);
 
   static const notes = ViewSelection(NoteView.notes);
+  static const board = ViewSelection(NoteView.board);
   static const reminders = ViewSelection(NoteView.reminders);
   static const archive = ViewSelection(NoteView.archive);
   static const trash = ViewSelection(NoteView.trash);
@@ -130,6 +134,11 @@ bool _matchesQuery(Note note, String query, Map<String, Label> labelsById) {
 bool _isInView(Note note, ViewSelection selection, String? currentUserId) =>
     switch (selection.view) {
       NoteView.notes => !note.archived && !note.trashed,
+      // The board groups notes by stage rather than filtering a flat list, so
+      // it builds its own columns (see state/board_layout.dart) and never
+      // reaches selectNotes. Matching `notes` keeps the switch total and any
+      // caller that does pass it here sensible.
+      NoteView.board => !note.archived && !note.trashed,
       NoteView.reminders => note.reminderAt != null && !note.trashed,
       NoteView.archive => note.archived && !note.trashed,
       // Collaborators cannot trash notes. If an owner trashes a shared note,

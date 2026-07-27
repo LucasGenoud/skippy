@@ -129,6 +129,15 @@ class Note {
   final bool archived;
   final bool trashed;
   final double position;
+
+  /// The board column holding this note, or null for unassigned. At most one,
+  /// unlike [labelIds] — stages are a separate, exclusive system, which is why
+  /// the board never has to guess which column a note belongs in.
+  final String? stageId;
+
+  /// Order within [stageId]'s column. Separate from [position] so arranging
+  /// the board never reshuffles the grid, and vice versa.
+  final double stagePosition;
   final DateTime? reminderAt;
 
   /// Audio-note transcription state: `none` (not an audio note or no clip yet),
@@ -153,6 +162,8 @@ class Note {
     this.archived = false,
     this.trashed = false,
     this.position = 0,
+    this.stageId,
+    this.stagePosition = 0,
     this.reminderAt,
     this.transcriptStatus = 'none',
     required this.createdAt,
@@ -187,7 +198,9 @@ class Note {
 
   bool isOwnedBy(String? userId) => owner == null || owner!.id == userId;
 
-  static const _sentinelDate = 'sticky-notes-unset';
+  /// Marks a nullable [copyWith] argument as "not passed", so callers can tell
+  /// "leave it alone" apart from "set it to null".
+  static const _unset = 'sticky-notes-unset';
 
   Note copyWith({
     String? workspaceId,
@@ -200,7 +213,9 @@ class Note {
     bool? archived,
     bool? trashed,
     double? position,
-    Object? reminderAt = _sentinelDate,
+    Object? stageId = _unset,
+    double? stagePosition,
+    Object? reminderAt = _unset,
     String? transcriptStatus,
     DateTime? updatedAt,
     Set<String>? labelIds,
@@ -219,7 +234,9 @@ class Note {
       archived: archived ?? this.archived,
       trashed: trashed ?? this.trashed,
       position: position ?? this.position,
-      reminderAt: reminderAt == _sentinelDate
+      stageId: stageId == _unset ? this.stageId : stageId as String?,
+      stagePosition: stagePosition ?? this.stagePosition,
+      reminderAt: reminderAt == _unset
           ? this.reminderAt
           : reminderAt as DateTime?,
       transcriptStatus: transcriptStatus ?? this.transcriptStatus,
@@ -247,6 +264,13 @@ class Note {
       archived: json['archived'] as bool? ?? false,
       trashed: json['trashed'] as bool? ?? false,
       position: (json['position'] as num?)?.toDouble() ?? 0,
+      stageId: json['stage_id'] as String?,
+      // Absent for a cache written before boards existed; the grid position is
+      // the same seed the server's migration uses.
+      stagePosition:
+          (json['stage_position'] as num?)?.toDouble() ??
+          (json['position'] as num?)?.toDouble() ??
+          0,
       reminderAt: json['reminder_at'] == null
           ? null
           : DateTime.tryParse(json['reminder_at'] as String)?.toLocal(),
@@ -287,6 +311,8 @@ class Note {
     'archived': archived,
     'trashed': trashed,
     'position': position,
+    'stage_id': stageId,
+    'stage_position': stagePosition,
     'reminder_at': reminderAt?.toUtc().toIso8601String(),
     'transcript_status': transcriptStatus,
     'created_at': createdAt.toIso8601String(),
@@ -394,6 +420,59 @@ class Label {
     name: name ?? this.name,
     color: color ?? this.color,
     icon: icon ?? this.icon,
+  );
+}
+
+/// A board column. Stages are workspace state like labels — every member sees
+/// the same board — but a separate system on purpose: a note carries any number
+/// of labels and at most one stage. Nothing here refers to [Label], and nothing
+/// in [Label] refers to this.
+///
+/// Stages carry no icon: a column header is text-led, and a glyph per column is
+/// noise rather than information.
+@immutable
+class Stage {
+  final String id;
+  final String workspaceId;
+  final String name;
+
+  /// Hex colour (`#RRGGBB`) for the column header, or null for the theme
+  /// default.
+  final String? color;
+
+  /// Left-to-right order on the board.
+  final double position;
+
+  const Stage({
+    required this.id,
+    required this.name,
+    this.workspaceId = '',
+    this.color,
+    this.position = 0,
+  });
+
+  factory Stage.fromJson(Map<String, dynamic> json) => Stage(
+    id: json['id'] as String,
+    workspaceId: json['workspace_id'] as String? ?? '',
+    name: json['name'] as String,
+    color: json['color'] as String?,
+    position: (json['position'] as num?)?.toDouble() ?? 0,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'workspace_id': workspaceId,
+    'name': name,
+    if (color != null) 'color': color,
+    'position': position,
+  };
+
+  Stage copyWith({String? name, String? color, double? position}) => Stage(
+    id: id,
+    workspaceId: workspaceId,
+    name: name ?? this.name,
+    color: color ?? this.color,
+    position: position ?? this.position,
   );
 }
 

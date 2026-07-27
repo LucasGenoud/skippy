@@ -48,6 +48,7 @@ Format touched Dart files with `dart format`. Format touched Rust files with `ca
 `NotesStore` is the central client domain store. Mutations are optimistic and are represented by serializable pending operations. The store persists note metadata and its operation queue through `PrefsLocalCache`, retries transient failures, drops permanent client failures, and refetches after WebSocket change notifications. Pure note transformations are split into:
 
 - `state/note_collection.dart`: sorting, filtering, searching, and view selection.
+- `state/board_layout.dart`: grouping notes into board columns.
 - `state/note_conversion.dart`: conversion between text, markdown, and checklist content.
 - `state/pending_operation.dart`: persisted optimistic operation types and JSON encoding.
 
@@ -100,6 +101,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/sharing.rs`: collaborator lookup, add/remove, and permission rules.
 - `backend/src/handlers/workspaces.rs`: workspace CRUD, membership, and the default workspace every account starts with.
 - `backend/src/handlers/labels.rs`: workspace labels and note-label membership.
+- `backend/src/handlers/stages.rs`: workspace board columns. A near-copy of `labels.rs` on purpose; see the stages/labels contract below before merging the two.
 - `backend/src/handlers/settings.rs`: opaque per-user settings document and managed descriptors.
 - `backend/src/handlers/search.rs`: semantic query, stats, and background reindex endpoints.
 - `backend/src/handlers/chat.rs`: streaming note-chat WebSocket and optional writes.
@@ -122,6 +124,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/tests/api/main.rs`: modular API integration test entry point.
 - `backend/tests/api/helpers.rs`: real-router harness and deterministic fake services.
 - `backend/tests/api/*.rs`: behavior grouped by API feature.
+- `backend/tests/api/stages.rs`: board columns, including the rules that keep them independent of labels.
 - `backend/tests/s3.rs`: S3 file-store behavior against a local fake server.
 
 ### Flutter client
@@ -148,6 +151,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/screens/settings_screen.dart`: settings composition and optional-service probes.
 - `app/lib/screens/chat_screen.dart`: streamed notes chat, citations, and write confirmation/result UI.
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
+- `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
 - `app/lib/widgets/note_card.dart`: card rendering for all note types.
 - `app/lib/widgets/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions.
 - `app/lib/widgets/quick_add_bar.dart`: inline text, checklist, and markdown drafts plus image-note creation.
@@ -180,6 +184,10 @@ Every note and label belongs to exactly one workspace. A participant is the note
 Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. Owners control destructive sharing and note lifecycle actions, including moving a note between workspaces; collaborators can edit and leave. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. A user's default workspace can never be deleted or left, because notes are rehomed there when a workspace goes away.
 
 Labels are a workspace's shared taxonomy, not personal state: every member sees and applies the same set. Someone who reached a note through a direct share is not in its workspace, so they see none of its labels and their `label_ids` patch is ignored rather than clearing what members attached. Pin, archive, reminder, color, and custom ordering are shared note state.
+
+Stages (board columns) are shared workspace state too, and are deliberately a separate system from labels: a note carries any number of labels via `note_labels` and at most one stage via `notes.stage_id`, so the exclusivity a board needs is a schema fact rather than a rule the client maintains. The two must stay independent. Do not merge `handlers/stages.rs` into `handlers/labels.rs` or introduce a shared "workspace taxonomy" abstraction — they read alike, and the duplication is the cheaper side of that trade. A patch carrying `stage_id` must never write `note_labels`, and one carrying `label_ids` must never write `stage_id`; `backend/tests/api/stages.rs` pins both directions. Shared code between the two is allowed only over primitives (both resolve a hex colour through `PaletteEntry.hexToColor`), never over each other's types.
+
+A note's stage must belong to the note's workspace. `prune_foreign_stage` is the single-stage counterpart of `prune_foreign_labels` and is what stops a stray or foreign stage id from sticking; a workspace move clears the stage for the same reason it drops the old labels. `stage_position` orders cards within a column and is separate from `position` on purpose, so arranging the board never reshuffles the grid. A move is one patch carrying both `stage_id` and `stage_position`, not a stage change chased by a reorder.
 
 Recheck the entire permission matrix when adding a note-related endpoint. Do not fetch a raw row first and bolt on an inconsistent permission check if an existing participant-scoped repository method can express the operation.
 

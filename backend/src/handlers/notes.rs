@@ -176,8 +176,17 @@ pub async fn create_note_for_user(
         updated_at,
         // Set on the first edit; until then there's nothing to attribute.
         last_editor_id: None,
+        stage_id: body.stage_id.filter(|id| !id.trim().is_empty()),
+        // Board order starts out matching grid order, so a note is in the same
+        // relative place however you look at it.
+        stage_position: body.stage_position.unwrap_or(position),
     };
     state.repo.insert_note(&record).await?;
+    // A stage from another workspace is dropped rather than honoured, the same
+    // way a foreign label is.
+    if record.stage_id.is_some() {
+        state.repo.prune_foreign_stage(&record.id).await?;
+    }
     if let Some(label_ids) = body.label_ids
         && let Err(error) = state.repo.set_note_labels(&record.id, &label_ids).await
     {
@@ -268,6 +277,9 @@ pub async fn apply_note_update(
         None => Vec::new(),
     };
     let content_changed = changes_content(&body, &record);
+    // Read before `apply_to` consumes the body. Present-but-null is a real
+    // change (back to unassigned), so this asks whether the key was sent.
+    let stage_changed = body.stage_id.is_some();
     reset_delivered_reminder_if_rescheduled(&body, &mut record);
     let label_ids = body.label_ids.take();
 
@@ -302,6 +314,11 @@ pub async fn apply_note_update(
     // label_ids so an explicit set still wins.
     if moving_to.is_some() {
         state.repo.prune_foreign_labels(id).await?;
+    }
+    // Same rule for the board column, which is that workspace's too: a move
+    // sends the note back to unassigned, and a stray stage id never sticks.
+    if moving_to.is_some() || stage_changed {
+        state.repo.prune_foreign_stage(id).await?;
     }
     // Labels belong to the note's workspace. Someone who reached the note
     // through a direct share is not in that workspace and sees none of them,

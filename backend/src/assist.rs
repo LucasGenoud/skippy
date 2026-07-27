@@ -518,6 +518,8 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             last_editor_id: None,
+            stage_id: None,
+            stage_position: 0.0,
         };
         // Checked stays visibly checked — the model must not re-list it as
         // still to buy.

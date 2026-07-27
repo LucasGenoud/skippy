@@ -2,7 +2,7 @@
 
 A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **Rust** backend (axum + SQLite). Built for smoothness — every interaction is optimistic-first, every layout change animates, and collaboration syncs live over WebSockets.
 
-<p align="center"><em>Masonry grid · drag-to-reorder · text, markdown, checklist, and audio notes · sharing and live co-editing · reminders · labels · attachments · dark mode</em></p>
+<p align="center"><em>Masonry grid · drag-to-reorder · text, markdown, checklist, and audio notes · sharing and live co-editing · reminders · labels · kanban board · attachments · dark mode</em></p>
 
 ## Features
 
@@ -21,6 +21,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - **Workspaces**: every account starts with a default workspace and can create more, switching from the header of the drawer/sidebar. Notes, labels, archive, trash, search, and chat are all scoped to the open one, and a note can be moved between workspaces from its menu.
 - An 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
 - Flat labels per workspace (create/rename/delete; filter from the drawer)
+- **Board view**: a kanban board whose columns are the workspace's *stages* — a system deliberately separate from labels, so a note carries any number of labels and sits in at most one column. Columns are side by side on wide screens and paged behind a name strip on phones; cards move with "Move to column" from the card menu. Unplaced notes collect in a capped **Unassigned** column.
 - Pinning, archive, trash (auto-purged after 7 days)
 - **Drag-to-reorder** with animated reflow, edge auto-scroll, haptics
 - Grid / single-column list toggle; responsive density and width presets support up to 8 columns
@@ -304,13 +305,14 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH /auth/me` | Accounts, profile changes & sessions |
 | `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces (the default one cannot be deleted) |
 | `POST /workspaces/{id}/members`, `DELETE /workspaces/{id}/members/{user_id}` | Workspace roster; removing yourself leaves it |
-| `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` clears; `workspace_id` moves the note) |
+| `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` and `stage_id: null` clear; `workspace_id` moves the note) |
 | `POST /notes/{id}/rewrite` | Opt-in LLM cleanup/concise or grammar-only note edit |
 | `POST /notes/reorder` | Persist drag order (renumbers the given ids) |
 | `GET /notes/{id}/versions`, `POST /notes/{id}/versions/{version_id}/restore` | Version timeline and reversible restore |
 | `POST /notes/{id}/collaborators`, `DELETE /notes/{id}/collaborators/{user_id}` | Sharing |
 | `POST /notes/{id}/attachments`, `DELETE /attachments/{id}`, `GET /files/{id}?exp=…&sig=…` | Attachments and signed, expiring media/download access |
 | `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per workspace, shared by its members) |
+| `GET/POST /stages`, `PATCH/DELETE /stages/{id}` | Board columns (per workspace, shared by its members; deleting one returns its notes to Unassigned) |
 | `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
 | `GET /search?q=…&workspace_id=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
 | `GET /search/stats`, `POST /search/reindex`, `GET /search/reindex/status` | Embedding diagnostics and background reindexing |

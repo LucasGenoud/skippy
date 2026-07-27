@@ -48,7 +48,13 @@ CREATE TABLE IF NOT EXISTS notes (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     trashed_at TEXT,
-    last_editor_id TEXT
+    last_editor_id TEXT,
+    -- Deliberately no foreign key: the column reaches existing databases
+    -- through ALTER TABLE, which SQLite cannot use to add a constraint, so a
+    -- fresh schema must not have one either or the two would drift.
+    -- `delete_stage` clears it explicitly instead.
+    stage_id TEXT,
+    stage_position REAL
 );
 CREATE TABLE IF NOT EXISTS note_versions (
     id TEXT PRIMARY KEY,
@@ -71,6 +77,14 @@ CREATE TABLE IF NOT EXISTS labels (
     name TEXT NOT NULL,
     color TEXT,
     icon TEXT,
+    UNIQUE (workspace_id, name COLLATE NOCASE)
+);
+CREATE TABLE IF NOT EXISTS stages (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    color TEXT,
+    position REAL NOT NULL DEFAULT 0,
     UNIQUE (workspace_id, name COLLATE NOCASE)
 );
 CREATE TABLE IF NOT EXISTS note_labels (
@@ -121,6 +135,8 @@ const ADDITIVE_MIGRATIONS: &[&str] = &[
     "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
     "ALTER TABLE labels ADD COLUMN color TEXT",
     "ALTER TABLE labels ADD COLUMN icon TEXT",
+    "ALTER TABLE notes ADD COLUMN stage_id TEXT",
+    "ALTER TABLE notes ADD COLUMN stage_position REAL",
 ];
 
 /// Creates the current schema and upgrades databases written by older builds.
@@ -129,6 +145,23 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     apply_additive_migrations(pool).await;
     migrate_user_accounts(pool).await?;
     migrate_checklist_history(pool).await?;
+    migrate_stage_positions(pool).await?;
+    Ok(())
+}
+
+/// Seed board ordering from the grid's custom order, so an existing database's
+/// first board opens in the arrangement its owner already made rather than an
+/// arbitrary one.
+///
+/// This is a data backfill, not DDL, so it cannot live in
+/// [`ADDITIVE_MIGRATIONS`] — those re-run on every startup. The `IS NULL`
+/// guard is what makes re-running it harmless, the same way
+/// [`migrate_user_accounts`] guards its own updates. Every row written after
+/// this point carries a stage position from the start.
+async fn migrate_stage_positions(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::query("UPDATE notes SET stage_position = position WHERE stage_position IS NULL")
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

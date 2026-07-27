@@ -219,6 +219,14 @@ class AppSidebar extends StatelessWidget {
                 onTap: () => onSelect(ViewSelection.notes),
               ),
               _SidebarItem(
+                icon: Icons.view_kanban_outlined,
+                selectedIcon: Icons.view_kanban,
+                label: 'Board',
+                isSelected: selection == ViewSelection.board,
+                isOpen: isOpen,
+                onTap: () => onSelect(ViewSelection.board),
+              ),
+              _SidebarItem(
                 icon: Icons.notifications_outlined,
                 selectedIcon: Icons.notifications,
                 label: 'Reminders',

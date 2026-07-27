@@ -14,6 +14,7 @@ import 'package:skippy/models/workspace.dart';
 class FakeApi implements Api {
   final Map<String, Note> notes = {};
   final Map<String, Label> labels = {};
+  final Map<String, Stage> stages = {};
 
   /// Workspaces keyed by id. Seeded with the default one every account has, so
   /// tests that predate workspaces still get a coherent world.
@@ -171,9 +172,16 @@ class FakeApi implements Api {
     // The server rehomes rather than destroys; mirror that so store tests see
     // the same end state.
     labels.removeWhere((_, label) => label.workspaceId == id);
+    stages.removeWhere((_, stage) => stage.workspaceId == id);
     for (final note in notes.values.toList()) {
       if (note.workspaceId == id) {
-        notes[note.id] = note.copyWith(workspaceId: home, labelIds: const {});
+        // A rehomed note leaves both the old workspace's taxonomy and its
+        // board behind — two independent rules that happen to fire together.
+        notes[note.id] = note.copyWith(
+          workspaceId: home,
+          labelIds: const {},
+          stageId: null,
+        );
       }
     }
   });
@@ -253,9 +261,21 @@ class FakeApi implements Api {
           labelIds: fields.containsKey('label_ids')
               ? (fields['label_ids'] as List).cast<String>().toSet()
               : null,
+          // Present-but-null means "back to unassigned", so the key's presence
+          // is what decides — matching the server's nested Option. An absent
+          // key re-passes the current value, the way reminder_at does above.
+          stageId: fields.containsKey('stage_id')
+              ? _resolveStage(fields['stage_id'] as String?)
+              : existing.stageId,
+          stagePosition: (fields['stage_position'] as num?)?.toDouble(),
           updatedAt: DateTime.now(),
         );
       });
+
+  /// A stage the server would refuse — unknown, or from another workspace —
+  /// is dropped rather than honoured, so client tests meet the same rule the
+  /// API tests pin down.
+  String? _resolveStage(String? id) => stages.containsKey(id) ? id : null;
 
   @override
   Future<Note> rewriteNote(String id, NoteRewriteMode mode) async {
@@ -396,6 +416,68 @@ class FakeApi implements Api {
   @override
   Future<void> deleteLabel(String id) => _run('deleteLabel:$id', () {
     labels.remove(id);
+  });
+
+  @override
+  Future<List<Stage>> fetchStages() => _run('fetchStages', () {
+    final list = stages.values.toList()
+      ..sort((a, b) => a.position.compareTo(b.position));
+    return list;
+  });
+
+  @override
+  Future<void> createStage(
+    String id,
+    String name, {
+    required String workspaceId,
+    String? color,
+    double? position,
+  }) => _run('createStage:$name', () {
+    stages[id] = Stage(
+      id: id,
+      workspaceId: workspaceId,
+      name: name,
+      color: (color ?? '').isEmpty ? null : color,
+      position: position ?? _nextStagePosition(workspaceId),
+    );
+  });
+
+  double _nextStagePosition(String workspaceId) {
+    var max = 0.0;
+    for (final stage in stages.values) {
+      if (stage.workspaceId == workspaceId && stage.position > max) {
+        max = stage.position;
+      }
+    }
+    return max + 1024.0;
+  }
+
+  @override
+  Future<void> updateStage(
+    String id,
+    String name, {
+    String? color,
+    double? position,
+  }) => _run('updateStage:$id', () {
+    final existing = stages[id];
+    stages[id] = Stage(
+      id: id,
+      workspaceId: existing?.workspaceId ?? '',
+      name: name,
+      color: (color ?? '').isEmpty ? null : color,
+      position: position ?? existing?.position ?? 0,
+    );
+  });
+
+  @override
+  Future<void> deleteStage(String id) => _run('deleteStage:$id', () {
+    stages.remove(id);
+    // Notes outlive their column, exactly as the server's delete does.
+    for (final entry in notes.entries.toList()) {
+      if (entry.value.stageId == id) {
+        notes[entry.key] = entry.value.copyWith(stageId: null);
+      }
+    }
   });
 
   @override

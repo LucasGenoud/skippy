@@ -1098,4 +1098,137 @@ void main() {
       expect(api.notes['n1']!.title, 'old');
     });
   });
+
+  group('stages', () {
+    /// A stage change is one queued write carrying both fields, not a stage
+    /// patch chased by a reorder.
+    test('setNoteStage is optimistic and syncs as a single patch', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['n1'] = serverNote('n1', title: 'card');
+      await store.load();
+
+      store.setNoteStage('n1', 'todo');
+      // Local state moves without awaiting the network.
+      expect(store.noteById('n1')!.stageId, 'todo');
+
+      await settle();
+      final patches = api.log
+          .where((l) => l.startsWith('patchNote:n1'))
+          .toList();
+      expect(patches.length, 1);
+      expect(patches.single, contains('stage_id'));
+      expect(patches.single, contains('stage_position'));
+      expect(api.notes['n1']!.stageId, 'todo');
+    });
+
+    test('moving to a column places the card at its end', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['a'] = serverNote('a').copyWith(
+        stageId: 'todo',
+        stagePosition: 4096,
+      );
+      api.notes['b'] = serverNote('b');
+      await store.load();
+
+      store.setNoteStage('b', 'todo');
+      expect(store.noteById('b')!.stagePosition, greaterThan(4096));
+    });
+
+    test('setNoteStage(null) sends the card back to unassigned', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['n1'] = serverNote('n1').copyWith(stageId: 'todo');
+      await store.load();
+
+      store.setNoteStage('n1', null);
+      await settle();
+      expect(store.noteById('n1')!.stageId, isNull);
+      expect(api.notes['n1']!.stageId, isNull);
+    });
+
+    /// Stages and labels are independent: moving a card between columns says
+    /// nothing about its taxonomy.
+    test('changing stage leaves labels alone', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.labels['work'] = const Label(
+        id: 'work',
+        name: 'work',
+        workspaceId: 'w-default',
+      );
+      api.notes['n1'] = serverNote('n1', labelIds: const {'work'});
+      await store.load();
+
+      store.setNoteStage('n1', 'todo');
+      await settle();
+      expect(store.noteById('n1')!.labelIds, {'work'});
+      expect(api.notes['n1']!.labelIds, {'work'});
+    });
+
+    test('deleting a stage keeps its notes, unassigned', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['n1'] = serverNote('n1').copyWith(stageId: 'todo');
+      await store.load();
+
+      store.deleteStage('todo');
+      expect(store.noteById('n1'), isNotNull);
+      expect(store.noteById('n1')!.stageId, isNull);
+      await settle();
+      expect(api.stages.containsKey('todo'), isFalse);
+      expect(api.notes['n1'], isNotNull);
+      expect(api.notes['n1']!.stageId, isNull);
+    });
+
+    test('created stages append to the right of the board', () async {
+      await store.load();
+      store.createStage('Todo');
+      store.createStage('Doing');
+      await settle();
+      expect(store.stages.map((s) => s.name), ['Todo', 'Doing']);
+      expect(api.stages.length, 2);
+    });
+
+    test('a stage change survives an app restart', () async {
+      final cache = MemoryLocalCache();
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['n1'] = serverNote('n1');
+      final first = testStore(api, cache: cache);
+      await first.load();
+      api.failWith = Exception('network down');
+      first.setNoteStage('n1', 'todo');
+      await settle();
+      first.dispose();
+
+      // The write never reached the server, but the queue outlived the launch.
+      expect(api.notes['n1']!.stageId, isNull);
+      api.failWith = null;
+      final second = testStore(api, cache: cache);
+      await second.load();
+      await settle();
+      expect(api.notes['n1']!.stageId, 'todo');
+      second.dispose();
+    });
+  });
 }

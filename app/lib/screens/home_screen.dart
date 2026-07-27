@@ -14,6 +14,7 @@ import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/board/board_view.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/file_drop.dart';
@@ -333,6 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _viewTitle(NotesStore store) => switch (_selection.view) {
     NoteView.notes => '',
+    NoteView.board => 'Board',
     NoteView.reminders => 'Reminders',
     NoteView.archive => 'Archive',
     NoteView.trash => 'Trash',
@@ -588,6 +590,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             Expanded(
                               child: Stack(
                                 children: [
+                                  // The board is a horizontal container of
+                                  // independently scrolling columns, so it
+                                  // replaces the sliver stack rather than
+                                  // nesting an opposing scroll inside it.
+                                  if (_selection.view == NoteView.board)
+                                    Positioned.fill(
+                                      child: BoardView(query: _query),
+                                    )
+                                  else
                                   Positioned.fill(
                                     child: LayoutBuilder(
                                       builder: (context, constraints) {
@@ -817,6 +828,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   IconData get _emptyIcon => switch (_selection.view) {
     NoteView.notes => Icons.lightbulb_outline,
+    NoteView.board => Icons.view_kanban_outlined,
     NoteView.reminders => Icons.notifications_outlined,
     NoteView.archive => Icons.archive_outlined,
     NoteView.trash => Icons.delete_outline,
@@ -825,6 +837,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String get _emptyMessage => switch (_selection.view) {
     NoteView.notes => 'Notes you add appear here',
+    NoteView.board => 'Notes you add appear here',
     NoteView.reminders => 'Notes with reminders appear here',
     NoteView.archive => 'Your archived notes appear here',
     NoteView.trash => 'No notes in Trash',

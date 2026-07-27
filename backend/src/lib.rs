@@ -224,6 +224,14 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
             "/labels/{id}",
             axum::routing::patch(handlers::update_label).delete(handlers::delete_label),
         )
+        .route(
+            "/stages",
+            get(handlers::list_stages).post(handlers::create_stage),
+        )
+        .route(
+            "/stages/{id}",
+            axum::routing::patch(handlers::update_stage).delete(handlers::delete_stage),
+        )
         .route("/llm/test", post(handlers::llm_test))
         .route("/notify/test", post(handlers::notify_test))
         .route("/chat", get(handlers::chat_ws))

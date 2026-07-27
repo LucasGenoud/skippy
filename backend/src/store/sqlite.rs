@@ -543,8 +543,9 @@ impl Repository for SqliteRepository {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO notes
              (id, owner_id, workspace_id, kind, title, content, items, color, pinned, archived,
-              trashed, position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+              trashed, position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at,
+              stage_id, stage_position)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
         )
         .bind(&note.id)
         .bind(&note.owner_id)
@@ -562,6 +563,8 @@ impl Repository for SqliteRepository {
         .bind(&note.reminder_fired_at)
         .bind(&note.created_at)
         .bind(&note.updated_at)
+        .bind(&note.stage_id)
+        .bind(note.stage_position)
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
@@ -576,6 +579,7 @@ impl Repository for SqliteRepository {
             "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
              color = ?, pinned = ?, archived = ?, position = ?, reminder_at = ?,
              reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
+             stage_id = ?, stage_position = ?,
              trashed_at = CASE
                  WHEN ? AND trashed = 0 THEN ?
                  WHEN NOT ? THEN NULL
@@ -597,6 +601,8 @@ impl Repository for SqliteRepository {
         .bind(&note.reminder_fired_at)
         .bind(&note.updated_at)
         .bind(&note.last_editor_id)
+        .bind(&note.stage_id)
+        .bind(note.stage_position)
         .bind(note.trashed as i64)
         .bind(now())
         .bind(note.trashed as i64)
@@ -939,6 +945,122 @@ impl Repository for SqliteRepository {
             "DELETE FROM note_labels WHERE note_id = ? AND label_id NOT IN (
                  SELECT l.id FROM labels l
                  JOIN notes n ON n.workspace_id = l.workspace_id
+                 WHERE n.id = ?
+             )",
+        )
+        .bind(note_id)
+        .bind(note_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    // -- stages (board columns) ------------------------------------------------
+
+    async fn stages_for_user(&self, user_id: &str) -> RepoResult<Vec<Stage>> {
+        let rows = sqlx::query(&format!(
+            "SELECT id, workspace_id, name, color, position FROM stages
+             WHERE workspace_id IN ({MY_WORKSPACES})
+             ORDER BY position, name COLLATE NOCASE"
+        ))
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| Stage {
+                id: r.get("id"),
+                workspace_id: r.get("workspace_id"),
+                name: r.get("name"),
+                color: r.get("color"),
+                position: r.get("position"),
+            })
+            .collect())
+    }
+
+    async fn insert_stage(&self, stage: &Stage) -> RepoResult<()> {
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO stages (id, workspace_id, name, color, position)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&stage.id)
+        .bind(&stage.workspace_id)
+        .bind(&stage.name)
+        .bind(&stage.color)
+        .bind(stage.position)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(RepoError::Conflict("stage already exists".to_string()));
+        }
+        Ok(())
+    }
+
+    async fn update_stage(
+        &self,
+        user_id: &str,
+        stage_id: &str,
+        name: &str,
+        color: Option<&str>,
+        position: Option<f64>,
+    ) -> RepoResult<bool> {
+        // Membership, not authorship: a workspace's board belongs to everyone
+        // in it. An absent position leaves the column where it is, so renaming
+        // a stage never reshuffles the board.
+        let result = sqlx::query(&format!(
+            "UPDATE stages SET name = ?, color = ?, position = COALESCE(?, position)
+             WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
+        ))
+        .bind(name)
+        .bind(color)
+        .bind(position)
+        .bind(stage_id)
+        .bind(user_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn delete_stage(&self, user_id: &str, stage_id: &str) -> RepoResult<bool> {
+        let mut tx = self.pool.begin().await?;
+        // Notes outlive their column. There is no foreign key to do this for
+        // us (see the schema), so the clear is explicit and shares the
+        // transaction with the delete.
+        sqlx::query("UPDATE notes SET stage_id = NULL WHERE stage_id = ?")
+            .bind(stage_id)
+            .execute(&mut *tx)
+            .await?;
+        let result = sqlx::query(&format!(
+            "DELETE FROM stages WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
+        ))
+        .bind(stage_id)
+        .bind(user_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn max_stage_position(&self, workspace_id: &str) -> RepoResult<f64> {
+        // 0.0, not 0: an integer literal makes the empty-board case decode as
+        // INTEGER and the f64 read fails.
+        let row =
+            sqlx::query("SELECT COALESCE(MAX(position), 0.0) AS m FROM stages WHERE workspace_id = ?")
+                .bind(workspace_id)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(row.get("m"))
+    }
+
+    async fn prune_foreign_stage(&self, note_id: &str) -> RepoResult<()> {
+        sqlx::query(
+            "UPDATE notes SET stage_id = NULL
+             WHERE id = ? AND stage_id IS NOT NULL AND stage_id NOT IN (
+                 SELECT s.id FROM stages s
+                 JOIN notes n ON n.workspace_id = s.workspace_id
                  WHERE n.id = ?
              )",
         )

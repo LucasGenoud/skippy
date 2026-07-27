@@ -120,6 +120,24 @@ abstract class Api {
   });
   Future<void> deleteLabel(String id);
 
+  // stages (board columns) — deliberately parallel to labels rather than
+  // sharing an abstraction with them; the two are independent systems.
+  Future<List<Stage>> fetchStages();
+  Future<void> createStage(
+    String id,
+    String name, {
+    required String workspaceId,
+    String? color,
+    double? position,
+  });
+  Future<void> updateStage(
+    String id,
+    String name, {
+    String? color,
+    double? position,
+  });
+  Future<void> deleteStage(String id);
+
   // sharing
   Future<Note> addCollaborator(String noteId, String email);
   Future<void> removeCollaborator(String noteId, String userId);
@@ -466,6 +484,9 @@ class ApiClient implements Api {
           // A note composed inside a label view is already filed when it
           // reaches the server; the draft never had a chance to PATCH them.
           'label_ids': note.labelIds.toList(),
+          // Same for one composed inside a board column.
+          if (note.stageId != null) 'stage_id': note.stageId,
+          'stage_position': note.stagePosition,
           if (preserveTimestamps) ...{
             'archived': note.archived,
             'created_at': note.createdAt.toUtc().toIso8601String(),
@@ -618,6 +639,66 @@ class ApiClient implements Api {
   @override
   Future<void> deleteLabel(String id) async {
     _decode(await _client.delete(_uri('/labels/$id'), headers: _headers()));
+  }
+
+  // -- stages ---------------------------------------------------------------
+
+  @override
+  Future<List<Stage>> fetchStages() async {
+    final data =
+        _decode(await _client.get(_uri('/stages'), headers: _headers()))
+            as List;
+    return data.map((j) => Stage.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
+  @override
+  Future<void> createStage(
+    String id,
+    String name, {
+    required String workspaceId,
+    String? color,
+    double? position,
+  }) async {
+    _decode(
+      await _client.post(
+        _uri('/stages'),
+        headers: _headers(),
+        // Empty string clears the colour server-side; an omitted position
+        // appends the column to the right of the board.
+        body: jsonEncode({
+          'id': id,
+          if (workspaceId.isNotEmpty) 'workspace_id': workspaceId,
+          'name': name,
+          'color': color ?? '',
+          'position': ?position,
+        }),
+      ),
+    );
+  }
+
+  @override
+  Future<void> updateStage(
+    String id,
+    String name, {
+    String? color,
+    double? position,
+  }) async {
+    _decode(
+      await _client.patch(
+        _uri('/stages/$id'),
+        headers: _headers(),
+        body: jsonEncode({
+          'name': name,
+          'color': color ?? '',
+          'position': ?position,
+        }),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteStage(String id) async {
+    _decode(await _client.delete(_uri('/stages/$id'), headers: _headers()));
   }
 
   // -- sharing ----------------------------------------------------------------

@@ -14,6 +14,7 @@ import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/note_export.dart';
 import '../util/snack.dart';
+import 'board/move_to_stage_sheet.dart';
 import 'color_picker.dart';
 import 'workspace_menu.dart';
 import 'labels_sheet.dart';
@@ -235,6 +236,11 @@ class _NoteTileState extends State<NoteTile> {
 
   Future<void> _addLabel() => LabelsSheet.show(context, widget.note.id);
 
+  /// Labels and columns are separate systems, so this is its own action rather
+  /// than another entry in the labels sheet.
+  Future<void> _moveToStage() =>
+      MoveToStageSheet.show(context, widget.note.id);
+
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
@@ -362,6 +368,7 @@ class _NoteTileState extends State<NoteTile> {
                   onArchive: _archive,
                   onDuplicate: _duplicate,
                   onMoveToWorkspace: _moveToWorkspace,
+                  onMoveToStage: _moveToStage,
                   canMove:
                       widget.note.isOwnedBy(
                         context.read<NotesStore>().currentUserId,
@@ -909,6 +916,10 @@ class _NoteActions extends StatelessWidget {
   /// there has to be somewhere else to move it to.
   final VoidCallback onMoveToWorkspace;
   final bool canMove;
+
+  /// Opens the column picker. The board's move gesture in v1, and the
+  /// keyboard/screen-reader path on every platform.
+  final VoidCallback onMoveToStage;
   final VoidCallback onCopyToClipboard;
   final VoidCallback onDelete;
   final ValueChanged<NoteRewriteMode> onRewrite;
@@ -928,6 +939,7 @@ class _NoteActions extends StatelessWidget {
     required this.onArchive,
     required this.onDuplicate,
     required this.onMoveToWorkspace,
+    required this.onMoveToStage,
     required this.canMove,
     required this.onCopyToClipboard,
     required this.onDelete,
@@ -1027,6 +1039,7 @@ class _NoteActions extends StatelessWidget {
                     if (value == 'share') onShare();
                     if (value == 'duplicate') onDuplicate();
                     if (value == 'move') onMoveToWorkspace();
+                    if (value == 'stage') onMoveToStage();
                     if (value == 'clipboard') onCopyToClipboard();
                     if (value == 'delete') onDelete();
                     if (value == 'concise') onRewrite(NoteRewriteMode.concise);
@@ -1077,6 +1090,14 @@ class _NoteActions extends StatelessWidget {
                       child: ListTile(
                         leading: Icon(Icons.copy_all_outlined),
                         title: Text('Duplicate'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'stage',
+                      child: ListTile(
+                        leading: Icon(Icons.view_kanban_outlined),
+                        title: Text('Move to column'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),

@@ -4,6 +4,7 @@ use crate::models::{NoteRecord, NoteVersion, User, Workspace};
 
 pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let items_json: String = row.get("items");
+    let position: f64 = row.get("position");
     NoteRecord {
         id: row.get("id"),
         owner_id: row.get("owner_id"),
@@ -16,13 +17,21 @@ pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
         pinned: row.get::<i64, _>("pinned") != 0,
         archived: row.get::<i64, _>("archived") != 0,
         trashed: row.get::<i64, _>("trashed") != 0,
-        position: row.get("position"),
+        position,
         reminder_at: row.get("reminder_at"),
         reminder_fired_at: row.get("reminder_fired_at"),
         transcript_status: row.get("transcript_status"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
         last_editor_id: row.get("last_editor_id"),
+        stage_id: row.get("stage_id"),
+        // The startup backfill fills this in for rows written before boards
+        // existed; falling back to the grid position keeps the model non-null
+        // for anything that slips past it (a row inserted by an older build
+        // still running against the same file).
+        stage_position: row
+            .get::<Option<f64>, _>("stage_position")
+            .unwrap_or(position),
     }
 }
 

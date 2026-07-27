@@ -1,8 +1,10 @@
 .DS_Store
 *.log
 
-# Runtime data — SQLite DB, uploaded files, downloaded embedding model
-backend/sticky_notes.db
+# Runtime data — SQLite DB, uploaded files, downloaded embedding model.
+# The glob also covers sidecars (-wal/-shm) and hand-made backups, so a
+# multi-megabyte database can't be committed by accident.
+backend/sticky_notes.db*
 backend/uploads/
 backend/.fastembed_cache/
 

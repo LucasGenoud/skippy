@@ -190,6 +190,13 @@ pub struct NoteRecord {
     /// (edits by the same author in one sitting collapse to a single version)
     /// and starts out `None` until the first edit. Not exposed on the wire.
     pub last_editor_id: Option<String>,
+    /// The board stage holding this note, or `None` for unassigned. Stages are
+    /// deliberately independent of labels: a note has at most one stage, and
+    /// the storage layer keeps it inside the note's own workspace.
+    pub stage_id: Option<String>,
+    /// Order within the note's stage. Separate from `position` so arranging a
+    /// board never reshuffles the grid's custom order, and vice versa.
+    pub stage_position: f64,
 }
 
 /// A note as served to a specific user: the labels they can see, plus the
@@ -224,6 +231,8 @@ pub struct NoteFields {
     pub transcript_status: String,
     pub created_at: String,
     pub updated_at: String,
+    pub stage_id: Option<String>,
+    pub stage_position: f64,
 }
 
 impl NoteRecord {
@@ -244,6 +253,8 @@ impl NoteRecord {
             transcript_status: self.transcript_status.clone(),
             created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
+            stage_id: self.stage_id.clone(),
+            stage_position: self.stage_position,
         }
     }
 }
@@ -280,6 +291,24 @@ pub struct Label {
     /// `None` for the default label glyph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+}
+
+/// A board column. Stages are workspace state like labels — every member sees
+/// and uses the same set — but they are a separate system on purpose: a note
+/// carries any number of labels and at most one stage, so the exclusivity a
+/// board needs is a schema fact rather than a rule the client has to maintain.
+/// Nothing here references labels, and nothing in labels references stages.
+#[derive(Debug, Clone, Serialize)]
+pub struct Stage {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    /// Hex colour (`#RRGGBB`) for the column header, or `None` for the theme
+    /// default. Purely presentational — the server never interprets it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Left-to-right order of the column on the board.
+    pub position: f64,
 }
 
 /// A checklist item text previously checked off in a note; powers typing
@@ -326,6 +355,15 @@ pub struct CreateNote {
     pub reminder_at: Option<String>,
     #[serde(default)]
     pub label_ids: Option<Vec<String>>,
+    /// Board stage to file the note in. Absent or null means unassigned; a
+    /// stage from another workspace is dropped, the same way a foreign label
+    /// is.
+    #[serde(default)]
+    pub stage_id: Option<String>,
+    /// Defaults to `position`, so a note starts out ordered the same way on
+    /// the board as it is in the grid.
+    #[serde(default)]
+    pub stage_position: Option<f64>,
     #[serde(default)]
     pub created_at: Option<String>,
     #[serde(default)]
@@ -352,6 +390,12 @@ pub struct UpdateNote {
     #[serde(default, with = "double_option")]
     pub reminder_at: Option<Option<String>>,
     pub label_ids: Option<Vec<String>>,
+    /// Moves the note between board columns. Nested like `reminder_at` so
+    /// `"stage_id": null` sends the note back to unassigned while an absent
+    /// key leaves the stage untouched.
+    #[serde(default, with = "double_option")]
+    pub stage_id: Option<Option<String>>,
+    pub stage_position: Option<f64>,
 }
 
 impl UpdateNote {
@@ -373,6 +417,8 @@ impl UpdateNote {
             position,
             reminder_at,
             label_ids: _,
+            stage_id,
+            stage_position,
         } = self;
         if let Some(v) = workspace_id {
             record.workspace_id = v;
@@ -407,6 +453,12 @@ impl UpdateNote {
         if let Some(v) = reminder_at {
             record.reminder_at = v;
         }
+        if let Some(v) = stage_id {
+            record.stage_id = v;
+        }
+        if let Some(v) = stage_position {
+            record.stage_position = v;
+        }
     }
 }
 
@@ -440,6 +492,23 @@ pub struct LabelPayload {
     pub color: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
+}
+
+/// Create/update body for a board stage. `position` is absent on create (the
+/// stage is appended to the board) and present when columns are reordered.
+#[derive(Debug, Deserialize)]
+pub struct StagePayload {
+    #[serde(default)]
+    pub id: Option<String>,
+    /// Which workspace the stage belongs to. Absent means the caller's default
+    /// workspace, mirroring note and label creation.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub position: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]

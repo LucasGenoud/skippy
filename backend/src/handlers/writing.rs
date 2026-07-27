@@ -103,6 +103,8 @@ pub async fn rewrite_note(
         position: None,
         reminder_at: None,
         label_ids: None,
+        stage_id: None,
+        stage_position: None,
     };
     Ok(Json(apply_note_update(&state, &user_id, &id, body).await?))
 }
