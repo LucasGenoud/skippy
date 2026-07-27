@@ -32,6 +32,14 @@ class AppDrawer extends StatelessWidget {
         ),
       ),
       (
+        ViewSelection.board,
+        const NavigationDrawerDestination(
+          icon: Icon(Icons.view_kanban_outlined),
+          selectedIcon: Icon(Icons.view_kanban),
+          label: Text('Board'),
+        ),
+      ),
+      (
         ViewSelection.reminders,
         const NavigationDrawerDestination(
           icon: Icon(Icons.notifications_outlined),

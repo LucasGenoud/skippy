@@ -10,6 +10,7 @@ import 'package:skippy/widgets/board/move_to_stage_sheet.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
+import 'widget_test.dart' show homeApp;
 
 Widget boardApp(NotesStore store) => MultiProvider(
   providers: [
@@ -313,6 +314,39 @@ void main() {
     expect(store.noteById('c')!.stageId, 'todo');
     await flushTimers(tester);
     expect(api.log.where((l) => l.startsWith('patchNote')).length, 1);
+  });
+
+  /// The board has to be reachable from the app's own navigation, not just
+  /// mountable in a test. The narrow drawer and the wide sidebar are separate
+  /// widgets, and an entry added to one is not added to the other.
+  group('reaching the board from the menus', () {
+    testWidgets('from the drawer on a phone', (tester) async {
+      await setViewport(tester, const Size(390, 780));
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationDrawer), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Board'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('from the sidebar on a wide screen', (tester) async {
+      await setViewport(tester, const Size(1200, 900));
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Board'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsOneWidget);
+      await flushTimers(tester);
+    });
   });
 
   /// The unassigned column is capped so a mature workspace does not open onto
