@@ -1206,6 +1206,73 @@ void main() {
       expect(api.stages.length, 2);
     });
 
+    test('positionBetween places head, tail, and between', () {
+      Note card(double p) => serverNote('x').copyWith(stagePosition: p);
+      // Empty column.
+      expect(NotesStore.positionBetween(null, null), 1024.0);
+      // Above the first card, below the last, and between two.
+      expect(NotesStore.positionBetween(null, card(1024)), lessThan(1024));
+      expect(NotesStore.positionBetween(card(1024), null), greaterThan(1024));
+      expect(NotesStore.positionBetween(card(1024), card(2048)), 1536.0);
+    });
+
+    /// Reordering inside a column is a move to the stage the card is already
+    /// in, so it takes the same single-patch path as a cross-column move.
+    test('a reposition within a column is one patch', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['a'] = serverNote('a').copyWith(
+        stageId: 'todo',
+        stagePosition: 1024,
+      );
+      api.notes['b'] = serverNote('b').copyWith(
+        stageId: 'todo',
+        stagePosition: 2048,
+      );
+      api.notes['c'] = serverNote('c').copyWith(
+        stageId: 'todo',
+        stagePosition: 3072,
+      );
+      await store.load();
+
+      // Drop c between a and b.
+      store.setNoteStage(
+        'c',
+        'todo',
+        position: NotesStore.positionBetween(
+          store.noteById('a'),
+          store.noteById('b'),
+        ),
+      );
+      expect(store.noteById('c')!.stagePosition, 1536.0);
+
+      await settle();
+      expect(api.log.where((l) => l.startsWith('patchNote:c')).length, 1);
+      expect(api.notes['c']!.stagePosition, 1536.0);
+      expect(api.notes['c']!.stageId, 'todo');
+    });
+
+    test('dropping a card where it already sits queues nothing', () async {
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+      );
+      api.notes['a'] = serverNote('a').copyWith(
+        stageId: 'todo',
+        stagePosition: 1024,
+      );
+      await store.load();
+      api.log.clear();
+
+      store.setNoteStage('a', 'todo', position: 1024);
+      await settle();
+      expect(api.log.where((l) => l.startsWith('patchNote')), isEmpty);
+    });
+
     test('a stage change survives an app restart', () async {
       final cache = MemoryLocalCache();
       api.stages['todo'] = const Stage(

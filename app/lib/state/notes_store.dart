@@ -1711,20 +1711,40 @@ class NotesStore extends ChangeNotifier {
     _enqueue(PendingOp(PendingOpKind.stageDelete, id: id));
   }
 
-  /// Move a note to [stageId] (null for unassigned), placing it at the end of
-  /// that column.
+  /// Move a note to [stageId] (null for unassigned). Without a [position] the
+  /// card goes to the end of that column, which is what the column picker
+  /// wants; a drop passes the slot it landed in (see [positionBetween]).
   ///
   /// One patch carries both fields, so a move is a single queued write rather
-  /// than a stage change chased by a reorder. Labels are untouched: a card
+  /// than a stage change chased by a reorder. That also makes reordering
+  /// *within* a column the same operation as moving between two: it is a move
+  /// to the stage the card is already in. Labels are untouched — a card
   /// changing column says nothing about its taxonomy.
-  void setNoteStage(String noteId, String? stageId) {
+  void setNoteStage(String noteId, String? stageId, {double? position}) {
     final note = noteById(noteId);
-    if (note == null || note.stageId == stageId) return;
-    final position = _endOfStage(stageId, note.workspaceId);
-    _patch(noteId, note.copyWith(stageId: stageId, stagePosition: position), {
+    if (note == null) return;
+    // A no-op reposition still has to be filtered out, or every drop that
+    // lands where the card already was would queue a write.
+    if (note.stageId == stageId && position == null) return;
+    final target = position ?? _endOfStage(stageId, note.workspaceId);
+    if (note.stageId == stageId && note.stagePosition == target) return;
+    _patch(noteId, note.copyWith(stageId: stageId, stagePosition: target), {
       'stage_id': stageId,
-      'stage_position': position,
+      'stage_position': target,
     });
+  }
+
+  /// The slot between two cards in a column, for a drop that landed there.
+  ///
+  /// Positions are sparse rather than densely renumbered, so placing a card
+  /// writes one row instead of the whole column — the same trick
+  /// [_frontPosition] uses for new notes. A null neighbour means the head or
+  /// the tail of the column.
+  static double positionBetween(Note? above, Note? below) {
+    if (above == null && below == null) return 1024.0;
+    if (above == null) return below!.stagePosition - 1024.0;
+    if (below == null) return above.stagePosition + 1024.0;
+    return (above.stagePosition + below.stagePosition) / 2;
   }
 
   /// One slot past the last card of [stageId] in [workspaceId].

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +7,7 @@ import '../../state/board_layout.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../theme.dart';
+import '../../util/snack.dart';
 import '../empty_state.dart';
 import 'board_column_view.dart';
 import 'stage_editor.dart';
@@ -37,12 +40,20 @@ class _BoardViewState extends State<BoardView> {
   /// cap is about what you open onto.
   bool _showAllUnassigned = false;
 
-  final _pageController = PageController();
+  /// Columns do not fill the page: the neighbours peek in at either edge, so
+  /// a phone shows that a board *has* columns rather than presenting one list
+  /// at a time. It also puts the next column within drag reach.
+  final _pageController = PageController(viewportFraction: 0.86);
+
+  /// Horizontal scroll of the whole board on wide screens; also what the edge
+  /// zones drive while a card is being carried.
+  final _boardController = ScrollController();
   int _page = 0;
 
   @override
   void dispose() {
     _pageController.dispose();
+    _boardController.dispose();
     super.dispose();
   }
 
@@ -66,29 +77,71 @@ class _BoardViewState extends State<BoardView> {
 
   void _showAll() => setState(() => _showAllUnassigned = true);
 
+  /// A card carried up from the page below and dropped on a stage chip. This
+  /// is the phone's move gesture: short travel, and no page turns under the
+  /// finger the way dragging across a `PageView` would.
+  void _dropOnStage(String noteId, BoardColumn column) {
+    final store = context.read<NotesStore>();
+    final from = store.noteById(noteId)?.stageId;
+    store.setNoteStage(noteId, column.stage?.id);
+    showAppSnack(
+      'Moved to ${column.title}',
+      icon: Icons.view_kanban_outlined,
+      actionLabel: 'Undo',
+      onAction: () => store.setNoteStage(noteId, from),
+    );
+  }
+
   Widget _buildColumns(Board board) {
     final scheme = Theme.of(context).colorScheme;
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      itemCount: board.columns.length,
-      itemBuilder: (context, index) {
-        final column = board.columns[index];
-        return Container(
-          width: BoardView._columnWidth,
-          margin: const EdgeInsets.only(right: 12),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: kBorderRadius,
-            border: Border.all(color: hairlineColor(scheme)),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ListView.builder(
+            controller: _boardController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            itemCount: board.columns.length,
+            itemBuilder: (context, index) {
+              final column = board.columns[index];
+              return Container(
+                width: BoardView._columnWidth,
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: kBorderRadius,
+                  border: Border.all(color: hairlineColor(scheme)),
+                ),
+                child: BoardColumnView(
+                  column: column,
+                  query: widget.query,
+                  onShowAll: column.isUnassigned ? _showAll : null,
+                ),
+              );
+            },
           ),
-          child: BoardColumnView(
-            column: column,
-            query: widget.query,
-            onShowAll: column.isUnassigned ? _showAll : null,
+        ),
+        // Carrying a card to a column that is off-screen needs the board to
+        // move under it. These two strips do that while a card hovers them.
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          child: _EdgeScrollZone(
+            controller: _boardController,
+            towardsStart: true,
           ),
-        );
-      },
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: _EdgeScrollZone(
+            controller: _boardController,
+            towardsStart: false,
+          ),
+        ),
+      ],
     );
   }
 
@@ -106,6 +159,10 @@ class _BoardViewState extends State<BoardView> {
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
           ),
+          onWillDrop: (noteId, column) =>
+              context.read<NotesStore>().noteById(noteId)?.stageId !=
+              column.stage?.id,
+          onDrop: _dropOnStage,
         ),
         Expanded(
           child: PageView.builder(
@@ -129,84 +186,237 @@ class _BoardViewState extends State<BoardView> {
   }
 }
 
+/// A thin strip at the board's edge that scrolls it while a dragged card
+/// hovers there, so a column off the side of the screen is still reachable.
+///
+/// A `DragTarget` that never accepts: it only wants to know a card is over it.
+/// `onMove` stops firing when the pointer holds still, so the scrolling is
+/// driven by a timer between enter and leave rather than by pointer samples.
+class _EdgeScrollZone extends StatefulWidget {
+  final ScrollController controller;
+
+  /// Which way to travel: towards the board's start (left) or its end.
+  final bool towardsStart;
+
+  const _EdgeScrollZone({required this.controller, required this.towardsStart});
+
+  static const double width = 56;
+  static const double _pixelsPerTick = 14;
+
+  @override
+  State<_EdgeScrollZone> createState() => _EdgeScrollZoneState();
+}
+
+class _EdgeScrollZoneState extends State<_EdgeScrollZone> {
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _start() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      final position = widget.controller.position;
+      final delta = widget.towardsStart
+          ? -_EdgeScrollZone._pixelsPerTick
+          : _EdgeScrollZone._pixelsPerTick;
+      final next = (position.pixels + delta).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if (next == position.pixels) return;
+      widget.controller.jumpTo(next);
+    });
+  }
+
+  void _stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<String>(
+      // Never accepts: a drop here should fall through to whatever column has
+      // scrolled under the pointer, not vanish into the edge.
+      onWillAcceptWithDetails: (_) => false,
+      onMove: (_) {
+        if (_timer == null && widget.controller.hasClients) _start();
+      },
+      onLeave: (_) => _stop(),
+      builder: (context, _, _) =>
+          const SizedBox(width: _EdgeScrollZone.width),
+    );
+  }
+}
+
 /// The phone board's column switcher: names and counts, scrollable, current
-/// one highlighted. Doubles as the header the paged columns leave out.
-class _StageStrip extends StatelessWidget {
+/// one highlighted. Doubles as the header the paged columns leave out, and as
+/// the phone's drop target — a card is carried up to a chip rather than across
+/// pages, so nothing has to turn under the finger.
+class _StageStrip extends StatefulWidget {
   final List<BoardColumn> columns;
   final int current;
   final ValueChanged<int> onSelect;
+
+  /// Whether [noteId] may be dropped on [column] — false for the column it is
+  /// already in, so the chip does not light up for a no-op.
+  final bool Function(String noteId, BoardColumn column)? onWillDrop;
+
+  /// A card was carried up from the page below and dropped on a chip.
+  final void Function(String noteId, BoardColumn column)? onDrop;
 
   const _StageStrip({
     required this.columns,
     required this.current,
     required this.onSelect,
+    this.onWillDrop,
+    this.onDrop,
+  });
+
+  @override
+  State<_StageStrip> createState() => _StageStripState();
+}
+
+class _StageStripState extends State<_StageStrip> {
+  final _controller = ScrollController();
+  final Map<int, GlobalKey> _chipKeys = {};
+
+  @override
+  void didUpdateWidget(_StageStrip old) {
+    super.didUpdateWidget(old);
+    if (old.current != widget.current) _revealCurrent();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// Keep the open column's chip on screen. Without this a chip can sit past
+  /// the right edge, which is not merely awkward to tap — it is unreachable as
+  /// a drop target, because you cannot scroll the strip while holding a card.
+  void _revealCurrent() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final chip = _chipKeys[widget.current]?.currentContext;
+      if (chip == null) return;
+      Scrollable.ensureVisible(
+        chip,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Every chip is built, not just the visible ones: a board has a handful of
+    // columns, and [Scrollable.ensureVisible] can only reach a chip that
+    // exists — which is exactly the off-screen one it is needed for.
+    return SizedBox(
+      height: 44,
+      child: SingleChildScrollView(
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            for (final (index, column) in widget.columns.indexed)
+              Padding(
+                key: _chipKeys.putIfAbsent(index, GlobalKey.new),
+                padding: const EdgeInsets.only(right: 8),
+                child: DragTarget<String>(
+                  onWillAcceptWithDetails: (details) =>
+                      widget.onWillDrop?.call(details.data, column) ?? false,
+                  onAcceptWithDetails: (details) =>
+                      widget.onDrop?.call(details.data, column),
+                  builder: (context, candidate, _) => _StageChip(
+                    column: column,
+                    selected: index == widget.current,
+                    hovered: candidate.isNotEmpty,
+                    onTap: () => widget.onSelect(index),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One column's chip in the phone strip: a navigation control and, while a
+/// card is in the air, a drop target.
+class _StageChip extends StatelessWidget {
+  final BoardColumn column;
+  final bool selected;
+  final bool hovered;
+  final VoidCallback onTap;
+
+  const _StageChip({
+    required this.column,
+    required this.selected,
+    required this.hovered,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 44,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        itemCount: columns.length,
-        itemBuilder: (context, index) {
-          final column = columns[index];
-          final selected = index == current;
-          final accent =
-              PaletteEntry.hexToColor(column.stage?.color) ??
-              scheme.onSurfaceVariant;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: InkWell(
-              onTap: () => onSelect(index),
-              borderRadius: kBorderRadius,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? scheme.secondaryContainer
-                      : Colors.transparent,
-                  borderRadius: kBorderRadius,
-                  border: Border.all(
-                    color: selected
-                        ? Colors.transparent
-                        : hairlineColor(scheme),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      column.title,
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: selected
-                            ? scheme.onSecondaryContainer
-                            : scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${column.totalCount}',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+    final accent =
+        PaletteEntry.hexToColor(column.stage?.color) ?? scheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: kBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: hovered
+              ? scheme.primaryContainer
+              : selected
+              ? scheme.secondaryContainer
+              : Colors.transparent,
+          borderRadius: kBorderRadius,
+          border: Border.all(
+            color: hovered
+                ? scheme.primary
+                : selected
+                ? Colors.transparent
+                : hairlineColor(scheme),
+            width: hovered ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              column.title,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected
+                    ? scheme.onSecondaryContainer
+                    : scheme.onSurfaceVariant,
               ),
             ),
-          );
-        },
+            const SizedBox(width: 6),
+            Text(
+              '${column.totalCount}',
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
       ),
     );
   }

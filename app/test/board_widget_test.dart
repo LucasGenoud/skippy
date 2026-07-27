@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/widgets/board/board_column_view.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/board/move_to_stage_sheet.dart';
 
@@ -87,16 +88,20 @@ void main() {
     await tester.pumpWidget(boardApp(store));
     await tester.pumpAndSettle();
 
-    // One column at a time: the first page is Unassigned.
+    // One column per page, opening on Unassigned.
     expect(find.byType(PageView), findsOneWidget);
     expect(find.text('unplaced card'), findsOneWidget);
-    expect(find.text('todo card'), findsNothing);
+
+    // Columns are narrower than the page so the neighbours peek in — what
+    // makes a phone read as a board rather than as one list.
+    final viewport = tester.getSize(find.byType(BoardView)).width;
+    final column = tester.getSize(find.byType(BoardColumnView).first).width;
+    expect(column, lessThan(viewport));
 
     // The strip names every column and moves between them.
     await tester.tap(find.text('Todo'));
     await tester.pumpAndSettle();
     expect(find.text('todo card'), findsOneWidget);
-    expect(find.text('unplaced card'), findsNothing);
     await flushTimers(tester);
   });
 
@@ -131,6 +136,183 @@ void main() {
 
     expect(store.noteById('n1')!.stageId, 'doing');
     await flushTimers(tester);
+  });
+
+  /// The gesture the whole feature is for: pick a card up out of one column
+  /// and drop it on another.
+  testWidgets('dragging a card onto another column moves it', (tester) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['n1'] = serverNote('n1', title: 'card one');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+    expect(store.noteById('n1')!.stageId, isNull);
+
+    // Touch is the default test platform, so cards lift on long press (see
+    // masonry's isTouchPrimaryPlatform branch).
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card one')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Carry it over the Doing column and let go.
+    await gesture.moveTo(tester.getCenter(find.text('Doing')));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(store.noteById('n1')!.stageId, 'doing');
+    await flushTimers(tester);
+  });
+
+  /// A card dropped back on the column it came from is a no-op, not a write.
+  testWidgets('dropping a card on its own column changes nothing', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['n1'] = serverNote(
+      'n1',
+      title: 'card one',
+    ).copyWith(stageId: 'todo', stagePosition: 1024);
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+    api.log.clear();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card one')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveTo(tester.getCenter(find.text('Todo')));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(store.noteById('n1')!.stageId, 'todo');
+    expect(api.log.where((l) => l.startsWith('patchNote')), isEmpty);
+    await flushTimers(tester);
+  });
+
+  /// An empty column has no cards to lay out, so the drop target has to live
+  /// on the column rather than inside its (zero-sized) masonry.
+  testWidgets('an empty column still accepts a dropped card', (tester) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['n1'] = serverNote('n1', title: 'card one');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card one')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveTo(tester.getCenter(find.text('Drop notes here').first));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(store.noteById('n1')!.stageId, isNotNull);
+    await flushTimers(tester);
+  });
+
+  /// The phone's move gesture: carry the card up to the strip rather than
+  /// across pages, so nothing turns under the finger.
+  testWidgets('a card dropped on a stage chip moves to that column', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(390, 780));
+    api.notes['n1'] = serverNote('n1', title: 'card one');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    // Todo's chip sits within the viewport at page 0; Doing's is past the
+    // right edge until the strip scrolls, which is its own test below.
+    final chip = tester.getCenter(find.text('Todo'));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card one')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    // Step towards the chip: a DragTarget needs move events over it, not just
+    // a release at its coordinates.
+    await gesture.moveTo(Offset(chip.dx, chip.dy + 80));
+    await tester.pump();
+    await gesture.moveTo(chip);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(store.noteById('n1')!.stageId, 'todo');
+    await flushTimers(tester);
+  });
+
+  /// A chip past the right edge cannot be dropped on, and you cannot scroll
+  /// the strip while holding a card — so opening a column has to bring its
+  /// chip into view.
+  testWidgets('the strip scrolls the open column into view', (tester) async {
+    await setViewport(tester, const Size(390, 780));
+    for (var i = 0; i < 6; i++) {
+      api.stages['s$i'] = Stage(
+        id: 's$i',
+        name: 'Column number $i',
+        workspaceId: 'w-default',
+        position: (i + 3) * 1024,
+      );
+    }
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    // Page along to the far end of the board.
+    for (var i = 0; i < 12; i++) {
+      await tester.drag(find.byType(PageView), const Offset(-400, 0));
+      await tester.pumpAndSettle();
+    }
+
+    // The open column's chip has been scrolled back inside the viewport, so
+    // it can be tapped — and dropped on.
+    final viewport = tester.getSize(find.byType(BoardView)).width;
+    final chip = tester.getRect(find.text('Column number 5'));
+    expect(chip.right, lessThanOrEqualTo(viewport + 1));
+    expect(chip.left, greaterThanOrEqualTo(-1));
+    await flushTimers(tester);
+  });
+
+  /// Reordering inside a column takes the same single-patch path as a move
+  /// between two, because it is a move to the stage the card is already in.
+  testWidgets('dragging a card up its own column repositions it', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    for (final (index, id) in ['a', 'b', 'c'].indexed) {
+      api.notes[id] = serverNote(id, title: 'card $id').copyWith(
+        stageId: 'todo',
+        stagePosition: (index + 1) * 1024,
+      );
+    }
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+    api.log.clear();
+
+    final target = tester.getCenter(find.text('card a'));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card c')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveTo(target);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // c now sorts ahead of a, and it took one write to say so.
+    expect(
+      store.noteById('c')!.stagePosition,
+      lessThan(store.noteById('a')!.stagePosition),
+    );
+    expect(store.noteById('c')!.stageId, 'todo');
+    await flushTimers(tester);
+    expect(api.log.where((l) => l.startsWith('patchNote')).length, 1);
   });
 
   /// The unassigned column is capped so a mature workspace does not open onto

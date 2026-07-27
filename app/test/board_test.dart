@@ -166,6 +166,26 @@ void main() {
       expect(board.columns.length, 1);
     });
 
+    /// A drag reports the whole reordered column, but only one card moved, and
+    /// moving one card is one write.
+    group('movedCardId', () {
+      test('finds the card that moved, wherever it went', () {
+        expect(movedCardId(['a', 'b', 'c'], ['c', 'a', 'b']), 'c');
+        expect(movedCardId(['a', 'b', 'c'], ['b', 'c', 'a']), 'a');
+        expect(movedCardId(['a', 'b', 'c'], ['a', 'c', 'b']), anyOf('b', 'c'));
+      });
+
+      test('an unchanged column moved nothing worth writing', () {
+        // Every candidate satisfies the test, so the first is returned; the
+        // caller then computes the position it already has and no-ops.
+        expect(movedCardId(['a', 'b', 'c'], ['a', 'b', 'c']), 'a');
+      });
+
+      test('mismatched lengths are not a reorder', () {
+        expect(movedCardId(['a', 'b'], ['a', 'b', 'c']), isNull);
+      });
+    });
+
     /// Stages and labels are independent systems: a card's column is its stage
     /// and nothing else, whatever labels it happens to carry.
     test('labels have no bearing on which column a card lands in', () {

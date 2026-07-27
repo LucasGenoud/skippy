@@ -1,7 +1,30 @@
 # Board Drag and Drop — Implementation Plan
 
 **Date:** 2026-07-27
-**Status:** Ready to implement
+**Status:** Implemented. Two departures from this plan, both noted inline below.
+
+## What was built, and where this plan was wrong
+
+**The masonry was left untouched.** This plan had `AnimatedMasonry` become the
+`DragTarget` with a live placeholder gap. It cannot: an empty masonry renders
+`SizedBox.shrink()`, so an empty column could never receive a card — the one
+drop every board needs on day one. The target went on the column instead, which
+also means it covers the header, and people aim at headers. The trade is no
+live gap preview; a hovering column highlights instead, matching how the
+sidebar drop targets already behave.
+
+**A cross-column drop appends** rather than landing at the pointer's slot. Drag
+again within the column to place it. Computing an insert index would have meant
+reaching into the masonry's geometry, which is what the paragraph above avoids.
+
+Also found while building, both real bugs rather than test artifacts:
+
+- The phone strip overflowed: a chip past the right edge is not merely awkward
+  to tap, it is unreachable as a drop target, because you cannot scroll the
+  strip while holding a card. The strip now builds every chip (a board has a
+  handful) and scrolls the open one into view.
+- Phone columns filled the whole page, so the board read as one list at a time.
+  They are now `viewportFraction: 0.86`, so neighbours peek in.
 **Follows:** [Kanban Board Mode design](../specs/2026-07-27-kanban-board-mode-design.md), v1 shipped on `feat/kanban-board`
 
 ## What changed since the design doc

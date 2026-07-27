@@ -113,6 +113,31 @@ Board buildBoard({
   ]);
 }
 
+/// The card that changed place between two orderings of one column, or null if
+/// nothing moved.
+///
+/// A drag reports the whole reordered column, but only one card actually moved,
+/// and moving one card is one write. This finds it by removing each candidate
+/// from both lists and asking whether what remains is identical — true for
+/// exactly the card that was picked up.
+String? movedCardId(List<String> before, List<String> after) {
+  if (before.length != after.length) return null;
+  for (final id in after) {
+    final withoutBefore = [...before]..remove(id);
+    final withoutAfter = [...after]..remove(id);
+    if (_sameOrder(withoutBefore, withoutAfter)) return id;
+  }
+  return null;
+}
+
+bool _sameOrder(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 /// The board shows live notes only. Archived and trashed ones have left the
 /// workflow, and a board that accumulates them stops being a board.
 bool _isOnBoard(Note note) => !note.archived && !note.trashed;
