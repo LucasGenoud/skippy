@@ -1471,8 +1471,11 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 100));
 
-        // Checked rows sit in their own section: the last field on screen is
-        // the empty checked one.
+        // Checked rows sit in their own section, folded away on open.
+        await tester.tap(find.text('2 checked items'));
+        await tester.pumpAndSettle();
+
+        // Once unfolded, the last field on screen is the empty checked one.
         final rows = find.descendant(
           of: find.byType(AnimatedChecklist),
           matching: find.byType(TextField),
@@ -1540,7 +1543,8 @@ void main() {
     );
 
     testWidgets(
-      'checking an item moves it to the checked section, still visible',
+      'checking an item moves it into the checked section, folded until asked '
+      'for',
       (tester) async {
         api.notes['n1'] = serverNote(
           'n1',
@@ -1561,12 +1565,18 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300)); // glide animation
         await tester.pump(const Duration(milliseconds: 300));
 
-        // Item is done, has moved below the header, and is still visible.
+        // Item is done and has moved into the checked section, which is
+        // folded: the header counts it, the row itself is gone from the list.
         expect(
           store.noteById('n1')!.items.firstWhere((i) => i.id == 'a').done,
           isTrue,
         );
         expect(find.text('1 checked item'), findsOneWidget);
+        expect(find.text('Apples'), findsNothing);
+
+        // Unfolding the section brings it back, struck through.
+        await tester.tap(find.text('1 checked item'));
+        await tester.pumpAndSettle();
         expect(find.text('Apples'), findsOneWidget);
         await flushTimers(tester);
       },

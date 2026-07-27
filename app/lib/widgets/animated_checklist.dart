@@ -11,8 +11,10 @@ import 'measure_size.dart';
 /// Checklist editor:
 ///
 /// * every row is absolutely positioned and glides when anything changes, so
-///   checking an item visibly slides it down into the "checked" section
-///   (where it stays visible, struck through);
+///   checking an item visibly slides it down into the "checked" section;
+/// * that section starts collapsed behind its "N checked items" header, so
+///   opening a long-lived list shows what is still to do rather than a wall
+///   of struck-through history — one tap unfolds it;
 /// * rows have a drag handle for reordering (immediate drag, no long-press);
 /// * typing in a row opens a suggestion popup anchored under the caret row,
 ///   fed by the user's checked-item history, with the matched prefix bolded.
@@ -144,14 +146,18 @@ String _withoutMarker(String text) => text.replaceAll(_kEmptyRowMarker, '');
 
 class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// Every item row (and the new-item row) is exactly this tall, so the list
-  /// stays perfectly even and hover state can never move the layout.
+  /// stays perfectly even, hover state can never move the layout, and a long
+  /// list can be laid out without measuring a single row.
   static const double _rowHeight = 48;
-  static const double _estimatedRowHeight = _rowHeight;
+
+  /// Only the checked-section header has a height of its own (it follows the
+  /// text scale), so it is the only thing that gets measured.
+  static const double _estimatedHeaderHeight = 40;
   static const Duration _moveDuration = Duration(milliseconds: 230);
 
   final Map<String, _RowHandles> _handles = {};
   late final _RowHandles _newRow = _RowHandles('');
-  final Map<String, double> _heights = {};
+  double? _headerHeight;
   final OverlayPortalController _popup = OverlayPortalController();
   // The popup is rendered in an overlay, but remains beneath the editor's
   // PrimaryScrollController in the widget tree. Give it an independent
@@ -165,12 +171,31 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   final ValueNotifier<int> _popupRevision = ValueNotifier(0);
 
   List<String> _uncheckedOrder = [];
+
+  /// [AnimatedChecklist.items] indexed by id, and the checked ones in order.
+  /// Derived once per item change instead of by rescanning the list for every
+  /// row, which made each build of a long checklist a quadratic walk.
+  Map<String, ChecklistItem> _byId = const {};
+  List<ChecklistItem> _checked = const [];
+
+  /// Built rows, kept across our own rebuilds. A row is a TextField with its
+  /// own focus, gesture and ink machinery plus an animated checkbox, while a
+  /// drag step, a caret move or a store refresh changes where rows sit — not
+  /// what they hold. Handing back the same instances lets the framework skip
+  /// those subtrees outright (`Element.updateChild` short-circuits on an
+  /// identical widget). An entry is dropped when its item changes, and all of
+  /// them when anything else a row is built from does.
+  final Map<String, Widget> _rows = {};
+  final Map<String, ChecklistItem> _rowItems = {};
+
   String? _draggingId;
   String? _pendingFocusId;
 
-  /// Which row the pointer is over. A notifier, not plain state, for the same
-  /// reason as [_popupRevision]: see the note in `_itemRow`.
+  /// Which row the pointer is over, and which one holds the caret. Notifiers,
+  /// not plain state, for the same reason as [_popupRevision]: see the note in
+  /// `_itemRow`.
   final ValueNotifier<String?> _hovered = ValueNotifier(null);
+  final ValueNotifier<String?> _focusedId = ValueNotifier(null);
 
   /// A row just materialized by typing in the add field: it keeps its "typed"
   /// state when focus lands so its suggestion popup shows without a keystroke.
@@ -187,11 +212,16 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   bool _adoptionSeen = false;
   double _dragY = 0;
   bool _snapFrame = true;
-  bool _showChecked = true;
+
+  /// Checked items fold away behind their header until asked for: a list that
+  /// has been in use for a while is mostly history, and neither the reader nor
+  /// the layout should have to carry it on every open.
+  bool _showChecked = false;
 
   @override
   void initState() {
     super.initState();
+    _syncItems();
     _uncheckedOrder = _uncheckedIdsFromItems();
     _newRow.focusNode.addListener(_onAnyFocusChange);
     // A fresh visit to the add field starts a new item, so drop any stale
@@ -219,12 +249,28 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     _suggestionsScrollController.dispose();
     _popupRevision.dispose();
     _hovered.dispose();
+    _focusedId.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Rows bake in colours and text metrics; a theme or text-scale change is
+    // the one thing that alters every one of them at once.
+    _invalidateRows();
   }
 
   @override
   void didUpdateWidget(AnimatedChecklist oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncItems();
+    // The only other things a row reads at build time. Its callbacks are read
+    // when they fire, so a fresh closure from the parent doesn't stale a row.
+    if (oldWidget.readOnly != widget.readOnly ||
+        oldWidget.highlightQuery != widget.highlightQuery) {
+      _invalidateRows();
+    }
     if (_draggingId == null) {
       _uncheckedOrder = _uncheckedIdsFromItems();
     } else {
@@ -252,9 +298,21 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     for (final id in stale) {
       _handles.remove(id)?.dispose();
     }
-    _heights.removeWhere(
-      (id, _) => !ids.contains(id) && id != _kNewRowId && id != _kHeaderId,
-    );
+    _rows.removeWhere((id, _) => !ids.contains(id));
+    _rowItems.removeWhere((id, _) => !ids.contains(id));
+  }
+
+  void _syncItems() {
+    _byId = {for (final item in widget.items) item.id: item};
+    _checked = [
+      for (final item in widget.items)
+        if (item.done) item,
+    ];
+  }
+
+  void _invalidateRows() {
+    _rows.clear();
+    _rowItems.clear();
   }
 
   List<String> _uncheckedIdsFromItems() => [
@@ -262,21 +320,22 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       if (!item.done) item.id,
   ];
 
-  List<ChecklistItem> get _checkedItems => [
-    for (final item in widget.items)
-      if (item.done) item,
-  ];
-
-  ChecklistItem? _itemById(String id) {
-    for (final item in widget.items) {
-      if (item.id == id) return item;
-    }
-    return null;
-  }
-
   void _onAnyFocusChange() {
     if (!mounted) return;
-    setState(() {});
+    // Where the caret is only changes the affordances on the row holding it
+    // and the suggestion popup. Rebuilding the whole list for it — twice per
+    // move, once for the blur and once for the focus — is what made a long
+    // checklist stutter as the caret walked down it.
+    _focusedId.value = _focusedRowId();
+    _popupRevision.value++;
+  }
+
+  String? _focusedRowId() {
+    if (_newRow.focusNode.hasFocus) return _kNewRowId;
+    for (final entry in _handles.entries) {
+      if (entry.value.focusNode.hasFocus) return entry.key;
+    }
+    return null;
   }
 
   _RowHandles _handleFor(ChecklistItem item) {
@@ -306,6 +365,15 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           if (item.id == _adopting?.id) _adopting = null;
         } else {
           _clearEmptyMarker(h);
+          // Losing the caret no longer rebuilds the row, so take in here what
+          // a rebuild used to: an edit that landed while the caret was in the
+          // way (a collaborator's, an undo) and was held back for it.
+          final current = _byId[item.id];
+          if (current != null &&
+              h.unacknowledged == null &&
+              h.controller.text != current.text) {
+            h.controller.text = current.text;
+          }
           // Single-line fields keep their horizontal offset after editing.
           // Once the row is no longer active, show its beginning again so a
           // long checklist item remains scannable on narrow/mobile layouts.
@@ -389,9 +457,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       return unchecked > 0 ? _uncheckedOrder[unchecked - 1] : _kNewRowId;
     }
     // Checked rows live in their own section, below the add field.
-    final checked = _checkedItems;
-    final at = checked.indexWhere((item) => item.id == itemId);
-    return at > 0 ? checked[at - 1].id : _kNewRowId;
+    final at = _checked.indexWhere((item) => item.id == itemId);
+    return at > 0 ? _checked[at - 1].id : _kNewRowId;
   }
 
   void _focusNeighborThenRemove(String itemId) {
@@ -440,11 +507,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     }
   }
 
-  double _h(String id) => _heights[id] ?? _estimatedRowHeight;
+  double _h(String id) =>
+      id == _kHeaderId ? (_headerHeight ?? _estimatedHeaderHeight) : _rowHeight;
 
-  void _measured(String id, double height) {
-    if (!mounted || (_heights[id] ?? -1) == height) return;
-    setState(() => _heights[id] = height);
+  void _measuredHeader(double height) {
+    if (!mounted || _headerHeight == height) return;
+    setState(() => _headerHeight = height);
   }
 
   // -------------------------------------------------------------------
@@ -461,12 +529,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       tops[_kNewRowId] = y;
       y += _h(_kNewRowId);
     }
-    final checked = _checkedItems;
-    if (checked.isNotEmpty) {
+    if (_checked.isNotEmpty) {
       tops[_kHeaderId] = y;
       y += _h(_kHeaderId);
       if (_showChecked) {
-        for (final item in checked) {
+        for (final item in _checked) {
           tops[item.id] = y;
           y += _h(item.id);
         }
@@ -520,8 +587,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     setState(() => _draggingId = null);
     final reordered = [
       for (final id in _uncheckedOrder)
-        if (_itemById(id) case final ChecklistItem item) item,
-      ..._checkedItems,
+        if (_byId[id] case final ChecklistItem item) item,
+      ..._checked,
     ];
     final current = [for (final item in widget.items) item.id];
     final proposed = [for (final item in reordered) item.id];
@@ -555,7 +622,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       if (h.focusNode.hasFocus &&
           h.typedSinceFocus &&
           h.text.trim().isNotEmpty) {
-        final exclude = {...activeTexts}..remove(_itemById(entry.key)?.text);
+        final exclude = {...activeTexts}..remove(_byId[entry.key]?.text);
         final suggestions = widget.suggestionsFor(h.text, exclude);
         if (suggestions.isEmpty) return null;
         return (rowId: entry.key, link: h.link, suggestions: suggestions);
@@ -582,7 +649,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       } else {
         // If the user was typing in an existing row and picked a suggestion
         // that matches a checked item, restore the row's original text.
-        final original = _itemById(rowId)?.text ?? '';
+        final original = _byId[rowId]?.text ?? '';
         final handles = _handles[rowId];
         if (handles != null) {
           handles.controller.text = original;
@@ -724,25 +791,25 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final scheme = Theme.of(context).colorScheme;
     final query = widget.highlightQuery.trim().toLowerCase();
     final matches = query.isNotEmpty && item.text.toLowerCase().contains(query);
-    final focused = handles.focusNode.hasFocus;
     // Touch has no hover: keep affordances visible. Desktop reveals them on
     // hover/focus, keeping the list visually calm.
-    bool showsControls(bool hovered) =>
+    bool showsControls(bool hovered, bool focused) =>
         !widget.readOnly &&
         (isTouchPrimaryPlatform || hovered || focused || dragging);
 
-    // Hover changes twice per row the pointer crosses. Routing it through a
-    // notifier keeps that from rebuilding every row in the list — only these
-    // three wrappers rebuild, and the subtrees they wrap (the drag gesture,
-    // the remove button, the field) are passed straight through.
-    Widget onHover(
+    // Hover changes twice per row the pointer crosses, and the caret moves
+    // just as often. Routing both through notifiers keeps either from
+    // rebuilding every row in the list — only these three wrappers rebuild,
+    // and the subtrees they wrap (the drag gesture, the remove button, the
+    // field) are passed straight through.
+    Widget onRowState(
       Widget child,
-      Widget Function(bool hovered, Widget child) build,
-    ) => ValueListenableBuilder<String?>(
-      valueListenable: _hovered,
+      Widget Function(bool hovered, bool focused, Widget child) build,
+    ) => ListenableBuilder(
+      listenable: Listenable.merge([_hovered, _focusedId]),
       child: child,
-      builder: (context, hoveredId, child) =>
-          build(hoveredId == item.id, child!),
+      builder: (context, child) =>
+          build(_hovered.value == item.id, _focusedId.value == item.id, child!),
     );
 
     final row = MouseRegion(
@@ -750,7 +817,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       onExit: (_) {
         if (_hovered.value == item.id) _hovered.value = null;
       },
-      child: onHover(
+      child: onRowState(
         // Every row keeps the exact same height and widget shape whether
         // hovered or not: controls fade in with Opacity instead of being
         // added to the tree, so hovering never shifts the layout.
@@ -759,7 +826,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              onHover(
+              onRowState(
                 MouseRegion(
                   cursor: SystemMouseCursors.grab,
                   child: GestureDetector(
@@ -782,8 +849,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     ),
                   ),
                 ),
-                (hovered, child) => Opacity(
-                  opacity: !item.done && showsControls(hovered) ? 1 : 0,
+                (hovered, focused, child) => Opacity(
+                  opacity: !item.done && showsControls(hovered, focused)
+                      ? 1
+                      : 0,
                   child: IgnorePointer(
                     ignoring: item.done || widget.readOnly,
                     child: child,
@@ -872,7 +941,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   ),
                 ),
               ),
-              onHover(
+              onRowState(
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   color: scheme.onSurfaceVariant,
@@ -884,8 +953,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   ),
                   onPressed: () => widget.onRemove(item.id),
                 ),
-                (hovered, child) {
-                  final show = showsControls(hovered);
+                (hovered, focused, child) {
+                  final show = showsControls(hovered, focused);
                   return Opacity(
                     opacity: show ? 1 : 0,
                     child: IgnorePointer(ignoring: !show, child: child),
@@ -895,7 +964,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             ],
           ),
         ),
-        (hovered, child) => DecoratedBox(
+        (hovered, _, child) => DecoratedBox(
           decoration: BoxDecoration(
             color: dragging
                 ? scheme.surfaceContainerHigh
@@ -919,6 +988,24 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       ),
     );
     return RepaintBoundary(child: row);
+  }
+
+  /// A row, reusing the last one built for this item when nothing about it has
+  /// changed (see [_rows]).
+  Widget _rowFor(ChecklistItem item, {required bool dragging}) {
+    // The dragged row is the one thing a drag step does change, and there is
+    // only ever one of it, so it stays out of the cache entirely.
+    if (dragging) {
+      _rows.remove(item.id);
+      _rowItems.remove(item.id);
+      return _itemRow(item, dragging: true);
+    }
+    final cached = _rows[item.id];
+    if (cached != null && _rowItems[item.id] == item) return cached;
+    final built = _itemRow(item, dragging: false);
+    _rows[item.id] = built;
+    _rowItems[item.id] = item;
+    return built;
   }
 
   Widget _newItemRow() {
@@ -1067,8 +1154,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         if (mounted) setState(() => _snapFrame = false);
       });
     }
-    final checked = _checkedItems;
-
     Widget positioned(String id, Widget child) {
       final dragging = id == _draggingId;
       final top = dragging ? _dragY : (layout.tops[id] ?? 0);
@@ -1083,10 +1168,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         left: 0,
         right: 0,
         top: top,
-        child: MeasureSize(
-          onChange: (size) => _measured(id, size.height),
-          child: child,
-        ),
+        child: child,
       );
     }
 
@@ -1099,14 +1181,20 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           clipBehavior: Clip.none,
           children: [
             for (final id in _uncheckedOrder)
-              if (_itemById(id) case final ChecklistItem item)
-                positioned(id, _itemRow(item, dragging: id == _draggingId)),
+              if (_byId[id] case final ChecklistItem item)
+                positioned(id, _rowFor(item, dragging: id == _draggingId)),
             if (!widget.readOnly) positioned(_kNewRowId, _newItemRow()),
-            if (checked.isNotEmpty)
-              positioned(_kHeaderId, _checkedHeader(checked.length)),
-            if (checked.isNotEmpty && _showChecked)
-              for (final item in checked)
-                positioned(item.id, _itemRow(item, dragging: false)),
+            if (_checked.isNotEmpty)
+              positioned(
+                _kHeaderId,
+                MeasureSize(
+                  onChange: (size) => _measuredHeader(size.height),
+                  child: _checkedHeader(_checked.length),
+                ),
+              ),
+            if (_checked.isNotEmpty && _showChecked)
+              for (final item in _checked)
+                positioned(item.id, _rowFor(item, dragging: false)),
           ],
         ),
       ),
