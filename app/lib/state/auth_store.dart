@@ -232,10 +232,16 @@ class AuthStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Signing out is a local decision, so the session goes first and the server
+  /// is told afterwards, best-effort. Waiting on that round trip meant that
+  /// with no connection the button appeared dead for the length of the request
+  /// timeout — and then signed out anyway.
   Future<void> signOut() async {
-    try {
-      await api.logout();
-    } catch (_) {}
+    // Started before the token is cleared: [ApiClient.logout] builds its
+    // headers synchronously, so the request still carries the token it is
+    // asking the server to revoke. Unreachable server = the token lives out
+    // its natural life there; nothing local depends on the answer.
+    unawaited(api.logout().catchError((Object _) {}));
     await _clearSession();
   }
 

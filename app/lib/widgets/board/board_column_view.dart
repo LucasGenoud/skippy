@@ -24,9 +24,10 @@ import 'stage_editor.dart';
 ///   the grid — lift, reflow around the pointer, edge auto-scroll — and reports
 ///   the reordered column, which becomes one midpoint write.
 /// - **Between columns**, this widget is a [DragTarget] for cards it does not
-///   already hold. Dropped cards land at the end; drag again to place them.
-///   Keeping the target here rather than inside the masonry is what lets an
-///   empty column receive a card at all (an empty masonry has no size).
+///   already hold. It holds a slot open under the carried card and drops it
+///   there, so arriving in a column and placing it are one gesture rather than
+///   two. Keeping the target here rather than inside the masonry is what lets
+///   an empty column receive a card at all (an empty masonry has no size).
 class BoardColumnView extends StatefulWidget {
   final BoardColumn column;
 
@@ -77,6 +78,24 @@ class _BoardColumnViewState extends State<BoardColumnView> {
   /// auto-scroll while a card is being dragged.
   final _scrollController = ScrollController();
 
+  /// Reached for to read the pointer back into a drop index. Replaced when the
+  /// column changes underneath us, which is what replays the entrance rather
+  /// than gliding cards between unrelated columns.
+  GlobalKey<AnimatedMasonryState> _masonryKey = GlobalKey();
+
+  /// Where a card from another column would land right now, or null when
+  /// nothing is hovering.
+  int? _incomingIndex;
+
+  @override
+  void didUpdateWidget(BoardColumnView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.column.stage?.id != _stageId) {
+      _masonryKey = GlobalKey();
+      _incomingIndex = null;
+    }
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -89,16 +108,47 @@ class _BoardColumnViewState extends State<BoardColumnView> {
   bool _isForeign(String noteId) =>
       !widget.column.notes.any((note) => note.id == noteId);
 
+  /// Follow the carried card, but only rebuild when it crosses into a new
+  /// slot — pointer samples arrive far faster than the answer changes, and
+  /// each rebuild costs the masonry its tile cache.
+  void _trackIncoming(Offset globalTop) {
+    final index = _masonryKey.currentState?.insertionIndexAt(globalTop) ?? 0;
+    if (index != _incomingIndex) setState(() => _incomingIndex = index);
+  }
+
+  void _clearIncoming() {
+    if (_incomingIndex != null) setState(() => _incomingIndex = null);
+  }
+
   void _acceptForeign(String noteId) {
     final store = context.read<NotesStore>();
-    final from = store.noteById(noteId)?.stageId;
-    store.setNoteStage(noteId, _stageId);
+    final index = _incomingIndex;
+    _clearIncoming();
+    final from = store.noteById(noteId);
+    store.setNoteStage(noteId, _stageId, position: _positionAt(index));
     showAppSnack(
       'Moved to ${widget.column.title}',
       icon: Icons.view_kanban_outlined,
       actionLabel: 'Undo',
-      onAction: () => store.setNoteStage(noteId, from),
+      // Its old slot, not just its old column: undoing a placement that chose
+      // where the card went should not drop it at the end of where it came
+      // from.
+      onAction: () => store.setNoteStage(
+        noteId,
+        from?.stageId,
+        position: from?.stagePosition,
+      ),
     );
+  }
+
+  /// The slot [index] names, as a position between the cards it falls between.
+  /// Null when the column never got a hover to place it — an empty column has
+  /// no masonry to aim at — which leaves the card at the end.
+  double? _positionAt(int? index) {
+    if (index == null) return null;
+    final notes = widget.column.notes;
+    Note? at(int i) => i < 0 || i >= notes.length ? null : notes[i];
+    return NotesStore.positionBetween(at(index - 1), at(index));
   }
 
   /// A drag inside the column: exactly one card moved, so write exactly one
@@ -127,6 +177,14 @@ class _BoardColumnViewState extends State<BoardColumnView> {
     // column means aiming at its title as often as at its cards.
     return DragTarget<String>(
       onWillAcceptWithDetails: (details) => _isForeign(details.data),
+      // Every column the pointer is over hears this, including one that just
+      // refused the card — `_DragAvatar` reports moves to all entered targets,
+      // not only the accepting one. Without the check, a card being lifted out
+      // of this column would open a slot in it for itself.
+      onMove: (details) => _isForeign(details.data)
+          ? _trackIncoming(details.offset)
+          : _clearIncoming(),
+      onLeave: (_) => _clearIncoming(),
       onAcceptWithDetails: (details) => _acceptForeign(details.data),
       builder: (context, candidate, _) => _DropHighlight(
         active: candidate.isNotEmpty,
@@ -159,10 +217,9 @@ class _BoardColumnViewState extends State<BoardColumnView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AnimatedMasonry(
-            // Re-key per column so switching stages replays the entrance
-            // rather than gliding cards between unrelated columns.
-            key: ValueKey('board-${_stageId ?? 'unassigned'}'),
+            key: _masonryKey,
             notes: widget.column.notes,
+            incomingIndex: _incomingIndex,
             columns: 1,
             spacing: 8,
             // A long press selects rather than lifts while selecting, the

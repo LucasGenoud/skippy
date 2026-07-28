@@ -80,6 +80,39 @@ void main() {
       expect(auth.status, AuthStatus.signedIn);
     });
   });
+
+  group('sign out', () {
+    test('an unreachable server does not hold the session open', () async {
+      seedSession();
+      // No route to the server: the socket hangs rather than refusing, so the
+      // logout call never answers. Signing out is a local decision and must
+      // not wait on it.
+      final hung = Completer<http.Response>();
+      final auth = storeWith(MockClient((_) => hung.future));
+      await auth.restore();
+
+      await auth.signOut().timeout(const Duration(seconds: 1));
+
+      expect(auth.status, AuthStatus.signedOut);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('sticky_notes_token'), isNull);
+      hung.complete(http.Response('{}', 200));
+    });
+
+    test('a failed revoke is not reported to the caller', () async {
+      seedSession();
+      final auth = storeWith(
+        MockClient((_) => Future.error(const SocketExceptionStub())),
+      );
+      await auth.restore();
+
+      await auth.signOut();
+      await pumpEventQueue(); // let the background revoke fail
+
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.user, isNull);
+    });
+  });
 }
 
 /// Stands in for a transport failure (`SocketException` on mobile) without

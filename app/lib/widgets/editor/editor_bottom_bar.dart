@@ -27,6 +27,11 @@ class EditorBottomBar extends StatelessWidget {
   /// File the note in another workspace. Null when the viewer doesn't own it,
   /// or there is nowhere else to put it.
   final VoidCallback? onMoveToWorkspace;
+
+  /// Open the column picker. On a phone the board opens a note full-screen,
+  /// which puts the card — and its drag gesture — out of reach; this is the
+  /// way back to the board without closing the note first.
+  final VoidCallback? onMoveToStage;
   final VoidCallback? onCopyToClipboard;
   final VoidCallback? onHistory;
   final void Function(NoteKind target)? onConvert;
@@ -52,6 +57,7 @@ class EditorBottomBar extends StatelessWidget {
     this.onDelete,
     this.onDuplicate,
     this.onMoveToWorkspace,
+    this.onMoveToStage,
     this.onCopyToClipboard,
     this.onHistory,
     this.onConvert,
@@ -205,6 +211,7 @@ class EditorBottomBar extends StatelessWidget {
                   if (value == 'delete') onDelete?.call();
                   if (value == 'duplicate') onDuplicate?.call();
                   if (value == 'move') onMoveToWorkspace?.call();
+                  if (value == 'stage') onMoveToStage?.call();
                   if (value == 'clipboard') onCopyToClipboard?.call();
                   if (value == 'history') onHistory?.call();
                   if (value == 'concise') {
@@ -300,6 +307,15 @@ class EditorBottomBar extends StatelessWidget {
                     label: 'Duplicate',
                     enabled: onDuplicate != null,
                   ),
+                  // Above "Move to workspace", in the same order the note
+                  // card's menu lists the two.
+                  if (onMoveToStage != null)
+                    _menuItem(
+                      value: 'stage',
+                      icon: Icons.view_kanban_outlined,
+                      label: 'Move to column',
+                      enabled: true,
+                    ),
                   if (onMoveToWorkspace != null)
                     _menuItem(
                       value: 'move',

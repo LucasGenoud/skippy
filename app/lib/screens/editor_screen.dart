@@ -23,6 +23,7 @@ import '../util/snack.dart';
 import 'history_screen.dart';
 import '../widgets/animated_checklist.dart';
 import '../widgets/audio_player.dart';
+import '../widgets/board/move_to_stage_sheet.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
@@ -1001,6 +1002,16 @@ class _EditorScreenState extends State<EditorScreen> {
                                   context,
                                   note.id,
                                 ),
+                          // Unlike workspaces, a column needs no second one to
+                          // move to — "Unassigned" is always a destination, so
+                          // this only asks that there be a board at all.
+                          onMoveToStage:
+                              trashed ||
+                                  note == null ||
+                                  note.isEmpty ||
+                                  _store.stages.isEmpty
+                              ? null
+                              : () => MoveToStageSheet.show(context, note.id),
                           // Copying to the clipboard reads the note; a trashed
                           // one is still readable, so this stays available.
                           onCopyToClipboard: note == null || note.isEmpty

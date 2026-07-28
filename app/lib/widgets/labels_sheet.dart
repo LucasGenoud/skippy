@@ -5,6 +5,7 @@ import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
+import 'form_dialog.dart';
 import 'settings/accent_color.dart' show kAccentPresets;
 
 /// A small colour dot with the label's icon inside — the shared leading glyph
@@ -200,45 +201,53 @@ class _LabelsSheetState extends State<LabelsSheet> {
 
 /// The "Edit labels" management dialog reached from the drawer. Lists labels
 /// with their colour/icon; each opens a [LabelEditorDialog] on tap.
+///
+/// Shown through [showFormDialog]: a floating box on a wide screen, a page that
+/// slides up on a phone — where a list of labels and a delete button per row
+/// have no business being squeezed into a boxed modal.
 class EditLabelsDialog extends StatelessWidget {
   const EditLabelsDialog({super.key});
 
-  static Future<void> show(BuildContext context) => showDialog<void>(
-    context: context,
-    builder: (_) => const EditLabelsDialog(),
-  );
+  static Future<void> show(BuildContext context) {
+    final store = context.read<NotesStore>();
+    return showFormDialog<void>(
+      context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: store,
+        child: const EditLabelsDialog(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
-    return AlertDialog(
+    return FormDialog(
       title: const Text('Edit labels'),
-      contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
-      content: SizedBox(
-        width: 360,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.add),
+            title: const Text('Create new label'),
+            onTap: () => LabelEditorDialog.show(context, null),
+          ),
+          const Divider(height: 8),
+          for (final label in store.labels)
             ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('Create new label'),
-              onTap: () => LabelEditorDialog.show(context, null),
-            ),
-            const Divider(height: 8),
-            for (final label in store.labels)
-              ListTile(
-                key: ValueKey(label.id),
-                leading: LabelGlyph(label: label, size: 28),
-                title: Text(label.name, overflow: TextOverflow.ellipsis),
-                onTap: () => LabelEditorDialog.show(context, label.id),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Delete label',
-                  onPressed: () => store.deleteLabel(label.id),
-                ),
+              key: ValueKey(label.id),
+              contentPadding: EdgeInsets.zero,
+              leading: LabelGlyph(label: label, size: 28),
+              title: Text(label.name, overflow: TextOverflow.ellipsis),
+              onTap: () => LabelEditorDialog.show(context, label.id),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Delete label',
+                onPressed: () => store.deleteLabel(label.id),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
       actions: [
         TextButton(
@@ -259,8 +268,8 @@ class LabelEditorDialog extends StatefulWidget {
 
   static Future<void> show(BuildContext context, String? labelId) {
     final store = context.read<NotesStore>();
-    return showDialog<void>(
-      context: context,
+    return showFormDialog<void>(
+      context,
       builder: (_) => ChangeNotifierProvider.value(
         value: store,
         child: LabelEditorDialog(labelId: labelId),
@@ -336,95 +345,88 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
+    return FormDialog(
       title: Text(_isNew ? 'New label' : 'Edit label'),
-      content: SizedBox(
-        width: 360,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _name,
+            autofocus: _isNew,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              labelText: 'Name',
+              isDense: true,
+              border: const OutlineInputBorder(),
+              // Non-null errorText turns the border + label red and shows
+              // the message underneath (Material's standard error state).
+              errorText: _nameError,
+            ),
+            // Clear the error as soon as they start correcting it.
+            onChanged: (_) {
+              if (_nameError != null) setState(() => _nameError = null);
+            },
+            onSubmitted: (_) => _save(),
+          ),
+          const SizedBox(height: 20),
+          _sectionLabel(context, 'Color'),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              TextField(
-                controller: _name,
-                autofocus: _isNew,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  labelText: 'Name',
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                  // Non-null errorText turns the border + label red and shows
-                  // the message underneath (Material's standard error state).
-                  errorText: _nameError,
+              // Default (no colour) slot.
+              _ColorDot(
+                color: null,
+                selected: _color == null,
+                onTap: () => setState(() {
+                  _color = null;
+                  _hex.text = '';
+                }),
+              ),
+              for (final c in kAccentPresets)
+                _ColorDot(
+                  color: c,
+                  selected:
+                      _color != null && PaletteEntry.hexToColor(_color) == c,
+                  onTap: () => setState(() {
+                    _color = PaletteEntry.colorToHex(c);
+                    _hex.text = _color!;
+                  }),
                 ),
-                // Clear the error as soon as they start correcting it.
-                onChanged: (_) {
-                  if (_nameError != null) setState(() => _nameError = null);
-                },
-                onSubmitted: (_) => _save(),
-              ),
-              const SizedBox(height: 20),
-              _sectionLabel(context, 'Color'),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  // Default (no colour) slot.
-                  _ColorDot(
-                    color: null,
-                    selected: _color == null,
-                    onTap: () => setState(() {
-                      _color = null;
-                      _hex.text = '';
-                    }),
-                  ),
-                  for (final c in kAccentPresets)
-                    _ColorDot(
-                      color: c,
-                      selected:
-                          _color != null &&
-                          PaletteEntry.hexToColor(_color) == c,
-                      onTap: () => setState(() {
-                        _color = PaletteEntry.colorToHex(c);
-                        _hex.text = _color!;
-                      }),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: 150,
-                child: TextField(
-                  controller: _hex,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    labelText: 'Custom hex',
-                    hintText: '#RRGGBB',
-                  ),
-                  onChanged: (value) {
-                    final parsed = PaletteEntry.hexToColor(value);
-                    setState(
-                      () => _color = parsed == null
-                          ? (value.trim().isEmpty ? null : _color)
-                          : PaletteEntry.colorToHex(parsed),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 20),
-              _sectionLabel(context, 'Icon'),
-              const SizedBox(height: 10),
-              _IconGrid(
-                selected: _icon,
-                tint:
-                    PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,
-                onSelect: (key) => setState(() => _icon = key),
-              ),
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: 150,
+            child: TextField(
+              controller: _hex,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                labelText: 'Custom hex',
+                hintText: '#RRGGBB',
+              ),
+              onChanged: (value) {
+                final parsed = PaletteEntry.hexToColor(value);
+                setState(
+                  () => _color = parsed == null
+                      ? (value.trim().isEmpty ? null : _color)
+                      : PaletteEntry.colorToHex(parsed),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
+          _sectionLabel(context, 'Icon'),
+          const SizedBox(height: 10),
+          _IconGrid(
+            selected: _icon,
+            tint: PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,
+            onSelect: (key) => setState(() => _icon = key),
+          ),
+        ],
       ),
       actions: [
         TextButton(

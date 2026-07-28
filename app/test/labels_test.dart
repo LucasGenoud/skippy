@@ -165,4 +165,73 @@ void main() {
       expect(store.labels, hasLength(1));
     });
   });
+
+  group('EditLabelsDialog', () {
+    /// Opens the label manager at [size] and hands back the store behind it.
+    Future<NotesStore> openAt(WidgetTester tester, Size size) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final store = NotesStore(api: FakeApi(), currentUserId: 'u');
+      addTearDown(store.dispose);
+      store.createLabel('Work');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<NotesStore>.value(
+            value: store,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: ElevatedButton(
+                  onPressed: () => EditLabelsDialog.show(context),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      return store;
+    }
+
+    testWidgets('on a phone it is a page, not a floating box', (tester) async {
+      await openAt(tester, const Size(390, 844));
+
+      expect(find.text('Edit labels'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+
+      // And the editor it leads to gets the same treatment — a boxed dialog
+      // opening on top of a full-screen page is the worst of both.
+      await tester.tap(find.text('Work'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit label'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('on a wide screen it stays a dialog', (tester) async {
+      await openAt(tester, const Size(1200, 900));
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.text('Work'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit label'), findsOneWidget);
+    });
+
+    testWidgets('renaming a label from the phone page sticks', (tester) async {
+      final store = await openAt(tester, const Size(390, 844));
+
+      await tester.tap(find.text('Work'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Errands');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(store.labels.single.name, 'Errands');
+      // Back on the list, which now shows the new name.
+      expect(find.text('Errands'), findsOneWidget);
+    });
+  });
 }

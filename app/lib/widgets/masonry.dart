@@ -47,6 +47,16 @@ class AnimatedMasonry extends StatefulWidget {
   /// opaque from the first frame.
   final bool staggeredEntrance;
 
+  /// Where a card carried in from outside is about to land, or null when
+  /// nothing is hovering.
+  ///
+  /// The grid holds a slot open at this index and marks it, so a drop from
+  /// another column can promise a place rather than an unspecified arrival.
+  /// Pair it with [insertionIndexAt], which reads a pointer back into one of
+  /// these indices. Reordering *within* the grid does not use this — a lifted
+  /// tile is already in [notes] and reflows on its own.
+  final int? incomingIndex;
+
   const AnimatedMasonry({
     super.key,
     required this.notes,
@@ -58,10 +68,11 @@ class AnimatedMasonry extends StatefulWidget {
     this.onStationaryLongPress,
     this.scrollController,
     this.staggeredEntrance = true,
+    this.incomingIndex,
   });
 
   @override
-  State<AnimatedMasonry> createState() => _AnimatedMasonryState();
+  State<AnimatedMasonry> createState() => AnimatedMasonryState();
 }
 
 class _Slot {
@@ -74,13 +85,27 @@ class _Layout {
   final Map<String, _Slot> slots;
   final double columnWidth;
   final double totalHeight;
-  const _Layout(this.slots, this.columnWidth, this.totalHeight);
+
+  /// The slot held open for an incoming card, or null when none is hovering.
+  final Rect? incomingSlot;
+
+  const _Layout(
+    this.slots,
+    this.columnWidth,
+    this.totalHeight, [
+    this.incomingSlot,
+  ]);
 }
 
-class _AnimatedMasonryState extends State<AnimatedMasonry>
+class AnimatedMasonryState extends State<AnimatedMasonry>
     with TickerProviderStateMixin {
   static const double _estimatedHeight = 120;
   static const Duration _moveDuration = Duration(milliseconds: 240);
+
+  /// How tall a slot held open for an incoming card is. The card's own height
+  /// is unknowable while it belongs to somewhere else, so this is a stand-in
+  /// big enough to read as a card-shaped opening.
+  static const double _incomingSlotHeight = 72;
 
   final Map<String, double> _heights = {};
   List<String> _orderIds = [];
@@ -193,28 +218,82 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
   _Layout _computeLayout(double maxWidth) {
     final cached = _layout;
     if (cached != null && _layoutWidth == maxWidth) return cached;
-    final layout = _packLayout(maxWidth);
+    final layout = _packLayout(maxWidth, gapAt: widget.incomingIndex);
     _layout = layout;
     _layoutWidth = maxWidth;
     return layout;
   }
 
-  _Layout _packLayout(double maxWidth) {
+  _Layout _packLayout(double maxWidth, {int? gapAt}) {
     final columns = widget.columns;
     final spacing = widget.spacing;
     final columnWidth = (maxWidth - spacing * (columns - 1)) / columns;
     final columnHeights = List<double>.filled(columns, 0);
     final slots = <String, _Slot>{};
-    for (final id in _orderIds) {
+    Rect? incoming;
+
+    int shortestColumn() {
       var col = 0;
       for (var c = 1; c < columns; c++) {
         if (columnHeights[c] < columnHeights[col] - 0.5) col = c;
       }
+      return col;
+    }
+
+    // The opening goes where the card itself would go, so the tiles below it
+    // move by exactly what the drop will cost them.
+    void reserveIncoming() {
+      final col = shortestColumn();
+      incoming = Rect.fromLTWH(
+        col * (columnWidth + spacing),
+        columnHeights[col],
+        columnWidth,
+        _incomingSlotHeight,
+      );
+      columnHeights[col] += _incomingSlotHeight + spacing;
+    }
+
+    for (var i = 0; i < _orderIds.length; i++) {
+      if (gapAt == i) reserveIncoming();
+      final id = _orderIds[i];
+      final col = shortestColumn();
       slots[id] = _Slot(col * (columnWidth + spacing), columnHeights[col]);
       columnHeights[col] += (_heights[id] ?? _estimatedHeight) + spacing;
     }
+    if (gapAt != null && gapAt >= _orderIds.length) reserveIncoming();
+
     final total = columnHeights.reduce(math.max);
-    return _Layout(slots, columnWidth, total <= 0 ? 0 : total - spacing);
+    return _Layout(
+      slots,
+      columnWidth,
+      total <= 0 ? 0 : total - spacing,
+      incoming,
+    );
+  }
+
+  /// Which index a card carried in from outside would land at.
+  ///
+  /// [globalTop] is the top edge of the card being carried, not the pointer:
+  /// a [DragTarget] reports the corner of the feedback widget, and that is
+  /// also what the user sees hovering over the column — so the slot lines up
+  /// with the card they are holding. Tiles claim the half of themselves the
+  /// card's edge has passed, which makes the answer stable while the pointer
+  /// jitters inside one of them.
+  int insertionIndexAt(Offset globalTop) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return _orderIds.length;
+    final local = box.globalToLocal(globalTop);
+    // Hit-tested against the grid as it would sit with nothing hovering:
+    // measuring against a layout that already holds a slot open would let the
+    // opening drive the answer that put it there.
+    final layout = _packLayout(box.size.width);
+    for (var i = 0; i < _orderIds.length; i++) {
+      final id = _orderIds[i];
+      final slot = layout.slots[id]!;
+      final height = _heights[id] ?? _estimatedHeight;
+      if (local.dy < slot.y + height / 2) return i;
+    }
+    return _orderIds.length;
   }
 
   void _onHeightMeasured(String id, double height) {
@@ -290,7 +369,12 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     HapticFeedback.selectionClick();
   }
 
-  void _onDragEnd({bool selectWhenStationary = false}) {
+  /// [tookIt] means a [DragTarget] accepted the card — it belongs somewhere
+  /// else now. On the way out, the pointer crosses this grid's own tiles and
+  /// reflows them, but that rearrangement is of a card that is leaving: only
+  /// the target gets to say where it ended up. Reporting it too would land a
+  /// second write that files the card back here, undoing the drop.
+  void _onDragEnd({bool selectWhenStationary = false, bool tookIt = false}) {
     _stopAutoScroll();
     _lastGlobalDragPoint = null;
     final draggingId = _draggingId;
@@ -298,7 +382,14 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
     final stationary = !_dragMoved;
     setState(() => _draggingId = null);
     final original = [for (final n in widget.notes) n.id];
-    if (_dragChangedOrder && !listEquals(original, _orderIds)) {
+    if (tookIt) {
+      // Drop the drag's arrangement; the rebuild that removes the card is
+      // what should redraw this grid, not a reorder it never really made.
+      setState(() {
+        _orderIds = original;
+        _invalidateLayout();
+      });
+    } else if (_dragChangedOrder && !listEquals(original, _orderIds)) {
       widget.onReorder?.call(List<String>.from(_orderIds));
     }
     _dragChangedOrder = false;
@@ -410,7 +501,7 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
           _onDragMove(details.globalPosition);
         },
         onDraggableCanceled: (velocity, offset) => _onDragEnd(),
-        onDragEnd: (_) => _onDragEnd(),
+        onDragEnd: (details) => _onDragEnd(tookIt: details.wasAccepted),
         maxSimultaneousDrags: 1,
         child: child,
       );
@@ -427,7 +518,8 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
       },
       onDraggableCanceled: (velocity, offset) =>
           _onDragEnd(selectWhenStationary: true),
-      onDragEnd: (_) => _onDragEnd(selectWhenStationary: true),
+      onDragEnd: (details) =>
+          _onDragEnd(selectWhenStationary: true, tookIt: details.wasAccepted),
       maxSimultaneousDrags: 1,
       child: child,
     );
@@ -473,6 +565,9 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
+              // First, so tiles gliding out of the way pass over it.
+              if (layout.incomingSlot case final Rect slot)
+                Positioned.fromRect(rect: slot, child: const _IncomingSlot()),
               for (var i = 0; i < _orderIds.length; i++)
                 if (notesById[_orderIds[i]] case final Note note)
                   AnimatedPositioned(
@@ -496,6 +591,24 @@ class _AnimatedMasonryState extends State<AnimatedMasonry>
           ),
         );
       },
+    );
+  }
+}
+
+/// The opening a hovering card is about to drop into: an outline where the
+/// card will be, rather than a hint that the column will take it somewhere.
+class _IncomingSlot extends StatelessWidget {
+  const _IncomingSlot();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(kRadius),
+        border: Border.all(color: scheme.primary, width: 2),
+      ),
     );
   }
 }

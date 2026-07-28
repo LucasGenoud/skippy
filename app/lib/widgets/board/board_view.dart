@@ -130,7 +130,11 @@ class _BoardViewState extends State<BoardView> {
                 width: BoardView._columnWidth,
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerLow,
+                  // A step off the canvas, not `surfaceContainerLow` — in light
+                  // mode that is the *same* colour as the scaffold, which left
+                  // the columns as bordered outlines on the background rather
+                  // than as troughs the cards sit in.
+                  color: scheme.surfaceContainer,
                   borderRadius: kBorderRadius,
                   border: Border.all(color: hairlineColor(scheme)),
                 ),
