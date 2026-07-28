@@ -109,6 +109,40 @@ class EditorBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    Future<void> handleMenuSelection(String value) async {
+      const routeActions = {
+        'image',
+        'reminder',
+        'attach',
+        'share',
+        'archive',
+        'delete',
+        'move',
+        'stage',
+        'history',
+      };
+      if (routeActions.contains(value)) {
+        await Motion.waitForMenuDismissal(context);
+        if (!context.mounted) return;
+      }
+      if (value == 'image') onImage?.call();
+      if (value == 'reminder') onReminder?.call();
+      if (value == 'attach') onAttach?.call();
+      if (value == 'share') onShare?.call();
+      if (value == 'archive') onArchive?.call();
+      if (value == 'delete') onDelete?.call();
+      if (value == 'duplicate') onDuplicate?.call();
+      if (value == 'move') onMoveToWorkspace?.call();
+      if (value == 'stage') onMoveToStage?.call();
+      if (value == 'clipboard') onCopyToClipboard?.call();
+      if (value == 'history') onHistory?.call();
+      if (value == 'concise') onRewrite?.call(NoteRewriteMode.concise);
+      if (value == 'grammar') onRewrite?.call(NoteRewriteMode.grammar);
+      for (final target in NoteKind.values) {
+        if (value == 'convert:${target.name}') onConvert?.call(target);
+      }
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Nine standard 48 px targets don't fit on a phone. Keep the common
@@ -202,30 +236,7 @@ class EditorBottomBar extends StatelessWidget {
                       )
                     : const Icon(Icons.more_vert),
                 tooltip: 'More',
-                onSelected: (value) {
-                  if (value == 'image') onImage?.call();
-                  if (value == 'reminder') onReminder?.call();
-                  if (value == 'attach') onAttach?.call();
-                  if (value == 'share') onShare?.call();
-                  if (value == 'archive') onArchive?.call();
-                  if (value == 'delete') onDelete?.call();
-                  if (value == 'duplicate') onDuplicate?.call();
-                  if (value == 'move') onMoveToWorkspace?.call();
-                  if (value == 'stage') onMoveToStage?.call();
-                  if (value == 'clipboard') onCopyToClipboard?.call();
-                  if (value == 'history') onHistory?.call();
-                  if (value == 'concise') {
-                    onRewrite?.call(NoteRewriteMode.concise);
-                  }
-                  if (value == 'grammar') {
-                    onRewrite?.call(NoteRewriteMode.grammar);
-                  }
-                  for (final target in NoteKind.values) {
-                    if (value == 'convert:${target.name}') {
-                      onConvert?.call(target);
-                    }
-                  }
-                },
+                onSelected: handleMenuSelection,
                 itemBuilder: (context) => [
                   if (compact) ...[
                     if (veryNarrow)

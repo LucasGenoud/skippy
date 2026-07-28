@@ -32,6 +32,7 @@ import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/markdown_toolbar.dart';
+import '../widgets/reminder_picker.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
@@ -149,6 +150,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _finding = false;
   bool _uploading = false;
   bool _previewMarkdown = false;
+  bool _reminderPickerOpen = false;
   final Map<int, Offset> _previewPointerStarts = {};
   Duration? _lastPreviewTapTime;
   Offset? _lastPreviewTapPosition;
@@ -612,69 +614,22 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _editReminder() async {
-    final note = _note;
-    if (note?.reminderAt != null) {
-      final action = await showModalBottomSheet<String>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Change reminder'),
-                onTap: () => Navigator.pop(context, 'change'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.alarm_off),
-                title: const Text('Remove reminder'),
-                onTap: () => Navigator.pop(context, 'remove'),
-              ),
-            ],
-          ),
-        ),
+    if (_reminderPickerOpen) return;
+    _reminderPickerOpen = true;
+    try {
+      final selection = await ReminderPicker.show(
+        context,
+        current: _note?.reminderAt,
+        use24hTime: context.read<SettingsStore>().use24hTime,
       );
-      if (action == 'remove') {
-        _store.setReminder(_noteId!, null);
-        setState(() {});
-        return;
-      }
-      if (action != 'change') return;
+      if (!mounted || selection == null) return;
+      if (selection.at != null) _ensureNote();
+      if (_noteId == null) return;
+      _store.setReminder(_noteId!, selection.at);
+      setState(() {});
+    } finally {
+      _reminderPickerOpen = false;
     }
-    await _pickReminder();
-  }
-
-  Future<void> _pickReminder() async {
-    final now = DateTime.now();
-    final initial =
-        _note?.reminderAt ?? DateTime(now.year, now.month, now.day + 1, 9);
-    if (!mounted) return;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365 * 5)),
-      helpText: 'Remind me on',
-    );
-    if (date == null || !mounted) return;
-    final use24h = context.read<SettingsStore>().use24hTime;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'Remind me at',
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
-        child: child!,
-      ),
-    );
-    if (time == null) return;
-    _ensureNote();
-    _store.setReminder(
-      _noteId!,
-      DateTime(date.year, date.month, date.day, time.hour, time.minute),
-    );
-    setState(() {});
   }
 
   Future<void> _openShare() async {

@@ -20,6 +20,7 @@ import 'workspace_menu.dart';
 import 'labels_sheet.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
+import 'reminder_picker.dart';
 import 'share_dialog.dart';
 import 'transcribing_indicator.dart';
 import '../util/highlight.dart';
@@ -57,66 +58,23 @@ class NoteTile extends StatefulWidget {
 class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
   bool _menuOpen = false;
+  bool _reminderPickerOpen = false;
 
   Future<void> _editReminder() async {
+    if (_reminderPickerOpen) return;
+    _reminderPickerOpen = true;
     final store = context.read<NotesStore>();
     final note = store.noteById(widget.note.id) ?? widget.note;
-    if (note.reminderAt != null) {
-      final action = await showModalBottomSheet<String>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Change reminder'),
-                onTap: () => Navigator.pop(context, 'change'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.alarm_off),
-                title: const Text('Remove reminder'),
-                onTap: () => Navigator.pop(context, 'remove'),
-              ),
-            ],
-          ),
-        ),
+    try {
+      final selection = await ReminderPicker.show(
+        context,
+        current: note.reminderAt,
+        use24hTime: context.read<SettingsStore>().use24hTime,
       );
-      if (!mounted) return;
-      if (action == 'remove') {
-        store.setReminder(note.id, null);
-        return;
-      }
-      if (action != 'change') return;
+      if (selection != null) store.setReminder(note.id, selection.at);
+    } finally {
+      _reminderPickerOpen = false;
     }
-
-    final now = DateTime.now();
-    final initial =
-        note.reminderAt ?? DateTime(now.year, now.month, now.day + 1, 9);
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365 * 5)),
-      helpText: 'Remind me on',
-    );
-    if (date == null || !mounted) return;
-    final use24h = context.read<SettingsStore>().use24hTime;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'Remind me at',
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
-        child: child!,
-      ),
-    );
-    if (time == null) return;
-    store.setReminder(
-      note.id,
-      DateTime(date.year, date.month, date.day, time.hour, time.minute),
-    );
   }
 
   Future<void> _share() async {
@@ -167,8 +125,7 @@ class _NoteTileState extends State<NoteTile> {
     }
   }
 
-  void _moveToWorkspace() =>
-      MoveToWorkspaceSheet.show(context, widget.note.id);
+  void _moveToWorkspace() => MoveToWorkspaceSheet.show(context, widget.note.id);
 
   void _duplicate() {
     context.read<NotesStore>().duplicate(widget.note.id);
@@ -238,8 +195,7 @@ class _NoteTileState extends State<NoteTile> {
 
   /// Labels and columns are separate systems, so this is its own action rather
   /// than another entry in the labels sheet.
-  Future<void> _moveToStage() =>
-      MoveToStageSheet.show(context, widget.note.id);
+  Future<void> _moveToStage() => MoveToStageSheet.show(context, widget.note.id);
 
   @override
   Widget build(BuildContext context) {
@@ -1034,8 +990,14 @@ class _NoteActions extends StatelessWidget {
                   padding: EdgeInsets.zero,
                   onOpened: onMenuOpened,
                   onCanceled: onMenuClosed,
-                  onSelected: (value) {
+                  onSelected: (value) async {
                     onMenuClosed();
+                    if (value == 'share' ||
+                        value == 'move' ||
+                        value == 'stage') {
+                      await Motion.waitForMenuDismissal(context);
+                      if (!context.mounted) return;
+                    }
                     if (value == 'share') onShare();
                     if (value == 'duplicate') onDuplicate();
                     if (value == 'move') onMoveToWorkspace();

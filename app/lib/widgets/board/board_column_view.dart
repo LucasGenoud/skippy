@@ -7,6 +7,7 @@ import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../screens/editor_screen.dart';
 import '../../theme.dart';
+import '../form_dialog.dart';
 import '../masonry.dart';
 import '../note_card.dart';
 import 'stage_editor.dart';
@@ -340,8 +341,8 @@ class _BoardColumnHeader extends StatelessWidget {
 
   Future<void> _showColumnMenu(BuildContext context, Stage stage) async {
     final store = context.read<NotesStore>();
-    final action = await showModalBottomSheet<String>(
-      context: context,
+    final action = await showAdaptiveSelectionSurface<String>(
+      context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,

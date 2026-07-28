@@ -1,8 +1,57 @@
 import 'package:flutter/material.dart';
 
+import '../util/motion.dart';
+
 /// Phone-sized viewport, matching the breakpoint the home screen uses.
 bool isNarrowScreen(BuildContext context) =>
     MediaQuery.sizeOf(context).width < 600;
+
+/// Presents a short list of choices as a bottom sheet on phones and a compact
+/// centered surface on wide layouts. This keeps thumb-friendly actions near
+/// the bottom on mobile without stretching a small picker across a web
+/// viewport.
+Future<T?> showAdaptiveSelectionSurface<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+  Color? backgroundColor,
+  bool isScrollControlled = false,
+  bool showDragHandle = true,
+  double maxWidth = 480,
+}) {
+  final color =
+      backgroundColor ?? Theme.of(context).colorScheme.surfaceContainer;
+  final dismissalDuration = Motion.overlayDismissalDuration(context);
+  final Future<T?> result;
+  if (isNarrowScreen(context)) {
+    result = showModalBottomSheet<T>(
+      context: context,
+      backgroundColor: color,
+      isScrollControlled: isScrollControlled,
+      showDragHandle: showDragHandle,
+      useSafeArea: true,
+      builder: builder,
+    );
+  } else {
+    result = showDialog<T>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: color,
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: maxWidth,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+          ),
+          child: builder(context),
+        ),
+      ),
+    );
+  }
+  return result.then((value) async {
+    await Future<void>.delayed(dismissalDuration);
+    return value;
+  });
+}
 
 /// Presents a [FormDialog] the way the viewport wants it: a centred dialog on
 /// wide screens, a pushed full-screen page on phones — where a floating box
@@ -10,21 +59,26 @@ bool isNarrowScreen(BuildContext context) =>
 Future<T?> showFormDialog<T>(
   BuildContext context, {
   required WidgetBuilder builder,
-}) {
+}) async {
+  final dismissalDuration = Motion.overlayDismissalDuration(context);
+  final T? result;
   if (isNarrowScreen(context)) {
-    return Navigator.of(context).push<T>(
+    result = await Navigator.of(context).push<T>(
       MaterialPageRoute(
         builder: (context) =>
             _FormDialogMode(fullScreen: true, child: builder(context)),
         fullscreenDialog: true,
       ),
     );
+  } else {
+    result = await showDialog<T>(
+      context: context,
+      builder: (context) =>
+          _FormDialogMode(fullScreen: false, child: builder(context)),
+    );
   }
-  return showDialog<T>(
-    context: context,
-    builder: (context) =>
-        _FormDialogMode(fullScreen: false, child: builder(context)),
-  );
+  await Future<void>.delayed(dismissalDuration);
+  return result;
 }
 
 /// How the enclosing route was opened. [FormDialog] obeys this rather than

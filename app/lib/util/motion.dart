@@ -40,6 +40,25 @@ class Motion {
   static AnimationStyle menuFor(BuildContext context) =>
       reduced(context) ? AnimationStyle.noAnimation : menu;
 
+  /// Waits until a popup menu's reverse animation has released the overlay.
+  /// `PopupMenuButton.onSelected` runs when the route is popped, not when its
+  /// visual dismissal has finished, so presenting another route immediately
+  /// can make the two surfaces flash through each other.
+  static Duration menuDismissalDuration(BuildContext context) =>
+      reduced(context) ? Duration.zero : fast;
+
+  static Future<void> waitForMenuDismissal(BuildContext context) =>
+      Future<void>.delayed(menuDismissalDuration(context));
+
+  /// Waits for a dialog, page, or bottom sheet to finish reversing after its
+  /// result future completes. Use when another route is opened or closed
+  /// immediately afterward.
+  static Duration overlayDismissalDuration(BuildContext context) =>
+      reduced(context) ? Duration.zero : base;
+
+  static Future<void> waitForOverlayDismissal(BuildContext context) =>
+      Future<void>.delayed(overlayDismissalDuration(context));
+
   /// True when the OS "reduce motion" accessibility setting is on. Callers skip
   /// or shorten decorative animation so the app stays comfortable to use.
   static bool reduced(BuildContext context) =>

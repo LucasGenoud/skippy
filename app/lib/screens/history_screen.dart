@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 
 /// The edit-history timeline for a single note: the current state on top,
@@ -67,7 +68,9 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
+    await Motion.waitForOverlayDismissal(context);
+    if (!mounted) return;
 
     setState(() => _restoringId = version.id);
     try {

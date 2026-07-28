@@ -1,14 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'form_dialog.dart';
+
 /// The app's keyboard shortcut reference. This dialog is the in-app source of
 /// truth for the bindings declared in home_screen.dart (plus the editor's and
 /// quick-add's own keys); the README's "Keyboard shortcuts" section mirrors it.
 /// Opened with "?" on the notes screen or from Settings → Help.
-Future<void> showShortcutHelp(BuildContext context) => showDialog<void>(
-  context: context,
-  builder: (_) => const ShortcutHelpDialog(),
-);
+Future<void> showShortcutHelp(BuildContext context) =>
+    showFormDialog<void>(context, builder: (_) => const ShortcutHelpDialog());
 
 class ShortcutHelpDialog extends StatelessWidget {
   const ShortcutHelpDialog({super.key});
@@ -51,22 +51,18 @@ class ShortcutHelpDialog extends StatelessWidget {
       ),
     ];
 
-    return AlertDialog(
+    return FormDialog(
       title: const Text('Keyboard shortcuts'),
-      content: SizedBox(
-        width: 360,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final (title, rows) in sections) ...[
-                _SectionLabel(title),
-                for (final (keys, description) in rows)
-                  _ShortcutRow(keys: keys, description: description),
-              ],
-            ],
-          ),
-        ),
+      width: 360,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (title, rows) in sections) ...[
+            _SectionLabel(title),
+            for (final (keys, description) in rows)
+              _ShortcutRow(keys: keys, description: description),
+          ],
+        ],
       ),
       actions: [
         TextButton(

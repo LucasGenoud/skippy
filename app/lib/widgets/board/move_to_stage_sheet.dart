@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../util/snack.dart';
+import '../form_dialog.dart';
 
 /// Picks the column one or more notes belong in.
 ///
@@ -27,8 +28,8 @@ class MoveToStageSheet extends StatelessWidget {
     final ids = noteIds.toList(growable: false);
     if (ids.isEmpty) return Future.value();
     final store = context.read<NotesStore>();
-    return showModalBottomSheet<void>(
-      context: context,
+    return showAdaptiveSelectionSurface<void>(
+      context,
       builder: (_) => ChangeNotifierProvider.value(
         value: store,
         child: MoveToStageSheet(noteIds: ids),

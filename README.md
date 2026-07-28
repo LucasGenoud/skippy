@@ -47,6 +47,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 
 **Reminders**
 - Time-based reminders per note, shown as chips (overdue = struck through) and collected in a drawer "Reminders" view. No calendar integration.
+- On phones, one reminder sheet provides quick presets for tomorrow morning, noon, evening, next week, and seven days from now, plus an inline custom date/time picker.
 - **Push notifications via [ntfy](https://ntfy.sh) and/or Telegram** (Settings → Notifications): each user brings their own ntfy topic URL and/or Telegram bot token + chat id — no server-side setup. A background sweep (every 30 s) delivers due reminders to every participant of the note with a configured channel, exactly once per scheduled time (rescheduling re-arms it); checklist reminders list only the still-pending items. A "Send test" button delivers a real probe notification before you save. Channels are pluggable — a new one is a single `Connector` impl on the backend plus a spec entry in the app.
 
 **Collaboration**
@@ -58,6 +59,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 
 **Platform integration**
 - Web drag-and-drop and file picking; native file/image pickers on mobile
+- Adaptive overlays: input-heavy editors use full-screen pages on phones and compact dialogs on web; quick choices use phone bottom sheets and centered web surfaces.
 - Android/iOS share-sheet intake turns shared text/links into text notes and shared files into attachment notes
 - Offline startup from a per-user local cache, with pending writes persisted and replayed after connectivity returns
 

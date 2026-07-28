@@ -7,6 +7,7 @@ import '../state/notes_store.dart';
 import '../theme.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
+import 'form_dialog.dart';
 
 /// The workspace switcher that heads the drawer and the sidebar: the open
 /// workspace's name, and a menu to switch, create, or manage.
@@ -14,9 +15,9 @@ class WorkspaceMenu extends StatelessWidget {
   /// Collapsed rails show the initial only, with the name in a tooltip.
   final bool compact;
 
-  /// Runs before the menu opens — the drawer closes itself first, so its
-  /// route doesn't sit above the dialogs the menu opens.
-  final VoidCallback? onBeforeAction;
+  /// Runs before a selected action starts. The phone drawer uses this to
+  /// finish closing before another route is presented.
+  final Future<void> Function()? onBeforeAction;
 
   const WorkspaceMenu({super.key, this.compact = false, this.onBeforeAction});
 
@@ -188,19 +189,43 @@ class WorkspaceMenu extends StatelessWidget {
     return trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
   }
 
-  void _onSelected(BuildContext context, NotesStore store, String value) {
-    onBeforeAction?.call();
+  Future<void> _onSelected(
+    BuildContext context,
+    NotesStore store,
+    String value,
+  ) async {
     if (value.startsWith('open:')) {
+      // Switching is ordinary state, not another overlay. Update immediately
+      // so the checkmark moves with the menu's own dismiss animation.
+      onBeforeAction?.call();
       store.setActiveWorkspace(value.substring(5));
       return;
     }
+    // The switcher can live inside the phone drawer. Keep a context owned by
+    // the navigator before that drawer subtree is removed, then wait for its
+    // close animation so a new route cannot overlap it and immediately pop.
+    final navigator = Navigator.of(context);
+    final menuDismissal = Motion.waitForMenuDismissal(context);
+    final beforeAction = onBeforeAction?.call();
+    await Future.wait([menuDismissal, ?beforeAction]);
+    if (!navigator.mounted) return;
     if (value == 'create') {
-      WorkspaceNameDialog.create(context);
+      await _createWorkspace(navigator);
       return;
     }
     final active = store.activeWorkspace;
-    if (active != null) ManageWorkspaceDialog.show(context, active.id);
+    if (active != null) {
+      await _manageWorkspace(navigator, active.id);
+    }
   }
+
+  static Future<void> _createWorkspace(NavigatorState navigator) =>
+      WorkspaceNameDialog.create(navigator.context);
+
+  static Future<void> _manageWorkspace(
+    NavigatorState navigator,
+    String workspaceId,
+  ) => ManageWorkspaceDialog.show(navigator.context, workspaceId);
 }
 
 /// Names a new workspace, or renames an existing one.
@@ -210,14 +235,14 @@ class WorkspaceNameDialog extends StatefulWidget {
 
   const WorkspaceNameDialog({super.key, this.workspace});
 
-  static Future<void> create(BuildContext context) => showDialog<void>(
-    context: context,
+  static Future<void> create(BuildContext context) => showFormDialog<void>(
+    context,
     builder: (_) => const WorkspaceNameDialog(),
   );
 
   static Future<void> rename(BuildContext context, Workspace workspace) =>
-      showDialog<void>(
-        context: context,
+      showFormDialog<void>(
+        context,
         builder: (_) => WorkspaceNameDialog(workspace: workspace),
       );
 
@@ -253,20 +278,18 @@ class _WorkspaceNameDialogState extends State<WorkspaceNameDialog> {
   @override
   Widget build(BuildContext context) {
     final creating = widget.workspace == null;
-    return AlertDialog(
+    return FormDialog(
       title: Text(creating ? 'New workspace' : 'Rename workspace'),
-      content: SizedBox(
-        width: 360,
-        child: TextField(
-          controller: _controller,
-          autofocus: true,
-          maxLength: 60,
-          decoration: const InputDecoration(
-            hintText: 'Workspace name',
-            prefixIcon: Icon(Icons.workspaces_outlined),
-          ),
-          onSubmitted: (_) => _submit(),
+      width: 360,
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 60,
+        decoration: const InputDecoration(
+          hintText: 'Workspace name',
+          prefixIcon: Icon(Icons.workspaces_outlined),
         ),
+        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
@@ -289,8 +312,8 @@ class ManageWorkspaceDialog extends StatefulWidget {
   const ManageWorkspaceDialog({super.key, required this.workspaceId});
 
   static Future<void> show(BuildContext context, String workspaceId) =>
-      showDialog<void>(
-        context: context,
+      showFormDialog<void>(
+        context,
         builder: (_) => ManageWorkspaceDialog(workspaceId: workspaceId),
       );
 
@@ -336,7 +359,16 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
     final store = context.watch<NotesStore>();
     final workspace = store.workspaceById(widget.workspaceId);
     if (workspace == null) {
-      return const AlertDialog(content: Text('Workspace is gone.'));
+      return FormDialog(
+        title: const Text('Workspace'),
+        content: const Text('Workspace is gone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      );
     }
     final me = store.currentUserId;
     final isOwner = workspace.isOwnedBy(me);
@@ -345,7 +377,7 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
         .where((note) => note.workspaceId == workspace.id && !note.trashed)
         .length;
 
-    return AlertDialog(
+    return FormDialog(
       title: Row(
         children: [
           Expanded(
@@ -359,101 +391,94 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
             ),
         ],
       ),
-      contentPadding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      width: 400,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            dense: true,
+            leading: CircleAvatar(
+              radius: 16,
+              child: Text(WorkspaceMenu._initial(workspace.owner?.name ?? '?')),
+            ),
+            title: Text(isOwner ? 'You' : (workspace.owner?.name ?? 'Owner')),
+            subtitle: const Text('Owner'),
+          ),
+          for (final member in workspace.members)
             ListTile(
               dense: true,
               leading: CircleAvatar(
                 radius: 16,
-                child: Text(
-                  WorkspaceMenu._initial(workspace.owner?.name ?? '?'),
-                ),
+                backgroundColor: scheme.secondaryContainer,
+                child: Text(WorkspaceMenu._initial(member.name)),
               ),
-              title: Text(isOwner ? 'You' : (workspace.owner?.name ?? 'Owner')),
-              subtitle: const Text('Owner'),
+              title: Text(
+                member.id == me ? '${member.name} (you)' : member.name,
+              ),
+              subtitle: const Text('Member'),
+              trailing: (isOwner || member.id == me)
+                  ? IconButton(
+                      icon: Icon(member.id == me ? Icons.logout : Icons.close),
+                      tooltip: member.id == me ? 'Leave workspace' : 'Remove',
+                      onPressed: () => _remove(store, workspace, member.id),
+                    )
+                  : null,
             ),
-            for (final member in workspace.members)
-              ListTile(
-                dense: true,
-                leading: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: scheme.secondaryContainer,
-                  child: Text(WorkspaceMenu._initial(member.name)),
-                ),
-                title: Text(
-                  member.id == me ? '${member.name} (you)' : member.name,
-                ),
-                subtitle: const Text('Member'),
-                trailing: (isOwner || member.id == me)
-                    ? IconButton(
-                        icon: Icon(
-                          member.id == me ? Icons.logout : Icons.close,
-                        ),
-                        tooltip: member.id == me ? 'Leave workspace' : 'Remove',
-                        onPressed: () => _remove(store, workspace, member.id),
-                      )
-                    : null,
-              ),
-            if (isOwner) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          hintText: 'Invite people by email',
-                          isDense: true,
-                          prefixIcon: Icon(Icons.person_add_alt, size: 20),
-                        ),
-                        onSubmitted: (_) => _invite(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _busy
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.send),
-                            tooltip: 'Invite',
-                            onPressed: _invite,
-                          ),
-                  ],
-                ),
-              ),
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(color: scheme.error, fontSize: 13),
-                  ),
-                ),
-            ],
+          if (isOwner) ...[
+            const SizedBox(height: 8),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Text(
-                isOwner
-                    ? 'Everyone here can see and edit this workspace\'s notes and labels.'
-                    : 'Everyone here can see and edit this workspace\'s notes and labels. Only the owner can invite people.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        hintText: 'Invite people by email',
+                        isDense: true,
+                        prefixIcon: Icon(Icons.person_add_alt, size: 20),
+                      ),
+                      onSubmitted: (_) => _invite(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _busy
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.send),
+                          tooltip: 'Invite',
+                          onPressed: _invite,
+                        ),
+                ],
               ),
             ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: scheme.error, fontSize: 13),
+                ),
+              ),
           ],
-        ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              isOwner
+                  ? 'Everyone here can see and edit this workspace\'s notes and labels.'
+                  : 'Everyone here can see and edit this workspace\'s notes and labels. Only the owner can invite people.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
       ),
       actions: [
         if (store.canDeleteWorkspace(workspace.id))
@@ -497,6 +522,8 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
           _DeleteWorkspaceDialog(workspace: workspace, noteCount: noteCount),
     );
     if (confirmed != true || !mounted) return;
+    await Motion.waitForOverlayDismissal(context);
+    if (!mounted) return;
     store.deleteWorkspace(workspace.id);
     if (mounted) Navigator.of(context).pop();
     showAppSnack(
@@ -609,16 +636,23 @@ class MoveToWorkspaceSheet {
     final store = context.read<NotesStore>();
     final note = store.noteById(noteId);
     if (note == null) return;
-    final target = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Move to workspace'),
-        children: [
-          for (final workspace in store.workspaces)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(workspace.id),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
+    final target = await showAdaptiveSelectionSurface<String>(
+      context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text(
+                'Move to workspace',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final workspace in store.workspaces)
+              ListTile(
+                onTap: () => Navigator.of(context).pop(workspace.id),
                 leading: Icon(
                   workspace.id == note.workspaceId
                       ? Icons.check
@@ -629,8 +663,9 @@ class MoveToWorkspaceSheet {
                     ? Text('${workspace.members.length + 1} people')
                     : null,
               ),
-            ),
-        ],
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
     if (target == null || target == note.workspaceId) return;

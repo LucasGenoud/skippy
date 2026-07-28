@@ -439,6 +439,38 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
       store.dispose();
     });
+
+    testWidgets('phone drawer closes before its workspace form opens', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationDrawer), findsOneWidget);
+
+      await tester.tap(find.byType(WorkspaceMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New workspace'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NavigationDrawer), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.widgetWithText(AppBar, 'New workspace'), findsOneWidget);
+
+      // The form used to overlap the closing drawer route and could disappear
+      // again immediately. It must still be the active page after both
+      // animations would have finished.
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.widgetWithText(AppBar, 'New workspace'), findsOneWidget);
+      store.dispose();
+    });
   });
 
   group('delete confirmation', () {

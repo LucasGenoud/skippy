@@ -41,10 +41,9 @@ class LabelsSheet extends StatefulWidget {
   const LabelsSheet({super.key, required this.noteIds});
 
   static Future<void> show(BuildContext context, String noteId) {
-    return showModalBottomSheet<void>(
-      context: context,
+    return showAdaptiveSelectionSurface<void>(
+      context,
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
@@ -63,10 +62,9 @@ class LabelsSheet extends StatefulWidget {
   ) {
     final ids = noteIds.toList(growable: false);
     if (ids.isEmpty) return Future.value();
-    return showModalBottomSheet<void>(
-      context: context,
+    return showAdaptiveSelectionSurface<void>(
+      context,
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-      showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(

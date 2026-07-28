@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/settings_store.dart';
+import 'form_dialog.dart';
 
 /// Horizontal strip of the user's note colors (personalized in Settings),
-/// shown in a bottom sheet from the editor. Selection updates live.
+/// shown in a phone sheet or compact web dialog. Selection updates live.
 class ColorPickerSheet extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
@@ -20,10 +21,9 @@ class ColorPickerSheet extends StatelessWidget {
     required ValueChanged<String> onSelect,
   }) {
     final settings = context.read<SettingsStore>();
-    return showModalBottomSheet<void>(
-      context: context,
+    return showAdaptiveSelectionSurface<void>(
+      context,
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-      showDragHandle: true,
       builder: (context) => ChangeNotifierProvider.value(
         value: settings,
         child: StatefulBuilder(

@@ -55,8 +55,14 @@ void main() {
     expect(find.text('Collaborators'), findsOneWidget);
 
     await tester.tap(find.text('Add image'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    // Platform pickers and app routes must not start while the popup menu is
+    // still reversing; that overlap caused visible open/close flicker.
+    expect(addedImage, isFalse);
+    await tester.pump(const Duration(milliseconds: 60));
     expect(addedImage, isTrue);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('More'));
     await tester.pumpAndSettle();

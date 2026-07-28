@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/form_dialog.dart';
 import '../widgets/login_field.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -107,10 +108,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _showAddUrlDialog() async {
     final urlController = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
+    final result = await showFormDialog<String>(
+      context,
+      builder: (context) => FormDialog(
         title: const Text('Add Server'),
+        width: 400,
         content: TextField(
           controller: urlController,
           autofocus: true,

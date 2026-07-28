@@ -391,12 +391,23 @@ class HomeTopBar extends StatelessWidget {
           popUpAnimationStyle: Motion.menuFor(context),
           enabled: selectedCount > 0,
           tooltip: 'More selected-note actions',
-          onSelected: (action) => switch (action) {
-            _SelectionAction.label => onAddLabelSelected(),
-            _SelectionAction.stage => onMoveToStageSelected(),
-            _SelectionAction.share => onShareSelected(),
-            _SelectionAction.color => onSetColorSelected(),
-            _SelectionAction.pin => onPinSelected(),
+          onSelected: (action) async {
+            if (action != _SelectionAction.pin) {
+              await Motion.waitForMenuDismissal(context);
+              if (!context.mounted) return;
+            }
+            switch (action) {
+              case _SelectionAction.label:
+                onAddLabelSelected();
+              case _SelectionAction.stage:
+                onMoveToStageSelected();
+              case _SelectionAction.share:
+                onShareSelected();
+              case _SelectionAction.color:
+                onSetColorSelected();
+              case _SelectionAction.pin:
+                onPinSelected();
+            }
           },
           itemBuilder: (context) => [
             if (canMoveToStage)
@@ -837,7 +848,11 @@ class _UserAvatarMenu extends StatelessWidget {
           ),
         ),
       ],
-      onSelected: (value) {
+      onSelected: (value) async {
+        if (value == 'settings' || value == 'sort' || value == 'logout') {
+          await Motion.waitForMenuDismissal(context);
+          if (!context.mounted) return;
+        }
         if (value == 'settings') {
           Navigator.of(context).push(SettingsScreen.route());
         } else if (value == 'sort') {

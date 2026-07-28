@@ -114,10 +114,15 @@ class AppDrawer extends StatelessWidget {
           // The switcher brings its own horizontal inset (it draws a card, and
           // that card lines up with the destination pills below).
           padding: const EdgeInsets.only(bottom: 8),
-          // The drawer route sits above dialogs, so close it before the menu
-          // opens one.
+          // Finish the drawer transition before presenting another route.
           child: WorkspaceMenu(
-            onBeforeAction: () => Navigator.of(context).pop(),
+            onBeforeAction: () async {
+              final closeDuration = Motion.reduced(context)
+                  ? Duration.zero
+                  : Motion.slow;
+              Navigator.of(context).pop();
+              await Future<void>.delayed(closeDuration);
+            },
           ),
         ),
         destinations[0].$2,
