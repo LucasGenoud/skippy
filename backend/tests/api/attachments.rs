@@ -1,6 +1,19 @@
 //! Attachment upload/serve/delete and signed file URLs.
 
 use crate::helpers::*;
+use axum::http::HeaderMap;
+
+const FILE_CONTENT_SECURITY_POLICY: &str =
+    "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'";
+
+fn assert_file_security_headers(headers: &HeaderMap) {
+    assert_eq!(
+        headers["content-security-policy"],
+        FILE_CONTENT_SECURITY_POLICY
+    );
+    assert_eq!(headers["referrer-policy"], "no-referrer");
+    assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+}
 
 #[tokio::test]
 async fn attachment_upload_serve_delete() {
@@ -44,10 +57,12 @@ async fn attachment_upload_serve_delete() {
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+    assert_eq!(response.headers()[header::CONTENT_DISPOSITION], "inline");
     assert_eq!(
         response.headers()[header::CACHE_CONTROL],
         "private, max-age=3600"
     );
+    assert_file_security_headers(response.headers());
     let served = response.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(served.as_ref(), payload);
 
@@ -101,6 +116,7 @@ async fn audio_files_serve_byte_ranges() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
     assert_eq!(response.headers()[header::CONTENT_DISPOSITION], "inline");
+    assert_file_security_headers(response.headers());
 
     // A byte range returns 206 with just those bytes and a Content-Range.
     let request = Request::builder()
@@ -111,6 +127,7 @@ async fn audio_files_serve_byte_ranges() {
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
     assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert_file_security_headers(response.headers());
     let served = response.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(served.as_ref(), b"2345");
 
@@ -134,6 +151,34 @@ async fn audio_files_serve_byte_ranges() {
     let response = app.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
     assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+    assert_file_security_headers(response.headers());
+}
+
+/// SVG is an active document format even though its MIME type is under
+/// `image/*`. It must never inherit the inline behavior of passive images.
+#[tokio::test]
+async fn svg_attachments_are_forced_to_download() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"title": "svg"})).await;
+    let note_id = note["id"].as_str().unwrap();
+
+    let payload = br#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#;
+    let (status, attachment) = upload(&app, &token, note_id, "image/svg+xml", payload).await;
+    assert_eq!(status, StatusCode::CREATED, "{attachment}");
+
+    let request = Request::builder()
+        .uri(attachment["url"].as_str().unwrap())
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/svg+xml");
+    let disposition = response.headers()[header::CONTENT_DISPOSITION]
+        .to_str()
+        .unwrap();
+    assert!(disposition.starts_with("attachment"), "{disposition}");
+    assert_file_security_headers(response.headers());
 }
 
 /// The signature is the whole access-control story for files, so exercise the
@@ -233,7 +278,7 @@ async fn attachment_rules() {
         .to_str()
         .unwrap();
     assert!(disposition.starts_with("attachment"), "{disposition}");
-    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    assert_file_security_headers(response.headers());
 
     // Strangers can't upload to a note they can't see.
     let (status, _) = upload(&app, &bob, note_id, "image/png", b"x").await;

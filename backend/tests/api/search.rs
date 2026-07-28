@@ -4,9 +4,10 @@ use crate::helpers::*;
 
 #[tokio::test]
 async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
-    let app = build_app(state_with_search().await);
+    let app_state = state_with_search().await;
+    let app = build_app(app_state.clone());
     let (ada, _) = register(&app, "ada").await;
-    let (bob, _) = register(&app, "bob").await;
+    let (bob, bob_id) = register(&app, "bob").await;
 
     let groceries = create_note(
         &app,
@@ -46,6 +47,30 @@ async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
     settle_index().await;
     let (_, bob_hits) = send(&app, "GET", "/api/search?q=milk", Some(&bob), None).await;
     assert_eq!(bob_hits.as_array().unwrap().len(), 1);
+
+    // Simulate the eventual-consistency window after access is revoked: remove
+    // the primary ACL directly, leaving Bob's vector row deliberately stale.
+    assert!(
+        app_state
+            .repo
+            .remove_collaborator(gid, &bob_id)
+            .await
+            .unwrap()
+    );
+    let stale = app_state
+        .search
+        .as_ref()
+        .unwrap()
+        .search(&bob_id, "milk", 20)
+        .await
+        .unwrap();
+    assert!(stale.iter().any(|(id, _)| id == gid));
+    let (_, bob_hits) = send(&app, "GET", "/api/search?q=milk", Some(&bob), None).await;
+    assert_eq!(
+        bob_hits,
+        json!([]),
+        "stale vector rows must not grant search visibility"
+    );
 
     // Deletion removes the note from the index.
     let (status, _) = send(

@@ -19,6 +19,7 @@ Note noteIn(
   bool trashed = false,
   bool pinned = false,
   UserRef? owner,
+  List<UserRef> collaborators = const [],
 }) => Note(
   id: id,
   workspaceId: workspaceId,
@@ -29,6 +30,7 @@ Note noteIn(
   createdAt: DateTime.now(),
   updatedAt: DateTime.now(),
   owner: owner ?? const UserRef(id: 'u-me', name: 'me'),
+  collaborators: collaborators,
 );
 
 /// Let debounce timers (400ms) and queue flushes run out.
@@ -60,16 +62,14 @@ void main() {
 
       expect(store.activeWorkspaceId, 'w-default');
       expect(store.workspaces.first.isDefault, isTrue);
-      expect(
-        store.notesFor(ViewSelection.notes, '').others.map((n) => n.id),
-        ['a'],
-      );
+      expect(store.notesFor(ViewSelection.notes, '').others.map((n) => n.id), [
+        'a',
+      ]);
 
       store.setActiveWorkspace(work);
-      expect(
-        store.notesFor(ViewSelection.notes, '').others.map((n) => n.id),
-        ['b'],
-      );
+      expect(store.notesFor(ViewSelection.notes, '').others.map((n) => n.id), [
+        'b',
+      ]);
     });
 
     test('a note shared from a workspace we are not in shows in the default'
@@ -84,10 +84,9 @@ void main() {
       );
       await store.load();
 
-      expect(
-        store.notesFor(ViewSelection.notes, '').others.map((n) => n.id),
-        ['s'],
-      );
+      expect(store.notesFor(ViewSelection.notes, '').others.map((n) => n.id), [
+        's',
+      ]);
       store.setActiveWorkspace(work);
       expect(store.notesFor(ViewSelection.notes, '').others, isEmpty);
     });
@@ -165,7 +164,7 @@ void main() {
       expect(store.workspaceById('w-default'), isNotNull);
     });
 
-    test('deleting one deletes our notes outright and drops its labels', () async {
+    test('deleting one rehomes our notes and drops its taxonomy', () async {
       api.labels['l2'] = const Label(
         id: 'l2',
         workspaceId: work,
@@ -184,6 +183,14 @@ void main() {
         title: 'theirs',
         owner: const UserRef(id: 'u-ada', name: 'Ada'),
       );
+      api.notes['d'] = noteIn(
+        work,
+        'd',
+        title: 'shared directly',
+        labelIds: {'l2'},
+        owner: const UserRef(id: 'u-ada', name: 'Ada'),
+        collaborators: const [UserRef(id: 'u-me', name: 'Me Example')],
+      );
       await store.load();
       store.setActiveWorkspace(work);
 
@@ -192,15 +199,25 @@ void main() {
       expect(store.workspaceById(work), isNull);
       // The view falls back to the default workspace rather than stranding.
       expect(store.activeWorkspaceId, 'w-default');
-      // Gone outright — not trashed, not rehomed. A member's note is deleted
-      // on their side; we only lose sight of it.
-      expect(store.noteById('b'), isNull);
+      // Our note follows us home; a member's note follows them home and is no
+      // longer visible through the deleted workspace.
+      expect(store.noteById('b')?.workspaceId, 'w-default');
+      expect(store.noteById('b')?.labelIds, isEmpty);
       expect(store.noteById('c'), isNull);
+      expect(store.noteById('d')?.workspaceId, work);
+      expect(store.noteById('d')?.labelIds, isEmpty);
+      final homeSections = store.notesFor(ViewSelection.notes, '');
+      expect(
+        [...homeSections.pinned, ...homeSections.others].map((note) => note.id),
+        containsAll(['b', 'd']),
+      );
       expect(store.labels, isEmpty);
 
       await settle();
       expect(api.workspaces.containsKey(work), isFalse);
-      expect(api.notes.containsKey('b'), isFalse);
+      expect(api.notes['b']?.workspaceId, 'w-default');
+      expect(api.notes.containsKey('c'), isFalse);
+      expect(api.notes['d']?.workspaceId, work);
     });
 
     test('leaving one keeps our notes and forgets the rest', () async {
@@ -365,8 +382,12 @@ void main() {
         workspaceId: 'w-default',
         name: 'Home',
       );
-      api.notes['a'] = noteIn('w-default', 'a', title: 'home note',
-          labelIds: {'l1'});
+      api.notes['a'] = noteIn(
+        'w-default',
+        'a',
+        title: 'home note',
+        labelIds: {'l1'},
+      );
       api.notes['b'] = noteIn(work, 'b', title: 'work note');
       await store.load();
       await tester.pumpWidget(homeApp(store));
@@ -468,7 +489,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(store.workspaceById(work), isNull);
-      expect(store.noteById('a'), isNull);
+      expect(store.noteById('a')?.workspaceId, 'w-default');
       store.dispose();
     });
   });

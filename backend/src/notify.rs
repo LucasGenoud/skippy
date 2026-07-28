@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::models::NoteRecord;
 use crate::AppState;
+use crate::models::NoteRecord;
 
 /// How often the background scheduler looks for due reminders.
 pub const REMINDER_SWEEP_SECS: u64 = 30;
@@ -78,17 +78,22 @@ pub fn default_connectors() -> Vec<Arc<dyn Connector>> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("reqwest client");
     vec![
-        Arc::new(NtfyConnector { client: client.clone() }),
+        Arc::new(NtfyConnector),
         Arc::new(TelegramConnector::new(client)),
     ]
 }
 
 /// A trimmed string setting; missing/non-string keys read as "".
 fn text(settings: &Value, key: &str) -> String {
-    settings[key].as_str().map(str::trim).unwrap_or_default().to_string()
+    settings[key]
+        .as_str()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// Master toggle (`reminder_notifications`), defaulting on — it only matters
@@ -99,15 +104,20 @@ pub fn notifications_enabled(settings: &Value) -> bool {
 
 /// Parse a settings document string as stored by `put_settings`.
 pub fn settings_value(settings_json: Option<&str>) -> Value {
-    settings_json.and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default()
+    settings_json
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default()
 }
 
 /// Turn a non-2xx response into an error carrying a truncated body (and never
 /// a token).
 async fn status_error(service: &str, response: reqwest::Response) -> anyhow::Error {
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    let body = body.chars().take(300).collect::<String>();
+    let body = crate::outbound::read_body_prefix(response, 16 * 1024).await;
+    let body = String::from_utf8_lossy(&body)
+        .chars()
+        .take(300)
+        .collect::<String>();
     anyhow::anyhow!("{service} returned {status}: {body}")
 }
 
@@ -117,9 +127,7 @@ async fn status_error(service: &str, response: reqwest::Response) -> anyhow::Err
 /// Publishes to an ntfy topic. Keys: `ntfy_url` (the full topic URL as shown
 /// in the ntfy apps, e.g. `https://ntfy.sh/my-secret-topic`) and optional
 /// `ntfy_token` for protected topics.
-pub struct NtfyConnector {
-    client: reqwest::Client,
-}
+pub struct NtfyConnector;
 
 /// Split a full ntfy topic URL into (server base, topic). Publishing goes to
 /// the server root as JSON — unlike the header-based `POST {url}` style this
@@ -152,7 +160,17 @@ impl Connector for NtfyConnector {
         let url = text(settings, "ntfy_url");
         let (base, topic) = split_ntfy_url(&url)
             .ok_or_else(|| anyhow::anyhow!("ntfy URL must look like https://ntfy.sh/your-topic"))?;
-        let mut request = self.client.post(&base).json(&serde_json::json!({
+        let target = crate::outbound::resolve_http_url(
+            &base,
+            crate::outbound::allow_private_user_endpoints(),
+        )
+        .await?;
+        let client = target
+            .client_builder()
+            .connect_timeout(crate::outbound::CONNECT_TIMEOUT)
+            .timeout(Duration::from_secs(15))
+            .build()?;
+        let mut request = client.post(target.url).json(&serde_json::json!({
             "topic": topic,
             "title": notification.title,
             "message": notification.body,
@@ -188,7 +206,10 @@ impl TelegramConnector {
     pub fn new(client: reqwest::Client) -> Self {
         let base = std::env::var("STICKY_NOTES_TELEGRAM_API")
             .unwrap_or_else(|_| "https://api.telegram.org".to_string());
-        Self { client, base: base.trim_end_matches('/').to_string() }
+        Self {
+            client,
+            base: base.trim_end_matches('/').to_string(),
+        }
     }
 }
 
@@ -215,8 +236,11 @@ impl Connector for TelegramConnector {
         } else {
             format!("⏰ {}\n{}", notification.title, notification.body)
         };
-        let url =
-            format!("{}/bot{}/sendMessage", self.base, text(settings, "telegram_bot_token"));
+        let url = format!(
+            "{}/bot{}/sendMessage",
+            self.base,
+            text(settings, "telegram_bot_token")
+        );
         let response = self
             .client
             .post(&url)
@@ -227,7 +251,10 @@ impl Connector for TelegramConnector {
             // Telegram errors carry a useful `description`; surface it rather
             // than the raw body (and never echo the URL, which holds the token).
             let status = response.status();
-            let value: Value = response.json().await.unwrap_or_default();
+            let body = crate::outbound::read_body_capped(response, 64 * 1024)
+                .await
+                .unwrap_or_default();
+            let value: Value = serde_json::from_slice(&body).unwrap_or_default();
             let description = value["description"].as_str().unwrap_or("request failed");
             return Err(anyhow::anyhow!("telegram returned {status}: {description}"));
         }
@@ -274,13 +301,22 @@ pub async fn sweep_due_reminders(state: &AppState) {
         }
     };
     for note in due {
-        if state.repo.mark_reminder_fired(&note.id, &now).await.is_err() {
+        if state
+            .repo
+            .mark_reminder_fired(&note.id, &now)
+            .await
+            .is_err()
+        {
             // Couldn't claim it; leave it for the next sweep rather than risk
             // sending without the fired mark (= resending every 30s).
             continue;
         }
         let notification = reminder_notification(&note);
-        let participants = state.repo.participant_ids(&note.id).await.unwrap_or_default();
+        let participants = state
+            .repo
+            .participant_ids(&note.id)
+            .await
+            .unwrap_or_default();
         for user_id in participants {
             let settings = state.repo.settings_for_user(&user_id).await.ok().flatten();
             let settings = settings_value(settings.as_deref());
@@ -288,7 +324,10 @@ pub async fn sweep_due_reminders(state: &AppState) {
                 continue;
             }
             for error in send_configured(&state.notifiers, &settings, &notification).await {
-                eprintln!("reminder delivery failed for note {} to {user_id}: {error}", note.id);
+                eprintln!(
+                    "reminder delivery failed for note {} to {user_id}: {error}",
+                    note.id
+                );
             }
         }
     }
@@ -398,9 +437,21 @@ mod tests {
 
         // Untitled note falls back; checklist body lists only pending items.
         let items = vec![
-            ChecklistItem { id: "1".into(), text: "milk".into(), done: false },
-            ChecklistItem { id: "2".into(), text: "bread".into(), done: true },
-            ChecklistItem { id: "3".into(), text: "eggs".into(), done: false },
+            ChecklistItem {
+                id: "1".into(),
+                text: "milk".into(),
+                done: false,
+            },
+            ChecklistItem {
+                id: "2".into(),
+                text: "bread".into(),
+                done: true,
+            },
+            ChecklistItem {
+                id: "3".into(),
+                text: "eggs".into(),
+                done: false,
+            },
         ];
         let n = reminder_notification(&record("", "", items));
         assert_eq!(n.title, "Reminder");

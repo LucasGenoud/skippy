@@ -53,10 +53,17 @@ Future<void> settle() =>
 /// [NotesStore.offlineGrace]); tests wait 20ms for the same behaviour.
 const testOfflineGrace = Duration(milliseconds: 20);
 
-NotesStore testStore(FakeApi api, {LocalCache? cache}) => NotesStore(
+NotesStore testStore(
+  FakeApi api, {
+  LocalCache? cache,
+  String cacheNamespace = '',
+  bool migrateLegacyCache = false,
+}) => NotesStore(
   api: api,
   cache: cache,
   currentUserId: 'u-me',
+  cacheNamespace: cacheNamespace,
+  migrateLegacyCache: migrateLegacyCache,
   offlineGrace: testOfflineGrace,
 );
 
@@ -440,6 +447,30 @@ void main() {
       expect(api.labels.values.map((l) => l.name), contains('after'));
     });
 
+    for (final status in [401, 408, 425, 429]) {
+      test('$status retains an optimistic write for a later retry', () async {
+        final cache = MemoryLocalCache();
+        api.notes['n1'] = serverNote('n1', title: 'a');
+        final s = testStore(api, cache: cache);
+        await s.load();
+
+        api.failWith = ApiException(status, 'retry later');
+        s.setColor('n1', 'teal');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final pending = await cache.read('u-me');
+        expect(pending!['queue'] as List, isNotEmpty);
+        expect(api.notes['n1']!.color, 'default');
+        expect(s.offline, status == 408);
+
+        api.failWith = null;
+        await s.retryNow();
+        await settle();
+        expect(api.notes['n1']!.color, 'teal');
+        expect((await cache.read('u-me'))!['queue'] as List, isEmpty);
+        s.dispose();
+      });
+    }
+
     test('deleting a never-synced draft makes no server calls', () async {
       final draft = store.createDraft();
       store.deleteForever(draft.id);
@@ -594,24 +625,27 @@ void main() {
       },
     );
 
-    test('a failure that recovers within the grace is never announced', () async {
-      await store.load();
-      store.startSync();
-      await pumpEventQueue(); // launch probe
+    test(
+      'a failure that recovers within the grace is never announced',
+      () async {
+        await store.load();
+        store.startSync();
+        await pumpEventQueue(); // launch probe
 
-      // One probe fails — the kind of blip a phone produces the instant its
-      // radio wakes up. Nothing is said about it...
-      api.failWith = Exception('radio still waking');
-      await store.checkConnectionNow();
-      expect(store.offline, isFalse);
-      expect(store.syncStatus, isNot(SyncStatus.offline));
+        // One probe fails — the kind of blip a phone produces the instant its
+        // radio wakes up. Nothing is said about it...
+        api.failWith = Exception('radio still waking');
+        await store.checkConnectionNow();
+        expect(store.offline, isFalse);
+        expect(store.syncStatus, isNot(SyncStatus.offline));
 
-      // ...and the next probe, inside the grace, clears it for good.
-      api.failWith = null;
-      await store.checkConnectionNow();
-      await Future<void>.delayed(testOfflineGrace * 3);
-      expect(store.offline, isFalse);
-    });
+        // ...and the next probe, inside the grace, clears it for good.
+        api.failWith = null;
+        await store.checkConnectionNow();
+        await Future<void>.delayed(testOfflineGrace * 3);
+        expect(store.offline, isFalse);
+      },
+    );
 
     test('cached notes open as "connecting", never as "saved"', () async {
       final cache = MemoryLocalCache();
@@ -643,25 +677,28 @@ void main() {
       s.dispose();
     });
 
-    test('resuming from the background drops a stale offline verdict', () async {
-      await store.load();
+    test(
+      'resuming from the background drops a stale offline verdict',
+      () async {
+        await store.load();
 
-      // The app went away while the server was unreachable.
-      api.failWith = Exception('network down');
-      await store.load();
-      await Future<void>.delayed(testOfflineGrace * 3);
-      expect(store.offline, isTrue);
+        // The app went away while the server was unreachable.
+        api.failWith = Exception('network down');
+        await store.load();
+        await Future<void>.delayed(testOfflineGrace * 3);
+        expect(store.offline, isTrue);
 
-      // Coming back: the verdict is dropped immediately (it describes a
-      // connection nothing has tested since) and a fresh pull runs.
-      api.failWith = null;
-      api.notes['n9'] = serverNote('n9', title: 'added elsewhere');
-      final resumed = store.onResumed();
-      expect(store.offline, isFalse);
-      await resumed;
-      expect(store.noteById('n9')?.title, 'added elsewhere');
-      expect(store.offline, isFalse);
-    });
+        // Coming back: the verdict is dropped immediately (it describes a
+        // connection nothing has tested since) and a fresh pull runs.
+        api.failWith = null;
+        api.notes['n9'] = serverNote('n9', title: 'added elsewhere');
+        final resumed = store.onResumed();
+        expect(store.offline, isFalse);
+        await resumed;
+        expect(store.noteById('n9')?.title, 'added elsewhere');
+        expect(store.offline, isFalse);
+      },
+    );
   });
 
   group('manual refresh', () {
@@ -857,7 +894,169 @@ void main() {
     });
   });
 
+  group('session lifecycle', () {
+    test(
+      'dispose stops an in-flight load before it makes another request',
+      () async {
+        final gatedApi = FakeApi();
+        final gate = gatedApi.fetchWorkspacesGate = Completer<void>();
+        final s = testStore(gatedApi);
+        final loading = s.load();
+        await pumpEventQueue();
+
+        s.dispose();
+        gate.complete();
+        await loading;
+
+        expect(gatedApi.log, ['fetchWorkspaces']);
+      },
+    );
+
+    test(
+      'dispose stops an old queue before it sends the next operation',
+      () async {
+        final gatedApi = FakeApi()..notes['n1'] = serverNote('n1', title: 'a');
+        final s = testStore(gatedApi);
+        await s.load();
+        final gate = gatedApi.patchGate = Completer<void>();
+
+        s.setColor('n1', 'teal');
+        s.togglePin('n1');
+        await pumpEventQueue();
+        s.dispose();
+        gate.complete();
+        await pumpEventQueue();
+
+        expect(
+          gatedApi.log.where((entry) => entry.startsWith('patchNote:')).length,
+          1,
+        );
+        expect(gatedApi.notes['n1']!.pinned, isFalse);
+      },
+    );
+
+    test('an older overlapping load cannot replace a newer snapshot', () async {
+      final gatedApi = FakeApi()..notes['n1'] = serverNote('n1', title: 'old');
+      final gate = gatedApi.fetchLabelsGate = Completer<void>();
+      final s = testStore(gatedApi);
+      final oldLoad = s.load();
+      while (!gatedApi.log.contains('fetchLabels')) {
+        await pumpEventQueue();
+      }
+
+      gatedApi.notes['n1'] = serverNote('n1', title: 'new');
+      await s.load();
+      expect(s.noteById('n1')?.title, 'new');
+
+      gate.complete();
+      await oldLoad;
+      expect(s.noteById('n1')?.title, 'new');
+      s.dispose();
+    });
+  });
+
   group('offline persistence', () {
+    test(
+      'cache and pending writes are isolated by server as well as user',
+      () async {
+        final cache = MemoryLocalCache();
+        final firstApi = FakeApi()
+          ..notes['private'] = serverNote('private', title: 'server A only');
+        final first = testStore(
+          firstApi,
+          cache: cache,
+          cacheNamespace: 'https://a.example',
+        );
+        await first.load();
+        await settle();
+        first.dispose();
+
+        final secondApi = FakeApi()..failWith = Exception('offline');
+        final second = testStore(
+          secondApi,
+          cache: cache,
+          cacheNamespace: 'https://b.example',
+        );
+        await second.load();
+        expect(second.noteById('private'), isNull);
+        second.dispose();
+
+        final firstOfflineApi = FakeApi()..failWith = Exception('offline');
+        final firstAgain = testStore(
+          firstOfflineApi,
+          cache: cache,
+          cacheNamespace: 'https://a.example',
+        );
+        await firstAgain.load();
+        expect(firstAgain.noteById('private')?.title, 'server A only');
+        firstAgain.dispose();
+      },
+    );
+
+    test(
+      'saved-session migration moves the legacy cache only when allowed',
+      () async {
+        final cache = MemoryLocalCache();
+        await cache.write('u-me', {
+          'notes': [serverNote('legacy', title: 'offline').toJson()],
+          'labels': <dynamic>[],
+          'history': <String, dynamic>{},
+          'queue': <dynamic>[],
+        });
+        final offlineApi = FakeApi()..failWith = Exception('offline');
+        final migrated = testStore(
+          offlineApi,
+          cache: cache,
+          cacheNamespace: 'https://known.example',
+          migrateLegacyCache: true,
+        );
+        await migrated.load();
+        expect(migrated.noteById('legacy')?.title, 'offline');
+        expect(await cache.read('u-me'), isNull);
+        migrated.dispose();
+      },
+    );
+
+    test('fresh login permanently refuses an ambiguous legacy cache', () async {
+      final cache = MemoryLocalCache();
+      await cache.write('u-me', {
+        'notes': [serverNote('legacy', title: 'server A').toJson()],
+        'labels': <dynamic>[],
+        'history': <String, dynamic>{},
+        'queue': [
+          {
+            'kind': 'patch',
+            'id': 'legacy',
+            'data': {'color': 'red'},
+          },
+        ],
+      });
+      final firstApi = FakeApi()..failWith = Exception('offline');
+      final freshLogin = testStore(
+        firstApi,
+        cache: cache,
+        cacheNamespace: 'https://server-b.example',
+      );
+      await freshLogin.load();
+      expect(freshLogin.noteById('legacy'), isNull);
+      freshLogin.dispose();
+
+      // On the next launch the token is now a restored session. The empty
+      // namespaced marker must still win over A's untouched legacy queue.
+      final restoredApi = FakeApi()..failWith = Exception('offline');
+      final restored = testStore(
+        restoredApi,
+        cache: cache,
+        cacheNamespace: 'https://server-b.example',
+        migrateLegacyCache: true,
+      );
+      await restored.load();
+      expect(restored.noteById('legacy'), isNull);
+      expect(restoredApi.log, isNot(contains('patchNote:legacy')));
+      expect(await cache.read('u-me'), isNotNull);
+      restored.dispose();
+    });
+
     test('edits are written to the local cache', () async {
       final cache = MemoryLocalCache();
       api.notes['n1'] = serverNote('n1', title: 'a');
@@ -1131,10 +1330,9 @@ void main() {
         name: 'Todo',
         workspaceId: 'w-default',
       );
-      api.notes['a'] = serverNote('a').copyWith(
-        stageId: 'todo',
-        stagePosition: 4096,
-      );
+      api.notes['a'] = serverNote(
+        'a',
+      ).copyWith(stageId: 'todo', stagePosition: 4096);
       api.notes['b'] = serverNote('b');
       await store.load();
 
@@ -1224,18 +1422,15 @@ void main() {
         name: 'Todo',
         workspaceId: 'w-default',
       );
-      api.notes['a'] = serverNote('a').copyWith(
-        stageId: 'todo',
-        stagePosition: 1024,
-      );
-      api.notes['b'] = serverNote('b').copyWith(
-        stageId: 'todo',
-        stagePosition: 2048,
-      );
-      api.notes['c'] = serverNote('c').copyWith(
-        stageId: 'todo',
-        stagePosition: 3072,
-      );
+      api.notes['a'] = serverNote(
+        'a',
+      ).copyWith(stageId: 'todo', stagePosition: 1024);
+      api.notes['b'] = serverNote(
+        'b',
+      ).copyWith(stageId: 'todo', stagePosition: 2048);
+      api.notes['c'] = serverNote(
+        'c',
+      ).copyWith(stageId: 'todo', stagePosition: 3072);
       await store.load();
 
       // Drop c between a and b.
@@ -1261,10 +1456,9 @@ void main() {
         name: 'Todo',
         workspaceId: 'w-default',
       );
-      api.notes['a'] = serverNote('a').copyWith(
-        stageId: 'todo',
-        stagePosition: 1024,
-      );
+      api.notes['a'] = serverNote(
+        'a',
+      ).copyWith(stageId: 'todo', stagePosition: 1024);
       await store.load();
       api.log.clear();
 

@@ -1,5 +1,5 @@
 backend/target
-backend/sticky_notes.db
+backend/sticky_notes.db*
 backend/uploads
 app/build
 app/.dart_tool

@@ -11,8 +11,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Reject tracked runtime databases
+        run: |
+          TRACKED=$(git ls-files -- ':(glob)backend/sticky_notes.db*')
+          if [ -n "$TRACKED" ]; then
+            echo "Runtime SQLite files must not be tracked:"
+            echo "$TRACKED"
+            exit 1
+          fi
+
       - name: Log in to the Forgejo registry
-        run: docker login forgejo.genoud.dev -u "${{ secrets.REGISTRY_USER }}" -p "${{ secrets.REGISTRY_TOKEN }}"
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" |
+            docker login forgejo.genoud.dev --username "$REGISTRY_USER" --password-stdin
 
       - name: Build and push
         run: |

@@ -1,7 +1,17 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-use tokio::sync::broadcast;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
+
+/// Bound sockets that have completed the HTTP upgrade but have not yet proved
+/// a session token. First-frame authentication keeps bearer credentials out of
+/// proxy logs, but without this gate an anonymous peer could hold unlimited
+/// tasks/file descriptors until the auth deadline.
+static PENDING_AUTH: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(64)));
+
+pub fn pending_auth_permit() -> Option<OwnedSemaphorePermit> {
+    PENDING_AUTH.clone().try_acquire_owned().ok()
+}
 
 /// In-process fan-out of change events to connected clients, keyed by user.
 /// A user may have several live connections (tabs, phone + web).

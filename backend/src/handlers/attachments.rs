@@ -1,10 +1,10 @@
 //! Attachment upload, deletion, transcription retry, and the signed-URL file
 //! server.
 
-use axum::extract::{Multipart, Path, Query, State};
-use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::extract::{Multipart, Path, Query, State};
+use axum::http::{HeaderMap, HeaderName, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
 use crate::AppState;
@@ -47,7 +47,10 @@ pub async fn upload_attachment(
             size: bytes.len() as i64,
             url: None,
         };
-        state.files.save(&record.owner_id, &attachment.id, &bytes).await?;
+        state
+            .files
+            .save(&record.owner_id, &attachment.id, &bytes)
+            .await?;
         state.repo.insert_attachment(&attachment, &id).await?;
         // An audio clip dropped onto an audio note kicks off transcription:
         // mark pending now (synchronously, so any refetch sees it) and run
@@ -56,8 +59,17 @@ pub async fn upload_attachment(
             && record.kind == KIND_AUDIO
             && attachment.mime.starts_with("audio/")
         {
-            state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
-            state.transcribe_later(&id, &record.owner_id, &attachment.id, &attachment.filename, &user_id);
+            state
+                .repo
+                .set_transcript(&id, TRANSCRIPT_PENDING, None)
+                .await?;
+            state.transcribe_later(
+                &id,
+                &record.owner_id,
+                &attachment.id,
+                &attachment.filename,
+                &user_id,
+            );
         }
         state.notify_note(&id).await;
         state.sign_attachment(&mut attachment);
@@ -75,16 +87,25 @@ pub async fn transcribe_note(
 ) -> ApiResult<StatusCode> {
     let record = require_participant(&state, &id, &user_id).await?;
     if state.transcribe.is_none() {
-        return Err(ApiError::Unavailable("audio transcription is not enabled on this server"));
+        return Err(ApiError::Unavailable(
+            "audio transcription is not enabled on this server",
+        ));
     }
-    let view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let view = state
+        .repo
+        .note_view(&id, &user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let clip = view
         .attachments
         .into_iter()
         .rev()
         .find(|a| a.mime.starts_with("audio/"))
         .ok_or_else(|| ApiError::BadRequest("note has no audio to transcribe".to_string()))?;
-    state.repo.set_transcript(&id, TRANSCRIPT_PENDING, None).await?;
+    state
+        .repo
+        .set_transcript(&id, TRANSCRIPT_PENDING, None)
+        .await?;
     state.transcribe_later(&id, &record.owner_id, &clip.id, &clip.filename, &user_id);
     state.notify_note(&id).await;
     Ok(StatusCode::ACCEPTED)
@@ -96,7 +117,11 @@ fn sanitize_filename(name: &str) -> String {
         .filter(|c| !c.is_control() && !"\\/\"<>|:*?".contains(*c))
         .collect();
     let trimmed = cleaned.trim();
-    if trimmed.is_empty() { "file".to_string() } else { trimmed.chars().take(120).collect() }
+    if trimmed.is_empty() {
+        "file".to_string()
+    } else {
+        trimmed.chars().take(120).collect()
+    }
 }
 
 pub async fn delete_attachment(
@@ -104,8 +129,11 @@ pub async fn delete_attachment(
     AuthUser(user_id): AuthUser,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    let (note_id, _info) =
-        state.repo.attachment_info(&id).await?.ok_or(ApiError::NotFound)?;
+    let (note_id, _info) = state
+        .repo
+        .attachment_info(&id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     let record = require_participant(&state, &note_id, &user_id).await?;
     state.repo.delete_attachment(&id).await?;
     state.files.delete(&record.owner_id, &id).await;
@@ -120,6 +148,42 @@ pub struct FileAccess {
     sig: Option<String>,
 }
 
+/// MIME types that browsers may render directly without interpreting active
+/// document content. Keep this list explicit: broad families such as
+/// `image/*` include SVG, which can contain scripts and external references.
+const SAFE_INLINE_MIME_TYPES: &[&str] = &[
+    "image/avif",
+    "image/bmp",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/vnd.microsoft.icon",
+    "image/x-icon",
+    "audio/aac",
+    "audio/flac",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/wav",
+    "audio/webm",
+    "audio/x-m4a",
+    "audio/x-wav",
+    "video/mp4",
+    "video/mpeg",
+    "video/ogg",
+    "video/quicktime",
+    "video/webm",
+    "video/x-m4v",
+];
+
+fn is_safe_inline_mime(mime: &str) -> bool {
+    let essence = mime.split(';').next().unwrap_or_default().trim();
+    SAFE_INLINE_MIME_TYPES
+        .iter()
+        .any(|candidate| essence.eq_ignore_ascii_case(candidate))
+}
+
 /// Serves attachment bytes, gated by a signed `?exp=..&sig=..` capability
 /// rather than a bearer token — so plain `<img>`/`<audio>` element loads work
 /// on web and mobile, while a stranger with just the id gets nothing. Only a
@@ -127,10 +191,11 @@ pub struct FileAccess {
 /// access-checked note views), and the signature expires, so a leaked URL
 /// stops working. See [`crate::files::signed_file_path`].
 ///
-/// Images, audio, and video render inline; any other type is forced to
-/// download with its original filename, so a user-uploaded HTML file can never
-/// execute in the app's origin. Byte-range requests are honored (`206`) so
-/// mobile media players can stream and seek.
+/// Explicitly allowlisted passive image, audio, and video formats render
+/// inline; every other type is forced to download with its original filename.
+/// This keeps active formats such as HTML and SVG from executing in the app's
+/// origin. Byte-range requests are honored (`206`) so mobile media players can
+/// stream and seek.
 pub async fn serve_file(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -143,8 +208,11 @@ pub async fn serve_file(
     if !crate::files::verify_file_access(&state.file_secret, &id, exp, &sig) {
         return Err(ApiError::Unauthorized);
     }
-    let (note_id, attachment) =
-        state.repo.attachment_info(&id).await?.ok_or(ApiError::NotFound)?;
+    let (note_id, attachment) = state
+        .repo
+        .attachment_info(&id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     // The blob lives under the note owner's identity (its S3 bucket); the
     // signature already proved access, this lookup just locates the bytes.
     let owner_id = state
@@ -153,16 +221,21 @@ pub async fn serve_file(
         .await?
         .map(|record| record.owner_id)
         .ok_or(ApiError::NotFound)?;
-    let bytes = state.files.read(&owner_id, &id).await.ok_or(ApiError::NotFound)?;
-    // Media (audio/video) render inline; other non-image types are forced to
-    // download so a user-uploaded HTML file can never execute in the app origin.
-    let inline = attachment.mime.starts_with("image/")
-        || attachment.mime.starts_with("audio/")
-        || attachment.mime.starts_with("video/");
+    let bytes = state
+        .files
+        .read(&owner_id, &id)
+        .await
+        .ok_or(ApiError::NotFound)?;
+    // Only passive media types render inline. In particular, SVG is an active
+    // document format despite its `image/*` MIME type and must be downloaded.
+    let inline = is_safe_inline_mime(&attachment.mime);
     let disposition = if inline {
         "inline".to_string()
     } else {
-        format!("attachment; filename=\"{}\"", attachment.filename.replace('"', ""))
+        format!(
+            "attachment; filename=\"{}\"",
+            attachment.filename.replace('"', "")
+        )
     };
     let total = bytes.len() as u64;
     // Common headers on every response. `Accept-Ranges` advertises range
@@ -175,12 +248,33 @@ pub async fn serve_file(
     if let Ok(value) = disposition.parse() {
         resp_headers.insert(header::CONTENT_DISPOSITION, value);
     }
-    resp_headers.insert(header::X_CONTENT_TYPE_OPTIONS, header::HeaderValue::from_static("nosniff"));
-    resp_headers.insert(header::ACCEPT_RANGES, header::HeaderValue::from_static("bytes"));
+    resp_headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
+    resp_headers.insert(
+        header::ACCEPT_RANGES,
+        header::HeaderValue::from_static("bytes"),
+    );
+    // These policies are defense in depth for a file opened as a top-level
+    // document. They also constrain legacy records whose declared MIME type
+    // may be inaccurate.
+    resp_headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        header::HeaderValue::from_static(
+            "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'",
+        ),
+    );
+    resp_headers.insert(
+        HeaderName::from_static("referrer-policy"),
+        header::HeaderValue::from_static("no-referrer"),
+    );
     // The URL is a per-user, expiring capability — never let a shared cache
     // store it. `private` scopes caching to the user's own browser.
-    resp_headers
-        .insert(header::CACHE_CONTROL, header::HeaderValue::from_static("private, max-age=3600"));
+    resp_headers.insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, max-age=3600"),
+    );
 
     // Honor a single-range request with `206 Partial Content`; anything we
     // can't parse falls through to serving the whole body.
@@ -223,7 +317,11 @@ fn parse_single_range(value: &axum::http::HeaderValue) -> Option<ByteRange> {
         return Some(ByteRange::Suffix(end.parse().ok()?));
     }
     let start = start.parse().ok()?;
-    let end = if end.is_empty() { None } else { Some(end.parse().ok()?) };
+    let end = if end.is_empty() {
+        None
+    } else {
+        Some(end.parse().ok()?)
+    };
     Some(ByteRange::From { start, end })
 }
 
@@ -234,9 +332,7 @@ fn resolve_range(range: ByteRange, total: u64) -> Option<(u64, u64)> {
         return None;
     }
     let (start, end) = match range {
-        ByteRange::From { start, end } => {
-            (start, end.unwrap_or(total - 1).min(total - 1))
-        }
+        ByteRange::From { start, end } => (start, end.unwrap_or(total - 1).min(total - 1)),
         ByteRange::Suffix(len) => {
             if len == 0 {
                 return None;

@@ -3,20 +3,24 @@
 
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Query, State, WebSocketUpgrade};
-use axum::response::Response;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::AppState;
-use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::events::WsParams;
 use super::{apply_note_update, create_note_for_user, new_id};
 
 /// One chat turn from the client.
 #[derive(Deserialize)]
 struct ChatRequest {
+    /// Sent inside the encrypted WebSocket stream so reverse-proxy request
+    /// logs never receive the bearer token.
+    #[serde(default)]
+    token: Option<String>,
     message: String,
     #[serde(default)]
     history: Vec<ChatHistoryEntry>,
@@ -42,11 +46,11 @@ struct ChatHistoryEntry {
 }
 
 /// Notes chat over a WebSocket (a streaming response has to reach Flutter
-/// web, whose HTTP client can't stream bodies — the app already speaks
-/// token-in-query WS for change events). One request per connection:
+/// web, whose HTTP client can't stream bodies). Authentication and the turn
+/// arrive together in the first frame; one request is handled per connection:
 ///
 /// ```text
-/// client → server:  {"message": "…", "history": [{"role","content"}, …]}
+/// client → server:  {"token":"…","message":"…","history":[{"role","content"},…]}
 /// server → client:  {"type":"sources","notes":[{"id","title"}, …]}
 ///                   {"type":"created","action":"create"|"append","note":{"id","title"}}
 ///                                                (0..1, only when the turn
@@ -56,18 +60,34 @@ struct ChatHistoryEntry {
 /// ```
 pub async fn chat_ws(
     State(state): State<AppState>,
-    Query(params): Query<WsParams>,
+    Query(params): Query<super::events::LegacyWsParams>,
     upgrade: WebSocketUpgrade,
-) -> ApiResult<Response> {
-    let user_id = state
-        .repo
-        .user_id_for_token(&params.token)
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
-    Ok(upgrade.on_upgrade(move |socket| chat_loop(socket, state, user_id)))
+) -> Response {
+    if let Some(token) = params.token.filter(|token| !token.is_empty()) {
+        return match state.repo.user_id_for_token(&token).await {
+            Ok(Some(user_id)) => upgrade
+                .max_message_size(256 * 1024)
+                .max_frame_size(256 * 1024)
+                .on_upgrade(move |socket| chat_loop(socket, state, Some(user_id), None)),
+            Ok(None) => StatusCode::UNAUTHORIZED.into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
+    let Some(auth_permit) = crate::ws::pending_auth_permit() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    upgrade
+        .max_message_size(256 * 1024)
+        .max_frame_size(256 * 1024)
+        .on_upgrade(move |socket| chat_loop(socket, state, None, Some(auth_permit)))
 }
 
-async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
+async fn chat_loop(
+    socket: WebSocket,
+    state: AppState,
+    authenticated_user: Option<String>,
+    auth_permit: Option<OwnedSemaphorePermit>,
+) {
     let (mut sink, mut stream) = socket.split();
 
     // Terminal error helper: best-effort send, then the connection closes.
@@ -77,7 +97,7 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     }
 
     // First (and only) request frame, ignoring pings.
-    let request = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+    let request = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while let Some(Ok(msg)) = stream.next().await {
             if let Message::Text(text) = msg {
                 return Some(text);
@@ -94,6 +114,21 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         send_error(&mut sink, "malformed chat request").await;
         return;
     };
+    let user_id = match authenticated_user {
+        Some(user_id) => user_id,
+        None => {
+            let Some(token) = request.token.as_deref().filter(|token| !token.is_empty()) else {
+                send_error(&mut sink, "unauthorized").await;
+                return;
+            };
+            let Ok(Some(user_id)) = state.repo.user_id_for_token(token).await else {
+                send_error(&mut sink, "unauthorized").await;
+                return;
+            };
+            drop(auth_permit);
+            user_id
+        }
+    };
     let message = request.message.trim();
     if message.is_empty() {
         send_error(&mut sink, "empty message").await;
@@ -103,24 +138,39 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     // Preconditions: retrieval needs the server-side embedder, generation
     // needs the user's own LLM config with chat enabled.
     let Some(search) = state.search.clone() else {
-        send_error(&mut sink, "chat needs semantic search enabled on this server").await;
+        send_error(
+            &mut sink,
+            "chat needs semantic search enabled on this server",
+        )
+        .await;
         return;
     };
     let settings = state.repo.settings_for_user(&user_id).await.ok().flatten();
     let effective = state.managed.overlay(settings.as_deref());
     let llm_settings = crate::assist::parse_llm_settings_value(&effective);
     let Some(cfg) = llm_settings.config.filter(|_| llm_settings.chat) else {
-        send_error(&mut sink, "configure an AI provider in Settings to use chat").await;
+        send_error(
+            &mut sink,
+            "configure an AI provider in Settings to use chat",
+        )
+        .await;
         return;
     };
 
-    let history: Vec<(String, String)> =
-        request.history.into_iter().map(|h| (h.role, h.content)).collect();
+    let history: Vec<(String, String)> = request
+        .history
+        .into_iter()
+        .map(|h| (h.role, h.content))
+        .collect();
 
     // Scope the turn to the open workspace. The vector index partitions by
     // participant, not by workspace, so the narrowing happens over its hits.
-    let workspace_id =
-        request.workspace_id.as_deref().map(str::trim).filter(|w| !w.is_empty()).map(str::to_owned);
+    let workspace_id = request
+        .workspace_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|w| !w.is_empty())
+        .map(str::to_owned);
     let allowed_notes = match &workspace_id {
         Some(id) => match super::workspace_note_ids(&state, &user_id, id).await {
             Ok(ids) => Some(ids),
@@ -140,7 +190,9 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
     // can't make chat worse than ordinary RAG, only better.
     let decision = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        state.llm.complete(&cfg, crate::assist::route_messages(&history, message)),
+        state
+            .llm
+            .complete(&cfg, crate::assist::route_messages(&history, message)),
     )
     .await
     {
@@ -164,7 +216,11 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         // drops the other workspaces' hits on top of that.
         let overfetch = if allowed_notes.is_some() { 8 } else { 2 };
         let hits = match search
-            .search(&user_id, query, crate::assist::CHAT_CONTEXT_NOTES * overfetch)
+            .search(
+                &user_id,
+                query,
+                crate::assist::CHAT_CONTEXT_NOTES * overfetch,
+            )
             .await
         {
             Ok(hits) => hits,
@@ -178,10 +234,17 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
             if notes.len() >= crate::assist::CHAT_CONTEXT_NOTES {
                 break;
             }
-            if allowed_notes.as_ref().is_some_and(|ids| !ids.contains(&note_id)) {
+            if allowed_notes
+                .as_ref()
+                .is_some_and(|ids| !ids.contains(&note_id))
+            {
                 continue;
             }
-            let Ok(Some(record)) = state.repo.note_record(&note_id).await else { continue };
+            // Index ACL rows are eventually consistent. Re-check the primary
+            // repository before reading any note text into an LLM prompt.
+            let Ok(Some(record)) = state.repo.note_record_for_user(&note_id, &user_id).await else {
+                continue;
+            };
             if record.trashed {
                 continue;
             }
@@ -200,7 +263,11 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         && chat_write(
             &mut sink,
             &state,
-            &TurnContext { user_id: &user_id, cfg: &cfg, workspace_id: workspace_id.as_deref() },
+            &TurnContext {
+                user_id: &user_id,
+                cfg: &cfg,
+                workspace_id: workspace_id.as_deref(),
+            },
             &notes,
             &history,
             message,
@@ -219,8 +286,10 @@ async fn chat_loop(socket: WebSocket, state: AppState, user_id: String) {
         return;
     }
 
-    let prompt_notes: Vec<(String, String)> =
-        notes.iter().map(|(_, title, text)| (title.clone(), text.clone())).collect();
+    let prompt_notes: Vec<(String, String)> = notes
+        .iter()
+        .map(|(_, title, text)| (title.clone(), text.clone()))
+        .collect();
     let messages = match &decision {
         // Write reaches here only when its plan was unusable: answer over the
         // retrieved notes like an ordinary read turn rather than writing.
@@ -303,7 +372,11 @@ where
     // " \"Groceries\"" or "" for a blank title — folded into a sentence.
     fn titled(title: &str) -> String {
         let t = title.trim();
-        if t.is_empty() { String::new() } else { format!(" \"{t}\"") }
+        if t.is_empty() {
+            String::new()
+        } else {
+            format!(" \"{t}\"")
+        }
     }
     fn plural(n: usize) -> &'static str {
         if n == 1 { "" } else { "s" }
@@ -328,12 +401,21 @@ where
     // Apply the edit through the same pipeline the HTTP handlers use, so it
     // gets indexing, auto-labeling, version history, and the WS refresh nudge.
     let (action_label, view, confirmation) = match action {
-        crate::assist::WriteAction::Create { kind, title, content, items } => {
+        crate::assist::WriteAction::Create {
+            kind,
+            title,
+            content,
+            items,
+        } => {
             let is_checklist = kind == KIND_CHECKLIST;
             let (content, item_structs) = if is_checklist {
                 let structs: Vec<ChecklistItem> = items
                     .iter()
-                    .map(|text| ChecklistItem { id: new_id(), text: text.clone(), done: false })
+                    .map(|text| ChecklistItem {
+                        id: new_id(),
+                        text: text.clone(),
+                        done: false,
+                    })
                     .collect();
                 (content, structs)
             } else {
@@ -362,19 +444,35 @@ where
             let view = match create_note_for_user(state, turn.user_id, body).await {
                 Ok(view) => view,
                 Err(_) => {
-                    send(sink, serde_json::json!({"type":"error","message":"could not create the note"})).await;
+                    send(
+                        sink,
+                        serde_json::json!({"type":"error","message":"could not create the note"}),
+                    )
+                    .await;
                     return true;
                 }
             };
             let confirmation = if is_checklist {
-                format!("Created a checklist{} with {n} item{}.", titled(&view.note.title), plural(n))
+                format!(
+                    "Created a checklist{} with {n} item{}.",
+                    titled(&view.note.title),
+                    plural(n)
+                )
             } else {
                 format!("Created a note{}.", titled(&view.note.title))
             };
             ("create", view, confirmation)
         }
-        crate::assist::WriteAction::Append { note_id, content, items } => {
-            let Ok(Some(record)) = state.repo.note_record(&note_id).await else {
+        crate::assist::WriteAction::Append {
+            note_id,
+            content,
+            items,
+        } => {
+            let Ok(Some(record)) = state
+                .repo
+                .note_record_for_user(&note_id, turn.user_id)
+                .await
+            else {
                 return false; // vanished between retrieval and now
             };
             let is_checklist = record.kind == KIND_CHECKLIST;
@@ -383,7 +481,11 @@ where
             if is_checklist && !items.is_empty() {
                 let mut merged = record.items.clone();
                 for text in &items {
-                    merged.push(ChecklistItem { id: new_id(), text: text.clone(), done: false });
+                    merged.push(ChecklistItem {
+                        id: new_id(),
+                        text: text.clone(),
+                        done: false,
+                    });
                 }
                 added = items.len();
                 body.items = Some(merged);
@@ -413,12 +515,20 @@ where
             let view = match apply_note_update(state, turn.user_id, &note_id, body).await {
                 Ok(view) => view,
                 Err(_) => {
-                    send(sink, serde_json::json!({"type":"error","message":"could not update the note"})).await;
+                    send(
+                        sink,
+                        serde_json::json!({"type":"error","message":"could not update the note"}),
+                    )
+                    .await;
                     return true;
                 }
             };
             let confirmation = if added > 0 {
-                format!("Added {added} item{} to{}.", plural(added), titled(&view.note.title))
+                format!(
+                    "Added {added} item{} to{}.",
+                    plural(added),
+                    titled(&view.note.title)
+                )
             } else {
                 format!("Updated{}.", titled(&view.note.title))
             };
@@ -437,7 +547,12 @@ where
     if !send(sink, created).await {
         return true; // client gone; turn is still "handled"
     }
-    if !send(sink, serde_json::json!({"type": "delta", "text": confirmation})).await {
+    if !send(
+        sink,
+        serde_json::json!({"type": "delta", "text": confirmation}),
+    )
+    .await
+    {
         return true;
     }
     send(sink, serde_json::json!({"type": "done"})).await;

@@ -181,6 +181,7 @@ Missing a required `s3` variable is a hard startup failure, not a silent downgra
 | --- | --- | --- |
 | `STICKY_NOTES_TELEGRAM_API` | `https://api.telegram.org` | Telegram Bot API base, for self-hosted bot-api servers or proxies. |
 | `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | unset (off) | `1`/`true`/`yes`/`on` lets link previews resolve private and loopback hosts. Off by default as an SSRF guard — only turn it on to preview links on your own LAN. |
+| `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | unset (off) | Allows per-user/managed LLM and ntfy URLs to resolve private or loopback addresses. Leave off on public-registration servers; enable only when users are trusted and need LAN services such as Ollama or a private ntfy. Public targets are DNS-pinned and redirects are refused. |
 
 **Server-managed LLM settings**
 
@@ -188,7 +189,7 @@ Each one overrides the per-user value and locks that field in the app's Settings
 
 | Variable | Manages | Notes |
 | --- | --- | --- |
-| `STICKY_NOTES_LLM_BASE_URL` | `llm_base_url` | OpenAI-compatible endpoint, e.g. `http://ollama:11434/v1`. |
+| `STICKY_NOTES_LLM_BASE_URL` | `llm_base_url` | OpenAI-compatible endpoint, e.g. `http://ollama:11434/v1` (private hosts also require `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS=1`). |
 | `STICKY_NOTES_LLM_API_KEY` | `llm_api_key` | **Secret** — drives the server, never sent to the app. |
 | `STICKY_NOTES_LLM_MODEL` | `llm_model` | |
 | `STICKY_NOTES_LLM_LABELING` | `llm_labeling` | Boolean. Auto-labeling on/off. |
@@ -320,8 +321,12 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
 | `GET /unfurl?url=…` | SSRF-guarded link preview metadata |
 | `POST /llm/test`, `/notify/test` | Test unsaved LLM or notification configuration |
-| `GET /chat?token=…` | One streaming notes-chat turn over WebSocket |
-| `GET /ws?token=…` | Change-event WebSocket; clients debounce and refetch notes/settings |
+| `GET /chat` | One streaming notes-chat turn over WebSocket; auth is in the first frame |
+| `GET /ws` | Change-event WebSocket; auth is in the first frame, then clients debounce and refetch |
+
+For rolling native-app upgrades, the previous `?token=…` WebSocket form is
+temporarily accepted by the server. Current clients never put session tokens
+in URLs; remove the compatibility path after older mobile releases age out.
 
 ## Design notes & trade-offs
 

@@ -274,7 +274,10 @@ class ApiClient implements Api {
   /// Uploads stream real bytes and can legitimately outlast [requestTimeout]
   /// on a slow link, so they go out unbounded.
   final http.Client _uploadClient;
-  late final http.Client _client = _TimeoutClient(_uploadClient, requestTimeout);
+  late final http.Client _client = _TimeoutClient(
+    _uploadClient,
+    requestTimeout,
+  );
 
   /// Session token; set by the auth store after sign-in.
   String? token;
@@ -295,6 +298,16 @@ class ApiClient implements Api {
     if (token != null) 'authorization': 'Bearer $token',
   };
 
+  Uri _webSocketUri(String path) {
+    final httpUri = _uri(path);
+    final scheme = switch (httpUri.scheme) {
+      'https' => 'wss',
+      'http' => 'ws',
+      _ => throw FormatException('backend URL must use http or https'),
+    };
+    return httpUri.replace(scheme: scheme);
+  }
+
   @override
   Future<void> checkConnection() async {
     final response = await _client
@@ -303,8 +316,26 @@ class ApiClient implements Api {
     _decode(response, authed: false);
   }
 
-  dynamic _decode(http.Response res, {bool authed = true}) {
-    if (res.statusCode == 401 && authed) {
+  dynamic _decode(
+    http.Response res, {
+    bool authed = true,
+    String? requestToken,
+  }) {
+    final authorization = res.request?.headers['authorization'];
+    final sentToken =
+        requestToken ??
+        (authorization != null && authorization.startsWith('Bearer ')
+            ? authorization.substring('Bearer '.length)
+            : null);
+    final requestUrl = res.request?.url.toString();
+    final currentApiBase = _uri('/').toString();
+    final currentServer =
+        requestUrl == null || requestUrl.startsWith(currentApiBase);
+    if (res.statusCode == 401 &&
+        authed &&
+        currentServer &&
+        sentToken != null &&
+        sentToken == token) {
       onUnauthorized?.call();
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -363,8 +394,10 @@ class ApiClient implements Api {
 
   @override
   Future<AuthUser> me() async {
+    final requestToken = token;
     final data = _decode(
       await _client.get(_uri('/auth/me'), headers: _headers()),
+      requestToken: requestToken,
     );
     return AuthUser.fromJson(data as Map<String, dynamic>);
   }
@@ -911,12 +944,11 @@ class ApiClient implements Api {
     }
 
     connect = () {
-      if (closed || token == null) return;
-      final wsBase = baseUrl.replaceFirst('http', 'ws');
+      final sessionToken = token;
+      if (closed || sessionToken == null) return;
       try {
-        channel = WebSocketChannel.connect(
-          Uri.parse('$wsBase/api/ws?token=$token'),
-        );
+        channel = WebSocketChannel.connect(_webSocketUri('/ws'));
+        channel!.sink.add(jsonEncode({'token': sessionToken}));
         channel!.stream.listen(
           (_) => controller.add(null),
           onDone: scheduleReconnect,
@@ -998,13 +1030,16 @@ class ApiClient implements Api {
     }
 
     controller.onListen = () {
-      final wsBase = baseUrl.replaceFirst('http', 'ws');
+      final sessionToken = token;
+      if (sessionToken == null) {
+        emit(const ChatErrorEvent('sign in to use chat'));
+        return;
+      }
       try {
-        channel = WebSocketChannel.connect(
-          Uri.parse('$wsBase/api/chat?token=$token'),
-        );
+        channel = WebSocketChannel.connect(_webSocketUri('/chat'));
         channel!.sink.add(
           jsonEncode({
+            'token': sessionToken,
             'message': message,
             'history': [for (final m in history) m.toJson()],
             if (workspaceId != null && workspaceId.isNotEmpty)

@@ -21,11 +21,16 @@ RUN cargo build --release
 # --- 3. Runtime ----------------------------------------------------------------
 FROM debian:trixie-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends ca-certificates gosu passwd \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system sticky-notes \
+    && useradd --system --gid sticky-notes --home-dir /nonexistent \
+        --shell /usr/sbin/nologin sticky-notes \
+    && install -d -o sticky-notes -g sticky-notes /data
 WORKDIR /app
 COPY --from=server /src/target/release/sticky-notes-server /app/
 COPY --from=web /src/build/web /app/web
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ENV STICKY_NOTES_WEB=/app/web \
     STICKY_NOTES_DB=/data/sticky_notes.db \
@@ -33,4 +38,5 @@ ENV STICKY_NOTES_WEB=/app/web \
 
 VOLUME ["/data"]
 EXPOSE 8787
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/app/sticky-notes-server"]

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
@@ -30,6 +32,18 @@ void main() {
     await settings.load();
     expect(settings.loaded, isTrue);
     expect(settings.themeMode, ThemeMode.system);
+  });
+
+  test('dispose stops an in-flight load before the next request', () async {
+    final gate = api.fetchCapabilitiesGate = Completer<void>();
+    final loading = settings.load();
+    await pumpEventQueue();
+
+    settings.dispose();
+    gate.complete();
+    await loading;
+
+    expect(api.log, ['fetchCapabilities']);
   });
 
   test('mutations persist to the server and roundtrip', () async {

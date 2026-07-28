@@ -38,6 +38,16 @@ class NotesStore extends ChangeNotifier {
   /// The signed-in user; used to scope trash and owner-only actions.
   final String? currentUserId;
 
+  /// Stable identity of the backend this store is connected to. A user id is
+  /// unique only inside one server, so durable notes and pending writes must
+  /// be partitioned by both values.
+  final String cacheNamespace;
+
+  /// Whether an old user-only cache may be claimed by this server. Set only
+  /// while restoring a token that was saved alongside the active server; a
+  /// fresh login on another server must never migrate another server's data.
+  final bool migrateLegacyCache;
+
   /// Invoked on server-push change events, so siblings (e.g. the settings
   /// store) can refresh from the same socket.
   final VoidCallback? onRemoteChange;
@@ -103,14 +113,18 @@ class NotesStore extends ChangeNotifier {
   bool _checkingConnection = false;
   bool _reloadPending = false;
   bool _restoringBackup = false;
+  bool _disposed = false;
 
   /// Increments whenever a local write enters the queue. A remote fetch that
   /// started before this revision changed must never replace optimistic state,
   /// even if the write drains before the response is applied.
   int _localWriteRevision = 0;
 
+  /// Orders overlapping server snapshots. A later load/refresh invalidates
+  /// every earlier multi-request snapshot before it can replace local state.
+  int _fetchGeneration = 0;
+
   static const _connectionProbeInterval = Duration(seconds: 2);
-  static const _syncOperationTimeout = Duration(seconds: 5);
 
   static const _defaultOfflineGrace = Duration(seconds: 5);
 
@@ -125,6 +139,8 @@ class NotesStore extends ChangeNotifier {
     required this.api,
     LocalCache? cache,
     this.currentUserId,
+    this.cacheNamespace = '',
+    this.migrateLegacyCache = false,
     this.onRemoteChange,
     this.offlineGrace = _defaultOfflineGrace,
   }) : cache = cache ?? MemoryLocalCache();
@@ -181,7 +197,8 @@ class NotesStore extends ChangeNotifier {
   /// How the home screen narrows notes to the open workspace.
   WorkspaceScope get workspaceScope => WorkspaceScope(
     workspaceId: _activeWorkspaceId,
-    isDefault: _activeWorkspaceId != null &&
+    isDefault:
+        _activeWorkspaceId != null &&
         _activeWorkspaceId == defaultWorkspace?.id,
     known: {for (final workspace in _workspaces) workspace.id},
   );
@@ -481,7 +498,11 @@ class NotesStore extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    if (_disposed) return;
+    final generation = ++_fetchGeneration;
+    bool isCurrent() => !_disposed && generation == _fetchGeneration;
     await _hydrate();
+    if (!isCurrent()) return;
     var fetchAgain = false;
     do {
       fetchAgain = false;
@@ -489,10 +510,15 @@ class NotesStore extends ChangeNotifier {
       final revisionAtStart = _localWriteRevision;
       try {
         final workspaces = await api.fetchWorkspaces();
+        if (!isCurrent()) return;
         final notes = await api.fetchNotes();
+        if (!isCurrent()) return;
         final labels = await api.fetchLabels();
+        if (!isCurrent()) return;
         final stages = await api.fetchStages();
+        if (!isCurrent()) return;
         final history = await api.fetchChecklistHistory();
+        if (!isCurrent()) return;
         final writesChangedDuringFetch = revisionAtStart != _localWriteRevision;
         // A write can enter and leave the queue entirely while these requests
         // are in flight. Checking only the queue at the end would then apply a
@@ -517,11 +543,13 @@ class NotesStore extends ChangeNotifier {
         }
         _markConnectionUp();
       } catch (_) {
+        if (!isCurrent()) return;
         _markConnectionDown();
         _retryTimer?.cancel();
         _retryTimer = Timer(const Duration(seconds: 5), load);
       }
     } while (fetchAgain);
+    if (!isCurrent()) return;
     loading = false;
     notifyListeners();
   }
@@ -531,7 +559,9 @@ class NotesStore extends ChangeNotifier {
   /// pending writes so the refetch reflects them. Skips clobbering when local
   /// changes are still in flight, matching [load].
   Future<void> refresh() async {
-    if (refreshing) return;
+    if (_disposed || refreshing) return;
+    final generation = ++_fetchGeneration;
+    bool isCurrent() => !_disposed && generation == _fetchGeneration;
     refreshing = true;
     notifyListeners();
     // Push anything queued/mid-debounce first, so the server state we pull back
@@ -543,10 +573,15 @@ class NotesStore extends ChangeNotifier {
     if (_queue.isNotEmpty) _flush();
     try {
       final workspaces = await api.fetchWorkspaces();
+      if (!isCurrent()) return;
       final notes = await api.fetchNotes();
+      if (!isCurrent()) return;
       final labels = await api.fetchLabels();
+      if (!isCurrent()) return;
       final stages = await api.fetchStages();
+      if (!isCurrent()) return;
       final history = await api.fetchChecklistHistory();
+      if (!isCurrent()) return;
       if (!_hasLocalChangesInFlight) {
         _notes = notes..sort((a, b) => a.position.compareTo(b.position));
         _labels = labels;
@@ -559,17 +594,37 @@ class NotesStore extends ChangeNotifier {
       }
       _markConnectionUp();
     } catch (_) {
+      if (!isCurrent()) return;
       _markConnectionDown();
     } finally {
       refreshing = false;
-      notifyListeners();
+      if (isCurrent()) {
+        // A refresh may have superseded the initial load.
+        loading = false;
+        notifyListeners();
+      }
     }
   }
 
   // ---------------------------------------------------------------------
   // Local persistence (offline cache)
 
-  String get _cacheKey => currentUserId ?? 'local';
+  String get _legacyCacheKey => currentUserId ?? 'local';
+
+  String get _cacheKey {
+    final namespace = cacheNamespace.trim();
+    if (namespace.isEmpty) return _legacyCacheKey;
+    return '${Uri.encodeComponent(namespace)}::$_legacyCacheKey';
+  }
+
+  static const Map<String, dynamic> _emptyCacheDoc = {
+    'notes': <dynamic>[],
+    'labels': <dynamic>[],
+    'stages': <dynamic>[],
+    'workspaces': <dynamic>[],
+    'history': <String, dynamic>{},
+    'queue': <dynamic>[],
+  };
 
   /// Load the on-disk snapshot so notes render instantly — before, and even
   /// without, a network round-trip. Runs once; the network fetch in [load]
@@ -578,7 +633,22 @@ class NotesStore extends ChangeNotifier {
   Future<void> _hydrate() async {
     if (_hydrated) return;
     try {
-      final doc = await cache.read(_cacheKey);
+      var doc = await cache.read(_cacheKey);
+      if (doc == null && migrateLegacyCache && _cacheKey != _legacyCacheKey) {
+        doc = await cache.read(_legacyCacheKey);
+        if (doc != null) {
+          await cache.write(_cacheKey, doc);
+          await cache.clear(_legacyCacheKey);
+        }
+      }
+      if (doc == null && !migrateLegacyCache && _cacheKey != _legacyCacheKey) {
+        // A fresh login cannot prove which server created the old user-only
+        // cache. Claim this server's namespace with an empty marker now, so a
+        // later restored launch cannot reinterpret another server's pending
+        // writes as its own.
+        doc = _emptyCacheDoc;
+        await cache.write(_cacheKey, doc);
+      }
       if (doc != null) {
         _notes = [
           for (final j in (doc['notes'] as List? ?? const []))
@@ -674,7 +744,7 @@ class NotesStore extends ChangeNotifier {
   /// timer) so it runs promptly after each change without leaking test
   /// timers.
   void _persistNow() {
-    if (!_hydrated) return;
+    if (_disposed || !_hydrated) return;
     _lastPersist = DateTime.now();
     _persistDirty = true;
     if (_persisting) return;
@@ -696,6 +766,7 @@ class NotesStore extends ChangeNotifier {
 
   @override
   void notifyListeners() {
+    if (_disposed) return;
     super.notifyListeners();
     _persistSoon();
   }
@@ -703,6 +774,7 @@ class NotesStore extends ChangeNotifier {
   /// Live sync: any server-side change to this user's notes triggers a
   /// debounced refetch (skipped while our own edits are still in flight).
   void startSync() {
+    if (_disposed) return;
     _syncSub?.cancel();
     _syncSub = api.changeEvents().listen((_) {
       _syncReloadDebounce?.cancel();
@@ -718,7 +790,9 @@ class NotesStore extends ChangeNotifier {
     // The browser fires 'online' the instant connectivity returns; flush the
     // pending queue right away instead of waiting for the 5s retry tick.
     _onlineSub?.cancel();
-    _onlineSub = onlineEvents().listen((_) => retryNow());
+    _onlineSub = onlineEvents().listen((_) {
+      if (_connectionDown) retryNow();
+    });
 
     // A quiet WebSocket can take a long time to notice that its TCP connection
     // disappeared. Probe the tiny health endpoint so the status indicator is
@@ -737,16 +811,18 @@ class NotesStore extends ChangeNotifier {
   /// Probe immediately (also exposed for deterministic tests and explicit
   /// lifecycle hooks). The periodic timer above normally drives this.
   Future<void> checkConnectionNow() async {
-    if (_checkingConnection) return;
+    if (_disposed || _checkingConnection) return;
     _checkingConnection = true;
     try {
       await api.checkConnection();
+      if (_disposed) return;
       final wasDown = _connectionDown;
       if (_markConnectionUp()) notifyListeners();
       // Recovered: push whatever was waiting, whether or not the outage
       // lasted long enough for the user to ever hear about it.
       if (wasDown) await retryNow();
     } catch (_) {
+      if (_disposed) return;
       _markConnectionDown();
     } finally {
       _checkingConnection = false;
@@ -1216,11 +1292,7 @@ class NotesStore extends ChangeNotifier {
     _workspaces[i] = _workspaces[i].copyWith(name: trimmed);
     notifyListeners();
     _enqueue(
-      PendingOp(
-        PendingOpKind.workspaceRename,
-        id: id,
-        data: {'name': trimmed},
-      ),
+      PendingOp(PendingOpKind.workspaceRename, id: id, data: {'name': trimmed}),
     );
   }
 
@@ -1232,17 +1304,35 @@ class NotesStore extends ChangeNotifier {
         workspace.isOwnedBy(currentUserId);
   }
 
-  /// Delete a workspace. Every note in it — the owner's and every member's —
-  /// is deleted outright along with it, not staged anywhere recoverable.
-  /// Only the owner can do this; a member who wants out without destroying
-  /// anything uses [leaveWorkspace].
+  /// Delete a workspace container without deleting anyone's notes. Each note
+  /// follows its owner to their default workspace; locally we keep notes this
+  /// user owns or can still reach through a direct share and drop the rest
+  /// from view. Workspace labels and board columns do not survive the move.
   void deleteWorkspace(String id) {
     if (!canDeleteWorkspace(id)) return;
-    for (final note in _notes.where((note) => note.workspaceId == id)) {
-      _saveDebounce.remove(note.id)?.cancel();
+    final me = currentUserId;
+    final retained = {
+      for (final note in _notes.where((note) => note.workspaceId == id))
+        if (note.isOwnedBy(me) ||
+            note.collaborators.any((user) => user.id == me))
+          note.id,
+    };
+    // A member's edit must reach the server before the workspace-delete op
+    // moves that note home, even though it disappears from this local shelf.
+    for (final note in _notes.where(
+      (note) => note.workspaceId == id && !retained.contains(note.id),
+    )) {
+      final timer = _saveDebounce.remove(note.id);
+      if (timer != null) {
+        timer.cancel();
+        _enqueueContentPatch(note.id);
+      }
       _drafts.remove(note.id);
     }
-    _notes.removeWhere((note) => note.workspaceId == id);
+    _rehomeNotesLocally(id, (note) => retained.contains(note.id));
+    _notes.removeWhere(
+      (note) => note.workspaceId == id && !retained.contains(note.id),
+    );
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((workspace) => workspace.id == id);
@@ -1265,17 +1355,15 @@ class NotesStore extends ChangeNotifier {
     _reconcileActiveWorkspace();
     notifyListeners();
     _enqueue(
-      PendingOp(
-        PendingOpKind.leaveWorkspace,
-        id: id,
-        data: {'userId': me},
-      ),
+      PendingOp(PendingOpKind.leaveWorkspace, id: id, data: {'userId': me}),
     );
   }
 
-  /// Move the notes matching [keep] out of a workspace that is going away and
-  /// into the default one, dropping the labels and the board column they leave
-  /// behind — both belong to the workspace, not to the note.
+  /// Reconcile notes while a workspace is going away. Our own notes move into
+  /// our default workspace. A note owned elsewhere but retained through a
+  /// direct share keeps an unknown foreign workspace id until the refetch
+  /// supplies its owner's new default id; [WorkspaceScope] still surfaces it
+  /// in our default view. Workspace labels and board placement never follow.
   void _rehomeNotesLocally(String workspaceId, bool Function(Note) keep) {
     final home = defaultWorkspace?.id ?? '';
     final leavingLabels = {
@@ -1286,7 +1374,7 @@ class NotesStore extends ChangeNotifier {
       final note = _notes[i];
       if (note.workspaceId != workspaceId || !keep(note)) continue;
       _notes[i] = note.copyWith(
-        workspaceId: home,
+        workspaceId: note.isOwnedBy(currentUserId) ? home : note.workspaceId,
         labelIds: note.labelIds.difference(leavingLabels),
         stageId: null,
       );
@@ -1559,7 +1647,10 @@ class NotesStore extends ChangeNotifier {
   /// actually have locally (never trashed ones). Throws on server errors so
   /// the UI can fall back to keyword search.
   Future<List<Note>> semanticSearch(String query) async {
-    final ids = await api.semanticSearch(query, workspaceId: _activeWorkspaceId);
+    final ids = await api.semanticSearch(
+      query,
+      workspaceId: _activeWorkspaceId,
+    );
     return [
       for (final id in ids)
         if (noteById(id) case final Note note)
@@ -1769,6 +1860,7 @@ class NotesStore extends ChangeNotifier {
   // Sync queue
 
   void _enqueue(PendingOp op) {
+    if (_disposed) return;
     _localWriteRevision++;
     _queue.add(op);
     _persistNow();
@@ -1778,7 +1870,8 @@ class NotesStore extends ChangeNotifier {
   /// Wait for the serial queue to empty (used before await-based calls that
   /// depend on queued writes, like sharing right after creating).
   Future<void> _drainQueue() async {
-    while (_queue.isNotEmpty && !_connectionDown) {
+    while (!_disposed && _queue.isNotEmpty && !_connectionDown) {
+      if (_retryTimer?.isActive == true) return;
       await _flush();
       if (_queue.isNotEmpty) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -1787,33 +1880,59 @@ class NotesStore extends ChangeNotifier {
   }
 
   Future<void> _flush() async {
-    if (_flushing) return;
+    if (_disposed || _flushing) return;
     _flushing = true;
-    while (_queue.isNotEmpty) {
-      final op = _queue.first;
-      try {
-        await _run(op).timeout(_syncOperationTimeout);
-        _queue.removeAt(0);
-        _persistNow();
-        if (_markConnectionUp()) notifyListeners();
-      } on ApiException catch (e) {
-        // A 4xx will never succeed on retry; drop the op instead of wedging
-        // the queue. 5xx are treated like network failures below.
-        if (e.statusCode >= 400 && e.statusCode < 500) {
-          debugPrint('dropping rejected op: $e');
+    try {
+      while (!_disposed && _queue.isNotEmpty) {
+        final op = _queue.first;
+        try {
+          // Keep exactly one mutation in flight. `Future.timeout` does not
+          // cancel its underlying HTTP request; retrying after such a timeout
+          // could let the original finish last and overwrite a newer queued
+          // operation. ApiClient owns the real transport timeout instead.
+          await _run(op);
+          if (_disposed) break;
           _queue.removeAt(0);
           _persistNow();
-          continue;
+          if (_markConnectionUp()) notifyListeners();
+        } on ApiException catch (e) {
+          if (_disposed) break;
+          // Authentication expiry and explicit throttling are recoverable.
+          // Keep the operation durable so signing in again or waiting for the
+          // server cannot silently discard an offline edit. Other 4xx
+          // responses are permanent contract/permission failures.
+          final retryable =
+              e.statusCode == 401 ||
+              e.statusCode == 408 ||
+              e.statusCode == 425 ||
+              e.statusCode == 429;
+          if (e.statusCode >= 400 && e.statusCode < 500 && !retryable) {
+            debugPrint('dropping rejected op: $e');
+            _queue.removeAt(0);
+            _persistNow();
+            continue;
+          }
+          final serverAskedToWait =
+              e.statusCode == 401 || e.statusCode == 425 || e.statusCode == 429;
+          _scheduleRetry(
+            markConnectionDown: !serverAskedToWait,
+            delay: serverAskedToWait
+                ? const Duration(seconds: 10)
+                : const Duration(seconds: 5),
+          );
+          break;
+        } catch (_) {
+          if (!_disposed) _scheduleRetry();
+          break;
         }
-        _scheduleRetry();
-        break;
-      } catch (_) {
-        _scheduleRetry();
-        break;
       }
+    } finally {
+      _flushing = false;
     }
-    _flushing = false;
-    if (_queue.isEmpty && _reloadPending && !_hasLocalChangesInFlight) {
+    if (!_disposed &&
+        _queue.isEmpty &&
+        _reloadPending &&
+        !_hasLocalChangesInFlight) {
       _reloadPending = false;
       load();
     }
@@ -1886,13 +2005,18 @@ class NotesStore extends ChangeNotifier {
     }
   }
 
-  void _scheduleRetry() {
-    _markConnectionDown();
+  void _scheduleRetry({
+    bool markConnectionDown = true,
+    Duration delay = const Duration(seconds: 5),
+  }) {
+    if (_disposed) return;
+    if (markConnectionDown) _markConnectionDown();
     _retryTimer?.cancel();
-    _retryTimer = Timer(const Duration(seconds: 5), _flush);
+    _retryTimer = Timer(delay, _flush);
   }
 
   Future<void> retryNow() async {
+    if (_disposed) return;
     _retryTimer?.cancel();
     if (_queue.isEmpty) {
       await load();
@@ -1903,6 +2027,8 @@ class NotesStore extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _retryTimer?.cancel();
     _offlineConfirmTimer?.cancel();
     _syncReloadDebounce?.cancel();

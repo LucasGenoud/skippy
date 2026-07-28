@@ -30,9 +30,9 @@ class _SkippyAppState extends State<SkippyApp> {
   late final ApiClient _api = ApiClient();
   late final AuthStore _auth = AuthStore(api: _api);
 
-  /// Shared session cache for link-preview unfurls (not user-scoped; the API
-  /// client carries the bearer token). Lives for the app's lifetime.
-  late final LinkPreviewCache _linkPreviews = LinkPreviewCache(api: _api);
+  /// Link previews can include metadata from private URLs, so this cache lives
+  /// only for one authenticated server/user session.
+  LinkPreviewCache? _linkPreviews;
 
   /// Receives content shared into the app from the OS share sheet (mobile) and
   /// creates a note for it. Long-lived so a share that arrives before sign-in
@@ -60,6 +60,7 @@ class _SkippyAppState extends State<SkippyApp> {
     if (signedIn && (_store == null || _store!.currentUserId != userId)) {
       _store?.dispose();
       _settings?.dispose();
+      _linkPreviews = LinkPreviewCache(api: _api);
       _settings = SettingsStore(api: _api)..load();
       final settings = _settings!;
       _store =
@@ -67,6 +68,8 @@ class _SkippyAppState extends State<SkippyApp> {
               api: _api,
               cache: PrefsLocalCache(),
               currentUserId: userId,
+              cacheNamespace: _api.baseUrl,
+              migrateLegacyCache: _auth.restoredSession,
               // Settings changes on other devices arrive on the same socket.
               onRemoteChange: () => settings.load(),
             )
@@ -79,6 +82,7 @@ class _SkippyAppState extends State<SkippyApp> {
       _settings?.dispose();
       _store = null;
       _settings = null;
+      _linkPreviews = null;
       _shareIntake.setStore(null);
       setState(() {});
     }
@@ -101,7 +105,8 @@ class _SkippyAppState extends State<SkippyApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: _auth),
-        Provider<LinkPreviewCache>.value(value: _linkPreviews),
+        if (_linkPreviews != null)
+          Provider<LinkPreviewCache>.value(value: _linkPreviews!),
         if (store != null) ChangeNotifierProvider.value(value: store),
         if (settings != null) ChangeNotifierProvider.value(value: settings),
       ],
@@ -138,7 +143,11 @@ class _SkippyAppState extends State<SkippyApp> {
                         ? const Scaffold(
                             body: Center(child: CircularProgressIndicator()),
                           )
-                        : HomeScreen(key: ValueKey(store.currentUserId)),
+                        : HomeScreen(
+                            key: ValueKey(
+                              '${_api.baseUrl}:${store.currentUserId}',
+                            ),
+                          ),
                 },
               ),
             ),

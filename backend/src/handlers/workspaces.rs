@@ -5,6 +5,8 @@
 //! Only the owner may rename, delete, or change the roster. Members can edit
 //! the workspace's notes and labels, and can leave it.
 
+use std::collections::HashSet;
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -177,19 +179,23 @@ pub async fn delete_workspace(
     }
     // Notify before the roster disappears, so every member's client refreshes.
     let members = state.repo.workspace_member_ids(&id).await?;
-    let Some(purged) = state.repo.delete_workspace(&id).await? else {
+    let Some(deleted) = state.repo.delete_workspace(&id).await? else {
         return Err(ApiError::NotFound);
     };
-    // Every note in the workspace is gone with it — the owner's and every
-    // member's — so its attachments and search-index entry go too, the same
-    // cleanup a real note delete does.
-    for note in &purged {
-        for attachment_id in &note.attachment_ids {
-            state.files.delete(&note.owner_id, attachment_id).await;
+    // Moving a note changes workspace-derived visibility. Rebuild its index
+    // rows from the primary repository and notify both the former workspace
+    // roster and everyone who can still see it through its new home or a
+    // direct share.
+    let mut audience: HashSet<String> = members.into_iter().collect();
+    for note_id in &deleted.moved_note_ids {
+        if let Ok(participants) = state.repo.participant_ids(note_id).await {
+            audience.extend(participants);
         }
-        state.unindex_note_later(&note.note_id);
+        state.index_note_later(note_id);
     }
-    state.hub.notify(&members, CHANGED_MSG);
+    state
+        .hub
+        .notify(&audience.into_iter().collect::<Vec<_>>(), CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -235,17 +241,23 @@ pub async fn remove_workspace_member(
     }
     // Notify before removal so the departing member's client refreshes too.
     let members = state.repo.workspace_member_ids(&id).await?;
-    // Their own notes follow them out to their default workspace; notes owned
-    // by others stay behind.
-    let moved = state.repo.rehome_own_notes(&id, &target_id).await?;
-    if !state.repo.remove_workspace_member(&id, &target_id).await? {
+    // Their own notes follow them out to their default workspace while notes
+    // owned by others stay behind. Membership and note moves share one
+    // repository transaction so neither half can commit alone.
+    let Some(moved) = state.repo.remove_workspace_member(&id, &target_id).await? else {
         return Err(ApiError::NotFound);
-    }
+    };
     reindex_workspace_notes(&state, &id, &user_id).await?;
+    let mut audience: HashSet<String> = members.into_iter().collect();
     for note_id in &moved {
+        if let Ok(participants) = state.repo.participant_ids(note_id).await {
+            audience.extend(participants);
+        }
         state.index_note_later(note_id);
     }
-    state.hub.notify(&members, CHANGED_MSG);
+    state
+        .hub
+        .notify(&audience.into_iter().collect::<Vec<_>>(), CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }
 

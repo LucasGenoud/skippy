@@ -17,6 +17,11 @@ class AuthStore extends ChangeNotifier {
   bool busy = false;
   String? error;
 
+  /// True only when the current session came from this installation's saved
+  /// token. The notes cache uses this to migrate the one legacy, unscoped
+  /// cache exactly once; a fresh login to another server must never claim it.
+  bool restoredSession = false;
+
   /// HTTP status of the last auth failure, when it was an [ApiException].
   /// Lets the login screen decide which fields to flag red (401 = both
   /// credentials, 409 = email taken); null for network/other errors.
@@ -26,6 +31,10 @@ class AuthStore extends ChangeNotifier {
   static const _userKey = 'sticky_notes_user';
   static const _urlsKey = 'sticky_notes_backend_urls';
   static const _activeUrlKey = 'sticky_notes_active_url';
+
+  /// Invalidates authentication work when another attempt or a server/session
+  /// switch supersedes it.
+  int _authGeneration = 0;
 
   /// All backend URLs the user has saved.
   List<String> savedUrls = [];
@@ -91,10 +100,12 @@ class AuthStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_tokenKey);
     if (saved == null) {
+      restoredSession = false;
       status = AuthStatus.signedOut;
       notifyListeners();
       return;
     }
+    restoredSession = true;
     api.token = saved;
     final cached = _cachedUser(prefs);
     if (cached != null) {
@@ -122,11 +133,17 @@ class AuthStore extends ChangeNotifier {
         await prefs.remove(_userKey);
         status = AuthStatus.signedOut;
       } else {
-        status = AuthStatus.signedIn;
+        // Without a cached profile there is no trustworthy user id with which
+        // to open the offline cache or evaluate owner-only UI. Keep the saved
+        // token for a later launch, but do not manufacture a null-user session.
+        api.token = null;
+        status = AuthStatus.signedOut;
+        error = "Can't restore the saved session while the server is offline";
       }
     } catch (_) {
-      // Unreachable: stay signed in so the app is usable offline.
-      status = AuthStatus.signedIn;
+      api.token = null;
+      status = AuthStatus.signedOut;
+      error = "Can't restore the saved session while the server is offline";
     }
     notifyListeners();
   }
@@ -136,16 +153,25 @@ class AuthStore extends ChangeNotifier {
   /// unable to reach the server is exactly the case the cached session exists
   /// for, and must never cost someone access to their notes.
   Future<void> _verifySession(SharedPreferences prefs) async {
+    final verifyingToken = api.token;
+    final verifyingBaseUrl = api.baseUrl;
+    if (verifyingToken == null) return;
     try {
       final fresh = await api.me();
-      if (api.token == null) return; // signed out while the check was in flight
+      if (api.token != verifyingToken || api.baseUrl != verifyingBaseUrl) {
+        return;
+      }
       user = fresh;
       await prefs.setString(_userKey, jsonEncode(fresh.toJson()));
       notifyListeners();
     } on ApiException catch (e) {
       // A 401 already tripped `onUnauthorized`; clearing again is harmless and
       // covers a 403 the interceptor doesn't watch for.
-      if (_isRejection(e)) await _clearSession();
+      if (_isRejection(e) &&
+          api.token == verifyingToken &&
+          api.baseUrl == verifyingBaseUrl) {
+        await _clearSession();
+      }
     } catch (_) {
       // Offline: keep the session exactly as it is.
     }
@@ -169,20 +195,41 @@ class AuthStore extends ChangeNotifier {
   Future<bool> _authenticate(
     Future<({String token, AuthUser user})> Function() call,
   ) async {
+    final generation = ++_authGeneration;
+    final baseUrl = api.baseUrl;
+    bool isCurrent() => generation == _authGeneration && api.baseUrl == baseUrl;
+
     busy = true;
     error = null;
     errorStatus = null;
     notifyListeners();
     try {
       final result = await call();
+      if (!isCurrent()) return false;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, result.token);
+      if (!isCurrent()) {
+        if (prefs.getString(_tokenKey) == result.token) {
+          await prefs.remove(_tokenKey);
+          await prefs.remove(_userKey);
+        }
+        return false;
+      }
+      await prefs.setString(_userKey, jsonEncode(result.user.toJson()));
+      if (!isCurrent()) {
+        if (prefs.getString(_tokenKey) == result.token) {
+          await prefs.remove(_tokenKey);
+          await prefs.remove(_userKey);
+        }
+        return false;
+      }
+      restoredSession = false;
       api.token = result.token;
       user = result.user;
       status = AuthStatus.signedIn;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_tokenKey, result.token);
-      await prefs.setString(_userKey, jsonEncode(result.user.toJson()));
       return true;
     } on ApiException catch (e) {
+      if (!isCurrent()) return false;
       errorStatus = e.statusCode;
       error = switch (e.statusCode) {
         401 => 'Wrong email or password',
@@ -191,11 +238,14 @@ class AuthStore extends ChangeNotifier {
       };
       return false;
     } catch (_) {
+      if (!isCurrent()) return false;
       error = "Can't reach the server — is it running?";
       return false;
     } finally {
-      busy = false;
-      notifyListeners();
+      if (generation == _authGeneration) {
+        busy = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -252,6 +302,9 @@ class AuthStore extends ChangeNotifier {
   }
 
   Future<void> _clearSession() async {
+    _authGeneration++;
+    busy = false;
+    restoredSession = false;
     api.token = null;
     user = null;
     status = AuthStatus.signedOut;

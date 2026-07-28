@@ -30,6 +30,13 @@ pub struct PurgedNote {
     pub attachment_ids: Vec<String>,
 }
 
+/// Result of deleting a workspace container. Notes outlive the workspace and
+/// are moved to their respective owners' default workspaces; callers use the
+/// ids to refresh visibility-dependent state such as the semantic index.
+pub struct DeletedWorkspace {
+    pub moved_note_ids: Vec<String>,
+}
+
 /// Storage boundary for the whole app. Handlers only talk to this trait, so
 /// swapping SQLite for Postgres (or anything else) means implementing this
 /// trait and changing one line of wiring in `main`.
@@ -63,28 +70,37 @@ pub trait Repository: Send + Sync {
     async fn default_workspace(&self, user_id: &str) -> RepoResult<Option<Workspace>>;
     async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()>;
     async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool>;
-    /// Delete a workspace and hard-delete every note it held — the owner's
-    /// and every member's alike. `None` means the workspace doesn't exist or
-    /// is a default one (which can't be deleted); `Some` carries what was
-    /// purged so the caller can clean up attachment blobs and search-index
-    /// entries the same way [`purge_trash_before`] does.
-    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<Vec<PurgedNote>>>;
+    /// Delete a non-default workspace after moving every note it held to that
+    /// note owner's default workspace. Workspace labels and stages disappear,
+    /// so moved notes lose both; content, versions, shares, and attachments
+    /// survive. `None` means the workspace doesn't exist or is the default.
+    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<DeletedWorkspace>>;
     /// The workspace's owner plus everyone invited to it.
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>>;
     async fn is_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;
     async fn add_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<()>;
-    async fn remove_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;
-    /// Move every note `user_id` owns in `workspace_id` back to their default
-    /// workspace, so leaving a shared workspace takes their own notes with
-    /// them. Returns the ids that moved (their labels changed, so they need
-    /// reindexing).
-    async fn rehome_own_notes(&self, workspace_id: &str, user_id: &str) -> RepoResult<Vec<String>>;
+    /// Atomically remove a member and move every note they own in that
+    /// workspace back to their default workspace. `None` means they were not
+    /// a member; `Some` carries the moved ids for visibility reindexing.
+    async fn remove_workspace_member(
+        &self,
+        workspace_id: &str,
+        user_id: &str,
+    ) -> RepoResult<Option<Vec<String>>>;
 
     // -- notes ---------------------------------------------------------------
     /// Every note the user can see — owned, shared with them directly, or held
     /// by a workspace they belong to — decorated for that user.
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>>;
     async fn note_view(&self, note_id: &str, viewer_id: &str) -> RepoResult<Option<NoteView>>;
+    /// One note only when `user_id` can currently see it. Use this at request
+    /// authorization boundaries; [`Repository::note_record`] is for trusted
+    /// background work that deliberately operates without a viewer.
+    async fn note_record_for_user(
+        &self,
+        note_id: &str,
+        user_id: &str,
+    ) -> RepoResult<Option<NoteRecord>>;
     async fn note_record(&self, note_id: &str) -> RepoResult<Option<NoteRecord>>;
     async fn insert_note(&self, note: &NoteRecord) -> RepoResult<()>;
     async fn update_note(&self, note: &NoteRecord) -> RepoResult<()>;

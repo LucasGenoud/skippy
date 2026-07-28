@@ -290,6 +290,23 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
     )
     .await;
     let bobs_note_id = bobs_note["id"].as_str().unwrap().to_string();
+    let (_, stage) = send(
+        &app,
+        "POST",
+        "/api/stages",
+        Some(&bob),
+        Some(json!({"name": "Doing", "workspace_id": work})),
+    )
+    .await;
+    let (_, bobs_note) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{bobs_note_id}"),
+        Some(&bob),
+        Some(json!({"stage_id": stage["id"]})),
+    )
+    .await;
+    assert_eq!(bobs_note["stage_id"], stage["id"]);
     let adas_note = create_note(
         &app,
         &ada,
@@ -314,6 +331,10 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
         bobs[0]["workspace_id"],
         json!(default_workspace_id(&app, &bob).await)
     );
+    assert!(
+        bobs[0]["stage_id"].is_null(),
+        "a stage cannot follow a note into another workspace"
+    );
     // Ada keeps her own note in the workspace and loses sight of nothing else.
     let adas: Vec<Value> = list_notes(&app, &ada)
         .await
@@ -325,11 +346,14 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
 }
 
 #[tokio::test]
-async fn deleting_a_workspace_deletes_every_note_in_it() {
+async fn deleting_a_workspace_rehomes_every_note_without_losing_content() {
     let app_state = state().await;
     let app = build_app(app_state.clone());
     let (ada, ada_id) = register(&app, "ada").await;
     let (bob, _) = register(&app, "bob").await;
+    let (eve, _) = register(&app, "eve").await;
+    let ada_home = default_workspace_id(&app, &ada).await;
+    let bob_home = default_workspace_id(&app, &bob).await;
     let work = make_workspace(&app, &ada, "Work").await;
     invite(&app, &ada, &work, &test_email("bob")).await;
 
@@ -340,7 +364,17 @@ async fn deleting_a_workspace_deletes_every_note_in_it() {
     )
     .await;
     let adas_id = adas["id"].as_str().unwrap();
-    create_note(&app, &bob, json!({"title": "bob's", "workspace_id": work})).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{adas_id}/collaborators"),
+        Some(&ada),
+        Some(json!({"email": test_email("eve")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let bobs = create_note(&app, &bob, json!({"title": "bob's", "workspace_id": work})).await;
+    let bobs_id = bobs["id"].as_str().unwrap();
     let (_, label) = send(
         &app,
         "POST",
@@ -357,10 +391,35 @@ async fn deleting_a_workspace_deletes_every_note_in_it() {
         Some(json!({"label_ids": [label["id"]]})),
     )
     .await;
+    let (_, stage) = send(
+        &app,
+        "POST",
+        "/api/stages",
+        Some(&ada),
+        Some(json!({"name": "Doing", "workspace_id": work})),
+    )
+    .await;
+    send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{adas_id}"),
+        Some(&ada),
+        Some(json!({"stage_id": stage["id"], "content": "keep this"})),
+    )
+    .await;
     let (status, attachment) = upload(&app, &ada, adas_id, "image/png", b"pixels").await;
     assert_eq!(status, StatusCode::CREATED);
     let attachment_id = attachment["id"].as_str().unwrap();
     assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
+    let (_, versions_before) = send(
+        &app,
+        "GET",
+        &format!("/api/notes/{adas_id}/versions"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert!(!versions_before.as_array().unwrap().is_empty());
 
     let (status, _) = send(
         &app,
@@ -372,23 +431,39 @@ async fn deleting_a_workspace_deletes_every_note_in_it() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    // Gone, not filed anywhere recoverable: every note in the workspace —
-    // ada's and bob's alike — is deleted outright, along with its labels,
-    // attachment blob, and the workspace itself.
-    assert!(list_notes(&app, &ada).await.is_empty());
-    assert!(list_notes(&app, &bob).await.is_empty());
-    let (status, _) = send(
+    // The container and its taxonomy are gone, but each person's note follows
+    // them home with content, versions, and attachments intact.
+    let adas_notes = list_notes(&app, &ada).await;
+    assert_eq!(adas_notes.len(), 1);
+    assert_eq!(adas_notes[0]["id"], adas_id);
+    assert_eq!(adas_notes[0]["workspace_id"], ada_home);
+    assert_eq!(adas_notes[0]["content"], "keep this");
+    assert_eq!(adas_notes[0]["label_ids"], json!([]));
+    assert!(adas_notes[0]["stage_id"].is_null());
+    assert_eq!(adas_notes[0]["attachments"][0]["id"], attachment_id);
+
+    let bobs_notes = list_notes(&app, &bob).await;
+    assert_eq!(bobs_notes.len(), 1);
+    assert_eq!(bobs_notes[0]["id"], bobs_id);
+    assert_eq!(bobs_notes[0]["workspace_id"], bob_home);
+
+    let eves_notes = list_notes(&app, &eve).await;
+    assert_eq!(eves_notes.len(), 1);
+    assert_eq!(eves_notes[0]["id"], adas_id);
+
+    let (status, versions_after) = send(
         &app,
         "GET",
-        &format!("/api/notes/{adas_id}"),
+        &format!("/api/notes/{adas_id}/versions"),
         Some(&ada),
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(versions_after, versions_before);
     let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
     assert_eq!(labels, json!([]));
-    assert!(app_state.files.read(&ada_id, attachment_id).await.is_none());
+    assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
 }
 
 #[tokio::test]

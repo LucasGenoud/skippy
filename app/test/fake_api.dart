@@ -32,7 +32,11 @@ class FakeApi implements Api {
 
   /// Checked-item history keyed by note id (per-note suggestions).
   Map<String, List<String>> history = {};
+  Completer<void>? fetchWorkspacesGate;
+  Completer<void>? fetchCapabilitiesGate;
+  Completer<void>? fetchLabelsGate;
   Completer<void>? fetchHistoryGate;
+  Completer<void>? patchGate;
   Completer<void>? rewriteGate;
   Map<String, dynamic> settings = {};
 
@@ -134,14 +138,21 @@ class FakeApi implements Api {
   });
 
   @override
-  Future<List<Workspace>> fetchWorkspaces() => _run('fetchWorkspaces', () {
-    final list = workspaces.values.toList()
-      ..sort((a, b) {
-        if (a.isDefault != b.isDefault) return a.isDefault ? -1 : 1;
-        return a.name.compareTo(b.name);
-      });
-    return list;
-  });
+  Future<List<Workspace>> fetchWorkspaces() async {
+    final gate = fetchWorkspacesGate;
+    if (gate != null) {
+      fetchWorkspacesGate = null;
+      await gate.future;
+    }
+    return _run('fetchWorkspaces', () {
+      final list = workspaces.values.toList()
+        ..sort((a, b) {
+          if (a.isDefault != b.isDefault) return a.isDefault ? -1 : 1;
+          return a.name.compareTo(b.name);
+        });
+      return list;
+    });
+  }
 
   @override
   Future<Workspace> createWorkspace(String id, String name) =>
@@ -168,11 +179,29 @@ class FakeApi implements Api {
     if (workspaces.remove(id) == null) {
       throw ApiException(404, '{"error":"not found"}');
     }
-    // The server deletes every note in the workspace outright; mirror that
-    // so store tests see the same end state.
+    // Notes outlive their workspace. This fake models what the current account
+    // can still see after the server moves each note to its owner's default:
+    // our notes and direct shares remain; workspace-only notes disappear.
+    for (final entry in notes.entries.toList()) {
+      final note = entry.value;
+      if (note.workspaceId != id) continue;
+      final retained =
+          note.isOwnedBy(account.id) ||
+          note.collaborators.any((user) => user.id == account.id);
+      if (retained) {
+        notes[entry.key] = note.copyWith(
+          workspaceId: note.isOwnedBy(account.id)
+              ? defaultWorkspaceId
+              : note.workspaceId,
+          labelIds: const {},
+          stageId: null,
+        );
+      } else {
+        notes.remove(entry.key);
+      }
+    }
     labels.removeWhere((_, label) => label.workspaceId == id);
     stages.removeWhere((_, stage) => stage.workspaceId == id);
-    notes.removeWhere((_, note) => note.workspaceId == id);
   });
 
   @override
@@ -220,46 +249,52 @@ class FakeApi implements Api {
       });
 
   @override
-  Future<void> patchNote(String id, Map<String, dynamic> fields) =>
-      _run('patchNote:$id:${fields.keys.join(',')}', () {
-        final existing = notes[id];
-        if (existing == null) throw ApiException(404, '{"error":"not found"}');
-        notes[id] = existing.copyWith(
-          kind: fields.containsKey('kind')
-              ? NoteKind.fromWire(fields['kind'] as String?)
-              : null,
-          title: fields['title'] as String?,
-          content: fields['content'] as String?,
-          items: fields.containsKey('items')
-              ? [
-                  for (final j in fields['items'] as List)
-                    ChecklistItem.fromJson(j as Map<String, dynamic>),
-                ]
-              : null,
-          workspaceId: fields['workspace_id'] as String?,
-          color: fields['color'] as String?,
-          pinned: fields['pinned'] as bool?,
-          archived: fields['archived'] as bool?,
-          trashed: fields['trashed'] as bool?,
-          position: (fields['position'] as num?)?.toDouble(),
-          reminderAt: fields.containsKey('reminder_at')
-              ? (fields['reminder_at'] == null
-                    ? null
-                    : DateTime.parse(fields['reminder_at'] as String).toLocal())
-              : existing.reminderAt,
-          labelIds: fields.containsKey('label_ids')
-              ? (fields['label_ids'] as List).cast<String>().toSet()
-              : null,
-          // Present-but-null means "back to unassigned", so the key's presence
-          // is what decides — matching the server's nested Option. An absent
-          // key re-passes the current value, the way reminder_at does above.
-          stageId: fields.containsKey('stage_id')
-              ? _resolveStage(fields['stage_id'] as String?)
-              : existing.stageId,
-          stagePosition: (fields['stage_position'] as num?)?.toDouble(),
-          updatedAt: DateTime.now(),
-        );
-      });
+  Future<void> patchNote(String id, Map<String, dynamic> fields) async {
+    final gate = patchGate;
+    if (gate != null) {
+      patchGate = null;
+      await gate.future;
+    }
+    return _run('patchNote:$id:${fields.keys.join(',')}', () {
+      final existing = notes[id];
+      if (existing == null) throw ApiException(404, '{"error":"not found"}');
+      notes[id] = existing.copyWith(
+        kind: fields.containsKey('kind')
+            ? NoteKind.fromWire(fields['kind'] as String?)
+            : null,
+        title: fields['title'] as String?,
+        content: fields['content'] as String?,
+        items: fields.containsKey('items')
+            ? [
+                for (final j in fields['items'] as List)
+                  ChecklistItem.fromJson(j as Map<String, dynamic>),
+              ]
+            : null,
+        workspaceId: fields['workspace_id'] as String?,
+        color: fields['color'] as String?,
+        pinned: fields['pinned'] as bool?,
+        archived: fields['archived'] as bool?,
+        trashed: fields['trashed'] as bool?,
+        position: (fields['position'] as num?)?.toDouble(),
+        reminderAt: fields.containsKey('reminder_at')
+            ? (fields['reminder_at'] == null
+                  ? null
+                  : DateTime.parse(fields['reminder_at'] as String).toLocal())
+            : existing.reminderAt,
+        labelIds: fields.containsKey('label_ids')
+            ? (fields['label_ids'] as List).cast<String>().toSet()
+            : null,
+        // Present-but-null means "back to unassigned", so the key's presence
+        // is what decides — matching the server's nested Option. An absent
+        // key re-passes the current value, the way reminder_at does above.
+        stageId: fields.containsKey('stage_id')
+            ? _resolveStage(fields['stage_id'] as String?)
+            : existing.stageId,
+        stagePosition: (fields['stage_position'] as num?)?.toDouble(),
+        updatedAt: DateTime.now(),
+      );
+    });
+  }
 
   /// A stage the server would refuse — unknown, or from another workspace —
   /// is dropped rather than honoured, so client tests meet the same rule the
@@ -363,11 +398,19 @@ class FakeApi implements Api {
   }
 
   @override
-  Future<List<Label>> fetchLabels() => _run('fetchLabels', () {
-    final list = labels.values.toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    return list;
-  });
+  Future<List<Label>> fetchLabels() async {
+    final result = await _run('fetchLabels', () {
+      final list = labels.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return list;
+    });
+    final gate = fetchLabelsGate;
+    if (gate != null) {
+      fetchLabelsGate = null;
+      await gate.future;
+    }
+    return result;
+  }
 
   @override
   Future<void> createLabel(
@@ -560,7 +603,14 @@ class FakeApi implements Api {
 
   @override
   Future<({bool semanticSearch, bool audioTranscription})>
-  fetchCapabilities() => _run('fetchCapabilities', () => capabilities);
+  fetchCapabilities() async {
+    final gate = fetchCapabilitiesGate;
+    if (gate != null) {
+      fetchCapabilitiesGate = null;
+      await gate.future;
+    }
+    return _run('fetchCapabilities', () => capabilities);
+  }
 
   /// Number of notes queued by the most recent [reindexEmbeddings] call.
   int reindexedCount = 0;

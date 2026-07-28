@@ -263,6 +263,7 @@ class SettingsStore extends ChangeNotifier {
 
   Timer? _saveDebounce;
   bool _savePending = false;
+  bool _disposed = false;
   int _customCounter = 0;
 
   SettingsStore({required this.api});
@@ -281,27 +282,36 @@ class SettingsStore extends ChangeNotifier {
   });
 
   Future<void> load() async {
+    if (_disposed) return;
     final before = loaded ? _fingerprint() : null;
     // Server capabilities are independent of the (debounced) settings save, so
     // refresh them even while a local edit is still pending.
     try {
       final caps = await api.fetchCapabilities();
+      if (_disposed) return;
       semanticSearchCapable = caps.semanticSearch;
       audioTranscriptionCapable = caps.audioTranscription;
     } catch (_) {
+      if (_disposed) return;
       // Unreachable: leave capabilities as they were (default off).
     }
     // Server-managed overrides are independent of the pending local save too.
     try {
-      managed = await api.fetchManagedSettings();
+      final nextManaged = await api.fetchManagedSettings();
+      if (_disposed) return;
+      managed = nextManaged;
     } catch (_) {
+      if (_disposed) return;
       // Unreachable: leave as-is (default: nothing managed).
     }
     // Never clobber local edits that haven't reached the server yet.
     if (!_savePending) {
       try {
-        _applyJson(await api.fetchSettings());
+        final nextSettings = await api.fetchSettings();
+        if (_disposed) return;
+        _applyJson(nextSettings);
       } catch (_) {
+        if (_disposed) return;
         // Offline: defaults (or last applied values) stay in effect.
       }
     }
@@ -410,14 +420,16 @@ class SettingsStore extends ChangeNotifier {
   };
 
   void _mutate(VoidCallback change) {
+    if (_disposed) return;
     change();
     notifyListeners();
     _savePending = true;
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(milliseconds: 600), () async {
+      if (_disposed) return;
       try {
         await api.putSettings(toJson());
-        _savePending = false;
+        if (!_disposed) _savePending = false;
       } catch (_) {
         // Retry on the next mutation or app start; local values still apply.
       }
@@ -588,6 +600,8 @@ class SettingsStore extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _saveDebounce?.cancel();
     super.dispose();
   }

@@ -68,6 +68,9 @@ services:
       # Lets link previews resolve private/loopback hosts — off by default as
       # an SSRF guard.
       # STICKY_NOTES_UNFURL_ALLOW_PRIVATE: "1"
+      # Allows user-configured LLM/ntfy endpoints on the LAN. Keep off when
+      # untrusted people can register.
+      STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS: ${STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS:-}
 
       # ── Server-managed LLM settings ─────────────────────────────────────
       # Each one overrides the per-user value and locks that field in the
@@ -97,7 +100,7 @@ services:
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
     ports:
-      - "9000:9000" # exposed so a host `cargo run` can reach it in dev
+      - "127.0.0.1:9000:9000" # host `cargo run` can reach it; other hosts cannot
     environment:
       ASR_MODEL: base # tiny | base | small | medium | large-v3
       ASR_ENGINE: faster_whisper

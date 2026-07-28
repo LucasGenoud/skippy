@@ -13,8 +13,21 @@ import 'package:flutter/painting.dart';
 class AttachmentImage extends ImageProvider<AttachmentImage> {
   final String attachmentId;
   final String url;
+  final String serverScope;
 
-  const AttachmentImage({required this.attachmentId, required this.url});
+  AttachmentImage({required this.attachmentId, required this.url})
+    : serverScope = _scopeOf(url);
+
+  /// Signed query parameters rotate, but the backend portion of the URL is
+  /// stable. Include it in the cache identity so two configured servers that
+  /// happen to use the same attachment UUID can never share pixels.
+  static String _scopeOf(String url) {
+    const marker = '/api/files/';
+    final markerAt = url.indexOf(marker);
+    if (markerAt >= 0) return url.substring(0, markerAt);
+    final parsed = Uri.tryParse(url);
+    return parsed?.hasAuthority == true ? parsed!.origin : url;
+  }
 
   @override
   Future<AttachmentImage> obtainKey(ImageConfiguration configuration) =>
@@ -34,8 +47,10 @@ class AttachmentImage extends ImageProvider<AttachmentImage> {
 
   @override
   bool operator ==(Object other) =>
-      other is AttachmentImage && other.attachmentId == attachmentId;
+      other is AttachmentImage &&
+      other.attachmentId == attachmentId &&
+      other.serverScope == serverScope;
 
   @override
-  int get hashCode => attachmentId.hashCode;
+  int get hashCode => Object.hash(serverScope, attachmentId);
 }

@@ -18,8 +18,9 @@ void seedSession() => SharedPreferences.setMockInitialValues({
   }),
 });
 
-AuthStore storeWith(http.Client client) =>
-    AuthStore(api: ApiClient(baseUrl: 'http://server.test', httpClient: client));
+AuthStore storeWith(http.Client client) => AuthStore(
+  api: ApiClient(baseUrl: 'http://server.test', httpClient: client),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +79,186 @@ void main() {
       await pumpEventQueue();
 
       expect(auth.status, AuthStatus.signedIn);
+    });
+
+    test(
+      'an offline restore without a cached profile stays signed out',
+      () async {
+        SharedPreferences.setMockInitialValues({'sticky_notes_token': 'tok'});
+        final auth = storeWith(
+          MockClient((_) => Future.error(const SocketExceptionStub())),
+        );
+
+        await auth.restore();
+
+        expect(auth.status, AuthStatus.signedOut);
+        expect(auth.user, isNull);
+        expect(auth.api.token, isNull);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('sticky_notes_token'), 'tok');
+      },
+    );
+
+    test('a stale restore response cannot replace a newer login', () async {
+      seedSession();
+      final oldMe = Completer<http.Response>();
+      final auth = storeWith(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/auth/me')) return oldMe.future;
+          if (request.url.path.endsWith('/auth/login')) {
+            return http.Response(
+              jsonEncode({
+                'token': 'new-token',
+                'user': {
+                  'id': 'u-new',
+                  'name': 'New',
+                  'email': 'new@example.com',
+                },
+              }),
+              200,
+            );
+          }
+          return http.Response('{}', 200);
+        }),
+      );
+
+      await auth.restore();
+      await auth.signIn('new@example.com', 'password');
+      oldMe.complete(
+        http.Response(
+          jsonEncode({
+            'id': 'u-old',
+            'name': 'Old',
+            'email': 'old@example.com',
+          }),
+          200,
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(auth.status, AuthStatus.signedIn);
+      expect(auth.user?.id, 'u-new');
+      expect(auth.api.token, 'new-token');
+    });
+
+    test('a stale restore rejection cannot clear a newer login', () async {
+      seedSession();
+      final oldMe = Completer<http.Response>();
+      final auth = storeWith(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/auth/me')) return oldMe.future;
+          if (request.url.path.endsWith('/auth/login')) {
+            return http.Response(
+              jsonEncode({
+                'token': 'new-token',
+                'user': {
+                  'id': 'u-new',
+                  'name': 'New',
+                  'email': 'new@example.com',
+                },
+              }),
+              200,
+            );
+          }
+          return http.Response('{}', 200);
+        }),
+      );
+
+      await auth.restore();
+      await auth.signIn('new@example.com', 'password');
+      oldMe.complete(http.Response('{"error":"expired"}', 401));
+      await pumpEventQueue();
+
+      expect(auth.status, AuthStatus.signedIn);
+      expect(auth.user?.id, 'u-new');
+      expect(auth.api.token, 'new-token');
+    });
+
+    test('a stale API rejection cannot clear a newer login', () async {
+      seedSession();
+      final oldNotes = Completer<http.Response>();
+      late http.Request oldNotesRequest;
+      final auth = storeWith(
+        MockClient((request) async {
+          if (request.url.path.endsWith('/auth/me')) {
+            return http.Response(
+              jsonEncode({
+                'id': 'u-me',
+                'name': 'Me',
+                'email': 'me@example.com',
+              }),
+              200,
+            );
+          }
+          if (request.url.path.endsWith('/notes')) {
+            oldNotesRequest = request;
+            return oldNotes.future;
+          }
+          if (request.url.path.endsWith('/auth/login')) {
+            return http.Response(
+              jsonEncode({
+                'token': 'new-token',
+                'user': {
+                  'id': 'u-new',
+                  'name': 'New',
+                  'email': 'new@example.com',
+                },
+              }),
+              200,
+            );
+          }
+          return http.Response('{}', 200);
+        }),
+      );
+
+      await auth.restore();
+      await pumpEventQueue();
+      final staleRequest = auth.api.fetchNotes();
+      await pumpEventQueue();
+      await auth.signIn('new@example.com', 'password');
+      oldNotes.complete(
+        http.Response('{"error":"expired"}', 401, request: oldNotesRequest),
+      );
+
+      await expectLater(staleRequest, throwsA(isA<ApiException>()));
+      await pumpEventQueue();
+      expect(auth.status, AuthStatus.signedIn);
+      expect(auth.user?.id, 'u-new');
+      expect(auth.api.token, 'new-token');
+    });
+
+    test('switching servers invalidates an in-flight login', () async {
+      SharedPreferences.setMockInitialValues({});
+      final login = Completer<http.Response>();
+      final api = ApiClient(
+        baseUrl: 'http://server-a.test',
+        httpClient: MockClient((request) async {
+          if (request.url.path.endsWith('/auth/login')) return login.future;
+          return http.Response('{}', 200);
+        }),
+      );
+      final auth = AuthStore(api: api);
+
+      final signingIn = auth.signIn('me@example.com', 'password');
+      await pumpEventQueue();
+      await auth.setActiveUrl('http://server-b.test');
+      login.complete(
+        http.Response(
+          jsonEncode({
+            'token': 'server-a-token',
+            'user': {'id': 'u-a', 'name': 'A user', 'email': 'me@example.com'},
+          }),
+          200,
+        ),
+      );
+
+      expect(await signingIn, isFalse);
+      expect(auth.activeUrl, 'http://server-b.test');
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.user, isNull);
+      expect(auth.api.token, isNull);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('sticky_notes_token'), isNull);
     });
   });
 

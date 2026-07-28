@@ -9,9 +9,9 @@
 //! read alike on purpose — keeping them as two obvious modules is cheaper than
 //! one shared abstraction that both have to be reasoned about through.
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -43,7 +43,10 @@ pub async fn create_stage(
         None => state.repo.max_stage_position(&workspace_id).await? + 1024.0,
     };
     let stage = Stage {
-        id: body.id.filter(|id| !id.trim().is_empty()).unwrap_or_else(new_id),
+        id: body
+            .id
+            .filter(|id| !id.trim().is_empty())
+            .unwrap_or_else(new_id),
         workspace_id,
         name,
         color: clean(body.color),
@@ -85,7 +88,9 @@ pub async fn update_stage(
     {
         return Err(ApiError::NotFound);
     }
-    let stage = find_stage(&state, &user_id, &id).await?.ok_or(ApiError::NotFound)?;
+    let stage = find_stage(&state, &user_id, &id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     notify_workspace(&state, &stage.workspace_id).await;
     Ok(Json(stage))
 }
@@ -97,7 +102,9 @@ pub async fn delete_stage(
 ) -> ApiResult<StatusCode> {
     // Read the workspace before the row goes away, so its members still get
     // told the column is gone.
-    let workspace_id = find_stage(&state, &user_id, &id).await?.map(|s| s.workspace_id);
+    let workspace_id = find_stage(&state, &user_id, &id)
+        .await?
+        .map(|s| s.workspace_id);
     // The repository sends the stage's notes back to unassigned in the same
     // transaction — deleting a column never deletes notes.
     if !state.repo.delete_stage(&user_id, &id).await? {

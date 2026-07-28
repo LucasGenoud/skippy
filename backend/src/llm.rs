@@ -11,8 +11,8 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::stream::BoxStream;
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use serde::Serialize;
 
 /// Per-call connection details, parsed from the requesting user's settings.
@@ -35,13 +35,22 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: "system", content: content.into() }
+        Self {
+            role: "system",
+            content: content.into(),
+        }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user", content: content.into() }
+        Self {
+            role: "user",
+            content: content.into(),
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: "assistant", content: content.into() }
+        Self {
+            role: "assistant",
+            content: content.into(),
+        }
     }
 }
 
@@ -64,32 +73,35 @@ pub trait Llm: Send + Sync {
 }
 
 /// Talks to an OpenAI-compatible `POST {base}/chat/completions`.
-pub struct OpenAiCompatLlm {
-    client: reqwest::Client,
-}
+pub struct OpenAiCompatLlm;
 
 impl Default for OpenAiCompatLlm {
     fn default() -> Self {
-        // No global timeout: it would cut off long streaming chats. The
-        // non-streaming path sets a per-request timeout instead, and the chat
-        // handler applies its own idle timeout between deltas.
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .expect("reqwest client");
-        Self { client }
+        Self
     }
 }
 
 impl OpenAiCompatLlm {
-    fn request(
+    async fn request(
         &self,
         cfg: &LlmConfig,
         messages: &[ChatMessage],
         stream: bool,
-    ) -> reqwest::RequestBuilder {
+    ) -> anyhow::Result<reqwest::RequestBuilder> {
         let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
-        let mut req = self.client.post(&url).json(&serde_json::json!({
+        let target = crate::outbound::resolve_http_url(
+            &url,
+            crate::outbound::allow_private_user_endpoints(),
+        )
+        .await?;
+        // A fresh, DNS-pinned client prevents rebinding between validation and
+        // connect. There is no global timeout because streaming chats can be
+        // long-lived; callers bound non-streaming or idle time separately.
+        let client = target
+            .client_builder()
+            .connect_timeout(crate::outbound::CONNECT_TIMEOUT)
+            .build()?;
+        let mut req = client.post(target.url).json(&serde_json::json!({
             "model": cfg.model,
             "messages": messages,
             "stream": stream,
@@ -97,7 +109,7 @@ impl OpenAiCompatLlm {
         if !cfg.api_key.is_empty() {
             req = req.bearer_auth(&cfg.api_key);
         }
-        req
+        Ok(req)
     }
 }
 
@@ -105,10 +117,16 @@ impl OpenAiCompatLlm {
 /// the API key).
 async fn status_error(response: reqwest::Response) -> anyhow::Error {
     let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    let body = body.chars().take(300).collect::<String>();
+    let body = crate::outbound::read_body_prefix(response, 16 * 1024).await;
+    let body = String::from_utf8_lossy(&body)
+        .chars()
+        .take(300)
+        .collect::<String>();
     anyhow::anyhow!("llm returned {status}: {body}")
 }
+
+const MAX_COMPLETION_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SSE_BUFFER_BYTES: usize = 1024 * 1024;
 
 #[async_trait]
 impl Llm for OpenAiCompatLlm {
@@ -119,13 +137,16 @@ impl Llm for OpenAiCompatLlm {
     ) -> anyhow::Result<String> {
         let response = self
             .request(cfg, &messages, false)
+            .await?
             .timeout(Duration::from_secs(30))
             .send()
             .await?;
         if !response.status().is_success() {
             return Err(status_error(response).await);
         }
-        let value: serde_json::Value = response.json().await?;
+        let body =
+            crate::outbound::read_body_capped(response, MAX_COMPLETION_RESPONSE_BYTES).await?;
+        let value: serde_json::Value = serde_json::from_slice(&body)?;
         value["choices"][0]["message"]["content"]
             .as_str()
             .map(|s| s.to_string())
@@ -137,32 +158,46 @@ impl Llm for OpenAiCompatLlm {
         cfg: &LlmConfig,
         messages: Vec<ChatMessage>,
     ) -> anyhow::Result<TokenStream> {
-        let response = self.request(cfg, &messages, true).send().await?;
+        let response = self.request(cfg, &messages, true).await?.send().await?;
         if !response.status().is_success() {
             return Err(status_error(response).await);
         }
         // State: (byte stream, line buffer, deltas not yet yielded, saw [DONE]).
-        let state = (response.bytes_stream(), String::new(), VecDeque::new(), false);
-        let stream = futures::stream::try_unfold(state, |(mut bytes, mut buf, mut pending, mut done)| async move {
-            loop {
-                if let Some(delta) = pending.pop_front() {
-                    return Ok(Some((delta, (bytes, buf, pending, done))));
-                }
-                if done {
-                    return Ok(None);
-                }
-                match bytes.next().await {
-                    Some(chunk) => {
-                        buf.push_str(&String::from_utf8_lossy(&chunk?));
-                        let (deltas, finished) = drain_sse_deltas(&mut buf);
-                        pending.extend(deltas);
-                        done = finished;
+        let state = (
+            response.bytes_stream(),
+            String::new(),
+            VecDeque::new(),
+            false,
+        );
+        let stream = futures::stream::try_unfold(
+            state,
+            |(mut bytes, mut buf, mut pending, mut done)| async move {
+                loop {
+                    if let Some(delta) = pending.pop_front() {
+                        return Ok(Some((delta, (bytes, buf, pending, done))));
                     }
-                    // Stream ended without [DONE]; treat as complete.
-                    None => return Ok(None),
+                    if done {
+                        return Ok(None);
+                    }
+                    match bytes.next().await {
+                        Some(chunk) => {
+                            buf.push_str(&String::from_utf8_lossy(&chunk?));
+                            if buf.len() > MAX_SSE_BUFFER_BYTES {
+                                return Err(anyhow::anyhow!(
+                                    "llm stream frame exceeded {} bytes",
+                                    MAX_SSE_BUFFER_BYTES
+                                ));
+                            }
+                            let (deltas, finished) = drain_sse_deltas(&mut buf);
+                            pending.extend(deltas);
+                            done = finished;
+                        }
+                        // Stream ended without [DONE]; treat as complete.
+                        None => return Ok(None),
+                    }
                 }
-            }
-        });
+            },
+        );
         Ok(stream.boxed())
     }
 }
@@ -178,13 +213,17 @@ pub fn drain_sse_deltas(buf: &mut String) -> (Vec<String>, bool) {
     while let Some(newline) = buf.find('\n') {
         let line: String = buf.drain(..=newline).collect();
         let line = line.trim_end_matches(['\n', '\r']);
-        let Some(payload) = line.strip_prefix("data:") else { continue };
+        let Some(payload) = line.strip_prefix("data:") else {
+            continue;
+        };
         let payload = payload.trim_start();
         if payload == "[DONE]" {
             done = true;
             continue;
         }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else { continue };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+            continue;
+        };
         if let Some(content) = value["choices"][0]["delta"]["content"].as_str()
             && !content.is_empty()
         {

@@ -1,7 +1,7 @@
 //! Semantic (meaning-based) note search.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
 
 use crate::AppState;
@@ -38,32 +38,46 @@ pub async fn semantic_search(
     Query(params): Query<SearchParams>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let Some(search) = &state.search else {
-        return Err(ApiError::Unavailable("semantic search is not enabled on this server"));
+        return Err(ApiError::Unavailable(
+            "semantic search is not enabled on this server",
+        ));
     };
     let query = params.q.trim();
     if query.is_empty() {
         return Ok(Json(serde_json::json!([])));
     }
     let limit = params.limit.unwrap_or(20).min(50);
-    let workspace = params.workspace_id.as_deref().map(str::trim).filter(|w| !w.is_empty());
-    // The vector index is scoped by participant, not by workspace, so a
-    // workspace filter is applied afterwards — over-fetch to keep the ranked
-    // list full once the other workspaces' hits drop out.
-    let fetch = if workspace.is_some() { (limit * 4).min(200) } else { limit };
+    let workspace = params
+        .workspace_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|w| !w.is_empty());
+    // The vector index is an eventually-consistent candidate source, never an
+    // authorization boundary. Over-fetch because workspace filtering and live
+    // access checks can discard stale rows after sharing or membership changes.
+    let fetch = (limit * 4).min(200);
     let allowed = match workspace {
         Some(workspace_id) => {
             Some(crate::handlers::workspace_note_ids(&state, &user_id, workspace_id).await?)
         }
         None => None,
     };
-    let hits: Vec<_> = search
-        .search(&user_id, query, fetch)
-        .await?
-        .into_iter()
-        .filter(|(note_id, _)| allowed.as_ref().is_none_or(|ids| ids.contains(note_id)))
-        .take(limit)
-        .map(|(note_id, score)| serde_json::json!({"note_id": note_id, "score": score}))
-        .collect();
+    let mut hits = Vec::with_capacity(limit);
+    for (note_id, score) in search.search(&user_id, query, fetch).await? {
+        if hits.len() >= limit {
+            break;
+        }
+        if allowed.as_ref().is_some_and(|ids| !ids.contains(&note_id)) {
+            continue;
+        }
+        let Some(record) = state.repo.note_record_for_user(&note_id, &user_id).await? else {
+            continue;
+        };
+        if record.trashed {
+            continue;
+        }
+        hits.push(serde_json::json!({"note_id": note_id, "score": score}));
+    }
     Ok(Json(serde_json::json!(hits)))
 }
 
@@ -107,7 +121,9 @@ pub async fn reindex_search(
     AuthUser(user_id): AuthUser,
 ) -> ApiResult<Json<serde_json::Value>> {
     let Some(search) = state.search.clone() else {
-        return Err(ApiError::Unavailable("semantic search is not enabled on this server"));
+        return Err(ApiError::Unavailable(
+            "semantic search is not enabled on this server",
+        ));
     };
 
     // Don't start a second job while one is still running for this user.
@@ -116,12 +132,19 @@ pub async fn reindex_search(
         if let Some(p) = progress.get(&user_id)
             && p.done < p.total
         {
-            return Ok(Json(serde_json::json!({ "total": p.total, "running": true })));
+            return Ok(Json(
+                serde_json::json!({ "total": p.total, "running": true }),
+            ));
         }
     }
 
-    let ids: Vec<String> =
-        state.repo.notes_for_user(&user_id).await?.into_iter().map(|n| n.note.id).collect();
+    let ids: Vec<String> = state
+        .repo
+        .notes_for_user(&user_id)
+        .await?
+        .into_iter()
+        .map(|n| n.note.id)
+        .collect();
     let total = ids.len();
     state
         .reindex_progress
@@ -146,7 +169,9 @@ pub async fn reindex_search(
         }
     });
 
-    Ok(Json(serde_json::json!({ "total": total, "running": total > 0 })))
+    Ok(Json(
+        serde_json::json!({ "total": total, "running": total > 0 }),
+    ))
 }
 
 /// Progress of the caller's running reindex job (see [`reindex_search`]).
@@ -155,7 +180,12 @@ pub async fn reindex_status(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
 ) -> Json<serde_json::Value> {
-    let progress = state.reindex_progress.lock().unwrap().get(&user_id).copied();
+    let progress = state
+        .reindex_progress
+        .lock()
+        .unwrap()
+        .get(&user_id)
+        .copied();
     match progress {
         Some(p) => Json(serde_json::json!({
             "running": p.done < p.total,

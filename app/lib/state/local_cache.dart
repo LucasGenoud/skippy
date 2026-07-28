@@ -6,8 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// uses [PrefsLocalCache] (shared_preferences, which is localStorage on web),
 /// tests inject an in-memory fake — mirroring how the store abstracts [Api].
 ///
-/// Each signed-in user gets one JSON document (notes + labels + checklist
-/// history + the pending sync queue), keyed by user id.
+/// Each signed-in server/user pair gets one JSON document (notes + labels +
+/// checklist history + the pending sync queue). [NotesStore] builds that
+/// composite key; this seam deliberately treats it as opaque.
 abstract class LocalCache {
   Future<Map<String, dynamic>?> read(String key);
   Future<void> write(String key, Map<String, dynamic> doc);

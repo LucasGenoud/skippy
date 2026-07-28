@@ -13,8 +13,8 @@
 //! `STICKY_NOTES_UNFURL_ALLOW_PRIVATE=1` disables it (self-hosters unfurling
 //! internal links; also used by the e2e/localhost tests).
 
-use std::net::IpAddr;
-use std::sync::OnceLock;
+use std::collections::HashSet;
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
@@ -57,24 +57,24 @@ impl LinkPreview {
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 6;
 
-fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(10))
-            // Redirects are followed manually so every hop is re-validated by
-            // the SSRF guard (a public URL must not redirect to an internal IP).
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("build unfurl http client")
-    })
+fn client(target: &ParsedUrl) -> anyhow::Result<reqwest::Client> {
+    // Resolve once during validation and pin that exact answer into reqwest.
+    // Without this, a rebinding DNS server could return a public address to
+    // the guard and a private one when the HTTP client resolves again.
+    Ok(reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(&target.host, &target.addrs)
+        .build()?)
 }
 
 /// Whether the SSRF guard is disabled by env. Read per-call so tests can set it.
 pub fn allow_private() -> bool {
     matches!(
-        std::env::var("STICKY_NOTES_UNFURL_ALLOW_PRIVATE").ok().as_deref(),
+        std::env::var("STICKY_NOTES_UNFURL_ALLOW_PRIVATE")
+            .ok()
+            .as_deref(),
         Some("1") | Some("true") | Some("yes") | Some("on")
     )
 }
@@ -87,7 +87,9 @@ pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkP
     let parsed = validate_public_http_url(raw, allow_private).await?;
     let mut preview = match fetch_html(&parsed, allow_private).await {
         Ok((final_url, html)) => {
-            let base = validate_public_http_url(&final_url, true).await.unwrap_or(parsed);
+            let base = validate_public_http_url(&final_url, true)
+                .await
+                .unwrap_or(parsed);
             parse_preview(&html, &base)
         }
         Err(_) => LinkPreview::host_only(&parsed),
@@ -116,7 +118,9 @@ async fn inline_favicon(url: &str, allow_private: bool) -> Option<String> {
         return Some(url.to_string());
     }
     let parsed = validate_public_http_url(url, allow_private).await.ok()?;
-    let (content_type, bytes) = fetch_bytes(&parsed, allow_private, MAX_FAVICON_BYTES).await.ok()?;
+    let (content_type, bytes) = fetch_bytes(&parsed, allow_private, MAX_FAVICON_BYTES)
+        .await
+        .ok()?;
     if bytes.is_empty() {
         return None;
     }
@@ -128,7 +132,12 @@ async fn inline_favicon(url: &str, allow_private: bool) -> Option<String> {
 /// type Flutter decodes on every platform, or `None` for formats it can't
 /// (`.ico`, SVG) — those keep the generic globe as they always have.
 fn decodable_image_mime(content_type: &str, bytes: &[u8]) -> Option<&'static str> {
-    let ct = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     match ct.as_str() {
         "image/png" => return Some("image/png"),
         "image/jpeg" | "image/jpg" => return Some("image/jpeg"),
@@ -171,8 +180,16 @@ fn base64_encode(bytes: &[u8]) -> String {
         let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
         out.push(ALPHABET[b0 >> 2] as char);
         out.push(ALPHABET[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
-        out.push(if chunk.len() > 1 { ALPHABET[((b1 & 0x0F) << 2) | (b2 >> 6)] as char } else { '=' });
-        out.push(if chunk.len() > 2 { ALPHABET[b2 & 0x3F] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            ALPHABET[((b1 & 0x0F) << 2) | (b2 >> 6)] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[b2 & 0x3F] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -183,7 +200,7 @@ fn base64_encode(bytes: &[u8]) -> String {
 async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(String, String)> {
     let mut current = start.clone();
     for _ in 0..MAX_REDIRECTS {
-        let resp = client()
+        let resp = client(&current)?
             .get(&current.full)
             .header(ACCEPT, "text/html,application/xhtml+xml")
             .header(
@@ -208,7 +225,11 @@ async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(S
             bail!("upstream status {status}");
         }
         // Skip non-HTML bodies (images, PDFs, JSON) — there's nothing to parse.
-        if let Some(ct) = resp.headers().get(CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
+        if let Some(ct) = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+        {
             let ct = ct.to_ascii_lowercase();
             if !ct.is_empty() && !ct.contains("html") && !ct.contains("xml") {
                 bail!("non-html content-type: {ct}");
@@ -231,7 +252,7 @@ async fn fetch_bytes(
 ) -> anyhow::Result<(String, Vec<u8>)> {
     let mut current = start.clone();
     for _ in 0..MAX_REDIRECTS {
-        let resp = client()
+        let resp = client(&current)?
             .get(&current.full)
             .header(ACCEPT, "image/*")
             .header(
@@ -308,8 +329,11 @@ fn find_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || hay.len() < needle.len() {
         return None;
     }
-    hay.windows(needle.len())
-        .position(|w| w.iter().zip(needle).all(|(a, b)| a.to_ascii_lowercase() == *b))
+    hay.windows(needle.len()).position(|w| {
+        w.iter()
+            .zip(needle)
+            .all(|(a, b)| a.to_ascii_lowercase() == *b)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +357,9 @@ pub fn parse_preview(html: &str, base: &ParsedUrl) -> LinkPreview {
     for tag in each_tag(html, &lower, "meta") {
         let key = get_attr(tag, "property").or_else(|| get_attr(tag, "name"));
         let Some(key) = key else { continue };
-        let Some(content) = get_attr(tag, "content") else { continue };
+        let Some(content) = get_attr(tag, "content") else {
+            continue;
+        };
         let content = decode_entities(content.trim());
         if content.is_empty() {
             continue;
@@ -358,7 +384,9 @@ pub fn parse_preview(html: &str, base: &ParsedUrl) -> LinkPreview {
     // Favicon: first <link rel="...icon...">, else default /favicon.ico.
     let mut favicon = None;
     for tag in each_tag(html, &lower, "link") {
-        let rel = get_attr(tag, "rel").unwrap_or_default().to_ascii_lowercase();
+        let rel = get_attr(tag, "rel")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         if rel.contains("icon")
             && let Some(href) = get_attr(tag, "href")
         {
@@ -367,9 +395,13 @@ pub fn parse_preview(html: &str, base: &ParsedUrl) -> LinkPreview {
         }
     }
 
-    let title = og_title.or(tw_title).or_else(|| extract_title(html, &lower));
+    let title = og_title
+        .or(tw_title)
+        .or_else(|| extract_title(html, &lower));
     let image = og_image.or(tw_image).map(|i| base.resolve(&i));
-    let favicon = favicon.map(|f| base.resolve(&f)).or_else(|| Some(base.resolve("/favicon.ico")));
+    let favicon = favicon
+        .map(|f| base.resolve(&f))
+        .or_else(|| Some(base.resolve("/favicon.ico")));
 
     LinkPreview {
         url: base.full.clone(),
@@ -398,10 +430,14 @@ fn each_tag<'a>(html: &'a str, lower: &str, tagname: &str) -> Vec<&'a str> {
         let start = i + p;
         let after = start + needle.len();
         // Guard against `<metaphor>` etc.: the char after the name must end it.
-        let boundary = html.as_bytes().get(after).is_none_or(|b| {
-            b.is_ascii_whitespace() || *b == b'>' || *b == b'/'
-        });
-        let end = lower[start..].find('>').map(|e| start + e + 1).unwrap_or(html.len());
+        let boundary = html
+            .as_bytes()
+            .get(after)
+            .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>' || *b == b'/');
+        let end = lower[start..]
+            .find('>')
+            .map(|e| start + e + 1)
+            .unwrap_or(html.len());
         if boundary {
             out.push(&html[start..end]);
         }
@@ -440,7 +476,9 @@ fn get_attr(tag: &str, name: &str) -> Option<String> {
                 return Some(rest[..end].to_string());
             }
             let rest = &tag[k..];
-            let end = rest.find(|c: char| c.is_whitespace() || c == '>').unwrap_or(rest.len());
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == '>')
+                .unwrap_or(rest.len());
             return Some(rest[..end].trim_end_matches('/').to_string());
         }
         search = after;
@@ -478,15 +516,22 @@ pub struct ParsedUrl {
     pub path: String,
     /// Reassembled `scheme://authority/path` used for requests.
     pub full: String,
+    /// DNS result checked by the SSRF policy and pinned into reqwest.
+    addrs: Vec<SocketAddr>,
 }
 
 impl ParsedUrl {
     fn authority(&self) -> String {
         let default = if self.scheme == "https" { 443 } else { 80 };
-        if self.port == default {
-            self.host.clone()
+        let host = if self.host.contains(':') {
+            format!("[{}]", self.host)
         } else {
-            format!("{}:{}", self.host, self.port)
+            self.host.clone()
+        };
+        if self.port == default {
+            host
+        } else {
+            format!("{host}:{}", self.port)
         }
     }
 
@@ -527,7 +572,10 @@ pub async fn validate_public_http_url(raw: &str, allow_private: bool) -> anyhow:
     let authority = &rest[..auth_end];
     let path = &rest[auth_end..];
     // Strip any userinfo.
-    let hostport = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let hostport = authority
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(authority);
     if hostport.is_empty() {
         bail!("url has no host");
     }
@@ -535,7 +583,9 @@ pub async fn validate_public_http_url(raw: &str, allow_private: bool) -> anyhow:
     let (host, port) = if let Some(rest) = hostport.strip_prefix('[') {
         let end = rest.find(']').ok_or_else(|| anyhow!("bad ipv6 literal"))?;
         let host = &rest[..end];
-        let port = rest[end + 1..].strip_prefix(':').and_then(|p| p.parse().ok());
+        let port = rest[end + 1..]
+            .strip_prefix(':')
+            .and_then(|p| p.parse().ok());
         (host.to_string(), port)
     } else if let Some((h, p)) = hostport.rsplit_once(':') {
         // Only treat the tail as a port if it's numeric (avoids eating IPv6).
@@ -552,30 +602,39 @@ pub async fn validate_public_http_url(raw: &str, allow_private: bool) -> anyhow:
     }
     let port = port.unwrap_or(if scheme == "https" { 443 } else { 80 });
 
-    if !allow_private {
-        if host == "localhost" || host.ends_with(".localhost") {
-            bail!("refusing to fetch a loopback host");
-        }
-        // Resolve DNS (also parses IP literals) and reject internal targets.
-        let addrs: Vec<IpAddr> = tokio::net::lookup_host((host.as_str(), port))
-            .await
-            .with_context(|| format!("could not resolve {host}"))?
-            .map(|s| s.ip())
-            .collect();
-        if addrs.is_empty() {
-            bail!("host did not resolve");
-        }
-        if addrs.iter().any(|ip| ip_is_blocked(*ip)) {
-            bail!("refusing to fetch a private/loopback address");
-        }
+    if !allow_private && (host == "localhost" || host.ends_with(".localhost")) {
+        bail!("refusing to fetch a loopback host");
+    }
+    // Resolve even when private targets are allowed: the same answer is pinned
+    // into the HTTP client, closing the DNS-rebinding gap in both modes.
+    let mut seen = HashSet::new();
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .with_context(|| format!("could not resolve {host}"))?
+        .filter(|addr| seen.insert(*addr))
+        .collect();
+    if addrs.is_empty() {
+        bail!("host did not resolve");
+    }
+    if !allow_private
+        && addrs
+            .iter()
+            .any(|addr| crate::outbound::ip_is_blocked(addr.ip()))
+    {
+        bail!("refusing to fetch a private/loopback address");
     }
 
+    let display_host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.clone()
+    };
     let full = format!(
         "{scheme}://{}{}",
         if port == if scheme == "https" { 443 } else { 80 } {
-            host.clone()
+            display_host
         } else {
-            format!("{host}:{port}")
+            format!("{display_host}:{port}")
         },
         if path.is_empty() { "/" } else { path }
     );
@@ -583,39 +642,14 @@ pub async fn validate_public_http_url(raw: &str, allow_private: bool) -> anyhow:
         scheme,
         host,
         port,
-        path: if path.is_empty() { "/".to_string() } else { path.to_string() },
+        path: if path.is_empty() {
+            "/".to_string()
+        } else {
+            path.to_string()
+        },
         full,
+        addrs,
     })
-}
-
-/// Non-routable / internal address ranges we refuse to fetch (SSRF guard).
-/// `IpAddr::is_global` is unstable, so the ranges are checked by hand.
-fn ip_is_blocked(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let o = v4.octets();
-            v4.is_loopback()            // 127.0.0.0/8
-                || v4.is_private()      // 10/8, 172.16/12, 192.168/16
-                || v4.is_link_local()   // 169.254/16
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                || v4.is_unspecified()  // 0.0.0.0
-                || o[0] == 0            // 0.0.0.0/8
-                || (o[0] == 100 && (64..=127).contains(&o[1])) // 100.64/10 CGNAT
-                || o[0] >= 224          // multicast / reserved
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return ip_is_blocked(IpAddr::V4(v4));
-            }
-            let seg = v6.segments();
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (seg[0] & 0xfe00) == 0xfc00 // fc00::/7 unique-local
-                || (seg[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
-                || (seg[0] & 0xff00) == 0xff00 // ff00::/8 multicast
-        }
-    }
 }
 
 #[cfg(test)]
@@ -623,9 +657,16 @@ mod tests {
     use super::*;
 
     fn base() -> ParsedUrl {
-        // A public-looking base for resolve() tests (no network).
-        futures::executor::block_on(validate_public_http_url("https://example.com/a/b", true))
-            .unwrap()
+        // URL-resolution and metadata parsing are pure; keep these tests
+        // independent from Tokio and DNS.
+        ParsedUrl {
+            scheme: "https".to_string(),
+            host: "example.com".to_string(),
+            port: 443,
+            path: "/a/b".to_string(),
+            full: "https://example.com/a/b".to_string(),
+            addrs: Vec::new(),
+        }
     }
 
     #[test]
@@ -643,8 +684,14 @@ mod tests {
         let p = parse_preview(html, &base());
         assert_eq!(p.title.as_deref(), Some("Rick & Morty"));
         assert_eq!(p.site_name.as_deref(), Some("YouTube"));
-        assert_eq!(p.image.as_deref(), Some("https://example.com/img/cover.png"));
-        assert_eq!(p.favicon.as_deref(), Some("https://example.com/favicon.png"));
+        assert_eq!(
+            p.image.as_deref(),
+            Some("https://example.com/img/cover.png")
+        );
+        assert_eq!(
+            p.favicon.as_deref(),
+            Some("https://example.com/favicon.png")
+        );
         assert_eq!(p.description.as_deref(), Some("A show"));
     }
 
@@ -655,7 +702,10 @@ mod tests {
         assert_eq!(p.title.as_deref(), Some("Just a title"));
         assert_eq!(p.site_name.as_deref(), Some("example.com"));
         assert_eq!(p.image, None);
-        assert_eq!(p.favicon.as_deref(), Some("https://example.com/favicon.ico"));
+        assert_eq!(
+            p.favicon.as_deref(),
+            Some("https://example.com/favicon.ico")
+        );
     }
 
     #[test]
@@ -685,20 +735,56 @@ mod tests {
 
     #[tokio::test]
     async fn ssrf_guard_rejects_loopback_and_private() {
-        assert!(validate_public_http_url("http://localhost/x", false).await.is_err());
-        assert!(validate_public_http_url("http://127.0.0.1/x", false).await.is_err());
-        assert!(validate_public_http_url("http://10.0.0.5/x", false).await.is_err());
-        assert!(validate_public_http_url("http://192.168.1.1/x", false).await.is_err());
-        assert!(validate_public_http_url("http://169.254.1.1/x", false).await.is_err());
-        assert!(validate_public_http_url("http://[::1]/x", false).await.is_err());
+        assert!(
+            validate_public_http_url("http://localhost/x", false)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_public_http_url("http://127.0.0.1/x", false)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_public_http_url("http://10.0.0.5/x", false)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_public_http_url("http://192.168.1.1/x", false)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_public_http_url("http://169.254.1.1/x", false)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_public_http_url("http://[::1]/x", false)
+                .await
+                .is_err()
+        );
         // Non-http schemes are refused regardless.
-        assert!(validate_public_http_url("file:///etc/passwd", false).await.is_err());
-        assert!(validate_public_http_url("ftp://example.com/x", false).await.is_err());
+        assert!(
+            validate_public_http_url("file:///etc/passwd", false)
+                .await
+                .is_err()
+        );
+        assert!(
+            validate_public_http_url("ftp://example.com/x", false)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
     async fn ssrf_guard_allows_private_when_opted_in() {
-        assert!(validate_public_http_url("http://127.0.0.1:8080/x", true).await.is_ok());
+        assert!(
+            validate_public_http_url("http://127.0.0.1:8080/x", true)
+                .await
+                .is_ok()
+        );
     }
 
     #[test]
@@ -717,7 +803,10 @@ mod tests {
     #[test]
     fn decodable_mime_trusts_known_content_types() {
         assert_eq!(decodable_image_mime("image/png", b""), Some("image/png"));
-        assert_eq!(decodable_image_mime("image/jpeg; charset=binary", b""), Some("image/jpeg"));
+        assert_eq!(
+            decodable_image_mime("image/jpeg; charset=binary", b""),
+            Some("image/jpeg")
+        );
         assert_eq!(decodable_image_mime("IMAGE/WEBP", b""), Some("image/webp"));
         // Formats Flutter can't decode are rejected so the caller keeps the URL.
         assert_eq!(decodable_image_mime("image/x-icon", b""), None);
@@ -733,7 +822,9 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             loop {
-                let Ok((mut sock, _)) = listener.accept().await else { return };
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
                 let (html, fav) = (page_html.clone(), favicon_bytes.clone());
                 tokio::spawn(async move {
                     let mut buf = [0u8; 1024];
@@ -769,7 +860,10 @@ mod tests {
         let p = preview_for(&base, true).await.unwrap();
         let fav = p.favicon.expect("favicon present");
         assert!(fav.starts_with("data:image/png;base64,"), "got {fav}");
-        assert_eq!(fav, format!("data:image/png;base64,{}", base64_encode(&png)));
+        assert_eq!(
+            fav,
+            format!("data:image/png;base64,{}", base64_encode(&png))
+        );
     }
 
     #[tokio::test]
@@ -787,8 +881,14 @@ mod tests {
     fn decodable_mime_sniffs_when_header_is_wrong() {
         // Servers routinely mislabel favicons; magic bytes win over the header.
         let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
-        assert_eq!(decodable_image_mime("application/octet-stream", &png), Some("image/png"));
-        assert_eq!(decodable_image_mime("text/plain", &[0xFF, 0xD8, 0xFF, 0]), Some("image/jpeg"));
+        assert_eq!(
+            decodable_image_mime("application/octet-stream", &png),
+            Some("image/png")
+        );
+        assert_eq!(
+            decodable_image_mime("text/plain", &[0xFF, 0xD8, 0xFF, 0]),
+            Some("image/jpeg")
+        );
         assert_eq!(decodable_image_mime("", b"GIF89a...."), Some("image/gif"));
         // Genuinely unknown bytes stay rejected.
         assert_eq!(decodable_image_mime("", b"not an image"), None);

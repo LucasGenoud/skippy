@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod llm;
 pub mod models;
 pub mod notify;
+mod outbound;
 pub mod search;
 pub mod store;
 pub mod transcribe;
@@ -90,7 +91,7 @@ impl AppState {
             files,
             search: None,
             transcribe: None,
-            llm: Arc::new(llm::OpenAiCompatLlm::default()),
+            llm: Arc::new(llm::OpenAiCompatLlm),
             notifiers: Arc::new(notify::default_connectors()),
             label_generations: Arc::default(),
             reindex_progress: Arc::default(),

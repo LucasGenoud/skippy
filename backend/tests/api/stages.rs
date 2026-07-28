@@ -57,7 +57,21 @@ async fn stage_crud_is_scoped_to_the_workspace() {
     let (_, stages) = send(&app, "GET", "/api/stages", Some(&bob), None).await;
     assert_eq!(stages.as_array().unwrap().len(), 1);
 
-    // And cannot touch Ada's column.
+    // Put a note in Ada's column before Bob tries to mutate it. The delete
+    // authorization check must happen before notes are unassigned.
+    let note = create_note(&app, &ada, json!({"title": "stay assigned"})).await;
+    let note_id = note["id"].as_str().unwrap();
+    let (_, note) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{note_id}"),
+        Some(&ada),
+        Some(json!({"stage_id": stage_id})),
+    )
+    .await;
+    assert_eq!(note["stage_id"], stage_id);
+
+    // Bob cannot touch Ada's column.
     let (status, _) = send(
         &app,
         "PATCH",
@@ -76,6 +90,18 @@ async fn stage_crud_is_scoped_to_the_workspace() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, note) = send(
+        &app,
+        "GET",
+        &format!("/api/notes/{note_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(
+        note["stage_id"], stage_id,
+        "an unauthorized delete must not unassign notes"
+    );
 
     // Renaming leaves the column where it is; an empty colour resets it.
     let (_, before) = send(&app, "GET", "/api/stages", Some(&ada), None).await;

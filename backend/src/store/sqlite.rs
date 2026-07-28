@@ -6,7 +6,7 @@ use sqlx::{Row, SqlitePool};
 
 use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row, workspace_from_row};
 use super::sqlite_schema;
-use super::{PurgedNote, RepoError, RepoResult, Repository};
+use super::{DeletedWorkspace, PurgedNote, RepoError, RepoResult, Repository};
 use crate::models::*;
 
 /// The workspaces a user belongs to: the ones they own plus the ones they were
@@ -399,7 +399,7 @@ impl Repository for SqliteRepository {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<Vec<PurgedNote>>> {
+    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<DeletedWorkspace>> {
         let Some(workspace) = self.workspace(workspace_id).await? else {
             return Ok(None);
         };
@@ -410,71 +410,41 @@ impl Repository for SqliteRepository {
             return Ok(None);
         }
         let mut tx = self.pool.begin().await?;
-        // Every note in the workspace is hard-deleted along with it — the
-        // owner asked for the whole thing gone, not for it to resurface
-        // somewhere. Snapshot attachment ids before each DELETE cascades them
-        // away, same as `purge_trash_before`, so the caller can still remove
-        // the blobs and unindex the note afterwards.
-        let rows = sqlx::query("SELECT id, owner_id FROM notes WHERE workspace_id = ?")
+        let rows = sqlx::query("SELECT id FROM notes WHERE workspace_id = ?")
             .bind(workspace_id)
             .fetch_all(&mut *tx)
             .await?;
-        let mut purged: Vec<PurgedNote> = rows
-            .iter()
-            .map(|r| PurgedNote {
-                note_id: r.get("id"),
-                owner_id: r.get("owner_id"),
-                attachment_ids: Vec::new(),
-            })
-            .collect();
-        for note in &mut purged {
-            let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
-                .bind(&note.note_id)
-                .fetch_all(&mut *tx)
-                .await?;
-            note.attachment_ids = attachments.iter().map(|r| r.get("id")).collect();
-            sqlx::query("DELETE FROM notes WHERE id = ?")
-                .bind(&note.note_id)
-                .execute(&mut *tx)
-                .await?;
-        }
-        // The workspace's own labels and stages cascade with it; every note
-        // that referenced them is already gone, so nothing needs pruning.
-        sqlx::query("DELETE FROM workspaces WHERE id = ?")
-            .bind(workspace_id)
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
-        Ok(Some(purged))
-    }
+        let moved_note_ids = rows.iter().map(|row| row.get("id")).collect();
 
-    async fn rehome_own_notes(&self, workspace_id: &str, user_id: &str) -> RepoResult<Vec<String>> {
-        let rows = sqlx::query("SELECT id FROM notes WHERE workspace_id = ? AND owner_id = ?")
-            .bind(workspace_id)
-            .bind(user_id)
-            .fetch_all(&self.pool)
-            .await?;
-        let ids: Vec<String> = rows.iter().map(|r| r.get("id")).collect();
-        if ids.is_empty() {
-            return Ok(ids);
-        }
-        let mut tx = self.pool.begin().await?;
+        // A workspace is a shared filing container, not the owner of its
+        // members' content. Move every note to its own owner's default home in
+        // one set-based update. If a corrupt account has no default workspace,
+        // the NOT NULL constraint aborts the transaction instead of losing the
+        // note.
         sqlx::query(
-            "UPDATE notes SET workspace_id = (
+            "UPDATE notes
+             SET workspace_id = (
                  SELECT w.id FROM workspaces w
                  WHERE w.owner_id = notes.owner_id AND w.is_default = 1
-             )
-             WHERE workspace_id = ? AND owner_id = ?",
+             ),
+                 stage_id = NULL
+             WHERE workspace_id = ?",
         )
         .bind(workspace_id)
-        .bind(user_id)
         .execute(&mut *tx)
         .await?;
         sqlx::query(PRUNE_MISMATCHED_LABELS)
             .execute(&mut *tx)
             .await?;
+
+        // Labels, stages, and membership are workspace-owned taxonomy and
+        // cascade away only after no note references the container.
+        sqlx::query("DELETE FROM workspaces WHERE id = ?")
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
-        Ok(ids)
+        Ok(Some(DeletedWorkspace { moved_note_ids }))
     }
 
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>> {
@@ -507,14 +477,49 @@ impl Repository for SqliteRepository {
         Ok(())
     }
 
-    async fn remove_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool> {
-        let result =
+    async fn remove_workspace_member(
+        &self,
+        workspace_id: &str,
+        user_id: &str,
+    ) -> RepoResult<Option<Vec<String>>> {
+        let mut tx = self.pool.begin().await?;
+        // The membership delete acquires SQLite's write lock and doubles as
+        // the existence check. No note can be created into this workspace
+        // between the snapshot, move, and membership removal.
+        let removed =
             sqlx::query("DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?")
                 .bind(workspace_id)
                 .bind(user_id)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await?;
-        Ok(result.rows_affected() > 0)
+        if removed.rows_affected() == 0 {
+            tx.rollback().await?;
+            return Ok(None);
+        }
+
+        let rows = sqlx::query("SELECT id FROM notes WHERE workspace_id = ? AND owner_id = ?")
+            .bind(workspace_id)
+            .bind(user_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        let moved_ids = rows.iter().map(|row| row.get("id")).collect();
+        sqlx::query(
+            "UPDATE notes SET workspace_id = (
+                 SELECT w.id FROM workspaces w
+                 WHERE w.owner_id = notes.owner_id AND w.is_default = 1
+             ),
+                 stage_id = NULL
+             WHERE workspace_id = ? AND owner_id = ?",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(PRUNE_MISMATCHED_LABELS)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(Some(moved_ids))
     }
 
     // -- notes ---------------------------------------------------------------
@@ -543,6 +548,25 @@ impl Repository for SqliteRepository {
             .await?
             .into_iter()
             .next())
+    }
+
+    async fn note_record_for_user(
+        &self,
+        note_id: &str,
+        user_id: &str,
+    ) -> RepoResult<Option<NoteRecord>> {
+        let row = sqlx::query(&format!(
+            "SELECT * FROM notes WHERE id = ? AND {}",
+            visible_notes("notes")
+        ))
+        .bind(note_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| note_from_row(&r)))
     }
 
     async fn note_record(&self, note_id: &str) -> RepoResult<Option<NoteRecord>> {
@@ -1039,13 +1063,10 @@ impl Repository for SqliteRepository {
 
     async fn delete_stage(&self, user_id: &str, stage_id: &str) -> RepoResult<bool> {
         let mut tx = self.pool.begin().await?;
-        // Notes outlive their column. There is no foreign key to do this for
-        // us (see the schema), so the clear is explicit and shares the
-        // transaction with the delete.
-        sqlx::query("UPDATE notes SET stage_id = NULL WHERE stage_id = ?")
-            .bind(stage_id)
-            .execute(&mut *tx)
-            .await?;
+        // Delete the membership-scoped stage first: its affected-row count is
+        // the authorization decision. Clearing notes before this check would
+        // let a non-member mutate another workspace merely by knowing a stage
+        // id. Both operations remain invisible until this transaction commits.
         let result = sqlx::query(&format!(
             "DELETE FROM stages WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
         ))
@@ -1054,18 +1075,30 @@ impl Repository for SqliteRepository {
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
+        if result.rows_affected() == 0 {
+            tx.rollback().await?;
+            return Ok(false);
+        }
+        // Notes outlive their column. There is no foreign key to do this for
+        // us (see the schema), so the clear is explicit and shares the
+        // transaction with the authorized delete.
+        sqlx::query("UPDATE notes SET stage_id = NULL WHERE stage_id = ?")
+            .bind(stage_id)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
-        Ok(result.rows_affected() > 0)
+        Ok(true)
     }
 
     async fn max_stage_position(&self, workspace_id: &str) -> RepoResult<f64> {
         // 0.0, not 0: an integer literal makes the empty-board case decode as
         // INTEGER and the f64 read fails.
-        let row =
-            sqlx::query("SELECT COALESCE(MAX(position), 0.0) AS m FROM stages WHERE workspace_id = ?")
-                .bind(workspace_id)
-                .fetch_one(&self.pool)
-                .await?;
+        let row = sqlx::query(
+            "SELECT COALESCE(MAX(position), 0.0) AS m FROM stages WHERE workspace_id = ?",
+        )
+        .bind(workspace_id)
+        .fetch_one(&self.pool)
+        .await?;
         Ok(row.get("m"))
     }
 

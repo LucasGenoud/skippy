@@ -1,4 +1,5 @@
-/// Wire types for the notes-chat WebSocket (`GET /api/chat?token=`).
+/// Wire types for the notes-chat WebSocket (`GET /api/chat`, with the bearer
+/// credential inside the first request frame).
 ///
 /// One request per connection: the client sends `{message, history}`, the
 /// server replies with a `sources` frame, zero or more `delta` frames, and a

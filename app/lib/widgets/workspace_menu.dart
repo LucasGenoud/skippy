@@ -210,8 +210,10 @@ class WorkspaceNameDialog extends StatefulWidget {
 
   const WorkspaceNameDialog({super.key, this.workspace});
 
-  static Future<void> create(BuildContext context) =>
-      showDialog<void>(context: context, builder: (_) => const WorkspaceNameDialog());
+  static Future<void> create(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (_) => const WorkspaceNameDialog(),
+  );
 
   static Future<void> rename(BuildContext context, Workspace workspace) =>
       showDialog<void>(
@@ -372,9 +374,7 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
                   WorkspaceMenu._initial(workspace.owner?.name ?? '?'),
                 ),
               ),
-              title: Text(
-                isOwner ? 'You' : (workspace.owner?.name ?? 'Owner'),
-              ),
+              title: Text(isOwner ? 'You' : (workspace.owner?.name ?? 'Owner')),
               subtitle: const Text('Owner'),
             ),
             for (final member in workspace.members)
@@ -394,9 +394,7 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
                         icon: Icon(
                           member.id == me ? Icons.logout : Icons.close,
                         ),
-                        tooltip: member.id == me
-                            ? 'Leave workspace'
-                            : 'Remove',
+                        tooltip: member.id == me ? 'Leave workspace' : 'Remove',
                         onPressed: () => _remove(store, workspace, member.id),
                       )
                     : null,
@@ -484,10 +482,7 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
     store.removeWorkspaceMember(workspace.id, userId);
     if (leaving) {
       Navigator.of(context).pop();
-      showAppSnack(
-        'You left "${workspace.name}"',
-        icon: Icons.logout,
-      );
+      showAppSnack('You left "${workspace.name}"', icon: Icons.logout);
     }
   }
 
@@ -498,10 +493,8 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
   ) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => _DeleteWorkspaceDialog(
-        workspace: workspace,
-        noteCount: noteCount,
-      ),
+      builder: (_) =>
+          _DeleteWorkspaceDialog(workspace: workspace, noteCount: noteCount),
     );
     if (confirmed != true || !mounted) return;
     store.deleteWorkspace(workspace.id);
@@ -514,13 +507,10 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
   }
 }
 
-/// Deleting a workspace deletes every note in it outright — the owner's and
-/// every member's, gone with it rather than trashed, and a member has no
-/// Undo to reach for since they're not the one clicking Delete. A plain
-/// Cancel/Delete pair was the right amount of friction when the worst case
-/// was a workspace vanishing; it isn't once the worst case is someone else's
-/// notes disappearing for good, so this asks for the workspace's name back
-/// before the button will even respond.
+/// Deleting a workspace removes its shared taxonomy and roster. Notes are
+/// preserved in their respective owners' default workspaces, but labels and
+/// board placement cannot follow them, so the name confirmation still makes
+/// the structural loss explicit.
 class _DeleteWorkspaceDialog extends StatefulWidget {
   final Workspace workspace;
   final int noteCount;
@@ -531,8 +521,7 @@ class _DeleteWorkspaceDialog extends StatefulWidget {
   });
 
   @override
-  State<_DeleteWorkspaceDialog> createState() =>
-      _DeleteWorkspaceDialogState();
+  State<_DeleteWorkspaceDialog> createState() => _DeleteWorkspaceDialogState();
 }
 
 class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
@@ -563,11 +552,11 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
         children: [
           Text(
             noteCount == 0
-                ? 'Its labels are removed. This can\'t be undone.'
-                : '$noteCount ${noteCount == 1 ? 'note' : 'notes'} — yours '
-                      'and any member\'s — ${noteCount == 1 ? 'is' : 'are'} '
-                      'deleted along with it, not moved to Trash. This '
-                      'can\'t be undone.',
+                ? 'Its labels and board columns are removed. This can\'t be undone.'
+                : '$noteCount ${noteCount == 1 ? 'note' : 'notes'} will move '
+                      'to their respective owners\' default workspaces. '
+                      'Workspace labels and board placement are removed. '
+                      'This can\'t be undone.',
           ),
           const SizedBox(height: 16),
           Text.rich(
@@ -658,4 +647,3 @@ class MoveToWorkspaceSheet {
     );
   }
 }
-
