@@ -18,6 +18,16 @@ const double kRadius = 4;
 /// floating surface read separately from the near-square note layout.
 const double kMenuRadius = 6;
 
+/// Shared layout rhythm for the compact controls built outside Material
+/// components. Keeping these values together prevents individual features
+/// from slowly drifting into slightly different spacings and icon sizes.
+const double kSpaceXs = 4;
+const double kSpaceSm = 8;
+const double kSpaceMd = 12;
+const double kSpaceLg = 16;
+const double kCompactIconSize = 20;
+const double kStandardIconSize = 24;
+
 /// [kRadius] as a [Radius]/[BorderRadius] for the many hand-rolled containers
 /// that can't read a shape from the theme.
 const Radius kRadiusCorner = Radius.circular(kRadius);

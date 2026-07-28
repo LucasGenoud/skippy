@@ -141,21 +141,47 @@ class FormDialog extends StatelessWidget {
     // In a `fullscreenDialog` route the app bar's leading button is a close
     // "X" automatically, so Cancel in [actions] is a second way out, not the
     // only one.
+    // A persistent footer is laid out below the keyboard on some mobile
+    // embedders. Keep the action row inside the page instead and pad it by
+    // the live keyboard inset, so the primary action never disappears while
+    // naming a workspace (or editing any other form).
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: title),
       body: SafeArea(
         top: false,
-        child: scrollable
-            ? SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                child: content,
-              )
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: content,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: scrollable
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      child: content,
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: content,
+                    ),
+            ),
+            AnimatedPadding(
+              duration: Motion.fast,
+              curve: Motion.standard,
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                8 + MediaQuery.viewInsetsOf(context).bottom,
               ),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                children: actions,
+              ),
+            ),
+          ],
+        ),
       ),
-      persistentFooterButtons: actions,
     );
   }
 }

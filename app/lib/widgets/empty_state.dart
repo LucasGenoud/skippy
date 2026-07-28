@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import '../util/motion.dart';
+import 'app_logo.dart';
 
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String message;
-  const EmptyState({super.key, required this.icon, required this.message});
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final IconData actionIcon;
+  final bool showBrandMark;
+
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+    this.actionIcon = Icons.add,
+    this.showBrandMark = false,
+  }) : assert(actionLabel == null || onAction != null);
 
   @override
   Widget build(BuildContext context) {
@@ -29,12 +44,15 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 96,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
-            ),
-            const SizedBox(height: 20),
+            if (showBrandMark)
+              const AppLogo(size: 72)
+            else
+              Icon(
+                icon,
+                size: 72,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
+              ),
+            const SizedBox(height: kSpaceLg),
             Text(
               message,
               textAlign: TextAlign.center,
@@ -42,6 +60,14 @@ class EmptyState extends StatelessWidget {
                 context,
               ).textTheme.titleMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
+            if (actionLabel != null) ...[
+              const SizedBox(height: kSpaceMd),
+              FilledButton.icon(
+                onPressed: onAction,
+                icon: Icon(actionIcon),
+                label: Text(actionLabel!),
+              ),
+            ],
           ],
         ),
       ),

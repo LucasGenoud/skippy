@@ -12,6 +12,7 @@ import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'animated_checklist.dart';
+import 'app_logo.dart';
 import 'markdown_toolbar.dart';
 
 /// Inline quick add, shown above the grid on wide screens: pick a kind and
@@ -269,9 +270,11 @@ class _QuickAddBarState extends State<QuickAddBar> {
         behavior: HitTestBehavior.opaque,
         onTap: () => _expand(NoteKind.text),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+          padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
           child: Row(
             children: [
+              const AppLogo(size: 22),
+              const SizedBox(width: kSpaceSm),
               Expanded(
                 child: Text(
                   'Take a note…',

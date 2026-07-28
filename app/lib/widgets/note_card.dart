@@ -421,6 +421,12 @@ class _NoteCardContent extends StatelessWidget {
     final files = note.attachments
         .where((a) => !a.isImage && !a.isAudio)
         .toList();
+    // Narrow cards are read at a glance. Preserve the most useful metadata
+    // (reminder, then one file and two labels) and summarize the rest instead
+    // of letting a dense wrap push the note itself below the fold.
+    final compactMetadata = MediaQuery.sizeOf(context).width < 600;
+    final visibleFileCount = compactMetadata ? 1 : 2;
+    final visibleLabelCount = compactMetadata ? 2 : 3;
 
     // A single rich preview for the note's first link (grid space is tight).
     final linkMatches = findUrls('${note.title}\n${note.content}');
@@ -600,13 +606,15 @@ class _NoteCardContent extends StatelessWidget {
               children: [
                 if (note.reminderAt != null)
                   _ReminderChip(reminderAt: note.reminderAt!),
-                for (final file in files.take(2)) _FileChip(file: file),
-                if (files.length > 2)
-                  _LabelChip(name: '+${files.length - 2} files'),
+                for (final file in files.take(visibleFileCount))
+                  _FileChip(file: file),
+                if (files.length > visibleFileCount)
+                  _LabelChip(name: '+${files.length - visibleFileCount} files'),
                 if (showLabelsInBody) ...[
-                  for (final row in labels.take(3)) _LabelChip.encoded(row),
-                  if (labels.length > 3)
-                    _LabelChip(name: '+${labels.length - 3}'),
+                  for (final row in labels.take(visibleLabelCount))
+                    _LabelChip.encoded(row),
+                  if (labels.length > visibleLabelCount)
+                    _LabelChip(name: '+${labels.length - visibleLabelCount}'),
                 ],
                 if (note.isShared)
                   Tooltip(

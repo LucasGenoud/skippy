@@ -102,4 +102,33 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(find.widgetWithText(AppBar, 'Edit details'), findsNothing);
   });
+
+  testWidgets('phone form actions stay above the keyboard', (tester) async {
+    Future<void> showEditor(BuildContext context) => showFormDialog<void>(
+      context,
+      builder: (context) => FormDialog(
+        title: const Text('New workspace'),
+        content: const TextField(autofocus: true),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    useViewport(tester, const Size(390, 844));
+    await tester.pumpWidget(launcher(showEditor));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    final createBottom = tester.getBottomRight(find.text('Create')).dy;
+    expect(createBottom, lessThan(844 - 300));
+    expect(tester.getRect(find.text('Create')).isEmpty, isFalse);
+  });
 }

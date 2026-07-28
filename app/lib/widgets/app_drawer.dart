@@ -127,21 +127,13 @@ class AppDrawer extends StatelessWidget {
         ),
         destinations[0].$2,
         destinations[1].$2,
+        destinations[2].$2,
         const Padding(
           padding: EdgeInsets.fromLTRB(28, 12, 28, 8),
           child: Divider(height: 1),
         ),
-        if (labels.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
-            child: Text(
-              'Labels',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        for (var i = 2; i < destinations.length - 2; i++) destinations[i].$2,
+        const _DrawerSectionHeader('Labels'),
+        for (var i = 3; i < destinations.length - 2; i++) destinations[i].$2,
         InkWell(
           onTap: () {
             final navigator = Navigator.of(context);
@@ -170,6 +162,7 @@ class AppDrawer extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(28, 8, 28, 12),
           child: Divider(height: 1),
         ),
+        const _DrawerSectionHeader('Library'),
         destinations[destinations.length - 2].$2,
         destinations[destinations.length - 1].$2,
         const SizedBox(height: 16),
@@ -247,35 +240,12 @@ class AppSidebar extends StatelessWidget {
                 isOpen: isOpen,
                 onTap: () => onSelect(ViewSelection.reminders),
               ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(height: 1, indent: 16, endIndent: 16),
+              ),
+              _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
               if (labels.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 1, indent: 16, endIndent: 16),
-                ),
-                // Constant-height slot: the header fades with the rail's
-                // width animation instead of vanishing and jumping the
-                // label items up.
-                SizedBox(
-                  height: 28,
-                  child: AnimatedOpacity(
-                    opacity: isOpen ? 1 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOutCubic,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
-                      child: Text(
-                        'LABELS',
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.clip,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          letterSpacing: 1.1,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
                 for (final label in labels)
                   _SidebarItem(
                     // Reuse the label's own icon + colour (matching its chips);
@@ -310,6 +280,7 @@ class AppSidebar extends StatelessWidget {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Divider(height: 1, indent: 16, endIndent: 16),
               ),
+              _SidebarSectionHeader(label: 'LIBRARY', isOpen: isOpen),
               _SidebarItem(
                 icon: Icons.archive_outlined,
                 selectedIcon: Icons.archive,
@@ -369,6 +340,55 @@ class AppSidebar extends StatelessWidget {
       kind: SnackKind.danger,
       actionLabel: 'Undo',
       onAction: () => store.restoreFromTrash(noteId),
+    );
+  }
+}
+
+class _DrawerSectionHeader extends StatelessWidget {
+  final String label;
+  const _DrawerSectionHeader(this.label);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
+    child: Text(
+      label.toUpperCase(),
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        letterSpacing: 1.1,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
+}
+
+class _SidebarSectionHeader extends StatelessWidget {
+  final String label;
+  final bool isOpen;
+  const _SidebarSectionHeader({required this.label, required this.isOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 28,
+      child: AnimatedOpacity(
+        opacity: isOpen ? 1 : 0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOutCubic,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.clip,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              letterSpacing: 1.1,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -453,7 +473,7 @@ class _SidebarItem extends StatelessWidget {
                         height: 48,
                         child: Icon(
                           isSelected ? selectedIcon : icon,
-                          size: 24,
+                          size: kStandardIconSize,
                           // A label's custom colour wins, except while it's a
                           // drop target (keep the highlight legible).
                           color: dropTarget

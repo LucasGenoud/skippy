@@ -788,6 +788,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     message: searching
                                                         ? 'No matching notes'
                                                         : _emptyMessage,
+                                                    actionLabel: searching
+                                                        ? null
+                                                        : _emptyActionLabel,
+                                                    onAction: searching
+                                                        ? null
+                                                        : _emptyAction,
+                                                    actionIcon: searching
+                                                        ? Icons.add
+                                                        : _emptyActionIcon,
+                                                    showBrandMark:
+                                                        !searching &&
+                                                        _selection.view ==
+                                                            NoteView.notes,
                                                   ),
                                                 )
                                               else ...[
@@ -878,6 +891,25 @@ class _HomeScreenState extends State<HomeScreen> {
     NoteView.archive => 'Your archived notes appear here',
     NoteView.trash => 'No notes in Trash',
     NoteView.label => 'No notes with this label yet',
+  };
+
+  String get _emptyActionLabel => switch (_selection.view) {
+    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
+      'Create note',
+    NoteView.archive || NoteView.trash => 'Browse notes',
+  };
+
+  VoidCallback get _emptyAction => switch (_selection.view) {
+    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
+      () => _newNote(NoteKind.text),
+    NoteView.archive || NoteView.trash =>
+      () => _selectView(ViewSelection.notes),
+  };
+
+  IconData get _emptyActionIcon => switch (_selection.view) {
+    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
+      Icons.add,
+    NoteView.archive || NoteView.trash => Icons.sticky_note_2_outlined,
   };
 
   /// Wrap a header-like widget (section label, view header) so its edges line
