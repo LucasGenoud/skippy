@@ -87,7 +87,8 @@ void main() {
     testWidgets('keeps custom date and time inside the same sheet', (
       tester,
     ) async {
-      tester.view.physicalSize = phoneSize;
+      const compactPhoneSize = Size(390, 640);
+      tester.view.physicalSize = compactPhoneSize;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -103,6 +104,17 @@ void main() {
       expect(find.byType(DatePickerDialog), findsNothing);
       expect(find.byType(TimePickerDialog), findsNothing);
       expect(find.text('Save reminder'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('save-custom-reminder')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .getBottomRight(find.byKey(const ValueKey('save-custom-reminder')))
+            .dy,
+        lessThan(compactPhoneSize.height - 24),
+      );
+      expect(find.text('Tomorrow morning'), findsNothing);
     });
 
     testWidgets('can remove an existing reminder from the sheet', (

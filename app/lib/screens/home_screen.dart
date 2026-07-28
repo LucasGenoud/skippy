@@ -378,7 +378,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (_selection != ViewSelection.notes && labelIds.isEmpty) {
       // A note dropped into a label view lands *in* that view, so only the
       // views that can't hold a new note need the "went to Notes" nudge.
-      showAppSnack('Note created in Notes', icon: Icons.lightbulb_outline);
+      showAppSnack('Note created in Notes', icon: Icons.sticky_note_2_outlined);
     }
   }
 
@@ -863,7 +863,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   IconData get _emptyIcon => switch (_selection.view) {
-    NoteView.notes => Icons.lightbulb_outline,
+    NoteView.notes => Icons.sticky_note_2_outlined,
     NoteView.board => Icons.view_kanban_outlined,
     NoteView.reminders => Icons.notifications_outlined,
     NoteView.archive => Icons.archive_outlined,

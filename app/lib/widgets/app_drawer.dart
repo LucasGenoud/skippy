@@ -26,8 +26,8 @@ class AppDrawer extends StatelessWidget {
       (
         ViewSelection.notes,
         const NavigationDrawerDestination(
-          icon: Icon(Icons.lightbulb_outline),
-          selectedIcon: Icon(Icons.lightbulb),
+          icon: Icon(Icons.sticky_note_2_outlined),
+          selectedIcon: Icon(Icons.sticky_note_2),
           label: Text('Notes'),
         ),
       ),
@@ -224,8 +224,8 @@ class AppSidebar extends StatelessWidget {
               // from the views below.
               const SizedBox(height: 8),
               _SidebarItem(
-                icon: Icons.lightbulb_outline,
-                selectedIcon: Icons.lightbulb,
+                icon: Icons.sticky_note_2_outlined,
+                selectedIcon: Icons.sticky_note_2,
                 label: 'Notes',
                 isSelected: selection == ViewSelection.notes,
                 isOpen: isOpen,

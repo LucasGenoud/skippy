@@ -214,6 +214,108 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
     Navigator.of(context).pop(ReminderSelection.set(value));
   }
 
+  Widget _customContent(ThemeData theme, ColorScheme scheme) {
+    return Column(
+      key: const ValueKey('custom-reminder-content'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton.icon(
+          key: const ValueKey('custom-reminder-toggle'),
+          onPressed: () => setState(() => _showCustom = false),
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('Quick reminder options'),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 216,
+          child: CupertinoTheme(
+            data: CupertinoTheme.of(context).copyWith(
+              primaryColor: scheme.primary,
+              brightness: theme.brightness,
+            ),
+            child: CupertinoDatePicker(
+              key: const ValueKey('custom-reminder-picker'),
+              mode: CupertinoDatePickerMode.dateAndTime,
+              initialDateTime: _customValue,
+              minimumDate: widget.now,
+              maximumDate: widget.now.add(const Duration(days: 365 * 5)),
+              use24hFormat: widget.use24hTime,
+              onDateTimeChanged: (value) => _customValue = value,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          key: const ValueKey('save-custom-reminder'),
+          onPressed: () => _select(_customValue),
+          icon: const Icon(Icons.notifications_active_outlined),
+          label: const Text('Save reminder'),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickContent(
+    ThemeData theme,
+    ColorScheme scheme,
+    List<ReminderPreset> presets,
+  ) {
+    return Column(
+      key: const ValueKey('quick-reminder-content'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Quick add', style: theme.textTheme.titleSmall),
+        const SizedBox(height: 10),
+        for (final preset in presets)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: OutlinedButton(
+              key: ValueKey('reminder-preset-${preset.id}'),
+              style: OutlinedButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              onPressed: () => _select(preset.at),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(preset.label),
+                  const SizedBox(height: 2),
+                  Text(
+                    _whenLabel(context, preset.at),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          key: const ValueKey('custom-reminder-toggle'),
+          onPressed: () => setState(() => _showCustom = true),
+          icon: const Icon(Icons.calendar_month_outlined),
+          label: const Text('Custom date & time'),
+        ),
+        if (widget.current != null) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            key: const ValueKey('remove-reminder'),
+            style: TextButton.styleFrom(foregroundColor: scheme.error),
+            onPressed: () =>
+                Navigator.of(context).pop(const ReminderSelection.clear()),
+            icon: const Icon(Icons.alarm_off),
+            label: const Text('Remove reminder'),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -225,7 +327,7 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
         maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -255,97 +357,14 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
               const SizedBox(height: 16),
             ] else
               const SizedBox(height: 4),
-            Text('Quick add', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 10),
-            for (final preset in presets)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: OutlinedButton(
-                  key: ValueKey('reminder-preset-${preset.id}'),
-                  style: OutlinedButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                  onPressed: () => _select(preset.at),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(preset.label),
-                      const SizedBox(height: 2),
-                      Text(
-                        _whenLabel(context, preset.at),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: 4),
-            OutlinedButton.icon(
-              key: const ValueKey('custom-reminder-toggle'),
-              onPressed: () => setState(() => _showCustom = !_showCustom),
-              icon: Icon(
-                _showCustom ? Icons.expand_less : Icons.calendar_month_outlined,
-              ),
-              label: Text(
-                _showCustom ? 'Hide custom date & time' : 'Custom date & time',
-              ),
-            ),
-            AnimatedSize(
+            AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
               child: _showCustom
-                  ? Column(
-                      children: [
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 216,
-                          child: CupertinoTheme(
-                            data: CupertinoTheme.of(context).copyWith(
-                              primaryColor: scheme.primary,
-                              brightness: theme.brightness,
-                            ),
-                            child: CupertinoDatePicker(
-                              key: const ValueKey('custom-reminder-picker'),
-                              mode: CupertinoDatePickerMode.dateAndTime,
-                              initialDateTime: _customValue,
-                              minimumDate: widget.now,
-                              maximumDate: widget.now.add(
-                                const Duration(days: 365 * 5),
-                              ),
-                              use24hFormat: widget.use24hTime,
-                              onDateTimeChanged: (value) =>
-                                  _customValue = value,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        FilledButton.icon(
-                          key: const ValueKey('save-custom-reminder'),
-                          onPressed: () => _select(_customValue),
-                          icon: const Icon(Icons.notifications_active_outlined),
-                          label: const Text('Save reminder'),
-                        ),
-                      ],
-                    )
-                  : const SizedBox.shrink(),
+                  ? _customContent(theme, scheme)
+                  : _quickContent(theme, scheme, presets),
             ),
-            if (widget.current != null) ...[
-              const SizedBox(height: 8),
-              TextButton.icon(
-                key: const ValueKey('remove-reminder'),
-                style: TextButton.styleFrom(foregroundColor: scheme.error),
-                onPressed: () =>
-                    Navigator.of(context).pop(const ReminderSelection.clear()),
-                icon: const Icon(Icons.alarm_off),
-                label: const Text('Remove reminder'),
-              ),
-            ],
           ],
         ),
       ),
