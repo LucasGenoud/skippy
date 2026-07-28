@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../state/notes_store.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
 
@@ -144,17 +145,31 @@ class _ShareDialogState extends State<ShareDialog> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _busy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.send),
-                          tooltip: 'Share',
-                          onPressed: _add,
-                        ),
+                  AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Motion.standard,
+                    switchOutCurve: Motion.standard,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(scale: animation, child: child),
+                    ),
+                    child: _busy
+                        ? const Padding(
+                            key: ValueKey('busy'),
+                            padding: EdgeInsets.all(10),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : IconButton(
+                            key: const ValueKey('send'),
+                            icon: const Icon(Icons.send),
+                            tooltip: 'Share',
+                            onPressed: _add,
+                          ),
+                  ),
                 ],
               ),
             ),

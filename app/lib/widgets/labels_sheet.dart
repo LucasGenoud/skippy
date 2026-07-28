@@ -5,8 +5,10 @@ import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
+import 'drag_reorder_list.dart';
 import 'form_dialog.dart';
 import 'settings/accent_color.dart' show kAccentPresets;
+import 'staggered_entrance.dart';
 
 /// A small colour dot with the label's icon inside — the shared leading glyph
 /// for a label across the assign sheet, the editor list, and the drawer.
@@ -220,6 +222,7 @@ class EditLabelsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
+    final labels = store.labels;
     return FormDialog(
       title: const Text('Edit labels'),
       content: Column(
@@ -232,19 +235,32 @@ class EditLabelsDialog extends StatelessWidget {
             onTap: () => LabelEditorDialog.show(context, null),
           ),
           const Divider(height: 8),
-          for (final label in store.labels)
-            ListTile(
-              key: ValueKey(label.id),
-              contentPadding: EdgeInsets.zero,
-              leading: LabelGlyph(label: label, size: 28),
-              title: Text(label.name, overflow: TextOverflow.ellipsis),
-              onTap: () => LabelEditorDialog.show(context, label.id),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete label',
-                onPressed: () => store.deleteLabel(label.id),
+          DragReorderList<Label>(
+            items: labels,
+            idOf: (label) => label.id,
+            onReorder: store.moveLabel,
+            rowBuilder: (context, label, index, handle) => StaggeredEntrance(
+              index: index,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    handle,
+                    const SizedBox(width: 4),
+                    LabelGlyph(label: label, size: 28),
+                  ],
+                ),
+                title: Text(label.name, overflow: TextOverflow.ellipsis),
+                onTap: () => LabelEditorDialog.show(context, label.id),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete label',
+                  onPressed: () => store.deleteLabel(label.id),
+                ),
               ),
             ),
+          ),
         ],
       ),
       actions: [

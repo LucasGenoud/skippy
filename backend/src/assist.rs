@@ -447,6 +447,7 @@ mod tests {
             name: name.into(),
             color: None,
             icon: None,
+            position: 0.0,
         }
     }
 

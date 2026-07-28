@@ -258,20 +258,31 @@ class _VersionCard extends StatelessWidget {
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerRight,
-                child: restoring
-                    ? const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                child: AnimatedSwitcher(
+                  duration: Motion.fast,
+                  switchInCurve: Motion.standard,
+                  switchOutCurve: Motion.standard,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: animation, child: child),
+                  ),
+                  child: restoring
+                      ? const Padding(
+                          key: ValueKey('restoring'),
+                          padding: EdgeInsets.all(8),
+                          child: SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : TextButton.icon(
+                          key: const ValueKey('restore'),
+                          onPressed: onRestore,
+                          icon: const Icon(Icons.restore, size: 18),
+                          label: const Text('Restore'),
                         ),
-                      )
-                    : TextButton.icon(
-                        onPressed: onRestore,
-                        icon: const Icon(Icons.restore, size: 18),
-                        label: const Text('Restore'),
-                      ),
+                ),
               ),
             ],
           ],

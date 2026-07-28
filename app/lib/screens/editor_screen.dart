@@ -149,6 +149,9 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _closing = false;
   bool _finding = false;
   bool _uploading = false;
+  // Files currently mid-upload, shown as dimmed placeholder tiles right where
+  // their real attachment tile will appear once the network call resolves.
+  final List<DroppedFile> _pendingUploads = [];
   bool _previewMarkdown = false;
   bool _reminderPickerOpen = false;
   final Map<int, Offset> _previewPointerStarts = {};
@@ -552,7 +555,12 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() => _uploading = true);
     try {
       for (final f in accepted) {
-        await _store.uploadFile(id, f.bytes, f.mime, f.name);
+        setState(() => _pendingUploads.add(f));
+        try {
+          await _store.uploadFile(id, f.bytes, f.mime, f.name);
+        } finally {
+          if (mounted) setState(() => _pendingUploads.remove(f));
+        }
       }
     } catch (_) {
       showAppSnack(
@@ -1227,24 +1235,37 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   /// Images render inline, in upload order; every other file becomes a
-  /// download tile below them.
+  /// download tile below them. Files still mid-upload render as placeholder
+  /// tiles in the same two groups, after their real counterparts, so a pick
+  /// shows up immediately instead of only once the network call resolves.
   List<Widget> _buildAttachments(Note? note) {
-    if (note == null || note.attachments.isEmpty) return const [];
-    VoidCallback? remove(Attachment attachment) => note.trashed
+    final pendingImages = _pendingUploads.where(
+      (f) => f.mime.startsWith('image/'),
+    );
+    final pendingFiles = _pendingUploads.where(
+      (f) => !f.mime.startsWith('image/'),
+    );
+    if ((note == null || note.attachments.isEmpty) && _pendingUploads.isEmpty) {
+      return const [];
+    }
+    final attachments = note?.attachments ?? const <Attachment>[];
+    final trashed = note?.trashed ?? false;
+    VoidCallback? remove(Attachment attachment) => trashed
         ? null
         : () {
-            _store.removeAttachment(note.id, attachment.id);
+            _store.removeAttachment(note!.id, attachment.id);
             setState(() {});
           };
     return [
-      for (final attachment in note.attachments.where((a) => a.isImage))
+      for (final attachment in attachments.where((a) => a.isImage))
         ImageAttachmentTile(
           attachment: attachment,
           url: _store.fileUrl(attachment),
           onRemove: remove(attachment),
         ),
+      for (final file in pendingImages) UploadingAttachmentTile(file: file),
       // Audio clips are played by the audio-note body, not listed as files.
-      for (final attachment in note.attachments.where(
+      for (final attachment in attachments.where(
         (a) => !a.isImage && !a.isAudio,
       ))
         FileAttachmentTile(
@@ -1252,6 +1273,7 @@ class _EditorScreenState extends State<EditorScreen> {
           url: _store.fileUrl(attachment),
           onRemove: remove(attachment),
         ),
+      for (final file in pendingFiles) UploadingAttachmentTile(file: file),
     ];
   }
 }

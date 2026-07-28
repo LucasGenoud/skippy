@@ -3,6 +3,7 @@ import '../../theme.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../models/dropped_file.dart';
 import '../../models/note.dart';
 import '../../util/attachment_image.dart';
 import '../../util/download.dart';
@@ -146,6 +147,107 @@ class _OverlayAction extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Icon(icon, size: 18, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+/// A placeholder for a file that is still uploading — shown in the same slot
+/// its real [ImageAttachmentTile]/[FileAttachmentTile] takes once the network
+/// call resolves, so the tile appears the instant a file is picked instead of
+/// popping into existence only on success. The bytes are already in memory
+/// (the file was just picked or dropped), so an image preview renders
+/// immediately, just dimmed under a spinner.
+class UploadingAttachmentTile extends StatelessWidget {
+  final DroppedFile file;
+  const UploadingAttachmentTile({super.key, required this.file});
+
+  bool get _isImage => file.mime.startsWith('image/');
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (_isImage) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(kRadius),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Opacity(
+                    opacity: 0.5,
+                    child: Image.memory(
+                      file.bytes,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => Container(
+                        height: 80,
+                        color: scheme.surfaceContainerHighest,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: scheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(kRadius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.insert_drive_file_outlined,
+                size: 20,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.name.isEmpty ? 'file' : file.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      'Uploading… ${formatBytes(file.bytes.length)}',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -659,6 +659,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   .floor()
                                                   .clamp(2, density.maxColumns);
 
+                                        final refreshScheme = Theme.of(
+                                          context,
+                                        ).colorScheme;
                                         return RefreshIndicator(
                                           // refresh, not load: the indicator
                                           // draws its own spinner, so flipping
@@ -666,6 +669,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                           // skeletons under the user's finger.
                                           onRefresh: store.refresh,
                                           edgeOffset: 16,
+                                          color: refreshScheme.primary,
+                                          backgroundColor:
+                                              refreshScheme.surfaceContainerHigh,
+                                          elevation: 2,
                                           child: CustomScrollView(
                                             controller: _scrollController,
                                             physics:
@@ -1111,13 +1118,23 @@ class _OfflineBannerState extends State<_OfflineBanner> {
           ),
           TextButton(
             onPressed: _retrying ? null : _retry,
-            child: _retrying
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Retry'),
+            child: AnimatedSwitcher(
+              duration: Motion.fast,
+              switchInCurve: Motion.standard,
+              switchOutCurve: Motion.standard,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(scale: animation, child: child),
+              ),
+              child: _retrying
+                  ? const SizedBox(
+                      key: ValueKey('retrying'),
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Retry', key: ValueKey('retry')),
+            ),
           ),
         ],
       ),

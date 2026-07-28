@@ -291,6 +291,9 @@ pub struct Label {
     /// `None` for the default label glyph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Order in the sidebar's label list. Same sparse-position trick as
+    /// [`Stage::position`].
+    pub position: f64,
 }
 
 /// A board column. Stages are workspace state like labels — every member sees
@@ -492,6 +495,10 @@ pub struct LabelPayload {
     pub color: Option<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    /// Absent on create (the label is appended to the sidebar list) and
+    /// present when the list is reordered, mirroring [`StagePayload::position`].
+    #[serde(default)]
+    pub position: Option<f64>,
 }
 
 /// Create/update body for a board stage. `position` is absent on create (the

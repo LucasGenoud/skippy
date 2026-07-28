@@ -9,6 +9,7 @@ import '../models/chat.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
+import '../util/motion.dart';
 import 'editor_screen.dart';
 
 /// Ask questions about your notes. Each turn the server retrieves the most
@@ -208,10 +209,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         reverse: true,
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         itemCount: _turns.length,
-                        itemBuilder: (context, index) => _Bubble(
-                          turn: _turns[_turns.length - 1 - index],
-                          onOpenNote: _openNote,
-                        ),
+                        itemBuilder: (context, index) {
+                          final turn = _turns[_turns.length - 1 - index];
+                          return _Bubble(
+                            key: ObjectKey(turn),
+                            turn: turn,
+                            onOpenNote: _openNote,
+                          );
+                        },
                       ),
               ),
               SafeArea(
@@ -315,7 +320,7 @@ class _Bubble extends StatelessWidget {
   final _Turn turn;
   final ValueChanged<String> onOpenNote;
 
-  const _Bubble({required this.turn, required this.onOpenNote});
+  const _Bubble({super.key, required this.turn, required this.onOpenNote});
 
   /// Chip text for a source note: its title, else the first line of its
   /// locally cached content, else "Untitled".
@@ -387,15 +392,11 @@ class _Bubble extends StatelessWidget {
       ),
     );
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: isUser
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          if (turn.sources.isNotEmpty) ...[
-            Wrap(
+    final sourcesChips = turn.sources.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [
@@ -410,30 +411,85 @@ class _Bubble extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 6),
-          ],
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: bubble,
+          );
+
+    final createdChip = switch (turn.created) {
+      final created? => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: ActionChip(
+          avatar: Icon(
+            created.action == 'append'
+                ? Icons.playlist_add
+                : Icons.note_add_outlined,
+            size: 16,
           ),
-          if (turn.created case final created?) ...[
-            const SizedBox(height: 8),
-            ActionChip(
-              avatar: Icon(
-                created.action == 'append'
-                    ? Icons.playlist_add
-                    : Icons.note_add_outlined,
-                size: 16,
-              ),
-              label: Text(
-                '${created.action == 'append' ? 'Updated' : 'Created'}: '
-                '${_chipLabel(created.note, store)}',
-                overflow: TextOverflow.ellipsis,
-              ),
-              onPressed: () => onOpenNote(created.note.id),
+          label: Text(
+            '${created.action == 'append' ? 'Updated' : 'Created'}: '
+            '${_chipLabel(created.note, store)}',
+            overflow: TextOverflow.ellipsis,
+          ),
+          onPressed: () => onOpenNote(created.note.id),
+        ),
+      ),
+      null => const SizedBox.shrink(),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: _entrance(
+        context,
+        Column(
+          crossAxisAlignment: isUser
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            _reveal(context, visible: turn.sources.isNotEmpty, child: sourcesChips),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: bubble,
             ),
+            _reveal(context, visible: turn.created != null, child: createdChip),
           ],
-        ],
+        ),
+      ),
+    );
+  }
+
+  /// Fades and rises a freshly-added bubble in; a turn already on screen
+  /// (its text growing while it streams) keeps this animation's Tween
+  /// unchanged across rebuilds, so it never replays.
+  Widget _entrance(BuildContext context, Widget child) {
+    if (Motion.reduced(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Motion.base,
+      curve: Motion.emphasized,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, (1 - value) * 10),
+          child: child,
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  /// Grows and fades a bubble-local extra (source chips, the created-note
+  /// chip) in when it first appears, instead of popping the bubble's layout.
+  Widget _reveal(BuildContext context, {required bool visible, required Widget child}) {
+    return AnimatedSize(
+      duration: Motion.base,
+      curve: Motion.standard,
+      alignment: Alignment.topLeft,
+      child: AnimatedSwitcher(
+        duration: Motion.base,
+        switchInCurve: Motion.standard,
+        switchOutCurve: Motion.standard,
+        child: KeyedSubtree(
+          key: ValueKey(visible),
+          child: visible ? child : const SizedBox.shrink(),
+        ),
       ),
     );
   }

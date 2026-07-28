@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/note.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../settings/accent_color.dart';
+import '../drag_reorder_list.dart';
 import '../form_dialog.dart';
+import '../staggered_entrance.dart';
 
 /// Manage the board's columns: add, rename, recolour, remove.
 ///
@@ -28,6 +31,7 @@ class EditStagesDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
+    final stages = store.stages;
     return FormDialog(
       title: const Text('Edit columns'),
       content: Column(
@@ -40,19 +44,32 @@ class EditStagesDialog extends StatelessWidget {
             onTap: () => StageEditorDialog.show(context, null),
           ),
           const Divider(height: 8),
-          for (final stage in store.stages)
-            ListTile(
-              key: ValueKey(stage.id),
-              contentPadding: EdgeInsets.zero,
-              leading: _StageDot(color: stage.color),
-              title: Text(stage.name, overflow: TextOverflow.ellipsis),
-              onTap: () => StageEditorDialog.show(context, stage.id),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete column',
-                onPressed: () => store.deleteStage(stage.id),
+          DragReorderList<Stage>(
+            items: stages,
+            idOf: (stage) => stage.id,
+            onReorder: store.moveStage,
+            rowBuilder: (context, stage, index, handle) => StaggeredEntrance(
+              index: index,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    handle,
+                    const SizedBox(width: 8),
+                    _StageDot(color: stage.color),
+                  ],
+                ),
+                title: Text(stage.name, overflow: TextOverflow.ellipsis),
+                onTap: () => StageEditorDialog.show(context, stage.id),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete column',
+                  onPressed: () => store.deleteStage(stage.id),
+                ),
               ),
             ),
+          ),
         ],
       ),
       actions: [

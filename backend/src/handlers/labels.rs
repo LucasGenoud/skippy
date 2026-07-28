@@ -31,12 +31,18 @@ pub async fn create_label(
         return Err(ApiError::BadRequest("label name is empty".to_string()));
     }
     let workspace_id = resolve_workspace(&state, &user_id, body.workspace_id.as_deref()).await?;
+    // A new label goes to the end of the sidebar list unless the caller places it.
+    let position = match body.position {
+        Some(p) => p,
+        None => state.repo.max_label_position(&workspace_id).await? + 1024.0,
+    };
     let label = Label {
         id: body.id.filter(|id| !id.trim().is_empty()).unwrap_or_else(new_id),
         workspace_id,
         name,
         color: clean(body.color),
         icon: clean(body.icon),
+        position,
     };
     state.repo.insert_label(&label).await?;
     notify_workspace(&state, &label.workspace_id).await;
@@ -70,7 +76,14 @@ pub async fn update_label(
     let icon = clean(body.icon);
     if !state
         .repo
-        .update_label(&user_id, &id, &name, color.as_deref(), icon.as_deref())
+        .update_label(
+            &user_id,
+            &id,
+            &name,
+            color.as_deref(),
+            icon.as_deref(),
+            body.position,
+        )
         .await?
     {
         return Err(ApiError::NotFound);

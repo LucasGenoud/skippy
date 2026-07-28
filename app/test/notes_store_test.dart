@@ -544,6 +544,29 @@ void main() {
         expect(api.labels[label.id]!.icon, isNull);
       },
     );
+
+    /// Drag-reordering the sidebar list moves a label immediately and syncs
+    /// as a single patch, without touching its colour or icon.
+    test('moveLabel reorders the sidebar and syncs one patch', () async {
+      await store.load();
+      final groceries = store.createLabel('Groceries', color: '#1A73E8');
+      store.createLabel('Errands');
+      store.createLabel('Chores');
+      await settle();
+      api.log.clear();
+
+      // Send Groceries (index 0) to the end (index 2, post-removal).
+      store.moveLabel(groceries.id, 2);
+      expect(store.labels.map((l) => l.name), ['Errands', 'Chores', 'Groceries']);
+
+      await settle();
+      final patches = api.log
+          .where((l) => l.startsWith('updateLabel:${groceries.id}'))
+          .toList();
+      expect(patches.length, 1);
+      expect(api.labels[groceries.id]!.color, '#1A73E8');
+      expect(api.labels[groceries.id]!.name, 'Groceries');
+    });
   });
 
   group('composing inside a label', () {
@@ -1402,6 +1425,31 @@ void main() {
       await settle();
       expect(store.stages.map((s) => s.name), ['Todo', 'Doing']);
       expect(api.stages.length, 2);
+    });
+
+    /// Drag-reordering a column moves it in the local order immediately and
+    /// syncs as a single patch carrying the new position, without touching
+    /// the column's name or colour.
+    test('moveStage reorders the board and syncs one patch', () async {
+      await store.load();
+      final todo = store.createStage('Todo', color: '#1A73E8');
+      store.createStage('Doing');
+      store.createStage('Done');
+      await settle();
+      api.log.clear();
+
+      // Send Todo (index 0) to the end (index 2, post-removal).
+      store.moveStage(todo.id, 2);
+      expect(store.stages.map((s) => s.name), ['Doing', 'Done', 'Todo']);
+
+      await settle();
+      final patches = api.log
+          .where((l) => l.startsWith('updateStage:${todo.id}'))
+          .toList();
+      expect(patches.length, 1);
+      // Colour survives the reorder unchanged.
+      expect(api.stages[todo.id]!.color, '#1A73E8');
+      expect(api.stages[todo.id]!.name, 'Todo');
     });
 
     test('positionBetween places head, tail, and between', () {

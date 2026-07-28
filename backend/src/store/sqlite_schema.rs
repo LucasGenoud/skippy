@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS labels (
     name TEXT NOT NULL,
     color TEXT,
     icon TEXT,
+    position REAL NOT NULL DEFAULT 0,
     UNIQUE (workspace_id, name COLLATE NOCASE)
 );
 CREATE TABLE IF NOT EXISTS stages (
@@ -138,6 +139,7 @@ const ADDITIVE_MIGRATIONS: &[&str] = &[
     "ALTER TABLE labels ADD COLUMN icon TEXT",
     "ALTER TABLE notes ADD COLUMN stage_id TEXT",
     "ALTER TABLE notes ADD COLUMN stage_position REAL",
+    "ALTER TABLE labels ADD COLUMN position REAL",
 ];
 
 /// Creates the current schema and upgrades databases written by older builds.
@@ -147,6 +149,7 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     migrate_user_accounts(pool).await?;
     migrate_checklist_history(pool).await?;
     migrate_stage_positions(pool).await?;
+    migrate_label_positions(pool).await?;
     Ok(())
 }
 
@@ -163,6 +166,28 @@ async fn migrate_stage_positions(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::query("UPDATE notes SET stage_position = position WHERE stage_position IS NULL")
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// Seed label ordering from the alphabetical order they used to be
+/// permanently sorted in, so an existing database's sidebar keeps its
+/// familiar order the first time drag-reorder becomes available, rather than
+/// jumping to an arbitrary one. Same `IS NULL`-guarded backfill shape as
+/// [`migrate_stage_positions`]. The rank is computed without a window
+/// function (portable across older SQLite builds): count how many sibling
+/// labels sort before this one.
+async fn migrate_label_positions(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE labels SET position = (
+            SELECT COUNT(*) * 1024.0 FROM labels AS l2
+            WHERE l2.workspace_id = labels.workspace_id
+              AND (l2.name COLLATE NOCASE < labels.name COLLATE NOCASE
+                   OR (l2.name COLLATE NOCASE = labels.name COLLATE NOCASE AND l2.id < labels.id))
+         )
+         WHERE position IS NULL",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

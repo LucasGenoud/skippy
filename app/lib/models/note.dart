@@ -390,12 +390,17 @@ class Label {
   final String? color;
   final String? icon;
 
+  /// Order in the sidebar's label list. Same sparse-position trick as
+  /// [Stage.position].
+  final double position;
+
   const Label({
     required this.id,
     required this.name,
     this.workspaceId = '',
     this.color,
     this.icon,
+    this.position = 0,
   });
 
   factory Label.fromJson(Map<String, dynamic> json) => Label(
@@ -404,6 +409,7 @@ class Label {
     name: json['name'] as String,
     color: json['color'] as String?,
     icon: json['icon'] as String?,
+    position: (json['position'] as num?)?.toDouble() ?? 0,
   );
 
   Map<String, dynamic> toJson() => {
@@ -412,15 +418,18 @@ class Label {
     'name': name,
     if (color != null) 'color': color,
     if (icon != null) 'icon': icon,
+    'position': position,
   };
 
-  Label copyWith({String? name, String? color, String? icon}) => Label(
-    id: id,
-    workspaceId: workspaceId,
-    name: name ?? this.name,
-    color: color ?? this.color,
-    icon: icon ?? this.icon,
-  );
+  Label copyWith({String? name, String? color, String? icon, double? position}) =>
+      Label(
+        id: id,
+        workspaceId: workspaceId,
+        name: name ?? this.name,
+        color: color ?? this.color,
+        icon: icon ?? this.icon,
+        position: position ?? this.position,
+      );
 }
 
 /// A board column. Stages are workspace state like labels — every member sees

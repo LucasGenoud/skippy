@@ -401,7 +401,12 @@ class FakeApi implements Api {
   Future<List<Label>> fetchLabels() async {
     final result = await _run('fetchLabels', () {
       final list = labels.values.toList()
-        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        ..sort((a, b) {
+          final byPosition = a.position.compareTo(b.position);
+          return byPosition != 0
+              ? byPosition
+              : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
       return list;
     });
     final gate = fetchLabelsGate;
@@ -419,6 +424,7 @@ class FakeApi implements Api {
     required String workspaceId,
     String? color,
     String? icon,
+    double? position,
   }) => _run('createLabel:$name', () {
     labels[id] = Label(
       id: id,
@@ -426,8 +432,19 @@ class FakeApi implements Api {
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       icon: (icon ?? '').isEmpty ? null : icon,
+      position: position ?? _nextLabelPosition(workspaceId),
     );
   });
+
+  double _nextLabelPosition(String workspaceId) {
+    var max = 0.0;
+    for (final label in labels.values) {
+      if (label.workspaceId == workspaceId && label.position > max) {
+        max = label.position;
+      }
+    }
+    return max + 1024.0;
+  }
 
   @override
   Future<void> updateLabel(
@@ -435,13 +452,16 @@ class FakeApi implements Api {
     String name, {
     String? color,
     String? icon,
+    double? position,
   }) => _run('updateLabel:$id', () {
+    final existing = labels[id];
     labels[id] = Label(
       id: id,
-      workspaceId: labels[id]?.workspaceId ?? '',
+      workspaceId: existing?.workspaceId ?? '',
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       icon: (icon ?? '').isEmpty ? null : icon,
+      position: position ?? existing?.position ?? 0,
     );
   });
 

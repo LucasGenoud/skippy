@@ -273,12 +273,14 @@ class NotesStore extends ChangeNotifier {
           }
         }
         if (label == null) {
+          final workspaceId = _activeWorkspaceId ?? '';
           label = Label(
             id: _uuid.v4(),
-            workspaceId: _activeWorkspaceId ?? '',
+            workspaceId: workspaceId,
             name: backupLabel.name,
             color: backupLabel.color,
             icon: backupLabel.icon,
+            position: _nextLabelPosition(workspaceId),
           );
           await api.createLabel(
             label.id,
@@ -286,6 +288,7 @@ class NotesStore extends ChangeNotifier {
             workspaceId: label.workspaceId,
             color: label.color,
             icon: label.icon,
+            position: label.position,
           );
           _labels.add(label);
           labelsCreated++;
@@ -295,9 +298,7 @@ class NotesStore extends ChangeNotifier {
         labelMap[backupLabel.id] = label.id;
         onProgress?.call(++completed, totalSteps);
       }
-      _labels.sort(
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      );
+      _labels.sort(_byLabelPosition);
 
       final notesBeforeFront = bundle.notes.isEmpty
           ? 0
@@ -657,7 +658,7 @@ class NotesStore extends ChangeNotifier {
         _labels = [
           for (final j in (doc['labels'] as List? ?? const []))
             Label.fromJson((j as Map).cast<String, dynamic>()),
-        ];
+        ]..sort(_byLabelPosition);
         _stages = [
           for (final j in (doc['stages'] as List? ?? const []))
             Stage.fromJson((j as Map).cast<String, dynamic>()),
@@ -1662,15 +1663,16 @@ class NotesStore extends ChangeNotifier {
   // Labels
 
   Label createLabel(String name, {String? color, String? icon}) {
+    final workspaceId = _activeWorkspaceId ?? '';
     final label = Label(
       id: _uuid.v4(),
-      workspaceId: _activeWorkspaceId ?? '',
+      workspaceId: workspaceId,
       name: name.trim(),
       color: color,
       icon: icon,
+      position: _nextLabelPosition(workspaceId),
     );
-    _labels = [..._labels, label]
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    _labels = [..._labels, label]..sort(_byLabelPosition);
     notifyListeners();
     _enqueue(
       PendingOp(
@@ -1681,16 +1683,42 @@ class NotesStore extends ChangeNotifier {
           'workspaceId': label.workspaceId,
           'color': color,
           'icon': icon,
+          'position': label.position,
         },
       ),
     );
     return label;
   }
 
+  /// A new label goes to the end of the sidebar list, matching the server.
+  double _nextLabelPosition(String workspaceId) {
+    var max = 0.0;
+    for (final label in _labels) {
+      if (label.workspaceId == workspaceId && label.position > max) {
+        max = label.position;
+      }
+    }
+    return max + 1024.0;
+  }
+
+  static int _byLabelPosition(Label a, Label b) {
+    final byPosition = a.position.compareTo(b.position);
+    return byPosition != 0
+        ? byPosition
+        : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
   /// Rename and/or restyle a label. Passing null for [color]/[icon] clears it
   /// (resets to the theme default) — these are set to exactly what's given, not
-  /// merged, so the editor's "no colour"/"no icon" choice sticks.
-  void updateLabel(String id, {String? name, String? color, String? icon}) {
+  /// merged, so the editor's "no colour"/"no icon" choice sticks. [position]
+  /// moves the label in the sidebar; omitting it leaves the order alone.
+  void updateLabel(
+    String id, {
+    String? name,
+    String? color,
+    String? icon,
+    double? position,
+  }) {
     final i = _labels.indexWhere((l) => l.id == id);
     if (i == -1) return;
     final newName = (name ?? _labels[i].name).trim();
@@ -1700,17 +1728,47 @@ class NotesStore extends ChangeNotifier {
       name: newName,
       color: color,
       icon: icon,
+      position: position ?? _labels[i].position,
     );
-    _labels.sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+    _labels.sort(_byLabelPosition);
     notifyListeners();
     _enqueue(
       PendingOp(
         PendingOpKind.labelUpdate,
         id: id,
-        data: {'name': newName, 'color': color, 'icon': icon},
+        data: {
+          'name': newName,
+          'color': color,
+          'icon': icon,
+          'position': position,
+        },
       ),
+    );
+  }
+
+  /// Drag-reorder a label. [newIndex] is the final resting index, same
+  /// convention as [moveStage].
+  void moveLabel(String id, int newIndex) {
+    final ordered = List<Label>.from(labels);
+    final currentIndex = ordered.indexWhere((l) => l.id == id);
+    if (currentIndex == -1) return;
+    final label = ordered.removeAt(currentIndex);
+    ordered.insert(newIndex, label);
+    final above = newIndex > 0 ? ordered[newIndex - 1] : null;
+    final below = newIndex + 1 < ordered.length ? ordered[newIndex + 1] : null;
+    final newPosition = above == null && below == null
+        ? label.position
+        : above == null
+        ? below!.position - 1024.0
+        : below == null
+        ? above.position + 1024.0
+        : (above.position + below.position) / 2;
+    updateLabel(
+      id,
+      name: label.name,
+      color: label.color,
+      icon: label.icon,
+      position: newPosition,
     );
   }
 
@@ -1795,6 +1853,29 @@ class NotesStore extends ChangeNotifier {
         data: {'name': newName, 'color': color, 'position': position},
       ),
     );
+  }
+
+  /// Drag-reorder a column. [newIndex] is the final resting index (the slot
+  /// the item lands in, counted *after* its own removal) — the convention
+  /// `ReorderableListView.onReorderItem` reports, so that callback can call
+  /// this directly. Recomputes a sparse position between the new neighbours
+  /// rather than renumbering the board, same trick as [positionBetween].
+  void moveStage(String id, int newIndex) {
+    final ordered = List<Stage>.from(stages);
+    final currentIndex = ordered.indexWhere((s) => s.id == id);
+    if (currentIndex == -1) return;
+    final stage = ordered.removeAt(currentIndex);
+    ordered.insert(newIndex, stage);
+    final above = newIndex > 0 ? ordered[newIndex - 1] : null;
+    final below = newIndex + 1 < ordered.length ? ordered[newIndex + 1] : null;
+    final newPosition = above == null && below == null
+        ? stage.position
+        : above == null
+        ? below!.position - 1024.0
+        : below == null
+        ? above.position + 1024.0
+        : (above.position + below.position) / 2;
+    updateStage(id, name: stage.name, color: stage.color, position: newPosition);
   }
 
   /// Delete a column. Its notes are not destroyed — they go back to unassigned,
@@ -1959,6 +2040,7 @@ class NotesStore extends ChangeNotifier {
           workspaceId: op.data['workspaceId'] as String? ?? '',
           color: op.data['color'] as String?,
           icon: op.data['icon'] as String?,
+          position: (op.data['position'] as num?)?.toDouble(),
         );
       case PendingOpKind.labelUpdate:
         return api.updateLabel(
@@ -1966,6 +2048,7 @@ class NotesStore extends ChangeNotifier {
           op.data['name'] as String,
           color: op.data['color'] as String?,
           icon: op.data['icon'] as String?,
+          position: (op.data['position'] as num?)?.toDouble(),
         );
       case PendingOpKind.labelDelete:
         return api.deleteLabel(op.id!);

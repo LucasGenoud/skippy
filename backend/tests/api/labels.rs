@@ -212,3 +212,42 @@ async fn label_rename_delete_scoped_to_owner() {
     .await;
     assert_eq!(view["label_ids"], json!([]));
 }
+
+/// New labels append to the sidebar, and an explicit position reorders them —
+/// mirrors `stages_are_ordered_left_to_right`.
+#[tokio::test]
+async fn labels_are_ordered_by_custom_position() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let groceries = make_label(&app, &ada, "Groceries").await;
+    make_label(&app, &ada, "Errands").await;
+    make_label(&app, &ada, "Chores").await;
+
+    // Creation order, not alphabetical — position beats name now.
+    let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
+    let names: Vec<&str> = labels
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["Groceries", "Errands", "Chores"]);
+
+    // Send Groceries to the end.
+    send(
+        &app,
+        "PATCH",
+        &format!("/api/labels/{groceries}"),
+        Some(&ada),
+        Some(json!({"name": "Groceries", "position": 9999.0})),
+    )
+    .await;
+    let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
+    let names: Vec<&str> = labels
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["Errands", "Chores", "Groceries"]);
+}

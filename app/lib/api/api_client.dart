@@ -111,12 +111,14 @@ abstract class Api {
     required String workspaceId,
     String? color,
     String? icon,
+    double? position,
   });
   Future<void> updateLabel(
     String id,
     String name, {
     String? color,
     String? icon,
+    double? position,
   });
   Future<void> deleteLabel(String id);
 
@@ -632,18 +634,21 @@ class ApiClient implements Api {
     required String workspaceId,
     String? color,
     String? icon,
+    double? position,
   }) async {
     _decode(
       await _client.post(
         _uri('/labels'),
         headers: _headers(),
-        // Empty strings clear the field server-side; null omits it.
+        // Empty strings clear the field server-side; an omitted position
+        // appends the label to the end of the sidebar list.
         body: jsonEncode({
           'id': id,
           if (workspaceId.isNotEmpty) 'workspace_id': workspaceId,
           'name': name,
           'color': color ?? '',
           'icon': icon ?? '',
+          'position': ?position,
         }),
       ),
     );
@@ -655,6 +660,7 @@ class ApiClient implements Api {
     String name, {
     String? color,
     String? icon,
+    double? position,
   }) async {
     _decode(
       await _client.patch(
@@ -664,6 +670,7 @@ class ApiClient implements Api {
           'name': name,
           'color': color ?? '',
           'icon': icon ?? '',
+          'position': ?position,
         }),
       ),
     );

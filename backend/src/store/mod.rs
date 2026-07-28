@@ -166,8 +166,11 @@ pub trait Repository: Send + Sync {
         name: &str,
         color: Option<&str>,
         icon: Option<&str>,
+        position: Option<f64>,
     ) -> RepoResult<bool>;
     async fn delete_label(&self, user_id: &str, label_id: &str) -> RepoResult<bool>;
+    /// Where a newly created label goes: to the end of the sidebar list.
+    async fn max_label_position(&self, workspace_id: &str) -> RepoResult<f64>;
     /// Replace a note's labels. Only labels from the note's own workspace are
     /// accepted, so a move or a stray id can never attach a foreign label.
     async fn set_note_labels(&self, note_id: &str, label_ids: &[String]) -> RepoResult<()>;

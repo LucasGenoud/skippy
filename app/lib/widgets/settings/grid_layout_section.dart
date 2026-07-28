@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
+import '../../util/motion.dart';
 
 /// Settings block for the note-grid layout: card density, how wide the centered
 /// grid may grow, and a live miniature preview of the two combined.
@@ -120,26 +121,36 @@ class _GridPreview extends StatelessWidget {
             border: Border.all(color: scheme.outlineVariant),
           ),
           alignment: Alignment.topCenter,
-          child: SizedBox(
+          // Picking a new density/width should visibly reflow the preview,
+          // not jump-cut — that's the whole point of showing it live.
+          child: AnimatedContainer(
+            duration: Motion.base,
+            curve: Motion.standard,
             width: innerW,
             // Expanded columns divide the band exactly, so sub-pixel rounding
             // can never overflow the row (which a fixed card width would).
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var c = 0; c < columns; c++) ...[
-                  if (c > 0) const SizedBox(width: gap),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        miniCard(_heights[(c * 2) % _heights.length]),
-                        const SizedBox(height: gap),
-                        miniCard(_heights[(c * 2 + 1) % _heights.length]),
-                      ],
+            child: AnimatedSwitcher(
+              duration: Motion.base,
+              switchInCurve: Motion.standard,
+              switchOutCurve: Motion.standard,
+              child: Row(
+                key: ValueKey(columns),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var c = 0; c < columns; c++) ...[
+                    if (c > 0) const SizedBox(width: gap),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          miniCard(_heights[(c * 2) % _heights.length]),
+                          const SizedBox(height: gap),
+                          miniCard(_heights[(c * 2 + 1) % _heights.length]),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         );
