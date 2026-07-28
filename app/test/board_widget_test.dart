@@ -320,32 +320,22 @@ void main() {
       await flushTimers(tester);
     });
 
-    /// Undo has to give back the slot, not just the column — otherwise
-    /// undoing a placement quietly makes a second one.
-    testWidgets('undo puts it back in the slot it came from', (tester) async {
+    /// A drag drop is silent — no confirmation snack, since the card visibly
+    /// gliding into place already says where it went.
+    testWidgets('dropping a card raises no confirmation', (tester) async {
       await seed(tester);
-      api.notes['n2'] = serverNote('n2', title: 'card two').copyWith(
-        stageId: 'doing',
-        stagePosition: 4096,
-      );
-      await store.load();
-      await tester.pumpAndSettle();
 
       final gesture = await tester.startGesture(
-        tester.getCenter(find.text('card two')),
+        tester.getCenter(find.text('card one')),
       );
       await tester.pump(const Duration(milliseconds: 400));
       await gesture.moveTo(tester.getCenter(find.text('Todo')));
       await tester.pump();
       await gesture.up();
       await tester.pumpAndSettle();
-      expect(store.noteById('n2')!.stageId, 'todo');
 
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-
-      expect(store.noteById('n2')!.stageId, 'doing');
-      expect(store.noteById('n2')!.stagePosition, 4096);
+      expect(store.noteById('n1')!.stageId, 'todo');
+      expect(find.byType(SnackBar), findsNothing);
       await flushTimers(tester);
     });
   });

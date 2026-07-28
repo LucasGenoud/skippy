@@ -399,39 +399,53 @@ impl Repository for SqliteRepository {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<bool> {
+    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<Vec<PurgedNote>>> {
         let Some(workspace) = self.workspace(workspace_id).await? else {
-            return Ok(false);
+            return Ok(None);
         };
-        // The default workspace is where notes are rehomed to; removing it
-        // would leave them nowhere to go.
+        // The default workspace is where notes would be rehomed to; removing
+        // it would leave them nowhere to go. (It also has no delete button in
+        // the UI, but the server doesn't trust that.)
         if workspace.is_default {
-            return Ok(false);
+            return Ok(None);
         }
         let mut tx = self.pool.begin().await?;
-        // Every note goes home to its own owner's default workspace, so
-        // deleting a shared workspace never destroys another member's notes.
-        sqlx::query(
-            "UPDATE notes SET workspace_id = (
-                 SELECT w.id FROM workspaces w
-                 WHERE w.owner_id = notes.owner_id AND w.is_default = 1
-             )
-             WHERE workspace_id = ?",
-        )
-        .bind(workspace_id)
-        .execute(&mut *tx)
-        .await?;
-        // The workspace's labels are its own; they go with it (note_labels
-        // cascades), exactly as deleting a label would.
-        let result = sqlx::query("DELETE FROM workspaces WHERE id = ?")
+        // Every note in the workspace is hard-deleted along with it — the
+        // owner asked for the whole thing gone, not for it to resurface
+        // somewhere. Snapshot attachment ids before each DELETE cascades them
+        // away, same as `purge_trash_before`, so the caller can still remove
+        // the blobs and unindex the note afterwards.
+        let rows = sqlx::query("SELECT id, owner_id FROM notes WHERE workspace_id = ?")
+            .bind(workspace_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        let mut purged: Vec<PurgedNote> = rows
+            .iter()
+            .map(|r| PurgedNote {
+                note_id: r.get("id"),
+                owner_id: r.get("owner_id"),
+                attachment_ids: Vec::new(),
+            })
+            .collect();
+        for note in &mut purged {
+            let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
+                .bind(&note.note_id)
+                .fetch_all(&mut *tx)
+                .await?;
+            note.attachment_ids = attachments.iter().map(|r| r.get("id")).collect();
+            sqlx::query("DELETE FROM notes WHERE id = ?")
+                .bind(&note.note_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        // The workspace's own labels and stages cascade with it; every note
+        // that referenced them is already gone, so nothing needs pruning.
+        sqlx::query("DELETE FROM workspaces WHERE id = ?")
             .bind(workspace_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query(PRUNE_MISMATCHED_LABELS)
-            .execute(&mut *tx)
-            .await?;
         tx.commit().await?;
-        Ok(result.rows_affected() > 0)
+        Ok(Some(purged))
     }
 
     async fn rehome_own_notes(&self, workspace_id: &str, user_id: &str) -> RepoResult<Vec<String>> {

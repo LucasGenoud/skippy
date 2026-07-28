@@ -7,7 +7,6 @@ import '../../state/board_layout.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../theme.dart';
-import '../../util/snack.dart';
 import '../empty_state.dart';
 import 'board_column_view.dart';
 import 'stage_editor.dart';
@@ -99,15 +98,7 @@ class _BoardViewState extends State<BoardView> {
   /// is the phone's move gesture: short travel, and no page turns under the
   /// finger the way dragging across a `PageView` would.
   void _dropOnStage(String noteId, BoardColumn column) {
-    final store = context.read<NotesStore>();
-    final from = store.noteById(noteId)?.stageId;
-    store.setNoteStage(noteId, column.stage?.id);
-    showAppSnack(
-      'Moved to ${column.title}',
-      icon: Icons.view_kanban_outlined,
-      actionLabel: 'Undo',
-      onAction: () => store.setNoteStage(noteId, from),
-    );
+    context.read<NotesStore>().setNoteStage(noteId, column.stage?.id);
   }
 
   Widget _buildColumns(Board board) {

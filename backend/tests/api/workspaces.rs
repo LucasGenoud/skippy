@@ -325,15 +325,22 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
 }
 
 #[tokio::test]
-async fn deleting_a_workspace_returns_notes_to_their_owners() {
-    let app = app().await;
-    let (ada, _) = register(&app, "ada").await;
+async fn deleting_a_workspace_deletes_every_note_in_it() {
+    let app_state = state().await;
+    let app = build_app(app_state.clone());
+    let (ada, ada_id) = register(&app, "ada").await;
     let (bob, _) = register(&app, "bob").await;
     let work = make_workspace(&app, &ada, "Work").await;
     invite(&app, &ada, &work, &test_email("bob")).await;
 
-    let adas = create_note(&app, &ada, json!({"title": "ada's", "workspace_id": work})).await;
-    let bobs = create_note(&app, &bob, json!({"title": "bob's", "workspace_id": work})).await;
+    let adas = create_note(
+        &app,
+        &ada,
+        json!({"title": "ada's", "workspace_id": work, "pinned": true}),
+    )
+    .await;
+    let adas_id = adas["id"].as_str().unwrap();
+    create_note(&app, &bob, json!({"title": "bob's", "workspace_id": work})).await;
     let (_, label) = send(
         &app,
         "POST",
@@ -345,11 +352,15 @@ async fn deleting_a_workspace_returns_notes_to_their_owners() {
     send(
         &app,
         "PATCH",
-        &format!("/api/notes/{}", adas["id"].as_str().unwrap()),
+        &format!("/api/notes/{adas_id}"),
         Some(&ada),
         Some(json!({"label_ids": [label["id"]]})),
     )
     .await;
+    let (status, attachment) = upload(&app, &ada, adas_id, "image/png", b"pixels").await;
+    assert_eq!(status, StatusCode::CREATED);
+    let attachment_id = attachment["id"].as_str().unwrap();
+    assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
 
     let (status, _) = send(
         &app,
@@ -361,22 +372,23 @@ async fn deleting_a_workspace_returns_notes_to_their_owners() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    // Nothing was destroyed: each note is back in its own owner's default
-    // workspace, and the workspace's labels went with it.
-    let ada_default = default_workspace_id(&app, &ada).await;
-    let bob_default = default_workspace_id(&app, &bob).await;
-    let ada_notes = list_notes(&app, &ada).await;
-    assert_eq!(ada_notes.len(), 1);
-    assert_eq!(ada_notes[0]["id"], adas["id"]);
-    assert_eq!(ada_notes[0]["workspace_id"], json!(ada_default));
-    assert_eq!(ada_notes[0]["label_ids"], json!([]));
+    // Gone, not filed anywhere recoverable: every note in the workspace —
+    // ada's and bob's alike — is deleted outright, along with its labels,
+    // attachment blob, and the workspace itself.
+    assert!(list_notes(&app, &ada).await.is_empty());
+    assert!(list_notes(&app, &bob).await.is_empty());
+    let (status, _) = send(
+        &app,
+        "GET",
+        &format!("/api/notes/{adas_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
     assert_eq!(labels, json!([]));
-
-    let bob_notes = list_notes(&app, &bob).await;
-    assert_eq!(bob_notes.len(), 1);
-    assert_eq!(bob_notes[0]["id"], bobs["id"]);
-    assert_eq!(bob_notes[0]["workspace_id"], json!(bob_default));
+    assert!(app_state.files.read(&ada_id, attachment_id).await.is_none());
 }
 
 #[tokio::test]

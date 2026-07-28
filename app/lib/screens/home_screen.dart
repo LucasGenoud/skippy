@@ -531,7 +531,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: SafeArea(
                         bottom: false,
                         child: Padding(
-                          padding: EdgeInsets.only(top: wideLayout ? 12 : 0),
+                          // Desktop has no status bar to hold the bar off the
+                          // window's top edge, so it gets breathing room here
+                          // instead — matched on the bottom so the bar sits
+                          // centered in the space above the divider rather
+                          // than pinned to it.
+                          padding: EdgeInsets.symmetric(
+                            vertical: wideLayout ? 12 : 0,
+                          ),
                           child: HomeTopBar(
                             controller: _searchController,
                             focusNode: _searchFocus,

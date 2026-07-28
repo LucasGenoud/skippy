@@ -17,6 +17,7 @@ Note noteIn(
   String title = '',
   Set<String> labelIds = const {},
   bool trashed = false,
+  bool pinned = false,
   UserRef? owner,
 }) => Note(
   id: id,
@@ -24,6 +25,7 @@ Note noteIn(
   title: title,
   labelIds: labelIds,
   trashed: trashed,
+  pinned: pinned,
   createdAt: DateTime.now(),
   updatedAt: DateTime.now(),
   owner: owner ?? const UserRef(id: 'u-me', name: 'me'),
@@ -163,13 +165,19 @@ void main() {
       expect(store.workspaceById('w-default'), isNotNull);
     });
 
-    test('deleting one returns our notes home and drops its labels', () async {
+    test('deleting one deletes our notes outright and drops its labels', () async {
       api.labels['l2'] = const Label(
         id: 'l2',
         workspaceId: work,
         name: 'Urgent',
       );
-      api.notes['b'] = noteIn(work, 'b', title: 'job', labelIds: {'l2'});
+      api.notes['b'] = noteIn(
+        work,
+        'b',
+        title: 'job',
+        labelIds: {'l2'},
+        pinned: true,
+      );
       api.notes['c'] = noteIn(
         work,
         'c',
@@ -184,15 +192,15 @@ void main() {
       expect(store.workspaceById(work), isNull);
       // The view falls back to the default workspace rather than stranding.
       expect(store.activeWorkspaceId, 'w-default');
-      final mine = store.noteById('b')!;
-      expect(mine.workspaceId, 'w-default');
-      expect(mine.labelIds, isEmpty);
-      // A member's note goes home with them, off our shelf.
+      // Gone outright — not trashed, not rehomed. A member's note is deleted
+      // on their side; we only lose sight of it.
+      expect(store.noteById('b'), isNull);
       expect(store.noteById('c'), isNull);
       expect(store.labels, isEmpty);
 
       await settle();
       expect(api.workspaces.containsKey(work), isFalse);
+      expect(api.notes.containsKey('b'), isFalse);
     });
 
     test('leaving one keeps our notes and forgets the rest', () async {
@@ -408,6 +416,59 @@ void main() {
       expect(store.activeWorkspace?.name, 'Trips');
       expect(find.text('Trips'), findsWidgets);
       await tester.pump(const Duration(milliseconds: 700));
+      store.dispose();
+    });
+  });
+
+  group('delete confirmation', () {
+    testWidgets('the Delete button stays off until the name matches', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      api.notes['a'] = noteIn(work, 'a', title: 'work note');
+      await store.load();
+      store.setActiveWorkspace(work);
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(WorkspaceMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Manage workspace'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete "Work"?'), findsOneWidget);
+      // The manage dialog's own invite field is still mounted underneath, so
+      // scope to the confirm dialog rather than grabbing the wrong TextField.
+      final confirmDialog = find.ancestor(
+        of: find.text('Delete "Work"?'),
+        matching: find.byType(AlertDialog),
+      );
+      final nameField = find.descendant(
+        of: confirmDialog,
+        matching: find.byType(TextField),
+      );
+      final deleteButton = find.widgetWithText(FilledButton, 'Delete');
+      expect(tester.widget<FilledButton>(deleteButton).onPressed, isNull);
+
+      await tester.enterText(nameField, 'wrong name');
+      await tester.pump();
+      expect(tester.widget<FilledButton>(deleteButton).onPressed, isNull);
+
+      await tester.enterText(nameField, 'Work');
+      await tester.pump();
+      expect(tester.widget<FilledButton>(deleteButton).onPressed, isNotNull);
+
+      await tester.tap(deleteButton);
+      await tester.pumpAndSettle();
+
+      expect(store.workspaceById(work), isNull);
+      expect(store.noteById('a'), isNull);
       store.dispose();
     });
   });

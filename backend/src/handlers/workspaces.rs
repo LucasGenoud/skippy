@@ -177,21 +177,17 @@ pub async fn delete_workspace(
     }
     // Notify before the roster disappears, so every member's client refreshes.
     let members = state.repo.workspace_member_ids(&id).await?;
-    // Notes are rehomed rather than destroyed, but their labels and their
-    // visibility both change, so the search index has to be rebuilt for them.
-    let moved: Vec<String> = state
-        .repo
-        .notes_for_user(&user_id)
-        .await?
-        .into_iter()
-        .filter(|view| view.note.workspace_id == id)
-        .map(|view| view.note.id)
-        .collect();
-    if !state.repo.delete_workspace(&id).await? {
+    let Some(purged) = state.repo.delete_workspace(&id).await? else {
         return Err(ApiError::NotFound);
-    }
-    for note_id in &moved {
-        state.index_note_later(note_id);
+    };
+    // Every note in the workspace is gone with it — the owner's and every
+    // member's — so its attachments and search-index entry go too, the same
+    // cleanup a real note delete does.
+    for note in &purged {
+        for attachment_id in &note.attachment_ids {
+            state.files.delete(&note.owner_id, attachment_id).await;
+        }
+        state.unindex_note_later(&note.note_id);
     }
     state.hub.notify(&members, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)

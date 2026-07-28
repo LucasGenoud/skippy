@@ -496,28 +496,11 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
     Workspace workspace,
     int noteCount,
   ) async {
-    final scheme = Theme.of(context).colorScheme;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete "${workspace.name}"?'),
-        content: Text(
-          noteCount == 0
-              ? 'Its labels are removed. Nothing else changes.'
-              : 'Its $noteCount ${noteCount == 1 ? 'note goes' : 'notes go'} back to your default workspace, '
-                    'and any note a member owns goes back to theirs. The workspace\'s labels are removed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: scheme.error),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
+      builder: (_) => _DeleteWorkspaceDialog(
+        workspace: workspace,
+        noteCount: noteCount,
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -527,6 +510,105 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
       'Deleted "${workspace.name}"',
       icon: Icons.delete_outline,
       kind: SnackKind.danger,
+    );
+  }
+}
+
+/// Deleting a workspace deletes every note in it outright — the owner's and
+/// every member's, gone with it rather than trashed, and a member has no
+/// Undo to reach for since they're not the one clicking Delete. A plain
+/// Cancel/Delete pair was the right amount of friction when the worst case
+/// was a workspace vanishing; it isn't once the worst case is someone else's
+/// notes disappearing for good, so this asks for the workspace's name back
+/// before the button will even respond.
+class _DeleteWorkspaceDialog extends StatefulWidget {
+  final Workspace workspace;
+  final int noteCount;
+
+  const _DeleteWorkspaceDialog({
+    required this.workspace,
+    required this.noteCount,
+  });
+
+  @override
+  State<_DeleteWorkspaceDialog> createState() =>
+      _DeleteWorkspaceDialogState();
+}
+
+class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
+  final _controller = TextEditingController();
+  String _typed = '';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool get _matches => _typed == widget.workspace.name;
+
+  void _submit() {
+    if (_matches) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final noteCount = widget.noteCount;
+    return AlertDialog(
+      title: Text('Delete "${widget.workspace.name}"?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            noteCount == 0
+                ? 'Its labels are removed. This can\'t be undone.'
+                : '$noteCount ${noteCount == 1 ? 'note' : 'notes'} — yours '
+                      'and any member\'s — ${noteCount == 1 ? 'is' : 'are'} '
+                      'deleted along with it, not moved to Trash. This '
+                      'can\'t be undone.',
+          ),
+          const SizedBox(height: 16),
+          Text.rich(
+            TextSpan(
+              text: 'Type ',
+              children: [
+                TextSpan(
+                  text: widget.workspace.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const TextSpan(text: ' to confirm.'),
+              ],
+            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) => setState(() => _typed = v),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: scheme.error),
+          onPressed: _matches ? _submit : null,
+          child: const Text('Delete'),
+        ),
+      ],
     );
   }
 }

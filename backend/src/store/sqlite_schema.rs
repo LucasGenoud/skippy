@@ -29,9 +29,10 @@ CREATE TABLE IF NOT EXISTS workspace_members (
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- Deliberately no ON DELETE action: deleting a workspace files its notes
-    -- in their own owner's default workspace first, so the reference is always
-    -- cleared before the row goes. A cascade here would destroy notes instead.
+    -- Deliberately no ON DELETE action: deleting a workspace deletes its
+    -- notes explicitly, one at a time, before the workspace row goes — a
+    -- cascade here would remove the rows without the app-level cleanup
+    -- (attachment blobs, search-index entries) that a real delete needs.
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     kind TEXT NOT NULL DEFAULT 'text',
     title TEXT NOT NULL DEFAULT '',

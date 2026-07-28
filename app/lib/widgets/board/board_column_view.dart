@@ -7,7 +7,6 @@ import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../screens/editor_screen.dart';
 import '../../theme.dart';
-import '../../util/snack.dart';
 import '../masonry.dart';
 import '../note_card.dart';
 import 'stage_editor.dart';
@@ -124,21 +123,10 @@ class _BoardColumnViewState extends State<BoardColumnView> {
     final store = context.read<NotesStore>();
     final index = _incomingIndex;
     _clearIncoming();
-    final from = store.noteById(noteId);
+    // No confirmation snack here: the card visibly glides into its new slot,
+    // which is the confirmation. A toast on top of a drag you just watched
+    // happen is noise, not information.
     store.setNoteStage(noteId, _stageId, position: _positionAt(index));
-    showAppSnack(
-      'Moved to ${widget.column.title}',
-      icon: Icons.view_kanban_outlined,
-      actionLabel: 'Undo',
-      // Its old slot, not just its old column: undoing a placement that chose
-      // where the card went should not drop it at the end of where it came
-      // from.
-      onAction: () => store.setNoteStage(
-        noteId,
-        from?.stageId,
-        position: from?.stagePosition,
-      ),
-    );
   }
 
   /// The slot [index] names, as a position between the cards it falls between.

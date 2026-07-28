@@ -1232,14 +1232,16 @@ class NotesStore extends ChangeNotifier {
         workspace.isOwnedBy(currentUserId);
   }
 
-  /// Delete a workspace. Its notes are not destroyed — the server files each
-  /// one in its own owner's default workspace — so they are moved locally the
-  /// same way rather than removed.
+  /// Delete a workspace. Every note in it — the owner's and every member's —
+  /// is deleted outright along with it, not staged anywhere recoverable.
+  /// Only the owner can do this; a member who wants out without destroying
+  /// anything uses [leaveWorkspace].
   void deleteWorkspace(String id) {
     if (!canDeleteWorkspace(id)) return;
-    _rehomeNotesLocally(id, (note) => note.isOwnedBy(currentUserId));
-    // Whatever is still filed here belonged to a member; it goes home with
-    // them and off our shelf.
+    for (final note in _notes.where((note) => note.workspaceId == id)) {
+      _saveDebounce.remove(note.id)?.cancel();
+      _drafts.remove(note.id);
+    }
     _notes.removeWhere((note) => note.workspaceId == id);
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);

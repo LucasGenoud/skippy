@@ -63,9 +63,12 @@ pub trait Repository: Send + Sync {
     async fn default_workspace(&self, user_id: &str) -> RepoResult<Option<Workspace>>;
     async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()>;
     async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool>;
-    /// Delete a workspace, first filing every note it held in the note owner's
-    /// own default workspace — deleting a workspace never destroys notes.
-    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<bool>;
+    /// Delete a workspace and hard-delete every note it held — the owner's
+    /// and every member's alike. `None` means the workspace doesn't exist or
+    /// is a default one (which can't be deleted); `Some` carries what was
+    /// purged so the caller can clean up attachment blobs and search-index
+    /// entries the same way [`purge_trash_before`] does.
+    async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<Vec<PurgedNote>>>;
     /// The workspace's owner plus everyone invited to it.
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>>;
     async fn is_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;

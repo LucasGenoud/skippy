@@ -165,25 +165,14 @@ class FakeApi implements Api {
 
   @override
   Future<void> deleteWorkspace(String id) => _run('deleteWorkspace:$id', () {
-    final home = workspaces.values.firstWhere((w) => w.isDefault).id;
     if (workspaces.remove(id) == null) {
       throw ApiException(404, '{"error":"not found"}');
     }
-    // The server rehomes rather than destroys; mirror that so store tests see
-    // the same end state.
+    // The server deletes every note in the workspace outright; mirror that
+    // so store tests see the same end state.
     labels.removeWhere((_, label) => label.workspaceId == id);
     stages.removeWhere((_, stage) => stage.workspaceId == id);
-    for (final note in notes.values.toList()) {
-      if (note.workspaceId == id) {
-        // A rehomed note leaves both the old workspace's taxonomy and its
-        // board behind — two independent rules that happen to fire together.
-        notes[note.id] = note.copyWith(
-          workspaceId: home,
-          labelIds: const {},
-          stageId: null,
-        );
-      }
-    }
+    notes.removeWhere((_, note) => note.workspaceId == id);
   });
 
   @override
