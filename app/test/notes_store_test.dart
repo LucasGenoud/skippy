@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/dropped_file.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/workspace.dart';
 import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 
@@ -25,6 +26,8 @@ Note serverNote(
   Set<String> labelIds = const {},
   UserRef? owner,
   DateTime? reminderAt,
+  String workspaceId = '',
+  List<UserRef> collaborators = const [],
 }) {
   final now = DateTime.now();
   return Note(
@@ -38,10 +41,12 @@ Note serverNote(
     trashed: trashed,
     position: position,
     reminderAt: reminderAt,
+    workspaceId: workspaceId,
     createdAt: createdAt ?? now,
     updatedAt: updatedAt ?? now,
     labelIds: labelIds,
     owner: owner ?? const UserRef(id: 'u-me', name: 'me'),
+    collaborators: collaborators,
   );
 }
 
@@ -115,8 +120,11 @@ void main() {
       final draft = store.createDraft();
       store.setReminder(draft.id, at);
 
-      // Nothing was typed, but the alarm is worth keeping — finalize creates
-      // the note instead of throwing it away.
+      // Nothing was typed, but the alarm is worth keeping, so it materializes
+      // immediately rather than waiting for editor close.
+      await settle();
+      expect(api.notes[draft.id]!.reminderAt!.toUtc(), at.toUtc());
+
       expect(store.finalizeNote(draft.id), isFalse);
       await settle();
       expect(store.noteById(draft.id), isNotNull);
@@ -127,6 +135,28 @@ void main() {
       api.notes['n1'] = serverNote('n1', title: 'shared');
       await store.load();
       await store.addCollaborator('n1', 'friend@example.com');
+
+      store.updateNoteContent('n1', title: '', content: '');
+      await settle();
+
+      expect(store.finalizeNote('n1'), isFalse);
+      expect(store.noteById('n1'), isNotNull);
+      expect(api.log.where((l) => l.startsWith('deleteNote')), isEmpty);
+    });
+
+    test('emptying a workspace-shared note does not discard it', () async {
+      api.workspaces['shared'] = const Workspace(
+        id: 'shared',
+        name: 'Team',
+        owner: UserRef(id: 'u-me', name: 'me'),
+        members: [UserRef(id: 'u2', name: 'Ada')],
+      );
+      api.notes['n1'] = serverNote(
+        'n1',
+        title: 'shared',
+        workspaceId: 'shared',
+      );
+      await store.load();
 
       store.updateNoteContent('n1', title: '', content: '');
       await settle();

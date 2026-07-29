@@ -419,7 +419,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _archiveAndClose() {
     final note = _note;
-    if (note == null || note.isEmpty) return;
+    if (note == null || _store.canAutoDiscard(note.id)) return;
     final id = note.id;
     final wasArchived = note.archived;
     _store.setArchived(id, !wasArchived);
@@ -798,6 +798,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final trashed = note?.trashed ?? false;
     final isOwner = note?.isOwnedBy(_store.currentUserId) ?? true;
     final isRewriting = note != null && _store.isRewritingNote(note.id);
+    final autoDiscardable = note == null || _store.canAutoDiscard(note.id);
     final query = _finding ? _findController.text.trim() : '';
 
     final labels = [
@@ -939,16 +940,12 @@ class _EditorScreenState extends State<EditorScreen> {
                           onImage: trashed || _uploading ? null : _pickImage,
                           onAttach: trashed || _uploading ? null : _pickFile,
                           onShare: trashed ? null : _openShare,
-                          onArchive: trashed || note == null || note.isEmpty
+                          onArchive: trashed || autoDiscardable
                               ? null
                               : _archiveAndClose,
                           onUndo: trashed || !_history.canUndo ? null : _undo,
                           onRedo: trashed || !_history.canRedo ? null : _redo,
-                          onDelete:
-                              trashed ||
-                                  note == null ||
-                                  note.isEmpty ||
-                                  !isOwner
+                          onDelete: trashed || autoDiscardable || !isOwner
                               ? null
                               : _deleteAndClose,
                           onDuplicate: trashed || note == null || note.isEmpty
@@ -958,7 +955,7 @@ class _EditorScreenState extends State<EditorScreen> {
                               trashed ||
                                   note == null ||
                                   note.isEmpty ||
-                                  !isOwner ||
+                              !isOwner ||
                                   _store.workspaces.length < 2
                               ? null
                               : () => MoveToWorkspaceSheet.show(

@@ -1093,6 +1093,34 @@ void main() {
       expect(api.notes, isEmpty);
     });
 
+    testWidgets('empty retained notes keep Archive and Delete enabled', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        reminderAt: DateTime(2030),
+        collaborators: const [UserRef(id: 'u2', name: 'Ada')],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      final archive = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.archive_outlined),
+      );
+      expect(archive.onPressed, isNotNull);
+
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      final delete = tester.widget<PopupMenuItem<String>>(
+        find.ancestor(
+          of: find.text('Delete'),
+          matching: find.byType(PopupMenuItem<String>),
+        ),
+      );
+      expect(delete.enabled, isTrue);
+    });
+
     testWidgets('archive lives in the editor bottom actions after sharing', (
       tester,
     ) async {

@@ -113,8 +113,13 @@ void main() {
     expect(find.text('me@example.test'), findsOneWidget);
     expect(find.text('Change your sign-in password'), findsOneWidget);
     expect(find.text('Delete account'), findsOneWidget);
+    expect(find.text('DANGER ZONE'), findsOneWidget);
     expect(find.text('Create backup'), findsOneWidget);
     expect(find.text('Restore backup'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Delete account')).dy,
+      greaterThan(tester.getTopLeft(find.text('Keyboard shortcuts')).dy),
+    );
 
     await tester.tap(find.text('Email').first);
     await tester.pumpAndSettle();

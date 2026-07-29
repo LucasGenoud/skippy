@@ -62,7 +62,7 @@ void main() {
     expect(note.isOwnedBy('anyone'), isTrue); // ownerless = mine
   });
 
-  test('isEmpty considers content, attachments, reminders, and sharing', () {
+  test('auto-discard distinguishes content from reminder and sharing', () {
     final now = DateTime.now();
     Note base({
       String title = '',
@@ -105,15 +105,18 @@ void main() {
       ).isEmpty,
       isFalse,
     );
-    // A wordless note still holds work when it carries an alarm someone set
-    // or access someone else was given: discarding either would destroy it.
-    expect(base(reminderAt: DateTime(2030)).isEmpty, isFalse);
-    expect(
-      base(
-        collaborators: [const UserRef(id: 'u2', name: 'Ada')],
-      ).isEmpty,
-      isFalse,
+    expect(base().canAutoDiscard, isTrue);
+
+    // These notes are still empty, so their cards can say so and content-only
+    // actions stay disabled. They must nevertheless survive editor close.
+    final reminded = base(reminderAt: DateTime(2030));
+    expect(reminded.isEmpty, isTrue);
+    expect(reminded.canAutoDiscard, isFalse);
+    final shared = base(
+      collaborators: [const UserRef(id: 'u2', name: 'Ada')],
     );
+    expect(shared.isEmpty, isTrue);
+    expect(shared.canAutoDiscard, isFalse);
   });
 
   test('copyWith reminder sentinel distinguishes clear from keep', () {

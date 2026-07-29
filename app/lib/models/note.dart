@@ -188,20 +188,22 @@ class Note {
   bool get transcribing => transcriptStatus == 'pending';
   bool get transcriptFailed => transcriptStatus == 'failed';
 
-  /// Whether the note holds nothing worth keeping — what lets a closing
-  /// editor discard an untouched draft instead of leaving a phantom note.
-  ///
-  /// Text is not the only thing worth keeping. A reminder is a scheduled
-  /// alarm the user asked for, and a collaborator is someone else's access;
-  /// discarding a note carrying either would silently destroy work nobody
-  /// asked to throw away, so both keep a wordless note alive.
+  /// Whether the note has no user-authored content. Metadata such as a
+  /// reminder or collaborators does not make a wordless note non-empty.
   bool get isEmpty =>
       title.trim().isEmpty &&
       content.trim().isEmpty &&
       items.every((i) => i.text.trim().isEmpty) &&
-      attachments.isEmpty &&
-      reminderAt == null &&
-      collaborators.isEmpty;
+      attachments.isEmpty;
+
+  /// Whether closing the editor may silently remove this note. A reminder is
+  /// a scheduled alarm the user asked for, and a collaborator is someone
+  /// else's access, so either requires an explicit Archive or Delete action.
+  ///
+  /// Workspace sharing is store-level state and is added by
+  /// `NotesStore.canAutoDiscard`.
+  bool get canAutoDiscard =>
+      isEmpty && reminderAt == null && collaborators.isEmpty;
 
   bool get isShared => collaborators.isNotEmpty;
 

@@ -187,6 +187,19 @@ class NotesStore extends ChangeNotifier {
     return null;
   }
 
+  /// Whether closing [id]'s editor may silently remove it.
+  ///
+  /// Untouched local drafts are still transient, even when composed while a
+  /// shared workspace is open. Once a note exists on the server, workspace
+  /// members count as sharing just like direct collaborators do.
+  bool canAutoDiscard(String id) {
+    final note = noteById(id);
+    if (note == null || !note.canAutoDiscard) return false;
+    if (_drafts.contains(id)) return true;
+    final workspace = workspaceById(_effectiveWorkspaceId(note));
+    return !(workspace?.isShared ?? false);
+  }
+
   Workspace? get defaultWorkspace {
     for (final workspace in _workspaces) {
       if (workspace.isDefault) return workspace;
@@ -835,7 +848,7 @@ class NotesStore extends ChangeNotifier {
       // URL on demand, so the cache stays small regardless of attachment size.
       'notes': [
         for (final n in _notes)
-          if (!(_drafts.contains(n.id) && n.isEmpty)) n.toJson(),
+          if (!(_drafts.contains(n.id) && canAutoDiscard(n.id))) n.toJson(),
       ],
       'labels': [for (final l in _labels) l.toJson()],
       'stages': [for (final s in _stages) s.toJson()],
@@ -1163,7 +1176,7 @@ class NotesStore extends ChangeNotifier {
 
   void _materializeIfNeeded(String id) {
     final note = noteById(id);
-    if (note == null || note.isEmpty) return;
+    if (note == null || note.canAutoDiscard) return;
     _drafts.remove(id);
     _enqueue(PendingOp(PendingOpKind.create, id: id));
   }
@@ -1233,6 +1246,12 @@ class NotesStore extends ChangeNotifier {
     _patch(id, note.copyWith(reminderAt: at), {
       'reminder_at': at?.toUtc().toIso8601String(),
     });
+    // A reminder makes even a wordless draft durable. Create it immediately
+    // so an app suspension before the editor closes cannot leave a cached
+    // note with no corresponding server row.
+    if (at != null && _drafts.contains(id)) {
+      _materializeIfNeeded(id);
+    }
   }
 
   bool canTrash(String id) => noteById(id)?.isOwnedBy(currentUserId) ?? false;
@@ -1355,7 +1374,7 @@ class NotesStore extends ChangeNotifier {
   bool finalizeNote(String id) {
     final note = noteById(id);
     if (note == null) return false;
-    if (note.isEmpty) {
+    if (canAutoDiscard(id)) {
       deleteForever(id);
       return true;
     }

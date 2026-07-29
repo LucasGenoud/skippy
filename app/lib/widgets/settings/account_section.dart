@@ -38,22 +38,6 @@ class AccountSection extends StatelessWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _open(context, _AccountField.password),
         ),
-        ListTile(
-          leading: Icon(
-            Icons.delete_forever_outlined,
-            color: Theme.of(context).colorScheme.error,
-          ),
-          title: Text(
-            'Delete account',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-          subtitle: const Text('Permanently delete your notes and account'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => showFormDialog<void>(
-            context,
-            builder: (_) => const _DeleteAccountDialog(),
-          ),
-        ),
       ],
     );
   }
@@ -62,6 +46,25 @@ class AccountSection extends StatelessWidget {
     showFormDialog<void>(
       context,
       builder: (_) => _EditAccountDialog(field: field),
+    );
+  }
+}
+
+class DeleteAccountTile extends StatelessWidget {
+  const DeleteAccountTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(Icons.delete_forever_outlined, color: scheme.error),
+      title: Text('Delete account', style: TextStyle(color: scheme.error)),
+      subtitle: const Text('Permanently delete your notes and account'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => showFormDialog<void>(
+        context,
+        builder: (_) => const _DeleteAccountDialog(),
+      ),
     );
   }
 }
