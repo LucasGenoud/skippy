@@ -181,7 +181,7 @@ Supported note kinds are `text`, `markdown`, `checklist`, and `audio`. Audio tra
 
 Every note and label belongs to exactly one workspace. A participant is the note's owner, one of its direct collaborators, or a member of the workspace holding it; the repository derives all three, so a new note-related query gets workspace access for free by going through `participant_ids`/`is_participant` rather than reading `note_shares` directly.
 
-Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. Owners control destructive sharing and note lifecycle actions, including moving a note between workspaces; collaborators can edit and leave. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. A user's default workspace can never be deleted or left, because notes are rehomed there when a workspace goes away.
+Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. Owners control destructive sharing and note lifecycle actions, including moving a note between workspaces; collaborators can edit and leave. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. Deleting a workspace permanently deletes every note and attachment it contains, regardless of author; leaving or being removed moves that member's own notes to their default workspace. A user's default workspace can never be deleted or left.
 
 Labels are a workspace's shared taxonomy, not personal state: every member sees and applies the same set. Someone who reached a note through a direct share is not in its workspace, so they see none of its labels and their `label_ids` patch is ignored rather than clearing what members attached. Pin, archive, reminder, color, and custom ordering are shared note state.
 
@@ -195,7 +195,7 @@ Recheck the entire permission matrix when adding a note-related endpoint. Do not
 
 Note content edits drive version capture, semantic reindexing, automatic labeling, collaborator notification, and WebSocket fan-out. Organization-only edits should retain their deliberately smaller side-effect set.
 
-Anything that changes who can see a note — a workspace roster change, a note moving workspaces, a workspace being deleted — must reindex the affected notes, because the vector index stores one row per participant. A move must also notify the workspace it left, not only the one it joined. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
+Anything that changes who can see a note — a workspace roster change or a note moving workspaces — must reindex the affected notes, because the vector index stores one row per participant. Workspace deletion must remove every contained note from the index and delete its attachment blobs. A move must also notify the workspace it left, not only the one it joined. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
 
 Checklist history is recorded on a transition to checked, shared with participants in that note, and capped at 500 records per note.
 

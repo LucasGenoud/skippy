@@ -170,6 +170,9 @@ class _EditorScreenState extends State<EditorScreen> {
     _store = context.read<NotesStore>();
     _noteId = widget.noteId;
     final note = _note;
+    // Existing markdown notes open in their rendered form. A new markdown
+    // draft still opens as source so typing can begin immediately.
+    _previewMarkdown = note?.kind == NoteKind.markdown;
     _titleController = TextEditingController(text: note?.title ?? '');
     _contentController = LinkifyingController(
       text: note?.content ?? '',

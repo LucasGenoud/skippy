@@ -54,7 +54,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 **Collaboration**
 - User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings. Password-confirmed account deletion removes every workspace the account owns and all notes inside those workspaces, including notes authored by other users.
 - Share a single note with other users by email; everyone can edit, only the owner can trash/delete/share
-- **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, or changes the roster; members can leave. Ordinary workspace deletion (or leaving one) never destroys notes — each goes back to its own owner's default workspace. Deleting the owner's account is the explicit exception: it deletes the workspace and every note inside it.
+- **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, or changes the roster; members can leave. Deleting a workspace permanently deletes every note and attachment inside it, regardless of author. Leaving or being removed preserves that member's own notes by moving them to their default workspace.
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
 - Labels are a workspace's shared taxonomy: everyone in it sees and applies the same set. Someone who only has a per-note share is not in that workspace and sees none of them.
 
@@ -355,7 +355,7 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `GET /health`, `/capabilities` | Health and optional-service detection |
 | `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
 | `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH/DELETE /auth/me` | Accounts, profile changes, deletion & sessions |
-| `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces (the default one cannot be deleted) |
+| `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces (the default cannot be deleted; deleting another permanently deletes all notes and attachments inside it) |
 | `POST /workspaces/{id}/members`, `DELETE /workspaces/{id}/members/{user_id}` | Workspace roster; removing yourself leaves it |
 | `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` and `stage_id: null` clear; `workspace_id` moves the note) |
 | `POST /notes/{id}/rewrite` | Opt-in LLM cleanup/concise or grammar-only note edit |

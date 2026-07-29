@@ -370,6 +370,10 @@ class _NoteTileState extends State<NoteTile> {
 
 class _NoteCardContent extends StatelessWidget {
   static const _maxSharedOwnerCharacters = 16;
+  static const _maxAudioTranscriptLines = 12;
+  static const _maxMarkdownPreviewHeight = 440.0;
+  static const _maxTextPreviewLines = 20;
+  static const _maxChecklistPreviewItems = 16;
 
   final Note note;
   final String query;
@@ -414,7 +418,7 @@ class _NoteCardContent extends StatelessWidget {
         .toList();
     final unchecked = visibleItems.where((i) => !i.done).toList();
     final checked = visibleItems.where((i) => i.done).toList();
-    final previewItems = unchecked.take(8).toList();
+    final previewItems = unchecked.take(_maxChecklistPreviewItems).toList();
 
     final images = note.attachments.where((a) => a.isImage).toList();
     // Audio clips are represented by the audio note's own player, not a chip.
@@ -510,7 +514,7 @@ class _NoteCardContent extends StatelessWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(
                           height: 1.45,
                         ),
-                        maxLines: 6,
+                        maxLines: _maxAudioTranscriptLines,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -521,7 +525,9 @@ class _NoteCardContent extends StatelessWidget {
                   // unbounded height so tall content clips without a
                   // layout overflow.
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
+                    constraints: const BoxConstraints(
+                      maxHeight: _maxMarkdownPreviewHeight,
+                    ),
                     child: ClipRect(
                       child: IgnorePointer(
                         child: SingleChildScrollView(
@@ -539,7 +545,7 @@ class _NoteCardContent extends StatelessWidget {
                       backgroundColor: scheme.primary.withValues(alpha: 0.30),
                     ),
                     style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-                    maxLines: 10,
+                    maxLines: _maxTextPreviewLines,
                     overflow: TextOverflow.ellipsis,
                   ),
                 if (note.isChecklist) ...[

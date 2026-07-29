@@ -43,11 +43,14 @@ pub struct DeletedAccount {
     pub audience: Vec<String>,
 }
 
-/// Result of deleting a workspace container. Notes outlive the workspace and
-/// are moved to their respective owners' default workspaces; callers use the
-/// ids to refresh visibility-dependent state such as the semantic index.
+/// Result of permanently deleting a workspace and every note it contains.
+/// Attachment rows cascade with their notes, so callers need this snapshot to
+/// remove the actual blobs and semantic-index entries after the transaction.
 pub struct DeletedWorkspace {
-    pub moved_note_ids: Vec<String>,
+    pub purged_notes: Vec<PurgedNote>,
+    /// Former roster members and direct note collaborators whose open clients
+    /// need to refetch after the workspace and notes disappear.
+    pub audience: Vec<String>,
 }
 
 /// Storage boundary for the whole app. Handlers only talk to this trait, so
@@ -87,10 +90,10 @@ pub trait Repository: Send + Sync {
     async fn default_workspace(&self, user_id: &str) -> RepoResult<Option<Workspace>>;
     async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()>;
     async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool>;
-    /// Delete a non-default workspace after moving every note it held to that
-    /// note owner's default workspace. Workspace labels and stages disappear,
-    /// so moved notes lose both; content, versions, shares, and attachments
-    /// survive. `None` means the workspace doesn't exist or is the default.
+    /// Permanently delete a non-default workspace and every note it contains.
+    /// Versions, shares, attachment metadata, labels, stages, and membership
+    /// cascade with it; the returned snapshot drives external blob and search
+    /// cleanup. `None` means the workspace doesn't exist or is the default.
     async fn delete_workspace(&self, workspace_id: &str) -> RepoResult<Option<DeletedWorkspace>>;
     /// The workspace's owner plus everyone invited to it.
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>>;

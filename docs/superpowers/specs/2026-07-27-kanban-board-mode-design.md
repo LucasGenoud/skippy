@@ -117,8 +117,9 @@ not a board.
 
 **Q5. What happens to a non-empty stage on delete?**
 Options: block the delete, require choosing a destination stage, or send its
-notes to Unassigned. *Recommendation: send to Unassigned with an undo snack*,
-mirroring how workspace deletion rehomes notes to the default workspace.
+notes to Unassigned. *Recommendation: send to Unassigned with an undo snack.*
+This is intentionally less destructive than workspace deletion, which
+permanently deletes every note the workspace contains.
 
 **Q6. Can the stage be changed from the note editor?**
 A stage chip in the editor bottom bar is the obvious place, but it is extra

@@ -177,25 +177,16 @@ pub async fn delete_workspace(
             "your default workspace cannot be deleted",
         ));
     }
-    // Notify before the roster disappears, so every member's client refreshes.
-    let members = state.repo.workspace_member_ids(&id).await?;
     let Some(deleted) = state.repo.delete_workspace(&id).await? else {
         return Err(ApiError::NotFound);
     };
-    // Moving a note changes workspace-derived visibility. Rebuild its index
-    // rows from the primary repository and notify both the former workspace
-    // roster and everyone who can still see it through its new home or a
-    // direct share.
-    let mut audience: HashSet<String> = members.into_iter().collect();
-    for note_id in &deleted.moved_note_ids {
-        if let Ok(participants) = state.repo.participant_ids(note_id).await {
-            audience.extend(participants);
+    for note in &deleted.purged_notes {
+        for attachment_id in &note.attachment_ids {
+            state.files.delete(&note.owner_id, attachment_id).await;
         }
-        state.index_note_later(note_id);
+        state.unindex_note_later(&note.note_id);
     }
-    state
-        .hub
-        .notify(&audience.into_iter().collect::<Vec<_>>(), CHANGED_MSG);
+    state.hub.notify(&deleted.audience, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -29,10 +29,10 @@ CREATE TABLE IF NOT EXISTS workspace_members (
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- Deliberately no ON DELETE action: deleting a workspace deletes its
-    -- notes explicitly, one at a time, before the workspace row goes — a
-    -- cascade here would remove the rows without the app-level cleanup
-    -- (attachment blobs, search-index entries) that a real delete needs.
+    -- Deliberately no ON DELETE action: workspace deletion snapshots and
+    -- explicitly deletes its notes before the workspace row goes. A cascade
+    -- here would remove rows without the app-level cleanup needed for
+    -- attachment blobs and semantic-index entries.
     workspace_id TEXT NOT NULL REFERENCES workspaces(id),
     kind TEXT NOT NULL DEFAULT 'text',
     title TEXT NOT NULL DEFAULT '',
@@ -124,7 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_a
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE);
 -- One default workspace per account, enforced rather than assumed: it is the
--- fallback every note is filed in and rehomed to.
+-- fallback for note creation and for notes owned by a departing member.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
     ON workspaces(owner_id) WHERE is_default = 1;
 "#;

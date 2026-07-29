@@ -105,7 +105,7 @@ async fn workspaces_are_created_renamed_and_deleted_by_their_owner() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(renamed["name"], "Day job");
 
-    // The default workspace is where notes are rehomed to, so it stays.
+    // The default workspace is permanent and cannot be deleted.
     let (status, _) = send(
         &app,
         "DELETE",
@@ -346,14 +346,12 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
 }
 
 #[tokio::test]
-async fn deleting_a_workspace_rehomes_every_note_without_losing_content() {
-    let app_state = state().await;
+async fn deleting_a_workspace_permanently_removes_every_note_and_attachment() {
+    let app_state = state_with_search().await;
     let app = build_app(app_state.clone());
     let (ada, ada_id) = register(&app, "ada").await;
-    let (bob, _) = register(&app, "bob").await;
-    let (eve, _) = register(&app, "eve").await;
-    let ada_home = default_workspace_id(&app, &ada).await;
-    let bob_home = default_workspace_id(&app, &bob).await;
+    let (bob, bob_id) = register(&app, "bob").await;
+    let (eve, eve_id) = register(&app, "eve").await;
     let work = make_workspace(&app, &ada, "Work").await;
     invite(&app, &ada, &work, &test_email("bob")).await;
 
@@ -420,6 +418,17 @@ async fn deleting_a_workspace_rehomes_every_note_without_losing_content() {
     )
     .await;
     assert!(!versions_before.as_array().unwrap().is_empty());
+    settle_index().await;
+    for user_id in [&ada_id, &bob_id, &eve_id] {
+        let hits = app_state
+            .search
+            .as_ref()
+            .unwrap()
+            .search(user_id, "keep", 20)
+            .await
+            .unwrap();
+        assert!(hits.iter().any(|(id, _)| id == adas_id));
+    }
 
     let (status, _) = send(
         &app,
@@ -431,27 +440,13 @@ async fn deleting_a_workspace_rehomes_every_note_without_losing_content() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    // The container and its taxonomy are gone, but each person's note follows
-    // them home with content, versions, and attachments intact.
-    let adas_notes = list_notes(&app, &ada).await;
-    assert_eq!(adas_notes.len(), 1);
-    assert_eq!(adas_notes[0]["id"], adas_id);
-    assert_eq!(adas_notes[0]["workspace_id"], ada_home);
-    assert_eq!(adas_notes[0]["content"], "keep this");
-    assert_eq!(adas_notes[0]["label_ids"], json!([]));
-    assert!(adas_notes[0]["stage_id"].is_null());
-    assert_eq!(adas_notes[0]["attachments"][0]["id"], attachment_id);
+    // The container, its taxonomy, every author's notes, direct shares,
+    // versions, attachment metadata/bytes, and semantic rows are all gone.
+    assert!(list_notes(&app, &ada).await.is_empty());
+    assert!(list_notes(&app, &bob).await.is_empty());
+    assert!(list_notes(&app, &eve).await.is_empty());
 
-    let bobs_notes = list_notes(&app, &bob).await;
-    assert_eq!(bobs_notes.len(), 1);
-    assert_eq!(bobs_notes[0]["id"], bobs_id);
-    assert_eq!(bobs_notes[0]["workspace_id"], bob_home);
-
-    let eves_notes = list_notes(&app, &eve).await;
-    assert_eq!(eves_notes.len(), 1);
-    assert_eq!(eves_notes[0]["id"], adas_id);
-
-    let (status, versions_after) = send(
+    let (status, _) = send(
         &app,
         "GET",
         &format!("/api/notes/{adas_id}/versions"),
@@ -459,11 +454,23 @@ async fn deleting_a_workspace_rehomes_every_note_without_losing_content() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(versions_after, versions_before);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
     assert_eq!(labels, json!([]));
-    assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
+    assert!(app_state.files.read(&ada_id, attachment_id).await.is_none());
+
+    settle_index().await;
+    for user_id in [&ada_id, &bob_id, &eve_id] {
+        let hits = app_state
+            .search
+            .as_ref()
+            .unwrap()
+            .search(user_id, "keep", 20)
+            .await
+            .unwrap();
+        assert!(hits.iter().all(|(id, _)| id != adas_id));
+        assert!(hits.iter().all(|(id, _)| id != bobs_id));
+    }
 }
 
 #[tokio::test]

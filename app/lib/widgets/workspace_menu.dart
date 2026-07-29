@@ -534,10 +534,9 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
   }
 }
 
-/// Deleting a workspace removes its shared taxonomy and roster. Notes are
-/// preserved in their respective owners' default workspaces, but labels and
-/// board placement cannot follow them, so the name confirmation still makes
-/// the structural loss explicit.
+/// Deleting a workspace permanently removes its notes, attachments, shared
+/// taxonomy, and roster, so the name confirmation makes the destructive scope
+/// explicit.
 class _DeleteWorkspaceDialog extends StatefulWidget {
   final Workspace workspace;
   final int noteCount;
@@ -571,20 +570,22 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final noteCount = widget.noteCount;
+    final deletionMessage = switch (noteCount) {
+      0 => 'Its labels and board columns are removed. This can\'t be undone.',
+      1 =>
+        '1 note and all its attachments will be permanently deleted. '
+            'This can\'t be undone.',
+      _ =>
+        '$noteCount notes and all their attachments will be permanently '
+            'deleted. This can\'t be undone.',
+    };
     return AlertDialog(
       title: Text('Delete "${widget.workspace.name}"?'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            noteCount == 0
-                ? 'Its labels and board columns are removed. This can\'t be undone.'
-                : '$noteCount ${noteCount == 1 ? 'note' : 'notes'} will move '
-                      'to their respective owners\' default workspaces. '
-                      'Workspace labels and board placement are removed. '
-                      'This can\'t be undone.',
-          ),
+          Text(deletionMessage),
           const SizedBox(height: 16),
           Text.rich(
             TextSpan(

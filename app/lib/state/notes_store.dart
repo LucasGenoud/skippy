@@ -394,8 +394,9 @@ class NotesStore extends ChangeNotifier {
     var restoredWorkspaces = 0;
 
     try {
-      // Delete notes before their non-default workspaces. Workspace deletion
-      // otherwise rehomes the current user's notes into the default workspace.
+      // Clear individually owned notes first, including those in the default
+      // workspace. Deleting each remaining non-default workspace then removes
+      // any notes it still contains, regardless of their author.
       for (final note in ownedNotes) {
         await api.deleteNote(note.id);
         onProgress?.call(++completed, totalSteps);
@@ -1448,35 +1449,16 @@ class NotesStore extends ChangeNotifier {
         workspace.isOwnedBy(currentUserId);
   }
 
-  /// Delete a workspace container without deleting anyone's notes. Each note
-  /// follows its owner to their default workspace; locally we keep notes this
-  /// user owns or can still reach through a direct share and drop the rest
-  /// from view. Workspace labels and board columns do not survive the move.
+  /// Permanently delete a workspace and every note it contains. Cancel local
+  /// debounced saves and drafts for those notes so no write can be enqueued
+  /// after the workspace-delete operation.
   void deleteWorkspace(String id) {
     if (!canDeleteWorkspace(id)) return;
-    final me = currentUserId;
-    final retained = {
-      for (final note in _notes.where((note) => note.workspaceId == id))
-        if (note.isOwnedBy(me) ||
-            note.collaborators.any((user) => user.id == me))
-          note.id,
-    };
-    // A member's edit must reach the server before the workspace-delete op
-    // moves that note home, even though it disappears from this local shelf.
-    for (final note in _notes.where(
-      (note) => note.workspaceId == id && !retained.contains(note.id),
-    )) {
-      final timer = _saveDebounce.remove(note.id);
-      if (timer != null) {
-        timer.cancel();
-        _enqueueContentPatch(note.id);
-      }
+    for (final note in _notes.where((note) => note.workspaceId == id)) {
+      _saveDebounce.remove(note.id)?.cancel();
       _drafts.remove(note.id);
     }
-    _rehomeNotesLocally(id, (note) => retained.contains(note.id));
-    _notes.removeWhere(
-      (note) => note.workspaceId == id && !retained.contains(note.id),
-    );
+    _notes.removeWhere((note) => note.workspaceId == id);
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((workspace) => workspace.id == id);

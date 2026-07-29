@@ -20,6 +20,7 @@ import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/animated_checklist.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
+import 'package:skippy/widgets/linked_text.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
@@ -124,6 +125,52 @@ void main() {
       expect(find.textContaining('Plan', findRichText: true), findsWidgets);
       // Long content is height-clipped; no layout overflow errors were thrown
       // (the test would fail on any).
+    });
+
+    testWidgets('content-heavy cards show twice as much preview content', (
+      tester,
+    ) async {
+      api.notes['text'] = serverNote(
+        'text',
+        content: List.generate(30, (i) => 'line $i').join('\n'),
+      );
+      api.notes['checklist'] = serverNote(
+        'checklist',
+        kind: NoteKind.checklist,
+        items: [
+          for (var i = 0; i < 20; i++)
+            ChecklistItem(id: 'i$i', text: 'item $i'),
+        ],
+      );
+      await store.load();
+
+      await tester.pumpWidget(
+        harness(
+          store,
+          SingleChildScrollView(
+            child: Column(
+              children: [
+                SizedBox(
+                  width: 240,
+                  child: NoteTile(note: store.noteById('text')!),
+                ),
+                SizedBox(
+                  width: 240,
+                  child: NoteTile(note: store.noteById('checklist')!),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final textPreview = tester.widget<LinkedText>(
+        find.byType(LinkedText).first,
+      );
+      expect(textPreview.maxLines, 20);
+      expect(find.text('item 15'), findsOneWidget);
+      expect(find.text('item 16'), findsNothing);
+      expect(find.text('+ 4 more'), findsOneWidget);
     });
 
     testWidgets('shows reminder chip and shared indicator', (tester) async {
@@ -964,58 +1011,47 @@ void main() {
   });
 
   group('EditorScreen', () {
-    testWidgets(
-      'markdown preview selects across blocks and double-clicking edits source',
-      (tester) async {
-        api.notes['n1'] = serverNote(
-          'n1',
-          kind: NoteKind.markdown,
-          content: '**Selectable** preview',
-        );
-        await store.load();
-        await tester.pumpWidget(
-          harness(store, const EditorScreen(noteId: 'n1')),
-        );
+    testWidgets('markdown opens in preview and double-clicking edits source', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.markdown,
+        content: '**Selectable** preview',
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
 
-        await tester.tap(find.byTooltip('Preview'));
-        await tester.pump();
+      final preview = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+      expect(preview.selectable, isFalse);
+      expect(find.byType(SelectionArea), findsOneWidget);
+      expect(find.byTooltip('Edit markdown'), findsOneWidget);
 
-        final preview = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
-        expect(preview.selectable, isFalse);
-        expect(find.byType(SelectionArea), findsOneWidget);
+      final previewPosition = tester.getCenter(find.byType(SelectionArea));
 
-        final previewPosition = tester.getCenter(find.byType(SelectionArea));
+      // A single click leaves preview open for native selection.
+      final singleClick = await tester.startGesture(previewPosition);
+      await singleClick.up();
+      await tester.pump();
+      expect(find.byType(MarkdownBody), findsOneWidget);
 
-        // A single click leaves preview open for native selection.
-        final singleClick = await tester.startGesture(previewPosition);
-        await singleClick.up();
-        await tester.pump();
-        expect(find.byType(MarkdownBody), findsOneWidget);
-
-        final firstClick = await tester.startGesture(
-          previewPosition,
-          pointer: 2,
-        );
-        await firstClick.up(timeStamp: const Duration(milliseconds: 350));
-        final secondClick = await tester.startGesture(
-          previewPosition,
-          pointer: 3,
-        );
-        await secondClick.up(timeStamp: const Duration(milliseconds: 400));
-        await tester.pump();
-        expect(find.byTooltip('Preview'), findsOneWidget);
-        final source = tester
-            .widgetList<EditableText>(find.byType(EditableText))
-            .last;
-        expect(source.focusNode.hasFocus, isTrue);
-        await tester.enterText(
-          find.byType(TextField).last,
-          '**Edited** preview',
-        );
-        expect(store.noteById('n1')!.content, '**Edited** preview');
-        await flushTimers(tester);
-      },
-    );
+      final firstClick = await tester.startGesture(previewPosition, pointer: 2);
+      await firstClick.up(timeStamp: const Duration(milliseconds: 350));
+      final secondClick = await tester.startGesture(
+        previewPosition,
+        pointer: 3,
+      );
+      await secondClick.up(timeStamp: const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(find.byTooltip('Preview'), findsOneWidget);
+      final source = tester
+          .widgetList<EditableText>(find.byType(EditableText))
+          .last;
+      expect(source.focusNode.hasFocus, isTrue);
+      await tester.enterText(find.byType(TextField).last, '**Edited** preview');
+      expect(store.noteById('n1')!.content, '**Edited** preview');
+      await flushTimers(tester);
+    });
 
     testWidgets('typing in a fresh editor creates the note; closing keeps it', (
       tester,
@@ -1386,6 +1422,39 @@ void main() {
         await tester.pump();
 
         expect(store.noteById('n1')!.items.single.text, 'Mi');
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
+      'checklist row preserves a contraction across the focus handoff',
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        final addField = find.widgetWithText(TextField, 'List item');
+        await tester.tap(addField);
+        tester.testTextInput.enterText('I');
+        await tester.pump();
+        await tester.pump();
+
+        // Some input clients report both characters after the focus handoff as
+        // replacements before catching up with the accumulated contraction.
+        tester.testTextInput.enterText("'");
+        await tester.pump();
+        tester.testTextInput.enterText('d');
+        await tester.pump();
+
+        expect(store.noteById('n1')!.items.single.text, "I'd");
+
+        // Once an accumulated value arrives, ordinary editing continues.
+        tester.testTextInput.enterText("I'd change");
+        await tester.pump();
+        expect(store.noteById('n1')!.items.single.text, "I'd change");
         await flushTimers(tester);
       },
     );

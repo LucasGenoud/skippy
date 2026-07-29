@@ -164,7 +164,7 @@ void main() {
       expect(store.workspaceById('w-default'), isNotNull);
     });
 
-    test('deleting one rehomes our notes and drops its taxonomy', () async {
+    test('deleting one permanently removes all of its notes', () async {
       api.labels['l2'] = const Label(
         id: 'l2',
         workspaceId: work,
@@ -199,25 +199,18 @@ void main() {
       expect(store.workspaceById(work), isNull);
       // The view falls back to the default workspace rather than stranding.
       expect(store.activeWorkspaceId, 'w-default');
-      // Our note follows us home; a member's note follows them home and is no
-      // longer visible through the deleted workspace.
-      expect(store.noteById('b')?.workspaceId, 'w-default');
-      expect(store.noteById('b')?.labelIds, isEmpty);
+      expect(store.noteById('b'), isNull);
       expect(store.noteById('c'), isNull);
-      expect(store.noteById('d')?.workspaceId, work);
-      expect(store.noteById('d')?.labelIds, isEmpty);
+      expect(store.noteById('d'), isNull);
       final homeSections = store.notesFor(ViewSelection.notes, '');
-      expect(
-        [...homeSections.pinned, ...homeSections.others].map((note) => note.id),
-        containsAll(['b', 'd']),
-      );
+      expect([...homeSections.pinned, ...homeSections.others], isEmpty);
       expect(store.labels, isEmpty);
 
       await settle();
       expect(api.workspaces.containsKey(work), isFalse);
-      expect(api.notes['b']?.workspaceId, 'w-default');
+      expect(api.notes.containsKey('b'), isFalse);
       expect(api.notes.containsKey('c'), isFalse);
-      expect(api.notes['d']?.workspaceId, work);
+      expect(api.notes.containsKey('d'), isFalse);
     });
 
     test('leaving one keeps our notes and forgets the rest', () async {
@@ -496,6 +489,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Delete "Work"?'), findsOneWidget);
+      expect(
+        find.text(
+          '1 note and all its attachments will be permanently deleted. '
+          'This can\'t be undone.',
+        ),
+        findsOneWidget,
+      );
       // The manage dialog's own invite field is still mounted underneath, so
       // scope to the confirm dialog rather than grabbing the wrong TextField.
       final confirmDialog = find.ancestor(
@@ -521,7 +521,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(store.workspaceById(work), isNull);
-      expect(store.noteById('a')?.workspaceId, 'w-default');
+      expect(store.noteById('a'), isNull);
       store.dispose();
     });
   });

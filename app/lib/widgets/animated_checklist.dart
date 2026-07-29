@@ -56,6 +56,8 @@ class AnimatedChecklist extends StatefulWidget {
   State<AnimatedChecklist> createState() => _AnimatedChecklistState();
 }
 
+const _kFocusHandoffWindow = Duration(milliseconds: 250);
+
 class _RowHandles {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -63,9 +65,10 @@ class _RowHandles {
   final LayerLink link = LayerLink();
 
   /// The text that materialized this row from the add field. Some desktop
-  /// text-input clients race the focus handoff and report the next character
-  /// as a replacement value instead of appending it. Preserve this prefix
-  /// until the first real edit lands on the row.
+  /// text-input clients race the focus handoff and report subsequent
+  /// characters as replacement values instead of appending them. Preserve
+  /// this prefix until the client reports an accumulated value (or the brief
+  /// handoff window expires).
   String? handoffPrefix;
   DateTime? handoffPrefixExpiresAt;
 
@@ -88,7 +91,7 @@ class _RowHandles {
       focusNode = FocusNode(),
       handoffPrefix = createdFromAddField ? text : null,
       handoffPrefixExpiresAt = createdFromAddField
-          ? DateTime.now().add(const Duration(milliseconds: 250))
+          ? DateTime.now().add(_kFocusHandoffWindow)
           : null;
 
   /// Set the moment the row goes away. Callbacks that outlive a row (the
@@ -892,8 +895,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                             DateTime.now(),
                           ) ??
                           false;
-                      handles.handoffPrefix = null;
-                      handles.handoffPrefixExpiresAt = null;
                       var effectiveText = _withoutMarker(text);
                       if (effectiveText.isEmpty &&
                           (handles.unacknowledged ?? item.text).isEmpty &&
@@ -904,11 +905,26 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                         _focusNeighborThenRemove(item.id);
                         return;
                       }
-                      if (prefix != null &&
-                          prefixStillFresh &&
-                          effectiveText.isNotEmpty &&
-                          !effectiveText.startsWith(prefix)) {
+                      if (prefix == null ||
+                          !prefixStillFresh ||
+                          effectiveText.isEmpty) {
+                        handles.handoffPrefix = null;
+                        handles.handoffPrefixExpiresAt = null;
+                      } else if (effectiveText.startsWith(prefix)) {
+                        // The input client is now reporting the whole value,
+                        // so normal editing can resume.
+                        handles.handoffPrefix = null;
+                        handles.handoffPrefixExpiresAt = null;
+                      } else {
                         effectiveText = '$prefix$effectiveText';
+                        // A contraction can arrive as more than one
+                        // replacement-style update (for example "'" then
+                        // "d"). Carry the merged value into the next update
+                        // instead of protecting only the first character.
+                        handles.handoffPrefix = effectiveText;
+                        handles.handoffPrefixExpiresAt = DateTime.now().add(
+                          _kFocusHandoffWindow,
+                        );
                       }
                       if (effectiveText != text) {
                         handles.controller.value = TextEditingValue(

@@ -188,27 +188,7 @@ class FakeApi implements Api {
     if (workspaces.remove(id) == null) {
       throw ApiException(404, '{"error":"not found"}');
     }
-    // Notes outlive their workspace. This fake models what the current account
-    // can still see after the server moves each note to its owner's default:
-    // our notes and direct shares remain; workspace-only notes disappear.
-    for (final entry in notes.entries.toList()) {
-      final note = entry.value;
-      if (note.workspaceId != id) continue;
-      final retained =
-          note.isOwnedBy(account.id) ||
-          note.collaborators.any((user) => user.id == account.id);
-      if (retained) {
-        notes[entry.key] = note.copyWith(
-          workspaceId: note.isOwnedBy(account.id)
-              ? defaultWorkspaceId
-              : note.workspaceId,
-          labelIds: const {},
-          stageId: null,
-        );
-      } else {
-        notes.remove(entry.key);
-      }
-    }
+    notes.removeWhere((_, note) => note.workspaceId == id);
     labels.removeWhere((_, label) => label.workspaceId == id);
     stages.removeWhere((_, stage) => stage.workspaceId == id);
   });

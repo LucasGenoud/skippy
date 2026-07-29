@@ -536,48 +536,68 @@ impl Repository for SqliteRepository {
         let Some(workspace) = self.workspace(workspace_id).await? else {
             return Ok(None);
         };
-        // The default workspace is where notes would be rehomed to; removing
-        // it would leave them nowhere to go. (It also has no delete button in
-        // the UI, but the server doesn't trust that.)
+        // The default workspace is the permanent home for notes created
+        // without an explicit workspace and for a member's notes when they
+        // leave another workspace. It has no delete button, but the server
+        // does not trust that.
         if workspace.is_default {
             return Ok(None);
         }
         let mut tx = self.pool.begin().await?;
-        let rows = sqlx::query("SELECT id FROM notes WHERE workspace_id = ?")
+        let rows = sqlx::query("SELECT id, owner_id FROM notes WHERE workspace_id = ?")
             .bind(workspace_id)
             .fetch_all(&mut *tx)
             .await?;
-        let moved_note_ids = rows.iter().map(|row| row.get("id")).collect();
+        let mut purged_notes: Vec<PurgedNote> = rows
+            .iter()
+            .map(|row| PurgedNote {
+                note_id: row.get("id"),
+                owner_id: row.get("owner_id"),
+                attachment_ids: Vec::new(),
+            })
+            .collect();
+        for note in &mut purged_notes {
+            let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
+                .bind(&note.note_id)
+                .fetch_all(&mut *tx)
+                .await?;
+            note.attachment_ids = attachments.iter().map(|row| row.get("id")).collect();
+        }
 
-        // A workspace is a shared filing container, not the owner of its
-        // members' content. Move every note to its own owner's default home in
-        // one set-based update. If a corrupt account has no default workspace,
-        // the NOT NULL constraint aborts the transaction instead of losing the
-        // note.
-        sqlx::query(
-            "UPDATE notes
-             SET workspace_id = (
-                 SELECT w.id FROM workspaces w
-                 WHERE w.owner_id = notes.owner_id AND w.is_default = 1
-             ),
-                 stage_id = NULL
-             WHERE workspace_id = ?",
+        // Capture everyone whose visible state changes before note shares and
+        // workspace membership cascade away.
+        let audience_rows = sqlx::query(
+            "SELECT owner_id AS user_id FROM workspaces WHERE id = ?
+             UNION SELECT user_id FROM workspace_members WHERE workspace_id = ?
+             UNION SELECT n.owner_id AS user_id FROM notes n WHERE n.workspace_id = ?
+             UNION SELECT ns.user_id FROM note_shares ns
+                   JOIN notes n ON n.id = ns.note_id
+                  WHERE n.workspace_id = ?",
         )
         .bind(workspace_id)
-        .execute(&mut *tx)
+        .bind(workspace_id)
+        .bind(workspace_id)
+        .bind(workspace_id)
+        .fetch_all(&mut *tx)
         .await?;
-        sqlx::query(PRUNE_MISMATCHED_LABELS)
+        let audience = audience_rows.iter().map(|row| row.get("user_id")).collect();
+
+        // Delete notes explicitly so their dependent rows cascade before the
+        // workspace row. Attachment bytes and search rows live outside this
+        // database and are cleaned up by the handler from the snapshot above.
+        sqlx::query("DELETE FROM notes WHERE workspace_id = ?")
+            .bind(workspace_id)
             .execute(&mut *tx)
             .await?;
-
-        // Labels, stages, and membership are workspace-owned taxonomy and
-        // cascade away only after no note references the container.
         sqlx::query("DELETE FROM workspaces WHERE id = ?")
             .bind(workspace_id)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(Some(DeletedWorkspace { moved_note_ids }))
+        Ok(Some(DeletedWorkspace {
+            purged_notes,
+            audience,
+        }))
     }
 
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>> {
