@@ -2,6 +2,14 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Stable cache identity for one account on one server.
+String notesCacheKey(String namespace, String? userId) {
+  final account = userId ?? 'local';
+  final trimmed = namespace.trim();
+  if (trimmed.isEmpty) return account;
+  return '${Uri.encodeComponent(trimmed)}::$account';
+}
+
 /// A tiny persistence seam for the offline notes cache. Swappable — the app
 /// uses [PrefsLocalCache] (shared_preferences, which is localStorage on web),
 /// tests inject an in-memory fake — mirroring how the store abstracts [Api].

@@ -59,6 +59,44 @@ docker compose up -d server
 
 Watchtower will leave it alone until a newer `:latest` is pushed.
 
+## Scheduled system backups
+
+`docker-compose.yml` bind-mounts `${STICKY_NOTES_BACKUPS_DIR:-./backups}` at
+`/backups`. Set `STICKY_NOTES_BACKUPS_DIR` to storage outside the application
+host when possible, or sync that directory off-host after each run.
+
+The backup command is online-safe and works in disk and S3 modes:
+
+```sh
+docker compose exec -T --user sticky-notes server /app/sticky-notes-server \
+  system-backup /backups/skippy-$(date -u +%Y%m%d-%H%M%S).skb
+```
+
+Example host crontab (cron treats `%` specially, hence the escaping):
+
+```cron
+15 3 * * * cd /srv/skippy && docker compose exec -T --user sticky-notes server /app/sticky-notes-server system-backup /backups/skippy-$(date -u +\%Y\%m\%d-\%H\%M\%S).skb
+```
+
+The archive includes the complete SQLite database and all attachment objects
+referenced by its consistent snapshot. It contains credentials, active session
+tokens, user settings, and private note/file data; protect it like the live
+database. Environment configuration and external service state are not part of
+the archive.
+
+Restores require downtime and create a pre-restore safety archive:
+
+```sh
+docker compose stop server
+docker compose run --rm --no-deps server \
+  /app/sticky-notes-server system-restore \
+  /backups/skippy-20260729-030000.skb --confirm
+docker compose up -d server
+```
+
+Use `--skip-safety-backup` only when the current database is unreadable and no
+safety archive can be created.
+
 ## Notes
 
 - The Dockerfile compiles the Rust backend from scratch when `backend/` changes

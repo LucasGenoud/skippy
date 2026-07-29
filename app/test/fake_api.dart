@@ -120,6 +120,15 @@ class FakeApi implements Api {
   Future<void> logout() => _run('logout', () {});
 
   @override
+  Future<void> deleteAccount(String currentPassword) =>
+      _run('deleteAccount', () {
+        notes.clear();
+        labels.clear();
+        stages.clear();
+        workspaces.clear();
+      });
+
+  @override
   Future<AuthUser> me() => _run('me', () => account);
 
   @override

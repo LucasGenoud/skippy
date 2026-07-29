@@ -30,6 +30,19 @@ pub struct PurgedNote {
     pub attachment_ids: Vec<String>,
 }
 
+/// Everything outside the relational database that must be refreshed after an
+/// account is removed.
+pub struct DeletedAccount {
+    /// Notes deleted because the account owned either the note or its
+    /// workspace. Their attachment rows cascade away, so callers need this
+    /// snapshot to remove the actual blobs.
+    pub purged_notes: Vec<PurgedNote>,
+    /// Notes that survive but whose participants or workspace changed.
+    pub remaining_note_ids: Vec<String>,
+    /// Accounts whose open clients need to refetch workspace/note rosters.
+    pub audience: Vec<String>,
+}
+
 /// Result of deleting a workspace container. Notes outlive the workspace and
 /// are moved to their respective owners' default workspaces; callers use the
 /// ids to refresh visibility-dependent state such as the semantic index.
@@ -57,6 +70,10 @@ pub trait Repository: Send + Sync {
     /// workspace with them. Used to refresh public display names after a
     /// profile change.
     async fn account_audience(&self, user_id: &str) -> RepoResult<Vec<String>>;
+    /// Permanently remove an account in one transaction. Every note owned by
+    /// the account is deleted, as is every note inside a workspace the account
+    /// owns, regardless of that note's owner.
+    async fn delete_account(&self, user_id: &str) -> RepoResult<Option<DeletedAccount>>;
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()>;
     async fn user_id_for_token(&self, token: &str) -> RepoResult<Option<String>>;
     async fn delete_session(&self, token: &str) -> RepoResult<()>;

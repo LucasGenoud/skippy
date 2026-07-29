@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/note.dart';
+import '../models/workspace.dart';
 
 /// Serialization targets for a bulk note export.
 enum ExportFormat {
@@ -28,13 +29,25 @@ String exportNotes(
   List<Note> notes,
   ExportFormat format, {
   List<Label> labels = const [],
+  List<Workspace> workspaces = const [],
   DateTime? now,
 }) {
   final names = {for (final l in labels) l.id: l.name};
+  final workspaceNames = {for (final w in workspaces) w.id: w.name};
   return switch (format) {
-    ExportFormat.json => _toJson(notes, names, now ?? DateTime.now()),
-    ExportFormat.markdown => _toMarkdown(notes, names, now ?? DateTime.now()),
-    ExportFormat.text => _toText(notes, names),
+    ExportFormat.json => _toJson(
+      notes,
+      names,
+      workspaceNames,
+      now ?? DateTime.now(),
+    ),
+    ExportFormat.markdown => _toMarkdown(
+      notes,
+      names,
+      workspaceNames,
+      now ?? DateTime.now(),
+    ),
+    ExportFormat.text => _toText(notes, names, workspaceNames),
   };
 }
 
@@ -43,7 +56,12 @@ List<String> _labelNames(Note n, Map<String, String> names) => [
     if (names[id] case final String name) name,
 ]..sort();
 
-String _toJson(List<Note> notes, Map<String, String> names, DateTime now) {
+String _toJson(
+  List<Note> notes,
+  Map<String, String> names,
+  Map<String, String> workspaceNames,
+  DateTime now,
+) {
   final data = {
     'exported_at': now.toUtc().toIso8601String(),
     'version': 1,
@@ -51,6 +69,8 @@ String _toJson(List<Note> notes, Map<String, String> names, DateTime now) {
       for (final n in notes)
         {
           'id': n.id,
+          if (workspaceNames[n.workspaceId] case final String workspace)
+            'workspace': workspace,
           'kind': n.kind.wire,
           'title': n.title,
           'content': n.content,
@@ -70,7 +90,12 @@ String _toJson(List<Note> notes, Map<String, String> names, DateTime now) {
   return const JsonEncoder.withIndent('  ').convert(data);
 }
 
-String _toMarkdown(List<Note> notes, Map<String, String> names, DateTime now) {
+String _toMarkdown(
+  List<Note> notes,
+  Map<String, String> names,
+  Map<String, String> workspaceNames,
+  DateTime now,
+) {
   final buf = StringBuffer('# Skippy export\n\n');
   String two(int v) => v.toString().padLeft(2, '0');
   buf.writeln(
@@ -79,6 +104,9 @@ String _toMarkdown(List<Note> notes, Map<String, String> names, DateTime now) {
   );
   for (final n in notes) {
     buf.writeln('---\n');
+    if (workspaceNames[n.workspaceId] case final String workspace) {
+      buf.writeln('**Workspace:** $workspace\n');
+    }
     final title = n.title.trim();
     if (title.isNotEmpty) buf.writeln('## $title\n');
     if (n.isChecklist) {
@@ -119,10 +147,17 @@ String noteToPlainText(Note note, {List<String> labels = const []}) {
   return buf.toString();
 }
 
-String _toText(List<Note> notes, Map<String, String> names) {
+String _toText(
+  List<Note> notes,
+  Map<String, String> names,
+  Map<String, String> workspaceNames,
+) {
   final buf = StringBuffer();
   for (var idx = 0; idx < notes.length; idx++) {
     if (idx > 0) buf.writeln('${'—' * 40}\n');
+    if (workspaceNames[notes[idx].workspaceId] case final String workspace) {
+      buf.writeln('Workspace: $workspace\n');
+    }
     buf.write(
       noteToPlainText(notes[idx], labels: _labelNames(notes[idx], names)),
     );

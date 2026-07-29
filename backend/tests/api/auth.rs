@@ -176,6 +176,134 @@ async fn sensitive_account_changes_require_current_password() {
 }
 
 #[tokio::test]
+async fn deleting_an_account_removes_owned_workspaces_and_every_note_inside_them() {
+    let app_state = state().await;
+    let app = build_app(app_state.clone());
+    let (ada, ada_id) = register(&app, "ada").await;
+    let (grace, grace_id) = register(&app, "grace").await;
+
+    let (_, second_login) = send(
+        &app,
+        "POST",
+        "/api/auth/login",
+        None,
+        Some(json!({
+            "email": "ada@example.test",
+            "password": "hunter22"
+        })),
+    )
+    .await;
+    let ada_second_token = second_login["token"].as_str().unwrap().to_string();
+
+    let (_, ada_workspaces) = send(&app, "GET", "/api/workspaces", Some(&ada), None).await;
+    let ada_default = ada_workspaces[0]["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/workspaces/{ada_default}/members"),
+        Some(&ada),
+        Some(json!({"email": "grace@example.test"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let ada_note = create_note(&app, &ada, json!({"title": "Ada's note"})).await;
+    let ada_note_id = ada_note["id"].as_str().unwrap();
+    let (status, attachment) = upload(&app, &ada, ada_note_id, "text/plain", b"owned bytes").await;
+    assert_eq!(status, StatusCode::CREATED);
+    let attachment_id = attachment["id"].as_str().unwrap();
+    assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
+
+    let grace_note = create_note(
+        &app,
+        &grace,
+        json!({
+            "id": "grace-in-adas-workspace",
+            "workspace_id": ada_default,
+            "title": "Grace's note"
+        }),
+    )
+    .await;
+    let grace_note_id = grace_note["id"].as_str().unwrap();
+    let (status, grace_attachment) =
+        upload(&app, &grace, grace_note_id, "text/plain", b"grace bytes").await;
+    assert_eq!(status, StatusCode::CREATED);
+    let grace_attachment_id = grace_attachment["id"].as_str().unwrap();
+    assert!(
+        app_state
+            .files
+            .read(&grace_id, grace_attachment_id)
+            .await
+            .is_some()
+    );
+
+    // A password typo must leave the account and both sessions untouched.
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        "/api/auth/me",
+        Some(&ada),
+        Some(json!({"current_password": "wrong"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        send(&app, "GET", "/api/auth/me", Some(&ada_second_token), None)
+            .await
+            .0,
+        StatusCode::OK
+    );
+
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        "/api/auth/me",
+        Some(&ada),
+        Some(json!({"current_password": "hunter22"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Every session and every blob from the deleted workspace is gone.
+    for token in [&ada, &ada_second_token] {
+        assert_eq!(
+            send(&app, "GET", "/api/auth/me", Some(token), None).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert!(app_state.files.read(&ada_id, attachment_id).await.is_none());
+    assert!(
+        app_state
+            .files
+            .read(&grace_id, grace_attachment_id)
+            .await
+            .is_none()
+    );
+
+    // Grace keeps her account and default workspace, but her note was inside
+    // Ada's workspace and is therefore deleted with that workspace.
+    let (_, grace_workspaces) = send(&app, "GET", "/api/workspaces", Some(&grace), None).await;
+    assert_eq!(grace_workspaces.as_array().unwrap().len(), 1);
+    let notes = list_notes(&app, &grace).await;
+    assert!(notes.is_empty());
+
+    // The email is free again because the account row itself was removed.
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/auth/register",
+        None,
+        Some(json!({
+            "name": "New Ada",
+            "email": "ada@example.test",
+            "password": "hunter22"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[tokio::test]
 async fn endpoints_require_auth() {
     let app = app().await;
     for (method, path) in [
@@ -184,6 +312,7 @@ async fn endpoints_require_auth() {
         ("GET", "/api/labels"),
         ("GET", "/api/auth/me"),
         ("PATCH", "/api/auth/me"),
+        ("DELETE", "/api/auth/me"),
     ] {
         let (status, _) = send(&app, method, path, None, None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");

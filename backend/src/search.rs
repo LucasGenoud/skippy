@@ -180,7 +180,7 @@ pub trait VectorIndex: Send + Sync {
 
 /// Register sqlite-vec for every SQLite connection opened by this process.
 /// Idempotent (guarded by `Once`); must run before the pool below is created.
-fn register_sqlite_vec() {
+pub fn register_sqlite_vec() {
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| unsafe {
         libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute::<

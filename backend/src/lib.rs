@@ -10,6 +10,7 @@ pub mod notify;
 mod outbound;
 pub mod search;
 pub mod store;
+pub mod system_backup;
 pub mod transcribe;
 pub mod unfurl;
 pub mod ws;
@@ -157,7 +158,9 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         .route("/auth/logout", post(handlers::logout))
         .route(
             "/auth/me",
-            get(handlers::me).patch(handlers::update_account),
+            get(handlers::me)
+                .patch(handlers::update_account)
+                .delete(handlers::delete_account),
         )
         .route(
             "/workspaces",

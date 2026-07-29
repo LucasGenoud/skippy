@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/note.dart';
+import 'local_cache.dart';
 
 enum AuthStatus { restoring, signedOut, signedIn }
 
@@ -280,6 +281,29 @@ class AuthStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_userKey, jsonEncode(updated.toJson()));
     notifyListeners();
+  }
+
+  /// Permanently delete the server account, then remove this installation's
+  /// session and offline note cache. [beforeSignOut] lets a caller close any
+  /// authenticated routes before their providers are torn down.
+  Future<void> deleteAccount(
+    String currentPassword, {
+    VoidCallback? beforeSignOut,
+  }) async {
+    final deletedUserId = user!.id;
+    final cacheKey = notesCacheKey(api.baseUrl, deletedUserId);
+    await api.deleteAccount(currentPassword);
+    beforeSignOut?.call();
+    await _clearSession();
+    // Let the app dispose its NotesStore before removing the cache, so a
+    // queued persistence microtask cannot recreate deleted local data.
+    await Future<void>.delayed(Duration.zero);
+    try {
+      await PrefsLocalCache().clear(cacheKey);
+    } catch (_) {
+      // The server deletion already succeeded. A best-effort local cleanup
+      // failure must not leave the UI pretending the account still exists.
+    }
   }
 
   /// Signing out is a local decision, so the session goes first and the server

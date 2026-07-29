@@ -83,6 +83,9 @@ services:
       # STICKY_NOTES_LLM_WRITING: "true"      # AI note editing
     volumes:
       - app_data:/data # SQLite DB + uploaded files
+      # Whole-system .skb archives land on the host, outside the live data
+      # volume. Override with STICKY_NOTES_BACKUPS_DIR in .env.
+      - ${STICKY_NOTES_BACKUPS_DIR:-./backups}:/backups
     depends_on:
       # Wait until Whisper's HTTP server actually answers, not just until its
       # container starts — otherwise the server probes a not-yet-ready Whisper

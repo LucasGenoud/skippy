@@ -60,6 +60,7 @@ abstract class Api {
   Future<({String token, AuthUser user})> login(String email, String password);
   Future<void> logout();
   Future<AuthUser> me();
+  Future<void> deleteAccount(String currentPassword);
   Future<AuthUser> updateAccount({
     String? name,
     String? email,
@@ -405,6 +406,19 @@ class ApiClient implements Api {
   }
 
   @override
+  Future<void> deleteAccount(String currentPassword) async {
+    final requestToken = token;
+    _decode(
+      await _client.delete(
+        _uri('/auth/me'),
+        headers: _headers(),
+        body: jsonEncode({'current_password': currentPassword}),
+      ),
+      requestToken: requestToken,
+    );
+  }
+
+  @override
   Future<AuthUser> updateAccount({
     String? name,
     String? email,
@@ -524,6 +538,7 @@ class ApiClient implements Api {
           'stage_position': note.stagePosition,
           if (preserveTimestamps) ...{
             'archived': note.archived,
+            'trashed': note.trashed,
             'created_at': note.createdAt.toUtc().toIso8601String(),
             'updated_at': note.updatedAt.toUtc().toIso8601String(),
           },

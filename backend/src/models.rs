@@ -66,6 +66,11 @@ pub struct UpdateAccountRequest {
     pub new_password: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DeleteAccountRequest {
+    pub current_password: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
@@ -352,6 +357,9 @@ pub struct CreateNote {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub archived: Option<bool>,
+    /// Accepted for backup restore. Ordinary creates omit it and start live.
+    #[serde(default)]
+    pub trashed: Option<bool>,
     #[serde(default)]
     pub position: Option<f64>,
     #[serde(default)]

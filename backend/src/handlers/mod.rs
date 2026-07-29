@@ -20,7 +20,7 @@ mod workspaces;
 mod writing;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
-pub use auth::{login, logout, me, register, update_account};
+pub use auth::{delete_account, login, logout, me, register, update_account};
 pub use chat::chat_ws;
 pub use events::ws_handler;
 pub use labels::{create_label, delete_label, list_labels, update_label};

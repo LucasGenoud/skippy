@@ -34,7 +34,12 @@ class _ExportSectionState extends State<ExportSection> {
       showAppSnack('No notes to export');
       return;
     }
-    final content = exportNotes(notes, format, labels: store.labels);
+    final content = exportNotes(
+      notes,
+      format,
+      labels: store.labelsForBackup,
+      workspaces: store.ownedWorkspaces,
+    );
     downloadTextFile(exportFilename(format), content, format.mime);
     final count = notes.length;
     showAppSnack(
@@ -59,8 +64,9 @@ class _ExportSectionState extends State<ExportSection> {
 
   Future<void> _exportBackup() async {
     final store = context.read<NotesStore>();
-    final notes = store.notesForExport;
-    if (notes.isEmpty && store.labels.isEmpty) {
+    final workspaces = store.ownedWorkspaces;
+    final notes = store.notesForBackup;
+    if (workspaces.isEmpty) {
       showAppSnack('Nothing to back up');
       return;
     }
@@ -71,8 +77,10 @@ class _ExportSectionState extends State<ExportSection> {
     });
     try {
       final bytes = await createBackupArchive(
+        workspaces: workspaces,
         notes: notes,
-        labels: store.labels,
+        labels: store.labelsForBackup,
+        stages: store.stagesForBackup,
         readAttachment: (attachment) => _readAttachment(store, attachment),
         onProgress: (done, total) {
           if (!mounted) return;
@@ -133,35 +141,11 @@ class _ExportSectionState extends State<ExportSection> {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final selected = await showDialog<Set<String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Restore this backup?'),
-        content: Text(
-          'This will add ${backup.notes.length} '
-          '${backup.notes.length == 1 ? 'note' : 'notes'}, '
-          '${backup.labels.length} '
-          '${backup.labels.length == 1 ? 'label' : 'labels'}, and '
-          '${backup.attachmentCount} '
-          '${backup.attachmentCount == 1 ? 'file' : 'files'}.\n\n'
-          'Nothing currently in your account will be deleted. Shared notes '
-          'are restored as private copies. Notes whose IDs are already in '
-          'your account are skipped.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, true),
-            icon: const Icon(Icons.settings_backup_restore),
-            label: const Text('Restore'),
-          ),
-        ],
-      ),
+      builder: (context) => RestoreBackupDialog(backup: backup),
     );
-    if (confirmed != true || !mounted) return;
+    if (selected == null || !mounted) return;
 
     setState(() {
       _busy = true;
@@ -171,6 +155,7 @@ class _ExportSectionState extends State<ExportSection> {
     try {
       final result = await context.read<NotesStore>().restoreBackup(
         backup,
+        workspaceIds: selected,
         onProgress: (done, total) {
           if (!mounted) return;
           setState(() {
@@ -184,8 +169,9 @@ class _ExportSectionState extends State<ExportSection> {
           'Restored ${result.notes} '
           '${result.notes == 1 ? 'note' : 'notes'} and '
           '${result.attachments} '
-          '${result.attachments == 1 ? 'file' : 'files'}'
-          '${result.skippedNotes == 0 ? '' : '; skipped ${result.skippedNotes} already present'}',
+          '${result.attachments == 1 ? 'file' : 'files'} across '
+          '${result.workspaces} '
+          '${result.workspaces == 1 ? 'workspace' : 'workspaces'}',
           icon: Icons.check_circle_outline,
         );
       }
@@ -223,10 +209,11 @@ class _ExportSectionState extends State<ExportSection> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
-            'Create a complete zip backup of your notes, labels, reminders, '
-            'and attached files, or restore one into this account. Archived '
-            'notes are included; trash and collaborators are not. Reading '
-            'formats exclude attached file bytes.',
+            'Create a complete zip backup of every workspace you own, '
+            'including notes, labels, board columns, reminders, trash, and '
+            'attached files. Workspaces shared with you and collaboration '
+            'access are excluded. Restoring replaces your owned workspace '
+            'data; readable formats exclude trash and attached file bytes.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -271,6 +258,87 @@ class _ExportSectionState extends State<ExportSection> {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+class RestoreBackupDialog extends StatefulWidget {
+  final BackupBundle backup;
+
+  const RestoreBackupDialog({super.key, required this.backup});
+
+  @override
+  State<RestoreBackupDialog> createState() => _RestoreBackupDialogState();
+}
+
+class _RestoreBackupDialogState extends State<RestoreBackupDialog> {
+  late final Set<String> _selected = {
+    for (final workspace in widget.backup.workspaces) workspace.id,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Choose workspaces to restore'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Restoring replaces all notes, labels, and board columns in '
+                'the workspaces you own. Workspaces shared with you are not '
+                'changed. Only the selected backup workspaces are recreated.',
+              ),
+              const SizedBox(height: 12),
+              for (final workspace in widget.backup.workspaces)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _selected.contains(workspace.id),
+                  title: Text(workspace.name),
+                  subtitle: Text(
+                    '${workspace.notes.length} '
+                    '${workspace.notes.length == 1 ? 'note' : 'notes'} · '
+                    '${workspace.labels.length} '
+                    '${workspace.labels.length == 1 ? 'label' : 'labels'} · '
+                    '${workspace.stages.length} '
+                    '${workspace.stages.length == 1 ? 'column' : 'columns'}',
+                  ),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _selected.add(workspace.id);
+                      } else {
+                        _selected.remove(workspace.id);
+                      }
+                    });
+                  },
+                ),
+              const SizedBox(height: 8),
+              Text(
+                'This cannot be undone. Create a fresh backup first if you '
+                'might need the current data.',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(context, Set<String>.from(_selected)),
+          icon: const Icon(Icons.settings_backup_restore),
+          label: const Text('Replace and restore'),
+        ),
       ],
     );
   }

@@ -38,6 +38,22 @@ class AccountSection extends StatelessWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _open(context, _AccountField.password),
         ),
+        ListTile(
+          leading: Icon(
+            Icons.delete_forever_outlined,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: Text(
+            'Delete account',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          subtitle: const Text('Permanently delete your notes and account'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showFormDialog<void>(
+            context,
+            builder: (_) => const _DeleteAccountDialog(),
+          ),
+        ),
       ],
     );
   }
@@ -46,6 +62,126 @@ class AccountSection extends StatelessWidget {
     showFormDialog<void>(
       context,
       builder: (_) => _EditAccountDialog(field: field),
+    );
+  }
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _password = TextEditingController();
+  bool _busy = false;
+  bool _obscure = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _delete() async {
+    if (_password.text.isEmpty) {
+      setState(() => _error = 'Enter your current password');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final navigator = Navigator.of(context);
+      await context.read<AuthStore>().deleteAccount(
+        _password.text,
+        beforeSignOut: () => navigator.popUntil((route) => route.isFirst),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.statusCode == 403
+            ? 'Current password is incorrect'
+            : e.serverMessage;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = "Couldn't delete your account";
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return FormDialog(
+      title: const Text('Delete account?'),
+      width: 420,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This permanently deletes your account, every workspace you own, '
+            'and every note inside those workspaces — including notes created '
+            'by other people. Your other notes, attachments, settings, and '
+            'sessions are also deleted. This cannot be undone.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _password,
+            autofocus: true,
+            obscureText: _obscure,
+            autofillHints: const [AutofillHints.password],
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _delete(),
+            decoration: InputDecoration(
+              labelText: 'Current password',
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                tooltip: _obscure ? 'Show password' : 'Hide password',
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(color: scheme.error)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
+          ),
+          onPressed: _busy ? null : _delete,
+          child: _busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Delete account'),
+        ),
+      ],
     );
   }
 }

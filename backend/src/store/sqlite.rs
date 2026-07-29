@@ -6,7 +6,7 @@ use sqlx::{Row, SqlitePool};
 
 use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row, workspace_from_row};
 use super::sqlite_schema;
-use super::{DeletedWorkspace, PurgedNote, RepoError, RepoResult, Repository};
+use super::{DeletedAccount, DeletedWorkspace, PurgedNote, RepoError, RepoResult, Repository};
 use crate::models::*;
 
 /// The workspaces a user belongs to: the ones they own plus the ones they were
@@ -266,6 +266,139 @@ impl Repository for SqliteRepository {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(|row| row.get("user_id")).collect())
+    }
+
+    async fn delete_account(&self, user_id: &str) -> RepoResult<Option<DeletedAccount>> {
+        let mut tx = self.pool.begin().await?;
+        let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if exists == 0 {
+            return Ok(None);
+        }
+
+        // Snapshot every note whose index visibility changes. This includes
+        // owned notes, direct shares, and notes visible through any workspace
+        // the account owns or has joined.
+        let affected_rows = sqlx::query(&format!(
+            "SELECT id FROM notes WHERE {}",
+            visible_notes("notes")
+        ))
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        let affected_note_ids: Vec<String> =
+            affected_rows.iter().map(|row| row.get("id")).collect();
+
+        // Notify every participant of affected notes, plus every roster member
+        // of a workspace that will lose this owner/member. Capture the roster
+        // before the user deletion cascades memberships away.
+        let audience_rows = sqlx::query(&format!(
+            "WITH affected_notes AS (
+                 SELECT n.id, n.workspace_id FROM notes n WHERE {}
+             ), affected_workspaces AS (
+                 SELECT id FROM workspaces WHERE owner_id = ?
+                 UNION SELECT workspace_id FROM workspace_members WHERE user_id = ?
+             ), audience(user_id) AS (
+                 SELECT n.owner_id FROM notes n
+                 JOIN affected_notes a ON a.id = n.id
+                 UNION SELECT ns.user_id FROM note_shares ns
+                 JOIN affected_notes a ON a.id = ns.note_id
+                 UNION SELECT w.owner_id FROM workspaces w
+                 JOIN affected_notes a ON a.workspace_id = w.id
+                 UNION SELECT wm.user_id FROM workspace_members wm
+                 JOIN affected_notes a ON a.workspace_id = wm.workspace_id
+                 UNION SELECT w.owner_id FROM workspaces w
+                 JOIN affected_workspaces a ON a.id = w.id
+                 UNION SELECT wm.user_id FROM workspace_members wm
+                 JOIN affected_workspaces a ON a.id = wm.workspace_id
+             )
+             SELECT user_id FROM audience",
+            visible_notes("n")
+        ))
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        let audience = audience_rows.iter().map(|row| row.get("user_id")).collect();
+
+        // Account deletion owns the whole workspace lifecycle: every note in
+        // one of this account's workspaces is deleted even when another user
+        // authored it. Snapshot each note's actual owner because object-store
+        // blobs are partitioned by note owner.
+        let owned_rows = sqlx::query(
+            "SELECT id, owner_id FROM notes
+             WHERE owner_id = ?
+                OR workspace_id IN (SELECT id FROM workspaces WHERE owner_id = ?)",
+        )
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        let mut purged_notes: Vec<PurgedNote> = owned_rows
+            .iter()
+            .map(|row| PurgedNote {
+                note_id: row.get("id"),
+                owner_id: row.get("owner_id"),
+                attachment_ids: Vec::new(),
+            })
+            .collect();
+        for note in &mut purged_notes {
+            let rows = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
+                .bind(&note.note_id)
+                .fetch_all(&mut *tx)
+                .await?;
+            note.attachment_ids = rows.iter().map(|row| row.get("id")).collect();
+        }
+        let purged_ids: std::collections::HashSet<&str> = purged_notes
+            .iter()
+            .map(|note| note.note_id.as_str())
+            .collect();
+        let remaining_note_ids = affected_note_ids
+            .into_iter()
+            .filter(|id| !purged_ids.contains(id.as_str()))
+            .collect();
+
+        sqlx::query(
+            "DELETE FROM notes
+             WHERE owner_id = ?
+                OR workspace_id IN (SELECT id FROM workspaces WHERE owner_id = ?)",
+        )
+        .bind(user_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+        // Surviving collaboration history must not retain the deleted
+        // account's identifier after its user row is gone.
+        sqlx::query("UPDATE notes SET last_editor_id = NULL WHERE last_editor_id = ?")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE note_versions SET edited_by = NULL WHERE edited_by = ?")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+
+        Ok(Some(DeletedAccount {
+            purged_notes,
+            remaining_note_ids,
+            audience,
+        }))
     }
 
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()> {
@@ -583,7 +716,8 @@ impl Repository for SqliteRepository {
              (id, owner_id, workspace_id, kind, title, content, items, color, pinned, archived,
               trashed, position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at,
               stage_id, stage_position)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                     CASE WHEN ? THEN ? ELSE NULL END, ?, ?)",
         )
         .bind(&note.id)
         .bind(&note.owner_id)
@@ -601,6 +735,8 @@ impl Repository for SqliteRepository {
         .bind(&note.reminder_fired_at)
         .bind(&note.created_at)
         .bind(&note.updated_at)
+        .bind(note.trashed as i64)
+        .bind(now())
         .bind(&note.stage_id)
         .bind(note.stage_position)
         .execute(&self.pool)

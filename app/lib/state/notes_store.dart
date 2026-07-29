@@ -229,17 +229,71 @@ class NotesStore extends ChangeNotifier {
     _activeWorkspaceId = defaultWorkspace?.id;
   }
 
-  /// Notes for a data export: everything except trash, in display order.
-  List<Note> get notesForExport =>
-      _notes.where((n) => !n.trashed).toList()
-        ..sort((a, b) => a.position.compareTo(b.position));
+  /// Workspaces this account owns. Backups and readable exports deliberately
+  /// exclude workspaces that were merely shared with this user.
+  List<Workspace> get ownedWorkspaces => List.unmodifiable([
+    for (final workspace in _workspaces)
+      if (workspace.isOwnedBy(currentUserId)) workspace,
+  ]);
 
-  /// Restore a validated backup as private copies. Existing content is never
-  /// removed; same-named labels are reused to avoid server-side conflicts.
-  /// Direct, awaited API calls keep the progress dialog truthful and allow a
-  /// failed current note to be rolled back before reporting a partial import.
+  Set<String> get _ownedWorkspaceIds => {
+    for (final workspace in ownedWorkspaces) workspace.id,
+  };
+
+  String _effectiveWorkspaceId(Note note) =>
+      note.workspaceId.isEmpty ? defaultWorkspace?.id ?? '' : note.workspaceId;
+
+  /// Non-trashed notes in every owned workspace, in workspace/grid order.
+  List<Note> get notesForExport {
+    final owned = _ownedWorkspaceIds;
+    return [
+      for (final note in _notes)
+        if (!note.trashed && owned.contains(_effectiveWorkspaceId(note))) note,
+    ]..sort((a, b) {
+      final byWorkspace = _effectiveWorkspaceId(
+        a,
+      ).compareTo(_effectiveWorkspaceId(b));
+      return byWorkspace != 0 ? byWorkspace : a.position.compareTo(b.position);
+    });
+  }
+
+  /// Complete backup inputs. Unlike the readable formats, trash is included.
+  List<Note> get notesForBackup {
+    final owned = _ownedWorkspaceIds;
+    return [
+      for (final note in _notes)
+        if (owned.contains(_effectiveWorkspaceId(note)))
+          note.workspaceId.isEmpty
+              ? note.copyWith(workspaceId: defaultWorkspace?.id ?? '')
+              : note,
+    ];
+  }
+
+  List<Label> get labelsForBackup {
+    final owned = _ownedWorkspaceIds;
+    return [
+      for (final label in _labels)
+        if (owned.contains(label.workspaceId)) label,
+    ];
+  }
+
+  List<Stage> get stagesForBackup {
+    final owned = _ownedWorkspaceIds;
+    return [
+      for (final stage in _stages)
+        if (owned.contains(stage.workspaceId)) stage,
+    ];
+  }
+
+  /// Replace this account's owned workspace data with selected workspaces from
+  /// a validated backup. Workspaces owned by someone else are untouched.
+  ///
+  /// Direct, awaited calls keep progress truthful. The operation is
+  /// intentionally rejected while offline because replacement cannot be
+  /// represented safely by the optimistic queue.
   Future<BackupRestoreResult> restoreBackup(
     BackupBundle bundle, {
+    Set<String>? workspaceIds,
     BackupProgress? onProgress,
   }) async {
     flushForBackground();
@@ -253,153 +307,227 @@ class NotesStore extends ChangeNotifier {
 
     _restoringBackup = true;
     notifyListeners();
+    final selectedIds =
+        workspaceIds ??
+        {for (final workspace in bundle.workspaces) workspace.id};
+    final selected = [
+      for (final workspace in bundle.workspaces)
+        if (selectedIds.contains(workspace.id)) workspace,
+    ];
+    if (selected.isEmpty) {
+      _restoringBackup = false;
+      notifyListeners();
+      throw const BackupRestoreException(
+        'Choose at least one workspace to restore',
+        restoredNotes: 0,
+      );
+    }
+
+    final owned = ownedWorkspaces;
+    final ownedIds = {for (final workspace in owned) workspace.id};
+    final ownedNotes = [
+      for (final note in _notes)
+        if (ownedIds.contains(_effectiveWorkspaceId(note)) &&
+            note.isOwnedBy(currentUserId))
+          note,
+    ];
+    final defaultId = defaultWorkspace?.id;
+    final defaultLabels = [
+      for (final label in _labels)
+        if (label.workspaceId == defaultId) label,
+    ];
+    final defaultStages = [
+      for (final stage in _stages)
+        if (stage.workspaceId == defaultId) stage,
+    ];
+    final nonDefaultOwned = [
+      for (final workspace in owned)
+        if (!workspace.isDefault) workspace,
+    ];
+    final selectedLabels = selected.fold<int>(
+      0,
+      (count, workspace) => count + workspace.labels.length,
+    );
+    final selectedStages = selected.fold<int>(
+      0,
+      (count, workspace) => count + workspace.stages.length,
+    );
+    final selectedNotes = selected.fold<int>(
+      0,
+      (count, workspace) => count + workspace.notes.length,
+    );
+    final selectedAttachments = selected.fold<int>(
+      0,
+      (count, workspace) => count + workspace.attachmentCount,
+    );
+    final createdWorkspaces = selected
+        .where((workspace) => !workspace.isDefault)
+        .length;
     final totalSteps =
-        bundle.labels.length + bundle.notes.length + bundle.attachmentCount;
+        ownedNotes.length +
+        defaultLabels.length +
+        defaultStages.length +
+        nonDefaultOwned.length +
+        createdWorkspaces +
+        selectedLabels +
+        selectedStages +
+        selectedNotes +
+        selectedAttachments;
     var completed = 0;
     var restoredNotes = 0;
-    var skippedNotes = 0;
     var restoredAttachments = 0;
-    var labelsCreated = 0;
-    var labelsReused = 0;
-    final labelMap = <String, String>{};
+    var restoredLabels = 0;
+    var restoredStages = 0;
+    var restoredWorkspaces = 0;
 
     try {
-      for (final backupLabel in bundle.labels) {
-        Label? label;
-        for (final existing in labels) {
-          if (existing.name.toLowerCase() == backupLabel.name.toLowerCase()) {
-            label = existing;
-            break;
-          }
-        }
-        if (label == null) {
-          final workspaceId = _activeWorkspaceId ?? '';
-          label = Label(
-            id: _uuid.v4(),
-            workspaceId: workspaceId,
-            name: backupLabel.name,
-            color: backupLabel.color,
-            icon: backupLabel.icon,
-            position: _nextLabelPosition(workspaceId),
-          );
-          await api.createLabel(
-            label.id,
-            label.name,
-            workspaceId: label.workspaceId,
-            color: label.color,
-            icon: label.icon,
-            position: label.position,
-          );
-          _labels.add(label);
-          labelsCreated++;
-        } else {
-          labelsReused++;
-        }
-        labelMap[backupLabel.id] = label.id;
+      // Delete notes before their non-default workspaces. Workspace deletion
+      // otherwise rehomes the current user's notes into the default workspace.
+      for (final note in ownedNotes) {
+        await api.deleteNote(note.id);
         onProgress?.call(++completed, totalSteps);
       }
-      _labels.sort(_byLabelPosition);
+      for (final label in defaultLabels) {
+        await api.deleteLabel(label.id);
+        onProgress?.call(++completed, totalSteps);
+      }
+      for (final stage in defaultStages) {
+        await api.deleteStage(stage.id);
+        onProgress?.call(++completed, totalSteps);
+      }
+      for (final workspace in nonDefaultOwned) {
+        await api.deleteWorkspace(workspace.id);
+        onProgress?.call(++completed, totalSteps);
+      }
 
-      final notesBeforeFront = bundle.notes.isEmpty
-          ? 0
-          : bundle.notes.length - 1;
-      final firstPosition = _frontPosition() - notesBeforeFront * 1024;
-      final knownNoteIds = _notes.map((note) => note.id).toSet();
-      for (var index = 0; index < bundle.notes.length; index++) {
-        final backupNote = bundle.notes[index];
-        if (!knownNoteIds.add(backupNote.id)) {
-          skippedNotes++;
-          completed += 1 + backupNote.attachments.length;
-          onProgress?.call(completed, totalSteps);
-          continue;
-        }
-        final noteId = backupNote.id;
-        var note = Note(
-          id: noteId,
-          workspaceId: _activeWorkspaceId ?? '',
-          kind: backupNote.kind,
-          title: backupNote.title,
-          content: backupNote.content,
-          items: [
-            for (final item in backupNote.items)
-              ChecklistItem(id: _uuid.v4(), text: item.text, done: item.done),
-          ],
-          color: backupNote.color,
-          pinned: backupNote.pinned,
-          archived: backupNote.archived,
-          position: firstPosition + index * 1024,
-          reminderAt: backupNote.reminderAt?.toLocal(),
-          createdAt: backupNote.createdAt,
-          updatedAt: backupNote.updatedAt,
-          labelIds: {for (final oldId in backupNote.labelIds) ?labelMap[oldId]},
-          owner: currentUserId == null
-              ? null
-              : UserRef(id: currentUserId!, name: ''),
-        );
-
-        var createdOnServer = false;
-        try {
-          await api.createNote(note, preserveTimestamps: true);
-          createdOnServer = true;
+      final defaultTarget = defaultWorkspace;
+      for (final backupWorkspace in selected) {
+        final String targetWorkspaceId;
+        if (backupWorkspace.isDefault) {
+          if (defaultTarget == null) {
+            throw const BackupRestoreException(
+              'The account has no default workspace',
+              restoredNotes: 0,
+            );
+          }
+          targetWorkspaceId = defaultTarget.id;
+          if (defaultTarget.name != backupWorkspace.name) {
+            await api.renameWorkspace(defaultTarget.id, backupWorkspace.name);
+          }
+        } else {
+          final created = await api.createWorkspace(
+            _uuid.v4(),
+            backupWorkspace.name,
+          );
+          targetWorkspaceId = created.id;
+          restoredWorkspaces++;
           onProgress?.call(++completed, totalSteps);
+        }
 
-          final uploaded = <Attachment>[];
+        final labelMap = <String, String>{};
+        for (final backupLabel in backupWorkspace.labels) {
+          final id = _uuid.v4();
+          await api.createLabel(
+            id,
+            backupLabel.name,
+            workspaceId: targetWorkspaceId,
+            color: backupLabel.color,
+            icon: backupLabel.icon,
+            position: backupLabel.position,
+          );
+          labelMap[backupLabel.id] = id;
+          restoredLabels++;
+          onProgress?.call(++completed, totalSteps);
+        }
+
+        final stageMap = <String, String>{};
+        for (final backupStage in backupWorkspace.stages) {
+          final id = _uuid.v4();
+          await api.createStage(
+            id,
+            backupStage.name,
+            workspaceId: targetWorkspaceId,
+            color: backupStage.color,
+            position: backupStage.position,
+          );
+          stageMap[backupStage.id] = id;
+          restoredStages++;
+          onProgress?.call(++completed, totalSteps);
+        }
+
+        for (final backupNote in backupWorkspace.notes) {
+          final noteId = _uuid.v4();
+          final note = Note(
+            id: noteId,
+            workspaceId: targetWorkspaceId,
+            kind: backupNote.kind,
+            title: backupNote.title,
+            content: backupNote.content,
+            items: [
+              for (final item in backupNote.items)
+                ChecklistItem(
+                  id: item.id.isEmpty ? _uuid.v4() : item.id,
+                  text: item.text,
+                  done: item.done,
+                ),
+            ],
+            color: backupNote.color,
+            pinned: backupNote.pinned,
+            archived: backupNote.archived,
+            trashed: backupNote.trashed,
+            position: backupNote.position,
+            stageId: backupNote.stageId == null
+                ? null
+                : stageMap[backupNote.stageId!],
+            stagePosition: backupNote.stagePosition,
+            reminderAt: backupNote.reminderAt?.toLocal(),
+            createdAt: backupNote.createdAt,
+            updatedAt: backupNote.updatedAt,
+            labelIds: {
+              for (final oldId in backupNote.labelIds)
+                if (labelMap[oldId] case final String id) id,
+            },
+            owner: currentUserId == null
+                ? null
+                : UserRef(id: currentUserId!, name: ''),
+          );
+          await api.createNote(note, preserveTimestamps: true);
+          restoredNotes++;
+          onProgress?.call(++completed, totalSteps);
           for (final attachment in backupNote.attachments) {
-            uploaded.add(
-              await api.uploadAttachment(
-                note.id,
-                attachment.bytes,
-                attachment.mime,
-                attachment.filename,
-              ),
+            await api.uploadAttachment(
+              note.id,
+              attachment.bytes,
+              attachment.mime,
+              attachment.filename,
             );
             restoredAttachments++;
             onProgress?.call(++completed, totalSteps);
           }
-          note = note.copyWith(attachments: uploaded);
-          _notes.add(note);
-          restoredNotes++;
-          notifyListeners();
-        } on ApiException catch (error) {
-          if (!createdOnServer && error.statusCode == 409) {
-            skippedNotes++;
-            completed += 1 + backupNote.attachments.length;
-            onProgress?.call(completed, totalSteps);
-            continue;
-          }
-          if (createdOnServer) {
-            try {
-              await api.deleteNote(noteId);
-            } catch (_) {}
-          }
-          rethrow;
-        } catch (_) {
-          if (createdOnServer) {
-            try {
-              await api.deleteNote(noteId);
-            } catch (_) {}
-          }
-          rethrow;
         }
       }
 
-      _notes.sort((a, b) => a.position.compareTo(b.position));
-      _persistNow();
       return BackupRestoreResult(
+        workspaces:
+            restoredWorkspaces + (selected.any((w) => w.isDefault) ? 1 : 0),
         notes: restoredNotes,
-        skippedNotes: skippedNotes,
         attachments: restoredAttachments,
-        labelsCreated: labelsCreated,
-        labelsReused: labelsReused,
+        labels: restoredLabels,
+        stages: restoredStages,
       );
     } catch (error) {
       final message = error is ApiException
           ? error.serverMessage
+          : error is BackupRestoreException
+          ? error.message
           : 'Restore could not be completed';
-      throw BackupRestoreException(message, restoredNotes: restoredNotes);
+      throw BackupRestoreException(
+        '$message. Some owned workspace data may already have been replaced',
+        restoredNotes: restoredNotes,
+      );
     } finally {
       _restoringBackup = false;
-      _persistNow();
+      await refresh();
       notifyListeners();
       if (_reloadPending) {
         _reloadPending = false;
@@ -610,13 +738,9 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Local persistence (offline cache)
 
-  String get _legacyCacheKey => currentUserId ?? 'local';
+  String get _legacyCacheKey => notesCacheKey('', currentUserId);
 
-  String get _cacheKey {
-    final namespace = cacheNamespace.trim();
-    if (namespace.isEmpty) return _legacyCacheKey;
-    return '${Uri.encodeComponent(namespace)}::$_legacyCacheKey';
-  }
+  String get _cacheKey => notesCacheKey(cacheNamespace, currentUserId);
 
   static const Map<String, dynamic> _emptyCacheDoc = {
     'notes': <dynamic>[],
@@ -1875,7 +1999,12 @@ class NotesStore extends ChangeNotifier {
         : below == null
         ? above.position + 1024.0
         : (above.position + below.position) / 2;
-    updateStage(id, name: stage.name, color: stage.color, position: newPosition);
+    updateStage(
+      id,
+      name: stage.name,
+      color: stage.color,
+      position: newPosition,
+    );
   }
 
   /// Delete a column. Its notes are not destroyed — they go back to unassigned,

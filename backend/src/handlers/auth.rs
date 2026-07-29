@@ -168,3 +168,35 @@ pub async fn update_account(
         email,
     }))
 }
+
+pub async fn delete_account(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Json(request): Json<DeleteAccountRequest>,
+) -> ApiResult<StatusCode> {
+    let user = state
+        .repo
+        .user_by_id(&user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    if !verify_password(&request.current_password, &user.password_hash) {
+        return Err(ApiError::Forbidden("current password is incorrect"));
+    }
+
+    let deleted = state
+        .repo
+        .delete_account(&user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    for note in &deleted.purged_notes {
+        for attachment_id in &note.attachment_ids {
+            state.files.delete(&note.owner_id, attachment_id).await;
+        }
+        state.unindex_note_later(&note.note_id);
+    }
+    for note_id in &deleted.remaining_note_ids {
+        state.index_note_later(note_id);
+    }
+    state.hub.notify(&deleted.audience, CHANGED_MSG);
+    Ok(StatusCode::NO_CONTENT)
+}

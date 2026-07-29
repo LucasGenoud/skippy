@@ -1,18 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/screens/settings_screen.dart';
 import 'package:skippy/state/auth_store.dart';
+import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/util/backup.dart';
+import 'package:skippy/widgets/settings/export_section.dart';
 
 import 'fake_api.dart';
 
 /// Pump the Settings screen with a loaded settings store (its managed map is
 /// whatever the FakeApi returns) and the notes store the export section needs.
-Future<SettingsStore> pumpSettings(WidgetTester tester, FakeApi api) async {
+Future<SettingsStore> pumpSettings(
+  WidgetTester tester,
+  FakeApi api, {
+  AuthStore? authStore,
+}) async {
   // Tall surface so the whole settings list builds (no lazy off-screen tiles).
   tester.view.physicalSize = const Size(1200, 4000);
   tester.view.devicePixelRatio = 1.0;
@@ -20,8 +30,9 @@ Future<SettingsStore> pumpSettings(WidgetTester tester, FakeApi api) async {
   final settings = SettingsStore(api: api);
   await settings.load();
   final notes = NotesStore(api: api, currentUserId: 'u-me');
-  final auth = AuthStore(api: ApiClient(baseUrl: 'http://unused'))
-    ..user = api.account;
+  final auth =
+      authStore ??
+      (AuthStore(api: ApiClient(baseUrl: 'http://unused'))..user = api.account);
   await tester.pumpWidget(
     MultiProvider(
       providers: [
@@ -46,6 +57,52 @@ void main() {
     expect(find.text('Restore backup'), findsOneWidget);
   });
 
+  testWidgets(
+    'restore dialog lists backup workspaces and requires a selection',
+    (tester) async {
+      const backup = BackupBundle(
+        workspaces: [
+          BackupWorkspace(
+            id: 'w-home',
+            name: 'Home',
+            isDefault: true,
+            labels: [],
+            stages: [],
+            notes: [],
+          ),
+          BackupWorkspace(
+            id: 'w-work',
+            name: 'Work',
+            isDefault: false,
+            labels: [BackupLabel(id: 'l-work', name: 'Urgent')],
+            stages: [BackupStage(id: 's-doing', name: 'Doing')],
+            notes: [],
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: RestoreBackupDialog(backup: backup)),
+        ),
+      );
+
+      expect(find.text('Choose workspaces to restore'), findsOneWidget);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Work'), findsOneWidget);
+      expect(find.text('Replace and restore'), findsOneWidget);
+      expect(find.byType(CheckboxListTile), findsNWidgets(2));
+
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pump();
+      await tester.tap(find.byType(Checkbox).last);
+      await tester.pump();
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Replace and restore'),
+      );
+      expect(button.onPressed, isNull);
+    },
+  );
+
   testWidgets('account settings expose name, email, and password editors', (
     tester,
   ) async {
@@ -55,6 +112,7 @@ void main() {
     expect(find.text('Me Example'), findsOneWidget);
     expect(find.text('me@example.test'), findsOneWidget);
     expect(find.text('Change your sign-in password'), findsOneWidget);
+    expect(find.text('Delete account'), findsOneWidget);
     expect(find.text('Create backup'), findsOneWidget);
     expect(find.text('Restore backup'), findsOneWidget);
 
@@ -63,6 +121,53 @@ void main() {
     expect(find.text('Change email'), findsOneWidget);
     expect(find.text('Current password'), findsOneWidget);
     expect(find.text('New email'), findsOneWidget);
+  });
+
+  testWidgets('account deletion requires a password and clears local state', (
+    tester,
+  ) async {
+    late http.Request deletion;
+    final client = MockClient((request) async {
+      deletion = request;
+      return http.Response('', 204, request: request);
+    });
+    final apiClient = ApiClient(
+      baseUrl: 'http://server.example',
+      httpClient: client,
+    )..token = 'session-token';
+    final auth = AuthStore(api: apiClient)
+      ..user = const AuthUser(
+        id: 'u-me',
+        name: 'Me Example',
+        email: 'me@example.test',
+      )
+      ..status = AuthStatus.signedIn;
+    final cacheKey = notesCacheKey(apiClient.baseUrl, 'u-me');
+    SharedPreferences.setMockInitialValues({
+      'notes_cache_$cacheKey': '{"notes":[]}',
+    });
+    await pumpSettings(tester, FakeApi(), authStore: auth);
+
+    await tester.tap(find.text('Delete account').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Delete account?'), findsOneWidget);
+    expect(find.textContaining('cannot be undone'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Current password'),
+      'hunter22',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpAndSettle();
+
+    expect(deletion.method, 'DELETE');
+    expect(deletion.url.path, '/api/auth/me');
+    expect(deletion.headers['authorization'], 'Bearer session-token');
+    expect(deletion.body, '{"current_password":"hunter22"}');
+    expect(auth.status, AuthStatus.signedOut);
+    expect(auth.user, isNull);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('notes_cache_$cacheKey'), isNull);
   });
 
   testWidgets('server-managed LLM fields are locked in the dialog', (

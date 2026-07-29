@@ -4,42 +4,77 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 
 import '../models/note.dart';
+import '../models/workspace.dart';
 import 'mime.dart';
 
 const _backupFormat = 'skippy-backup';
-const _backupVersion = 1;
+const _backupVersion = 2;
 const maxBackupArchiveBytes = 512 * 1024 * 1024;
 const _maxManifestBytes = 8 * 1024 * 1024;
+const _maxWorkspaces = 1000;
 const _maxNotes = 10000;
 const _maxLabels = 2000;
+const _maxStages = 2000;
 const _maxAttachments = 10000;
 
 typedef AttachmentReader = Future<Uint8List> Function(Attachment attachment);
 typedef BackupProgress = void Function(int completed, int total);
 
 class BackupBundle {
+  final List<BackupWorkspace> workspaces;
+
+  const BackupBundle({required this.workspaces});
+
+  List<BackupLabel> get labels => [
+    for (final workspace in workspaces) ...workspace.labels,
+  ];
+
+  List<BackupStage> get stages => [
+    for (final workspace in workspaces) ...workspace.stages,
+  ];
+
+  List<BackupNote> get notes => [
+    for (final workspace in workspaces) ...workspace.notes,
+  ];
+
+  int get attachmentCount =>
+      notes.fold(0, (count, note) => count + note.attachments.length);
+}
+
+class BackupWorkspace {
+  final String id;
+  final String name;
+  final bool isDefault;
   final List<BackupLabel> labels;
+  final List<BackupStage> stages;
   final List<BackupNote> notes;
 
-  const BackupBundle({required this.labels, required this.notes});
+  const BackupWorkspace({
+    required this.id,
+    required this.name,
+    required this.isDefault,
+    required this.labels,
+    required this.stages,
+    required this.notes,
+  });
 
   int get attachmentCount =>
       notes.fold(0, (count, note) => count + note.attachments.length);
 }
 
 class BackupRestoreResult {
+  final int workspaces;
   final int notes;
-  final int skippedNotes;
   final int attachments;
-  final int labelsCreated;
-  final int labelsReused;
+  final int labels;
+  final int stages;
 
   const BackupRestoreResult({
+    required this.workspaces,
     required this.notes,
-    required this.skippedNotes,
     required this.attachments,
-    required this.labelsCreated,
-    required this.labelsReused,
+    required this.labels,
+    required this.stages,
   });
 }
 
@@ -58,12 +93,28 @@ class BackupLabel {
   final String name;
   final String? color;
   final String? icon;
+  final double position;
 
   const BackupLabel({
     required this.id,
     required this.name,
     this.color,
     this.icon,
+    this.position = 0,
+  });
+}
+
+class BackupStage {
+  final String id;
+  final String name;
+  final String? color;
+  final double position;
+
+  const BackupStage({
+    required this.id,
+    required this.name,
+    this.color,
+    this.position = 0,
   });
 }
 
@@ -76,6 +127,10 @@ class BackupNote {
   final String color;
   final bool pinned;
   final bool archived;
+  final bool trashed;
+  final double position;
+  final String? stageId;
+  final double stagePosition;
   final DateTime? reminderAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -91,6 +146,10 @@ class BackupNote {
     required this.color,
     required this.pinned,
     required this.archived,
+    this.trashed = false,
+    this.position = 0,
+    this.stageId,
+    this.stagePosition = 0,
     required this.reminderAt,
     required this.createdAt,
     required this.updatedAt,
@@ -100,10 +159,15 @@ class BackupNote {
 }
 
 class BackupChecklistItem {
+  final String id;
   final String text;
   final bool done;
 
-  const BackupChecklistItem({required this.text, required this.done});
+  const BackupChecklistItem({
+    this.id = '',
+    required this.text,
+    required this.done,
+  });
 }
 
 class BackupAttachment {
@@ -124,12 +188,14 @@ String backupFilename([DateTime? now]) {
   return 'skippy-backup-${date.year}-${two(date.month)}-${two(date.day)}.zip';
 }
 
-/// Build one portable zip. Attachment bytes are fetched lazily and stored
-/// under opaque paths; the manifest carries their original names and MIME
-/// types, so path separators or duplicate filenames cannot collide.
+/// Build one portable zip containing every supplied workspace as a distinct
+/// container. The caller supplies owned workspaces only; memberships and note
+/// collaborators are deliberately not serialized.
 Future<Uint8List> createBackupArchive({
+  required List<Workspace> workspaces,
   required List<Note> notes,
   required List<Label> labels,
+  required List<Stage> stages,
   required AttachmentReader readAttachment,
   DateTime? now,
   BackupProgress? onProgress,
@@ -140,46 +206,99 @@ Future<Uint8List> createBackupArchive({
     (count, note) => count + note.attachments.length,
   );
   var completed = 0;
-  final noteDocs = <Map<String, dynamic>>[];
+  final workspaceDocs = <Map<String, dynamic>>[];
 
-  for (var noteIndex = 0; noteIndex < notes.length; noteIndex++) {
-    final note = notes[noteIndex];
-    final attachmentDocs = <Map<String, dynamic>>[];
-    for (
-      var attachmentIndex = 0;
-      attachmentIndex < note.attachments.length;
-      attachmentIndex++
-    ) {
-      final attachment = note.attachments[attachmentIndex];
-      final bytes = await readAttachment(attachment);
-      final path =
-          'files/$noteIndex/$attachmentIndex-${_safeName(attachment.filename)}';
-      archive.addFile(ArchiveFile.bytes(path, bytes));
-      attachmentDocs.add({
-        'path': path,
-        'filename': attachment.filename,
-        'mime': attachment.mime,
-        'size': bytes.length,
+  for (
+    var workspaceIndex = 0;
+    workspaceIndex < workspaces.length;
+    workspaceIndex++
+  ) {
+    final workspace = workspaces[workspaceIndex];
+    final workspaceLabels = [
+      for (final label in labels)
+        if (label.workspaceId == workspace.id) label,
+    ]..sort((a, b) => a.position.compareTo(b.position));
+    final workspaceStages = [
+      for (final stage in stages)
+        if (stage.workspaceId == workspace.id) stage,
+    ]..sort((a, b) => a.position.compareTo(b.position));
+    final workspaceNotes = [
+      for (final note in notes)
+        if (note.workspaceId == workspace.id) note,
+    ]..sort((a, b) => a.position.compareTo(b.position));
+    final noteDocs = <Map<String, dynamic>>[];
+
+    for (var noteIndex = 0; noteIndex < workspaceNotes.length; noteIndex++) {
+      final note = workspaceNotes[noteIndex];
+      final attachmentDocs = <Map<String, dynamic>>[];
+      for (
+        var attachmentIndex = 0;
+        attachmentIndex < note.attachments.length;
+        attachmentIndex++
+      ) {
+        final attachment = note.attachments[attachmentIndex];
+        final bytes = await readAttachment(attachment);
+        final path =
+            'files/$workspaceIndex/$noteIndex/'
+            '$attachmentIndex-${_safeName(attachment.filename)}';
+        archive.addFile(ArchiveFile.bytes(path, bytes));
+        attachmentDocs.add({
+          'path': path,
+          'filename': attachment.filename,
+          'mime': attachment.mime,
+          'size': bytes.length,
+        });
+        completed++;
+        onProgress?.call(completed, total);
+      }
+      noteDocs.add({
+        'id': note.id,
+        'kind': note.kind.wire,
+        'title': note.title,
+        'content': note.content,
+        'items': [
+          for (final item in note.items)
+            {'id': item.id, 'text': item.text, 'done': item.done},
+        ],
+        'color': note.color,
+        'pinned': note.pinned,
+        'archived': note.archived,
+        'trashed': note.trashed,
+        'position': note.position,
+        'stage_id': note.stageId,
+        'stage_position': note.stagePosition,
+        'reminder_at': note.reminderAt?.toUtc().toIso8601String(),
+        'created_at': note.createdAt.toUtc().toIso8601String(),
+        'updated_at': note.updatedAt.toUtc().toIso8601String(),
+        'label_ids': note.labelIds.toList(),
+        'attachments': attachmentDocs,
       });
-      completed++;
-      onProgress?.call(completed, total);
     }
-    noteDocs.add({
-      'id': note.id,
-      'kind': note.kind.wire,
-      'title': note.title,
-      'content': note.content,
-      'items': [
-        for (final item in note.items) {'text': item.text, 'done': item.done},
+
+    workspaceDocs.add({
+      'id': workspace.id,
+      'name': workspace.name,
+      'is_default': workspace.isDefault,
+      'labels': [
+        for (final label in workspaceLabels)
+          {
+            'id': label.id,
+            'name': label.name,
+            'color': label.color,
+            'icon': label.icon,
+            'position': label.position,
+          },
       ],
-      'color': note.color,
-      'pinned': note.pinned,
-      'archived': note.archived,
-      'reminder_at': note.reminderAt?.toUtc().toIso8601String(),
-      'created_at': note.createdAt.toUtc().toIso8601String(),
-      'updated_at': note.updatedAt.toUtc().toIso8601String(),
-      'label_ids': note.labelIds.toList(),
-      'attachments': attachmentDocs,
+      'stages': [
+        for (final stage in workspaceStages)
+          {
+            'id': stage.id,
+            'name': stage.name,
+            'color': stage.color,
+            'position': stage.position,
+          },
+      ],
+      'notes': noteDocs,
     });
   }
 
@@ -187,16 +306,7 @@ Future<Uint8List> createBackupArchive({
     'format': _backupFormat,
     'version': _backupVersion,
     'exported_at': (now ?? DateTime.now()).toUtc().toIso8601String(),
-    'labels': [
-      for (final label in labels)
-        {
-          'id': label.id,
-          'name': label.name,
-          'color': label.color,
-          'icon': label.icon,
-        },
-    ],
-    'notes': noteDocs,
+    'workspaces': workspaceDocs,
   });
   archive.addFile(ArchiveFile.string('backup.json', manifest));
   return ZipEncoder().encodeBytes(archive);
@@ -239,23 +349,134 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
   } catch (_) {
     throw const FormatException('Backup manifest is invalid');
   }
-  if (manifest['format'] != _backupFormat ||
-      manifest['version'] != _backupVersion) {
+  if (manifest['format'] != _backupFormat) {
     throw const FormatException('Unsupported Skippy backup version');
   }
 
-  final rawLabels = _list(manifest['labels'], 'labels');
-  final rawNotes = _list(manifest['notes'], 'notes');
-  if (rawLabels.length > _maxLabels || rawNotes.length > _maxNotes) {
-    throw const FormatException('Backup contains too many notes or labels');
+  final version = manifest['version'];
+  if (version == 1) {
+    return _parseLegacyBackup(manifest, entries);
   }
+  if (version != _backupVersion) {
+    throw const FormatException('Unsupported Skippy backup version');
+  }
+
+  final rawWorkspaces = _list(manifest['workspaces'], 'workspaces');
+  if (rawWorkspaces.isEmpty || rawWorkspaces.length > _maxWorkspaces) {
+    throw const FormatException('Backup contains an invalid workspace list');
+  }
+
+  final usedFiles = <String>{'backup.json'};
+  final workspaceIds = <String>{};
+  final workspaces = <BackupWorkspace>[];
+  var noteCount = 0;
+  var labelCount = 0;
+  var stageCount = 0;
+  var attachmentCount = 0;
+  var defaultCount = 0;
+
+  for (final rawWorkspace in rawWorkspaces) {
+    final map = _map(rawWorkspace, 'workspace');
+    final id = _requiredString(map, 'id', max: 200);
+    final name = _requiredString(map, 'name', max: 60).trim();
+    final isDefault = map['is_default'] == true;
+    if (name.isEmpty || !workspaceIds.add(id)) {
+      throw const FormatException('Backup contains an invalid workspace');
+    }
+    if (isDefault && ++defaultCount > 1) {
+      throw const FormatException(
+        'Backup contains multiple default workspaces',
+      );
+    }
+
+    final parsed = _parseWorkspaceContents(
+      map,
+      entries,
+      usedFiles,
+      legacy: false,
+    );
+    noteCount += parsed.notes.length;
+    labelCount += parsed.labels.length;
+    stageCount += parsed.stages.length;
+    attachmentCount += parsed.attachmentCount;
+    if (noteCount > _maxNotes ||
+        labelCount > _maxLabels ||
+        stageCount > _maxStages ||
+        attachmentCount > _maxAttachments) {
+      throw const FormatException('Backup contains too much workspace data');
+    }
+    workspaces.add(
+      BackupWorkspace(
+        id: id,
+        name: name,
+        isDefault: isDefault,
+        labels: parsed.labels,
+        stages: parsed.stages,
+        notes: parsed.notes,
+      ),
+    );
+  }
+
+  if (entries.keys.any((path) => !usedFiles.contains(path))) {
+    throw const FormatException('Backup contains unreferenced files');
+  }
+  return BackupBundle(workspaces: workspaces);
+}
+
+BackupBundle _parseLegacyBackup(
+  Map<String, dynamic> manifest,
+  Map<String, ArchiveFile> entries,
+) {
+  final workspaceMap = <String, dynamic>{
+    'labels': manifest['labels'],
+    'stages': const <dynamic>[],
+    'notes': manifest['notes'],
+  };
+  final usedFiles = <String>{'backup.json'};
+  final parsed = _parseWorkspaceContents(
+    workspaceMap,
+    entries,
+    usedFiles,
+    legacy: true,
+  );
+  if (parsed.notes.length > _maxNotes ||
+      parsed.labels.length > _maxLabels ||
+      parsed.attachmentCount > _maxAttachments) {
+    throw const FormatException('Backup contains too much workspace data');
+  }
+  if (entries.keys.any((path) => !usedFiles.contains(path))) {
+    throw const FormatException('Backup contains unreferenced files');
+  }
+  return BackupBundle(
+    workspaces: [
+      BackupWorkspace(
+        id: 'legacy-default',
+        name: 'My notes',
+        isDefault: true,
+        labels: parsed.labels,
+        stages: const [],
+        notes: parsed.notes,
+      ),
+    ],
+  );
+}
+
+BackupWorkspace _parseWorkspaceContents(
+  Map<String, dynamic> map,
+  Map<String, ArchiveFile> entries,
+  Set<String> usedFiles, {
+  required bool legacy,
+}) {
+  final rawLabels = _list(map['labels'], 'labels');
+  final rawStages = _list(map['stages'], 'stages');
+  final rawNotes = _list(map['notes'], 'notes');
 
   final labels = <BackupLabel>[];
   final labelIds = <String>{};
   for (final raw in rawLabels) {
-    final map = _map(raw, 'label');
-    final id = _requiredString(map, 'id', max: 200);
-    final name = _requiredString(map, 'name', max: 100).trim();
+    final label = _map(raw, 'label');
+    final id = _requiredString(label, 'id', max: 200);
+    final name = _requiredString(label, 'name', max: 100).trim();
     if (name.isEmpty || !labelIds.add(id)) {
       throw const FormatException('Backup contains an invalid label');
     }
@@ -263,28 +484,42 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
       BackupLabel(
         id: id,
         name: name,
-        color: _optionalString(map['color'], max: 32),
-        icon: _optionalString(map['icon'], max: 64),
+        color: _optionalString(label['color'], max: 32),
+        icon: _optionalString(label['icon'], max: 64),
+        position: _number(label['position'], legacy ? 0.0 : null),
+      ),
+    );
+  }
+
+  final stages = <BackupStage>[];
+  final stageIds = <String>{};
+  for (final raw in rawStages) {
+    final stage = _map(raw, 'stage');
+    final id = _requiredString(stage, 'id', max: 200);
+    final name = _requiredString(stage, 'name', max: 100).trim();
+    if (name.isEmpty || !stageIds.add(id)) {
+      throw const FormatException('Backup contains an invalid board column');
+    }
+    stages.add(
+      BackupStage(
+        id: id,
+        name: name,
+        color: _optionalString(stage['color'], max: 32),
+        position: _number(stage['position'], null),
       ),
     );
   }
 
   final notes = <BackupNote>[];
-  final usedFiles = <String>{'backup.json'};
-  var attachmentCount = 0;
   for (final raw in rawNotes) {
-    final map = _map(raw, 'note');
-    final rawKind = _requiredString(map, 'kind', max: 20);
+    final note = _map(raw, 'note');
+    final rawKind = _requiredString(note, 'kind', max: 20);
     if (!const {'text', 'markdown', 'checklist', 'audio'}.contains(rawKind)) {
       throw const FormatException('Backup contains an unknown note type');
     }
-    final rawItems = _list(map['items'], 'items');
-    final rawLabelIds = _list(map['label_ids'], 'label_ids');
-    final rawAttachments = _list(map['attachments'], 'attachments');
-    attachmentCount += rawAttachments.length;
-    if (attachmentCount > _maxAttachments) {
-      throw const FormatException('Backup contains too many attachments');
-    }
+    final rawItems = _list(note['items'], 'items');
+    final rawLabelIds = _list(note['label_ids'], 'label_ids');
+    final rawAttachments = _list(note['attachments'], 'attachments');
 
     final attachments = <BackupAttachment>[];
     for (final rawAttachment in rawAttachments) {
@@ -294,49 +529,50 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
       if (entry == null || !path.startsWith('files/') || !usedFiles.add(path)) {
         throw const FormatException('Backup attachment data is missing');
       }
-      if (entry.size > maxUploadBytes) {
-        throw const FormatException('A backup attachment exceeds 25 MB');
-      }
-      final content = entry.content;
-      if (content.length > maxUploadBytes) {
+      if (entry.size > maxUploadBytes ||
+          entry.content.length > maxUploadBytes) {
         throw const FormatException('A backup attachment exceeds 25 MB');
       }
       final declaredSize = attachment['size'];
-      if (declaredSize is! num || declaredSize.toInt() != content.length) {
+      if (declaredSize is! num ||
+          declaredSize.toInt() != entry.content.length) {
         throw const FormatException('Backup attachment size does not match');
       }
       attachments.add(
         BackupAttachment(
           filename: _requiredString(attachment, 'filename', max: 255),
           mime: _requiredString(attachment, 'mime', max: 200),
-          bytes: content,
+          bytes: entry.content,
         ),
       );
     }
 
-    final reminder = _optionalDate(map['reminder_at']);
-    final created = _requiredDate(map['created_at']);
-    final updated = _requiredDate(map['updated_at']);
+    final stageId = _optionalString(note['stage_id'], max: 200);
     notes.add(
       BackupNote(
-        id: _requiredString(map, 'id', max: 200),
+        id: _requiredString(note, 'id', max: 200),
         kind: NoteKind.fromWire(rawKind),
-        title: _string(map['title'], max: 100000),
-        content: _string(map['content'], max: 10000000),
+        title: _string(note['title'], max: 100000),
+        content: _string(note['content'], max: 10000000),
         items: [
           for (final rawItem in rawItems)
             if (_map(rawItem, 'checklist item') case final item)
               BackupChecklistItem(
+                id: _string(item['id'], max: 200),
                 text: _string(item['text'], max: 100000),
                 done: item['done'] == true,
               ),
         ],
-        color: _string(map['color'], max: 64, fallback: 'default'),
-        pinned: map['pinned'] == true,
-        archived: map['archived'] == true,
-        reminderAt: reminder,
-        createdAt: created,
-        updatedAt: updated,
+        color: _string(note['color'], max: 64, fallback: 'default'),
+        pinned: note['pinned'] == true,
+        archived: note['archived'] == true,
+        trashed: note['trashed'] == true,
+        position: _number(note['position'], 0),
+        stageId: stageId != null && stageIds.contains(stageId) ? stageId : null,
+        stagePosition: _number(note['stage_position'], 0),
+        reminderAt: _optionalDate(note['reminder_at']),
+        createdAt: _requiredDate(note['created_at']),
+        updatedAt: _requiredDate(note['updated_at']),
         labelIds: [
           for (final value in rawLabelIds)
             if (value is String && labelIds.contains(value)) value,
@@ -346,10 +582,14 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
     );
   }
 
-  if (entries.keys.any((path) => !usedFiles.contains(path))) {
-    throw const FormatException('Backup contains unreferenced files');
-  }
-  return BackupBundle(labels: labels, notes: notes);
+  return BackupWorkspace(
+    id: '',
+    name: '',
+    isDefault: false,
+    labels: labels,
+    stages: stages,
+    notes: notes,
+  );
 }
 
 List<dynamic> _list(Object? value, String field) {
@@ -385,6 +625,14 @@ String _string(Object? value, {required int max, String fallback = ''}) {
 String? _optionalString(Object? value, {required int max}) {
   if (value == null) return null;
   return _string(value, max: max);
+}
+
+double _number(Object? value, double? fallback) {
+  if (value == null && fallback != null) return fallback;
+  if (value is! num || !value.toDouble().isFinite) {
+    throw const FormatException('Backup number field is invalid');
+  }
+  return value.toDouble();
 }
 
 DateTime _requiredDate(Object? value) {

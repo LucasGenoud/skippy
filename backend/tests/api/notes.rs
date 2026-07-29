@@ -50,6 +50,7 @@ async fn backup_restore_can_preserve_note_timestamps() {
         json!({
             "title": "restored",
             "archived": true,
+            "trashed": true,
             "label_ids": [label["id"]],
             "created_at": created,
             "updated_at": updated
@@ -59,6 +60,7 @@ async fn backup_restore_can_preserve_note_timestamps() {
     assert_eq!(note["created_at"], created);
     assert_eq!(note["updated_at"], updated);
     assert_eq!(note["archived"], true);
+    assert_eq!(note["trashed"], true);
     assert_eq!(note["label_ids"], json!(["restore-label"]));
 
     let (status, _) = send(

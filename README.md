@@ -36,7 +36,8 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Accent color plus grid density and maximum-width presets
 - Date format (5 styles) and 12h/24h time — applied to reminder chips and "Edited" stamps everywhere
 - **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
-- Create and restore portable zip backups containing all non-trashed notes, labels, reminders, timestamps, and attachment bytes; readable JSON, Markdown, and plain-text exports remain available
+- Create portable zip backups of every owned workspace, including notes (also archived and trashed), labels, board columns, reminders, ordering, timestamps, and attachment bytes. Restore previews the workspaces in the archive and replaces owned workspace data with the selected backup workspaces; workspaces shared with the user are untouched. Readable JSON, Markdown, and plain-text exports remain available.
+- Operators can create whole-system `.skb` archives from the server CLI while Skippy is online. These contain a consistent database snapshot plus every referenced attachment from disk or S3, can be scheduled with cron, and restore the complete instance offline with an automatic pre-restore safety backup.
 
 **Optional AI integration**
 - Each user can configure an OpenAI-compatible endpoint, API key, and model; Ollama, LM Studio, vLLM, and hosted providers can use the same path
@@ -51,9 +52,9 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - **Push notifications via [ntfy](https://ntfy.sh) and/or Telegram** (Settings → Notifications): each user brings their own ntfy topic URL and/or Telegram bot token + chat id — no server-side setup. A background sweep (every 30 s) delivers due reminders to every participant of the note with a configured channel, exactly once per scheduled time (rescheduling re-arms it); checklist reminders list only the still-pending items. A "Send test" button delivers a real probe notification before you save. Channels are pluggable — a new one is a single `Connector` impl on the backend plus a spec entry in the app.
 
 **Collaboration**
-- User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings
+- User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings. Password-confirmed account deletion removes every workspace the account owns and all notes inside those workspaces, including notes authored by other users.
 - Share a single note with other users by email; everyone can edit, only the owner can trash/delete/share
-- **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, or changes the roster; members can leave. Deleting a workspace (or leaving one) never destroys notes — each goes back to its own owner's default workspace.
+- **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, or changes the roster; members can leave. Ordinary workspace deletion (or leaving one) never destroys notes — each goes back to its own owner's default workspace. Deleting the owner's account is the explicit exception: it deletes the workspace and every note inside it.
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
 - Labels are a workspace's shared taxonomy: everyone in it sees and applies the same set. Someone who only has a per-note share is not in that workspace and sees none of them.
 
@@ -94,6 +95,7 @@ sticky_notes/
 │   │   ├── store/        Repository trait, SQLite implementation/schema/rows
 │   │   ├── models.rs     domain, request, and response types
 │   │   ├── files.rs      FileStore trait, disk/S3 backends, signed file URLs
+│   │   ├── system_backup.rs whole-instance archive, validation, and restore
 │   │   ├── search.rs     embeddings API client + sqlite-vec index
 │   │   ├── assist.rs     LLM settings, prompts, routing, and reply parsing
 │   │   ├── llm.rs        OpenAI-compatible completion and streaming client
@@ -286,6 +288,53 @@ cd app && flutter build web --release
 cd ../backend && cargo run            # → open http://localhost:8787
 ```
 
+## Whole-system backup and restore
+
+The Settings backup is portable and user-scoped. Server operators also have a
+whole-system backup containing the complete SQLite database (accounts, password
+hashes, active sessions, settings, all workspaces and notes, history, server
+metadata, and search tables) plus every referenced attachment byte. Environment
+variables, the container image, and external Whisper/LLM service state are not
+included.
+
+Create a backup while the server is running:
+
+```sh
+cd backend
+cargo run -- system-backup /safe/path/skippy-20260729-030000.skb
+```
+
+With Docker Compose, `./backups` is mounted at `/backups` by default. Override
+the host path with `STICKY_NOTES_BACKUPS_DIR` in `.env`. A host crontab entry
+for a daily 03:15 UTC backup is:
+
+```cron
+15 3 * * * cd /srv/skippy && docker compose exec -T --user sticky-notes server /app/sticky-notes-server system-backup /backups/skippy-$(date -u +\%Y\%m\%d-\%H\%M\%S).skb
+```
+
+Each backup is written to a private temporary file, checksummed, and renamed
+into place only after the SQLite snapshot and every attachment succeed. Copy or
+sync `/backups` off the Skippy host and apply retention there; a backup stored
+only beside the live server is not disaster recovery.
+
+Restore is intentionally offline and refuses to run while the server holds the
+database lock:
+
+```sh
+docker compose stop server
+docker compose run --rm --no-deps server \
+  /app/sticky-notes-server system-restore \
+  /backups/skippy-20260729-030000.skb --confirm
+docker compose up -d server
+```
+
+The archive and its database are fully validated before current data changes.
+The command then creates `/data/system-backups/pre-restore-*.skb`, restores
+attachments through the configured disk/S3 backend, atomically replaces the
+database, and removes now-unreferenced blobs. If the current database is too
+damaged to make the safety archive, `--skip-safety-backup` is the explicit
+last-resort override.
+
 ## Tests
 
 ```sh
@@ -305,7 +354,7 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | --- | --- |
 | `GET /health`, `/capabilities` | Health and optional-service detection |
 | `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
-| `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH /auth/me` | Accounts, profile changes & sessions |
+| `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH/DELETE /auth/me` | Accounts, profile changes, deletion & sessions |
 | `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces (the default one cannot be deleted) |
 | `POST /workspaces/{id}/members`, `DELETE /workspaces/{id}/members/{user_id}` | Workspace roster; removing yourself leaves it |
 | `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` and `stage_id: null` clear; `workspace_id` moves the note) |
