@@ -875,6 +875,92 @@ void main() {
       expect(note.content, 'hello****');
       await flushTimers(tester);
     });
+
+    testWidgets('a color picked while composing lands on the created note', (
+      tester,
+    ) async {
+      await store.load();
+      await tester.pumpWidget(harness(store, const QuickAddBar()));
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Take a note…'),
+        'tinted',
+      );
+
+      await tester.tap(find.byTooltip('Note color'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Green'));
+      await tester.pumpAndSettle();
+      // Picking happens in a sheet of its own: the tap that lands on it must
+      // not read as a tap outside the composer and collapse it.
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Close'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      final note = store.notesFor(ViewSelection.notes, '').others.single;
+      expect(note.content, 'tinted');
+      expect(note.color, 'green');
+      await flushTimers(tester);
+      // The colour rides along on the create request rather than trailing it.
+      expect(api.notes[note.id]!.color, 'green');
+      expect(api.log.where((l) => l.startsWith('patchNote')), isEmpty);
+    });
+
+    testWidgets('a label picked while composing files the created note', (
+      tester,
+    ) async {
+      await store.load();
+      final label = store.createLabel('Recipes');
+      await tester.pumpWidget(harness(store, const QuickAddBar()));
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Take a note…'),
+        'pancakes',
+      );
+
+      await tester.tap(find.byTooltip('Labels'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recipes'));
+      await tester.pumpAndSettle();
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+
+      // The pick shows as a chip on the composer before the note exists.
+      expect(find.widgetWithText(InputChip, 'Recipes'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      final note = store.notesFor(ViewSelection.notes, '').others.single;
+      expect(note.labelIds, {label.id});
+      await flushTimers(tester);
+    });
+
+    testWidgets('Discard note throws the composed note away', (tester) async {
+      await store.load();
+      await tester.pumpWidget(harness(store, const QuickAddBar()));
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Take a note…'),
+        'never mind',
+      );
+
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard note'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Close'), findsNothing);
+      expect(store.notesFor(ViewSelection.notes, '').others, isEmpty);
+      await flushTimers(tester);
+      expect(api.notes, isEmpty);
+    });
   });
 
   group('EditorScreen', () {

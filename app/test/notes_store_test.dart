@@ -110,6 +110,32 @@ void main() {
       },
     );
 
+    test('a wordless draft with a reminder is kept, not discarded', () async {
+      final at = DateTime.now().add(const Duration(hours: 2));
+      final draft = store.createDraft();
+      store.setReminder(draft.id, at);
+
+      // Nothing was typed, but the alarm is worth keeping — finalize creates
+      // the note instead of throwing it away.
+      expect(store.finalizeNote(draft.id), isFalse);
+      await settle();
+      expect(store.noteById(draft.id), isNotNull);
+      expect(api.notes[draft.id]!.reminderAt!.toUtc(), at.toUtc());
+    });
+
+    test('emptying a shared note does not discard it on finalize', () async {
+      api.notes['n1'] = serverNote('n1', title: 'shared');
+      await store.load();
+      await store.addCollaborator('n1', 'friend@example.com');
+
+      store.updateNoteContent('n1', title: '', content: '');
+      await settle();
+
+      expect(store.finalizeNote('n1'), isFalse);
+      expect(store.noteById('n1'), isNotNull);
+      expect(api.log.where((l) => l.startsWith('deleteNote')), isEmpty);
+    });
+
     test('rapid edits are debounced into few patches', () async {
       api.notes['n1'] = serverNote('n1', title: 'x');
       await store.load();
@@ -557,7 +583,11 @@ void main() {
 
       // Send Groceries (index 0) to the end (index 2, post-removal).
       store.moveLabel(groceries.id, 2);
-      expect(store.labels.map((l) => l.name), ['Errands', 'Chores', 'Groceries']);
+      expect(store.labels.map((l) => l.name), [
+        'Errands',
+        'Chores',
+        'Groceries',
+      ]);
 
       await settle();
       final patches = api.log

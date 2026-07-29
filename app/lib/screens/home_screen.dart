@@ -537,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           // centered in the space above the divider rather
                           // than pinned to it.
                           padding: EdgeInsets.symmetric(
-                            vertical: wideLayout ? 12 : 0,
+                            vertical: wideLayout ? 6 : 0,
                           ),
                           child: HomeTopBar(
                             controller: _searchController,

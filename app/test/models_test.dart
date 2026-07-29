@@ -62,19 +62,23 @@ void main() {
     expect(note.isOwnedBy('anyone'), isTrue); // ownerless = mine
   });
 
-  test('isEmpty considers title, content, items, and attachments', () {
+  test('isEmpty considers content, attachments, reminders, and sharing', () {
     final now = DateTime.now();
     Note base({
       String title = '',
       String content = '',
       List<ChecklistItem> items = const [],
       List<Attachment> attachments = const [],
+      DateTime? reminderAt,
+      List<UserRef> collaborators = const [],
     }) => Note(
       id: 'n',
       title: title,
       content: content,
       items: items,
       attachments: attachments,
+      reminderAt: reminderAt,
+      collaborators: collaborators,
       createdAt: now,
       updatedAt: now,
     );
@@ -98,6 +102,15 @@ void main() {
     expect(
       base(
         attachments: [const Attachment(id: 'a', mime: 'image/png')],
+      ).isEmpty,
+      isFalse,
+    );
+    // A wordless note still holds work when it carries an alarm someone set
+    // or access someone else was given: discarding either would destroy it.
+    expect(base(reminderAt: DateTime(2030)).isEmpty, isFalse);
+    expect(
+      base(
+        collaborators: [const UserRef(id: 'u2', name: 'Ada')],
       ).isEmpty,
       isFalse,
     );

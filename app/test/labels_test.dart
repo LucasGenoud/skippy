@@ -168,14 +168,20 @@ void main() {
 
   group('EditLabelsDialog', () {
     /// Opens the label manager at [size] and hands back the store behind it.
-    Future<NotesStore> openAt(WidgetTester tester, Size size) async {
+    Future<NotesStore> openAt(
+      WidgetTester tester,
+      Size size, {
+      List<String> names = const ['Work'],
+    }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
       final store = NotesStore(api: FakeApi(), currentUserId: 'u');
       addTearDown(store.dispose);
-      store.createLabel('Work');
+      for (final name in names) {
+        store.createLabel(name);
+      }
 
       await tester.pumpWidget(
         MaterialApp(
@@ -232,6 +238,29 @@ void main() {
       expect(store.labels.single.name, 'Errands');
       // Back on the list, which now shows the new name.
       expect(find.text('Errands'), findsOneWidget);
+    });
+
+    testWidgets('dragging a handle down reorders the list', (tester) async {
+      final store = await openAt(
+        tester,
+        const Size(1200, 900),
+        names: ['One', 'Two', 'Three'],
+      );
+      expect([for (final l in store.labels) l.name], ['One', 'Two', 'Three']);
+
+      // Grab "One"'s handle and drag it past two rows.
+      final handle = find.byIcon(Icons.drag_indicator).first;
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      // Several small moves, as a real pointer sends — one big jump would
+      // hide a reorder that only tracks the drop point.
+      for (var i = 0; i < 8; i++) {
+        await gesture.moveBy(const Offset(0, 14));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect([for (final l in store.labels) l.name], ['Two', 'Three', 'One']);
     });
   });
 }

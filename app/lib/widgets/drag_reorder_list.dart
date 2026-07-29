@@ -1,18 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../util/motion.dart';
-import '../util/platform.dart';
 
-/// A short, non-scrolling list of rows that can be reordered by dragging a
-/// handle. Hand-rolled with [Draggable]/[DragTarget] rather than
-/// [ReorderableListView] on purpose: nesting that widget inside a
+/// A short, non-scrolling list of fixed-height rows reordered by dragging a
+/// handle, with the rest of the list parting live under the pointer.
+///
+/// This mirrors the checklist editor's reorder (see `animated_checklist.dart`)
+/// rather than using [ReorderableListView]: nesting that widget inside a
 /// non-fullscreen [FormDialog] (an [AlertDialog], whose content sizes to its
-/// own intrinsic height rather than a fixed viewport) throws a semantics
-/// assertion (`!semantics.parentDataDirty`) — a known fragility of mixing a
-/// reorderable sliver with another Scrollable/Overlay in that context. This
-/// mirrors the drag-and-drop the sidebar already uses (see `app_drawer.dart`)
-/// instead of introducing a second drag mechanism.
-class DragReorderList<T> extends StatelessWidget {
+/// own intrinsic height) throws a semantics assertion. A plain
+/// [Draggable]/[DragTarget] pair was the first replacement, but it only
+/// reorders when the pointer happens to land inside another row's box, which
+/// drops legitimate drags.
+class DragReorderList<T> extends StatefulWidget {
   final List<T> items;
   final String Function(T item) idOf;
 
@@ -26,11 +27,12 @@ class DragReorderList<T> extends StatelessWidget {
   )
   rowBuilder;
 
-  /// Called with the dragged item's id and its landing index, already
-  /// adjusted for its own removal — the same convention
-  /// `ReorderableListView.onReorderItem` uses, so it can be handed straight
-  /// to a `NotesStore.moveStage`/`moveLabel`-shaped method.
+  /// Called with the dragged item's id and its final resting index — the
+  /// shape `NotesStore.moveStage`/`moveLabel` expect.
   final void Function(String id, int newIndex) onReorder;
+
+  /// Every row occupies this height; rows slide between multiples of it.
+  final double rowHeight;
 
   const DragReorderList({
     super.key,
@@ -38,112 +40,136 @@ class DragReorderList<T> extends StatelessWidget {
     required this.idOf,
     required this.rowBuilder,
     required this.onReorder,
-  });
-
-  void _handleDrop(String draggedId, int targetIndex) {
-    final currentIndex = items.indexWhere((item) => idOf(item) == draggedId);
-    if (currentIndex == -1 || currentIndex == targetIndex) return;
-    final adjusted = targetIndex > currentIndex ? targetIndex - 1 : targetIndex;
-    onReorder(draggedId, adjusted);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final entry in items.asMap().entries)
-          _DragReorderRow<T>(
-            key: ValueKey(idOf(entry.value)),
-            item: entry.value,
-            index: entry.key,
-            id: idOf(entry.value),
-            rowBuilder: rowBuilder,
-            onDrop: _handleDrop,
-          ),
-      ],
-    );
-  }
-}
-
-class _DragReorderRow<T> extends StatefulWidget {
-  final T item;
-  final int index;
-  final String id;
-  final Widget Function(BuildContext, T, int, Widget) rowBuilder;
-  final void Function(String draggedId, int targetIndex) onDrop;
-
-  const _DragReorderRow({
-    super.key,
-    required this.item,
-    required this.index,
-    required this.id,
-    required this.rowBuilder,
-    required this.onDrop,
+    this.rowHeight = 56,
   });
 
   @override
-  State<_DragReorderRow<T>> createState() => _DragReorderRowState<T>();
+  State<DragReorderList<T>> createState() => _DragReorderListState<T>();
 }
 
-class _DragReorderRowState<T> extends State<_DragReorderRow<T>> {
-  bool _isTarget = false;
+class _DragReorderListState<T> extends State<DragReorderList<T>> {
+  /// The live order during a drag; between drags it tracks [widget.items].
+  late List<String> _order;
+  String? _draggingId;
+  double _dragY = 0;
+
+  List<String> get _incoming => [for (final i in widget.items) widget.idOf(i)];
+
+  @override
+  void initState() {
+    super.initState();
+    _order = _incoming;
+  }
+
+  @override
+  void didUpdateWidget(covariant DragReorderList<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Mid-drag the local order is the source of truth; adopting the store's
+    // (still un-committed) order would fight the gesture.
+    if (_draggingId != null) return;
+    final incoming = _incoming;
+    if (!listEquals(incoming, _order)) setState(() => _order = incoming);
+  }
+
+  void _dragStart(String id) {
+    setState(() {
+      _draggingId = id;
+      _dragY = _order.indexOf(id) * widget.rowHeight;
+    });
+  }
+
+  void _dragUpdate(double dy) {
+    final id = _draggingId;
+    if (id == null) return;
+    final maxY = (_order.length - 1) * widget.rowHeight;
+    setState(() {
+      _dragY = (_dragY + dy).clamp(0.0, maxY < 0 ? 0.0 : maxY);
+      // Snapping on the dragged row's own top (not its centre) means the row
+      // swaps once it has travelled half a slot, which is what the gap under
+      // the pointer looks like it is asking for.
+      final target = (_dragY / widget.rowHeight).round().clamp(
+        0,
+        _order.length - 1,
+      );
+      final from = _order.indexOf(id);
+      if (from != target) {
+        _order.removeAt(from);
+        _order.insert(target, id);
+      }
+    });
+  }
+
+  void _dragEnd() {
+    final id = _draggingId;
+    if (id == null) return;
+    final newIndex = _order.indexOf(id);
+    setState(() => _draggingId = null);
+    if (!listEquals(_incoming, _order)) widget.onReorder(id, newIndex);
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final handle = Icon(Icons.drag_indicator, color: scheme.onSurfaceVariant);
-    final ghostHandle = Opacity(opacity: 0.3, child: handle);
-    final draggableHandle = isTouchPrimaryPlatform
-        ? LongPressDraggable<String>(
-            data: widget.id,
-            delay: const Duration(milliseconds: 220),
-            feedback: _feedback(context),
-            childWhenDragging: ghostHandle,
-            child: handle,
-          )
-        : Draggable<String>(
-            data: widget.id,
-            feedback: _feedback(context),
-            childWhenDragging: ghostHandle,
-            child: handle,
-          );
+    final byId = {for (final item in widget.items) widget.idOf(item): item};
 
-    final row = widget.rowBuilder(context, widget.item, widget.index, draggableHandle);
-
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (details) => details.data != widget.id,
-      onAcceptWithDetails: (details) =>
-          widget.onDrop(details.data, widget.index),
-      onMove: (_) {
-        if (!_isTarget) setState(() => _isTarget = true);
-      },
-      onLeave: (_) => setState(() => _isTarget = false),
-      builder: (context, candidates, rejected) => AnimatedContainer(
-        duration: Motion.fast,
-        curve: Motion.standard,
-        decoration: BoxDecoration(
-          color: _isTarget
-              ? scheme.primaryContainer.withValues(alpha: 0.35)
-              : null,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: row,
+    return SizedBox(
+      height: _order.length * widget.rowHeight,
+      child: Stack(
+        children: [
+          for (final entry in _order.asMap().entries)
+            if (byId[entry.value] case final T item)
+              AnimatedPositioned(
+                key: ValueKey(entry.value),
+                // The dragged row must track the pointer exactly; the others
+                // glide to their new slots.
+                duration: entry.value == _draggingId
+                    ? Duration.zero
+                    : Motion.fast,
+                curve: Motion.standard,
+                left: 0,
+                right: 0,
+                top: entry.value == _draggingId
+                    ? _dragY
+                    : entry.key * widget.rowHeight,
+                height: widget.rowHeight,
+                // Material (rather than a DecoratedBox) so the lifted row's
+                // fill sits below the row's own ink splashes instead of
+                // hiding them.
+                child: Material(
+                  animationDuration: Motion.fast,
+                  color: entry.value == _draggingId
+                      ? scheme.surfaceContainerHigh
+                      : Colors.transparent,
+                  elevation: entry.value == _draggingId ? 3 : 0,
+                  borderRadius: BorderRadius.circular(8),
+                  child: widget.rowBuilder(
+                    context,
+                    item,
+                    entry.key,
+                    _handle(entry.value, scheme),
+                  ),
+                ),
+              ),
+        ],
       ),
     );
   }
 
-  Widget _feedback(BuildContext context) => Material(
-    elevation: 4,
-    borderRadius: BorderRadius.circular(8),
-    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 320),
-      child: widget.rowBuilder(
-        context,
-        widget.item,
-        widget.index,
-        const SizedBox(width: 24),
+  Widget _handle(String id, ColorScheme scheme) => MouseRegion(
+    cursor: SystemMouseCursors.grab,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: (_) => _dragStart(id),
+      onVerticalDragUpdate: (details) => _dragUpdate(details.delta.dy),
+      onVerticalDragEnd: (_) => _dragEnd(),
+      onVerticalDragCancel: _dragEnd,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Icon(
+          Icons.drag_indicator,
+          size: 20,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+        ),
       ),
     ),
   );

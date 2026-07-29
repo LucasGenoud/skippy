@@ -40,7 +40,23 @@ class LabelGlyph extends StatelessWidget {
 /// typing a name that doesn't exist offers "Create `name`".
 class LabelsSheet extends StatefulWidget {
   final List<String> noteIds;
-  const LabelsSheet({super.key, required this.noteIds});
+
+  /// Detached mode: label a note that does not exist yet (the desktop quick
+  /// add composer). The sheet reads this set and reports every tap through
+  /// [onToggle] instead of writing to a stored note, so composing never has
+  /// to materialize a note just to file it.
+  final Set<String>? selection;
+  final ValueChanged<String>? onToggle;
+
+  const LabelsSheet({
+    super.key,
+    this.noteIds = const [],
+    this.selection,
+    this.onToggle,
+  }) : assert(
+         selection == null || onToggle != null,
+         'detached mode needs an onToggle',
+       );
 
   static Future<void> show(BuildContext context, String noteId) {
     return showAdaptiveSelectionSurface<void>(
@@ -77,6 +93,26 @@ class LabelsSheet extends StatefulWidget {
     );
   }
 
+  /// Assign labels to a note being composed: [selected] is the live set and
+  /// [onToggle] is called with each label the user checks or unchecks.
+  static Future<void> showForSelection(
+    BuildContext context, {
+    required Set<String> selected,
+    required ValueChanged<String> onToggle,
+  }) {
+    return showAdaptiveSelectionSurface<void>(
+      context,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+        ),
+        child: LabelsSheet(selection: selected, onToggle: onToggle),
+      ),
+    );
+  }
+
   @override
   State<LabelsSheet> createState() => _LabelsSheetState();
 }
@@ -94,12 +130,32 @@ class _LabelsSheetState extends State<LabelsSheet> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
+    final selection = widget.selection;
     final notes = [
       for (final id in widget.noteIds)
         if (store.noteById(id) case final Note note) note,
     ];
-    if (notes.isEmpty) return const SizedBox.shrink();
+    if (selection == null && notes.isEmpty) return const SizedBox.shrink();
     final isMultiple = notes.length > 1;
+
+    bool isAssigned(Label label) =>
+        selection?.contains(label.id) ??
+        notes.every((note) => note.labelIds.contains(label.id));
+
+    /// One tap on a label row: the composed selection in detached mode, the
+    /// stored notes otherwise.
+    void toggle(Label label) {
+      if (selection != null) {
+        widget.onToggle!(label.id);
+        setState(() {});
+      } else if (isMultiple) {
+        for (final note in notes) {
+          store.addLabelToNote(note.id, label.id);
+        }
+      } else {
+        store.toggleLabelOnNote(notes.single.id, label.id);
+      }
+    }
 
     final q = _query.trim().toLowerCase();
     final visible = store.labels
@@ -149,8 +205,12 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       title: Text('Create "${_query.trim()}"'),
                       onTap: () {
                         final label = store.createLabel(_query.trim());
-                        for (final note in notes) {
-                          store.addLabelToNote(note.id, label.id);
+                        if (selection != null) {
+                          widget.onToggle!(label.id);
+                        } else {
+                          for (final note in notes) {
+                            store.addLabelToNote(note.id, label.id);
+                          }
                         }
                         _controller.clear();
                         setState(() => _query = '');
@@ -161,27 +221,19 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       ListTile(
                         leading: LabelGlyph(label: label),
                         title: Text(label.name),
-                        trailing:
-                            notes.every(
-                              (note) => note.labelIds.contains(label.id),
-                            )
+                        trailing: isAssigned(label)
                             ? const Icon(Icons.check)
                             : const Icon(Icons.add),
-                        onTap: () {
-                          for (final note in notes) {
-                            store.addLabelToNote(note.id, label.id);
-                          }
-                        },
+                        onTap: () => toggle(label),
                       )
                     else
                       CheckboxListTile(
-                        value: notes.single.labelIds.contains(label.id),
+                        value: isAssigned(label),
                         controlAffinity: ListTileControlAffinity.leading,
                         dense: true,
                         secondary: LabelGlyph(label: label),
                         title: Text(label.name),
-                        onChanged: (_) =>
-                            store.toggleLabelOnNote(notes.single.id, label.id),
+                        onChanged: (_) => toggle(label),
                       ),
                   if (visible.isEmpty && q.isEmpty)
                     const Padding(
