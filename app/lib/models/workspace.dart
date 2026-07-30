@@ -6,6 +6,8 @@ import 'note.dart';
 class Workspace {
   final String id;
   final String name;
+  final bool notesEnabled;
+  final bool boardEnabled;
 
   /// Null only for a workspace created locally that hasn't round-tripped
   /// through the server yet.
@@ -21,6 +23,8 @@ class Workspace {
   const Workspace({
     required this.id,
     required this.name,
+    this.notesEnabled = true,
+    this.boardEnabled = true,
     this.owner,
     this.members = const [],
     this.isDefault = false,
@@ -31,9 +35,16 @@ class Workspace {
   /// Whether anyone besides the owner is in it.
   bool get isShared => members.isNotEmpty;
 
-  Workspace copyWith({String? name, List<UserRef>? members}) => Workspace(
+  Workspace copyWith({
+    String? name,
+    bool? notesEnabled,
+    bool? boardEnabled,
+    List<UserRef>? members,
+  }) => Workspace(
     id: id,
     name: name ?? this.name,
+    notesEnabled: notesEnabled ?? this.notesEnabled,
+    boardEnabled: boardEnabled ?? this.boardEnabled,
     owner: owner,
     members: members ?? this.members,
     isDefault: isDefault,
@@ -42,6 +53,8 @@ class Workspace {
   factory Workspace.fromJson(Map<String, dynamic> json) => Workspace(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
+    notesEnabled: json['notes_enabled'] as bool? ?? true,
+    boardEnabled: json['board_enabled'] as bool? ?? true,
     owner: json['owner'] == null
         ? null
         : UserRef.fromJson(json['owner'] as Map<String, dynamic>),
@@ -54,6 +67,8 @@ class Workspace {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    'notes_enabled': notesEnabled,
+    'board_enabled': boardEnabled,
     'owner': owner?.toJson(),
     'members': [for (final m in members) m.toJson()],
     'is_default': isDefault,

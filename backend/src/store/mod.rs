@@ -89,7 +89,7 @@ pub trait Repository: Send + Sync {
     /// it is where notes land when no workspace is named.
     async fn default_workspace(&self, user_id: &str) -> RepoResult<Option<Workspace>>;
     async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()>;
-    async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool>;
+    async fn update_workspace(&self, workspace: &Workspace) -> RepoResult<bool>;
     /// Permanently delete a non-default workspace and every note it contains.
     /// Versions, shares, attachment metadata, labels, stages, and membership
     /// cascade with it; the returned snapshot drives external blob and search

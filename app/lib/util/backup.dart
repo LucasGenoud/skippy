@@ -45,6 +45,8 @@ class BackupWorkspace {
   final String id;
   final String name;
   final bool isDefault;
+  final bool notesEnabled;
+  final bool boardEnabled;
   final List<BackupLabel> labels;
   final List<BackupStage> stages;
   final List<BackupNote> notes;
@@ -53,6 +55,8 @@ class BackupWorkspace {
     required this.id,
     required this.name,
     required this.isDefault,
+    this.notesEnabled = true,
+    this.boardEnabled = true,
     required this.labels,
     required this.stages,
     required this.notes,
@@ -279,6 +283,8 @@ Future<Uint8List> createBackupArchive({
       'id': workspace.id,
       'name': workspace.name,
       'is_default': workspace.isDefault,
+      'notes_enabled': workspace.notesEnabled,
+      'board_enabled': workspace.boardEnabled,
       'labels': [
         for (final label in workspaceLabels)
           {
@@ -380,8 +386,15 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
     final id = _requiredString(map, 'id', max: 200);
     final name = _requiredString(map, 'name', max: 60).trim();
     final isDefault = map['is_default'] == true;
+    final notesEnabled = map['notes_enabled'] != false;
+    final boardEnabled = map['board_enabled'] != false;
     if (name.isEmpty || !workspaceIds.add(id)) {
       throw const FormatException('Backup contains an invalid workspace');
+    }
+    if (!notesEnabled && !boardEnabled) {
+      throw const FormatException(
+        'Backup contains a workspace with no enabled view',
+      );
     }
     if (isDefault && ++defaultCount > 1) {
       throw const FormatException(
@@ -410,6 +423,8 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
         id: id,
         name: name,
         isDefault: isDefault,
+        notesEnabled: notesEnabled,
+        boardEnabled: boardEnabled,
         labels: parsed.labels,
         stages: parsed.stages,
         notes: parsed.notes,

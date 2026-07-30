@@ -49,6 +49,8 @@ async fn registration_creates_one_default_workspace() {
     let mine = workspaces(&app, &ada).await;
     assert_eq!(mine.len(), 1);
     assert_eq!(mine[0]["is_default"], json!(true));
+    assert_eq!(mine[0]["notes_enabled"], json!(true));
+    assert_eq!(mine[0]["board_enabled"], json!(true));
     assert_eq!(mine[0]["owner"]["id"], json!(ada_id));
     assert_eq!(mine[0]["members"], json!([]));
 
@@ -99,11 +101,28 @@ async fn workspaces_are_created_renamed_and_deleted_by_their_owner() {
         "PATCH",
         &format!("/api/workspaces/{work}"),
         Some(&ada),
-        Some(json!({"name": "Day job"})),
+        Some(json!({
+            "name": "Day job",
+            "notes_enabled": false,
+            "board_enabled": true
+        })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(renamed["name"], "Day job");
+    assert_eq!(renamed["notes_enabled"], false);
+    assert_eq!(renamed["board_enabled"], true);
+
+    // A workspace always retains one primary way to display its notes.
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/workspaces/{work}"),
+        Some(&ada),
+        Some(json!({"board_enabled": false})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // The default workspace is permanent and cannot be deleted.
     let (status, _) = send(

@@ -396,6 +396,53 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text('Views', style: Theme.of(context).textTheme.labelLarge),
+          ),
+          SwitchListTile(
+            dense: true,
+            secondary: const Icon(Icons.sticky_note_2_outlined),
+            title: const Text('Notes'),
+            subtitle: const Text('Grid and list view'),
+            value: workspace.notesEnabled,
+            onChanged:
+                isOwner && (!workspace.notesEnabled || workspace.boardEnabled)
+                ? (value) => store.updateWorkspaceViews(
+                    id: workspace.id,
+                    notesEnabled: value,
+                    boardEnabled: workspace.boardEnabled,
+                  )
+                : null,
+          ),
+          SwitchListTile(
+            dense: true,
+            secondary: const Icon(Icons.view_kanban_outlined),
+            title: const Text('Board'),
+            subtitle: const Text('Kanban view with columns'),
+            value: workspace.boardEnabled,
+            onChanged:
+                isOwner && (!workspace.boardEnabled || workspace.notesEnabled)
+                ? (value) => store.updateWorkspaceViews(
+                    id: workspace.id,
+                    notesEnabled: workspace.notesEnabled,
+                    boardEnabled: value,
+                  )
+                : null,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              isOwner
+                  ? 'At least one view must stay enabled.'
+                  : 'Only the owner can change workspace views.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
           ListTile(
             dense: true,
             leading: CircleAvatar(

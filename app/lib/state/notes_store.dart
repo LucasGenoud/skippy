@@ -437,6 +437,13 @@ class NotesStore extends ChangeNotifier {
           restoredWorkspaces++;
           onProgress?.call(++completed, totalSteps);
         }
+        if (!backupWorkspace.notesEnabled || !backupWorkspace.boardEnabled) {
+          await api.updateWorkspaceViews(
+            targetWorkspaceId,
+            notesEnabled: backupWorkspace.notesEnabled,
+            boardEnabled: backupWorkspace.boardEnabled,
+          );
+        }
 
         final labelMap = <String, String>{};
         for (final backupLabel in backupWorkspace.labels) {
@@ -1441,6 +1448,31 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
+  /// Enable the workspace's two primary entry points. The owner controls this
+  /// shared setting; keeping one enabled prevents a workspace with no main
+  /// place to show or create notes.
+  void updateWorkspaceViews({
+    required String id,
+    required bool notesEnabled,
+    required bool boardEnabled,
+  }) {
+    if (!notesEnabled && !boardEnabled) return;
+    final i = _workspaces.indexWhere((w) => w.id == id);
+    if (i == -1 || !_workspaces[i].isOwnedBy(currentUserId)) return;
+    _workspaces[i] = _workspaces[i].copyWith(
+      notesEnabled: notesEnabled,
+      boardEnabled: boardEnabled,
+    );
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.workspaceViews,
+        id: id,
+        data: {'notesEnabled': notesEnabled, 'boardEnabled': boardEnabled},
+      ),
+    );
+  }
+
   /// Whether [id] can be deleted: you own it and it isn't your default one.
   bool canDeleteWorkspace(String id) {
     final workspace = workspaceById(id);
@@ -2203,6 +2235,12 @@ class NotesStore extends ChangeNotifier {
         return api.createWorkspace(op.id!, op.data['name'] as String);
       case PendingOpKind.workspaceRename:
         return api.renameWorkspace(op.id!, op.data['name'] as String);
+      case PendingOpKind.workspaceViews:
+        return api.updateWorkspaceViews(
+          op.id!,
+          notesEnabled: op.data['notesEnabled'] as bool? ?? true,
+          boardEnabled: op.data['boardEnabled'] as bool? ?? true,
+        );
       case PendingOpKind.workspaceDelete:
         return api.deleteWorkspace(op.id!);
       case PendingOpKind.leaveWorkspace:

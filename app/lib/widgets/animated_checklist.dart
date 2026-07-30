@@ -287,7 +287,13 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     }
     final ids = {for (final item in widget.items) item.id};
     final oldIds = {for (final item in oldWidget.items) item.id};
-    _enteringIds.addAll(ids.difference(oldIds));
+    // A row that is about to receive the caret must be stable immediately.
+    // Fading/sliding that TextField while focus is handed to it makes the
+    // first few characters feel like a dropped frame. Other additions (for
+    // example a picked suggestion) can still use the decorative entrance.
+    _enteringIds.addAll(
+      ids.difference(oldIds).where((id) => id != _pendingFocusId),
+    );
     // An adopted row that is missing from a rebuild that once contained it is
     // gone for good (removed, or the note was swapped out), so stop merging
     // keystrokes into it. Its mere absence proves nothing on its own: the
@@ -1014,12 +1020,15 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             ],
           ),
         ),
-        (hovered, _, child) => DecoratedBox(
+        (hovered, focused, child) => DecoratedBox(
+          key: ValueKey('checklist-row-background-${item.id}'),
           decoration: BoxDecoration(
             color: dragging
                 ? scheme.surfaceContainerHigh
                 : matches
                 ? scheme.tertiaryContainer.withValues(alpha: 0.55)
+                : focused && !widget.readOnly
+                ? scheme.primary.withValues(alpha: 0.035)
                 : hovered && !widget.readOnly
                 ? scheme.onSurface.withValues(alpha: 0.04)
                 : null,
@@ -1203,6 +1212,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     _applyPendingFocus();
     final layout = _layout();
     final snap = _snapFrame;
+    // When typing materializes the add field as a real item, that new row
+    // replaces it at the same position. Move the now-empty add field out of
+    // the way in the same frame; animating it down overlaps two live text
+    // fields during the focus handoff and presents as a small stutter.
+    final materializingAddField =
+        _typeCreatedId != null && _pendingFocusId == _typeCreatedId;
     if (snap) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _snapFrame = false);
@@ -1231,7 +1246,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       // Duration.zero so it tracks the pointer exactly.
       return AnimatedPositioned(
         key: ValueKey(id),
-        duration: snap || dragging ? Duration.zero : _moveDuration,
+        duration:
+            snap || dragging || (id == _kNewRowId && materializingAddField)
+            ? Duration.zero
+            : _moveDuration,
         curve: Curves.easeOutCubic,
         left: 0,
         right: 0,

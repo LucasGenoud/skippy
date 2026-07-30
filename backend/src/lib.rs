@@ -168,7 +168,7 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         )
         .route(
             "/workspaces/{id}",
-            axum::routing::patch(handlers::rename_workspace).delete(handlers::delete_workspace),
+            axum::routing::patch(handlers::update_workspace).delete(handlers::delete_workspace),
         )
         .route(
             "/workspaces/{id}/members",

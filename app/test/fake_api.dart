@@ -184,6 +184,26 @@ class FakeApi implements Api {
       });
 
   @override
+  Future<Workspace> updateWorkspaceViews(
+    String id, {
+    required bool notesEnabled,
+    required bool boardEnabled,
+  }) => _run('updateWorkspaceViews:$id:$notesEnabled:$boardEnabled', () {
+    final existing = workspaces[id];
+    if (existing == null) throw ApiException(404, '{"error":"not found"}');
+    if (!notesEnabled && !boardEnabled) {
+      throw ApiException(
+        400,
+        '{"error":"at least one workspace view must remain enabled"}',
+      );
+    }
+    return workspaces[id] = existing.copyWith(
+      notesEnabled: notesEnabled,
+      boardEnabled: boardEnabled,
+    );
+  });
+
+  @override
   Future<void> deleteWorkspace(String id) => _run('deleteWorkspace:$id', () {
     if (workspaces.remove(id) == null) {
       throw ApiException(404, '{"error":"not found"}');

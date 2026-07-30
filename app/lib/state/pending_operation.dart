@@ -12,6 +12,7 @@ enum PendingOpKind {
   stageDelete('stageDelete'),
   workspaceCreate('workspaceCreate'),
   workspaceRename('workspaceRename'),
+  workspaceViews('workspaceViews'),
   workspaceDelete('workspaceDelete'),
   leaveWorkspace('leaveWorkspace'),
   removeCollaborator('removeCollaborator'),

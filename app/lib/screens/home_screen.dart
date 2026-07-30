@@ -410,15 +410,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// A label belongs to one workspace, so switching workspaces (or deleting
-  /// the label elsewhere) would otherwise leave the grid parked on a label
-  /// that no longer exists. Fall back to Notes.
-  void _dropStaleLabelView(NotesStore store) {
-    if (_selection.view != NoteView.label) return;
-    if (store.labels.any((label) => label.id == _selection.labelId)) return;
+  ViewSelection _primaryView(NotesStore store) =>
+      store.activeWorkspace?.notesEnabled ?? true
+      ? ViewSelection.notes
+      : ViewSelection.board;
+
+  /// Workspace switches and shared setting changes must not leave the screen
+  /// parked on a view that the active workspace no longer exposes. A label
+  /// can go stale for the same reason, so both cases share this reconciliation.
+  void _reconcileWorkspaceView(NotesStore store) {
+    final workspace = store.activeWorkspace;
+    if (workspace == null) return;
+    final staleLabel =
+        _selection.view == NoteView.label &&
+        !store.labels.any((label) => label.id == _selection.labelId);
+    final disabledPrimary =
+        (_selection.view == NoteView.notes && !workspace.notesEnabled) ||
+        (_selection.view == NoteView.board && !workspace.boardEnabled);
+    if (!staleLabel && !disabledPrimary) return;
     // Called from build; defer so the reset lands in its own frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _selection = ViewSelection.notes);
+      if (mounted) setState(() => _selection = _primaryView(store));
     });
   }
 
@@ -426,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();
-    _dropStaleLabelView(store);
+    _reconcileWorkspaceView(store);
     final wideLayout = MediaQuery.sizeOf(context).width >= 600;
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.
@@ -910,7 +922,7 @@ class _HomeScreenState extends State<HomeScreen> {
     NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
       () => _newNote(NoteKind.text),
     NoteView.archive || NoteView.trash =>
-      () => _selectView(ViewSelection.notes),
+      () => _selectView(_primaryView(context.read<NotesStore>())),
   };
 
   IconData get _emptyActionIcon => switch (_selection.view) {

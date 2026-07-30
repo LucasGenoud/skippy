@@ -54,6 +54,8 @@ pub(super) fn workspace_from_row(row: &SqliteRow) -> Workspace {
         id: row.get("id"),
         owner_id: row.get("owner_id"),
         name: row.get("name"),
+        notes_enabled: row.get::<i64, _>("notes_enabled") != 0,
+        board_enabled: row.get::<i64, _>("board_enabled") != 0,
         is_default: row.get::<i64, _>("is_default") != 0,
         created_at: row.get("created_at"),
     }

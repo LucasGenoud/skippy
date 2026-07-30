@@ -73,6 +73,11 @@ abstract class Api {
   Future<List<Workspace>> fetchWorkspaces();
   Future<Workspace> createWorkspace(String id, String name);
   Future<Workspace> renameWorkspace(String id, String name);
+  Future<Workspace> updateWorkspaceViews(
+    String id, {
+    required bool notesEnabled,
+    required bool boardEnabled,
+  });
   Future<void> deleteWorkspace(String id);
 
   /// Invite someone by email; returns the workspace with its new roster.
@@ -471,6 +476,25 @@ class ApiClient implements Api {
         _uri('/workspaces/$id'),
         headers: _headers(),
         body: jsonEncode({'name': name}),
+      ),
+    );
+    return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<Workspace> updateWorkspaceViews(
+    String id, {
+    required bool notesEnabled,
+    required bool boardEnabled,
+  }) async {
+    final data = _decode(
+      await _client.patch(
+        _uri('/workspaces/$id'),
+        headers: _headers(),
+        body: jsonEncode({
+          'notes_enabled': notesEnabled,
+          'board_enabled': boardEnabled,
+        }),
       ),
     );
     return Workspace.fromJson(data as Map<String, dynamic>);

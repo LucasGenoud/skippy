@@ -1406,6 +1406,44 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets(
+      'the add-field handoff does not animate the field being typed into',
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(TextField, 'List item'));
+        tester.testTextInput.enterText('M');
+        await tester.pump();
+
+        final itemId = store.noteById('n1')!.items.single.id;
+        expect(
+          find.byKey(ValueKey('checklist-entrance-$itemId')),
+          findsNothing,
+        );
+        expect(
+          tester
+              .widget<AnimatedPositioned>(find.byKey(const ValueKey('__new__')))
+              .duration,
+          Duration.zero,
+        );
+
+        // The delayed store notification must not start the skipped entrance
+        // after the focus handoff has already completed.
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(
+          find.byKey(ValueKey('checklist-entrance-$itemId')),
+          findsNothing,
+        );
+        expect(store.noteById('n1')!.items.single.text, 'M');
+        await flushTimers(tester);
+      },
+    );
+
     testWidgets('typing and hovering rebuild only what changed', (
       tester,
     ) async {
@@ -1463,6 +1501,48 @@ void main() {
       // list-wide setState (thousands) fails.
       expect(typing, lessThan(300));
       expect(hovering, lessThan(2000));
+      await flushTimers(tester);
+    });
+
+    testWidgets('only the checklist row being edited gets a subtle tint', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: const [
+          ChecklistItem(id: 'first', text: 'Milk'),
+          ChecklistItem(id: 'second', text: 'Eggs'),
+        ],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+
+      Color? rowColor(String id) {
+        final box = tester.widget<DecoratedBox>(
+          find.byKey(ValueKey('checklist-row-background-$id')),
+        );
+        return (box.decoration as BoxDecoration).color;
+      }
+
+      expect(rowColor('first'), isNull);
+      expect(rowColor('second'), isNull);
+
+      await tester.tap(find.widgetWithText(TextField, 'Eggs'));
+      await tester.pump();
+
+      final scheme = Theme.of(
+        tester.element(find.widgetWithText(TextField, 'Eggs')),
+      ).colorScheme;
+      expect(rowColor('first'), isNull);
+      expect(rowColor('second'), scheme.primary.withValues(alpha: 0.035));
+
+      await tester.tap(find.widgetWithText(TextField, 'Milk'));
+      await tester.pump();
+
+      expect(rowColor('first'), scheme.primary.withValues(alpha: 0.035));
+      expect(rowColor('second'), isNull);
       await flushTimers(tester);
     });
 

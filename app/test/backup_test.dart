@@ -46,7 +46,7 @@ void main() {
       final bytes = await createBackupArchive(
         workspaces: const [
           Workspace(id: 'w-default', name: 'My notes', isDefault: true),
-          Workspace(id: 'w-travel', name: 'Travel'),
+          Workspace(id: 'w-travel', name: 'Travel', notesEnabled: false),
         ],
         notes: [note],
         labels: const [
@@ -78,6 +78,8 @@ void main() {
         'Travel',
       ]);
       final travel = restored.workspaces.last;
+      expect(travel.notesEnabled, isFalse);
+      expect(travel.boardEnabled, isTrue);
       expect(travel.labels.single.name, 'Travel');
       expect(travel.labels.single.position, 12);
       expect(travel.stages.single.name, 'Ready');
@@ -214,6 +216,7 @@ void main() {
             id: 'backup-project',
             name: 'New project',
             isDefault: false,
+            boardEnabled: false,
             labels: const [],
             stages: const [],
             notes: [
@@ -275,6 +278,12 @@ void main() {
       expect(
         api.workspaces.values.map((workspace) => workspace.name),
         isNot(contains('Do not restore')),
+      );
+      expect(
+        api.workspaces.values
+            .singleWhere((workspace) => workspace.name == 'New project')
+            .boardEnabled,
+        isFalse,
       );
       expect(api.notes, isNot(contains('old-default')));
       expect(api.notes, isNot(contains('old-project')));

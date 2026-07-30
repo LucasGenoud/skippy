@@ -92,6 +92,11 @@ pub struct Workspace {
     pub id: String,
     pub owner_id: String,
     pub name: String,
+    /// Whether the ordinary grid/list entry point is shown for this
+    /// workspace. At least one of this and `board_enabled` is always true.
+    pub notes_enabled: bool,
+    /// Whether the kanban board entry point is shown for this workspace.
+    pub board_enabled: bool,
     /// The workspace created with the account. It cannot be deleted or left,
     /// so a user always has somewhere for their notes to live.
     pub is_default: bool,
@@ -104,6 +109,8 @@ pub struct Workspace {
 pub struct WorkspaceView {
     pub id: String,
     pub name: String,
+    pub notes_enabled: bool,
+    pub board_enabled: bool,
     pub owner: UserPublic,
     /// Everyone invited to the workspace, excluding the owner.
     pub members: Vec<UserPublic>,
@@ -121,8 +128,10 @@ pub struct CreateWorkspace {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RenameWorkspace {
-    pub name: String,
+pub struct UpdateWorkspace {
+    pub name: Option<String>,
+    pub notes_enabled: Option<bool>,
+    pub board_enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

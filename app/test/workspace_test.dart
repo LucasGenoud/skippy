@@ -6,6 +6,7 @@ import 'package:skippy/models/workspace.dart';
 import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/widgets/app_drawer.dart';
+import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/workspace_menu.dart';
 
 import 'fake_api.dart';
@@ -156,6 +157,26 @@ void main() {
       await settle();
       expect(api.workspaces[work]?.name, 'Day job');
     });
+
+    test(
+      'workspace views are enabled by default and update optimistically',
+      () async {
+        await store.load();
+        expect(store.workspaceById(work)?.notesEnabled, isTrue);
+        expect(store.workspaceById(work)?.boardEnabled, isTrue);
+
+        store.updateWorkspaceViews(
+          id: work,
+          notesEnabled: false,
+          boardEnabled: true,
+        );
+        expect(store.workspaceById(work)?.notesEnabled, isFalse);
+        expect(store.workspaceById(work)?.boardEnabled, isTrue);
+        await settle();
+        expect(api.workspaces[work]?.notesEnabled, isFalse);
+        expect(api.workspaces[work]?.boardEnabled, isTrue);
+      },
+    );
 
     test('the default workspace cannot be deleted', () async {
       await store.load();
@@ -406,6 +427,41 @@ void main() {
       expect(find.text('No notes with this label yet'), findsNothing);
       store.dispose();
     });
+
+    testWidgets(
+      'disabled workspace views disappear and the open view falls back',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        api.workspaces[work] = const Workspace(
+          id: work,
+          name: 'Work',
+          notesEnabled: false,
+          owner: UserRef(id: 'u-me', name: 'Me Example'),
+        );
+        api.notes['b'] = noteIn(work, 'b', title: 'board only');
+        await store.load();
+        await tester.pumpWidget(homeApp(store));
+        await tester.pumpAndSettle();
+
+        store.setActiveWorkspace(work);
+        await tester.pumpAndSettle();
+
+        final sidebar = find.byType(AppSidebar);
+        expect(
+          find.descendant(of: sidebar, matching: find.text('Notes')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: sidebar, matching: find.text('Board')),
+          findsOneWidget,
+        );
+        expect(find.byType(BoardView), findsOneWidget);
+        store.dispose();
+      },
+    );
 
     testWidgets('creating one from the menu switches straight into it', (
       tester,

@@ -37,7 +37,7 @@ pub use unfurl::unfurl;
 pub use versions::{list_note_versions, restore_note_version};
 pub use workspaces::{
     add_workspace_member, create_default_workspace, create_workspace, delete_workspace,
-    list_workspaces, remove_workspace_member, rename_workspace,
+    list_workspaces, remove_workspace_member, update_workspace,
 };
 pub use writing::rewrite_note;
 

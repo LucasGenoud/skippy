@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    notes_enabled INTEGER NOT NULL DEFAULT 1,
+    board_enabled INTEGER NOT NULL DEFAULT 1,
     is_default INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
@@ -140,6 +142,8 @@ const ADDITIVE_MIGRATIONS: &[&str] = &[
     "ALTER TABLE notes ADD COLUMN stage_id TEXT",
     "ALTER TABLE notes ADD COLUMN stage_position REAL",
     "ALTER TABLE labels ADD COLUMN position REAL",
+    "ALTER TABLE workspaces ADD COLUMN notes_enabled INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE workspaces ADD COLUMN board_enabled INTEGER NOT NULL DEFAULT 1",
 ];
 
 /// Creates the current schema and upgrades databases written by older builds.

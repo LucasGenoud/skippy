@@ -480,6 +480,8 @@ impl Repository for SqliteRepository {
                     members,
                     id: workspace.id,
                     name: workspace.name,
+                    notes_enabled: workspace.notes_enabled,
+                    board_enabled: workspace.board_enabled,
                     is_default: workspace.is_default,
                     created_at: workspace.created_at,
                 }
@@ -505,12 +507,15 @@ impl Repository for SqliteRepository {
 
     async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()> {
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO workspaces (id, owner_id, name, is_default, created_at)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO workspaces
+                (id, owner_id, name, notes_enabled, board_enabled, is_default, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&workspace.id)
         .bind(&workspace.owner_id)
         .bind(&workspace.name)
+        .bind(workspace.notes_enabled as i64)
+        .bind(workspace.board_enabled as i64)
         .bind(workspace.is_default as i64)
         .bind(&workspace.created_at)
         .execute(&self.pool)
@@ -523,12 +528,18 @@ impl Repository for SqliteRepository {
         Ok(())
     }
 
-    async fn rename_workspace(&self, workspace_id: &str, name: &str) -> RepoResult<bool> {
-        let result = sqlx::query("UPDATE workspaces SET name = ? WHERE id = ?")
-            .bind(name)
-            .bind(workspace_id)
-            .execute(&self.pool)
-            .await?;
+    async fn update_workspace(&self, workspace: &Workspace) -> RepoResult<bool> {
+        let result = sqlx::query(
+            "UPDATE workspaces
+             SET name = ?, notes_enabled = ?, board_enabled = ?
+             WHERE id = ?",
+        )
+        .bind(&workspace.name)
+        .bind(workspace.notes_enabled as i64)
+        .bind(workspace.board_enabled as i64)
+        .bind(&workspace.id)
+        .execute(&self.pool)
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 

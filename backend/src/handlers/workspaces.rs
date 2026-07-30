@@ -109,6 +109,8 @@ pub async fn create_default_workspace(state: &AppState, user_id: &str) -> ApiRes
         id: new_id(),
         owner_id: user_id.to_string(),
         name: DEFAULT_WORKSPACE_NAME.to_string(),
+        notes_enabled: true,
+        board_enabled: true,
         is_default: true,
         created_at: now(),
     };
@@ -129,6 +131,8 @@ pub async fn create_workspace(
         },
         owner_id: user_id.clone(),
         name,
+        notes_enabled: true,
+        board_enabled: true,
         // Only the workspace created with the account is the default one.
         is_default: false,
         created_at: now(),
@@ -139,21 +143,34 @@ pub async fn create_workspace(
     Ok((StatusCode::CREATED, Json(view)))
 }
 
-pub async fn rename_workspace(
+pub async fn update_workspace(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(id): Path<String>,
-    Json(body): Json<RenameWorkspace>,
+    Json(body): Json<UpdateWorkspace>,
 ) -> ApiResult<Json<WorkspaceView>> {
-    require_owner(
+    let mut workspace = require_owner(
         &state,
         &id,
         &user_id,
-        "only the owner can rename a workspace",
+        "only the owner can change workspace settings",
     )
     .await?;
-    let name = validate_name(&body.name)?;
-    if !state.repo.rename_workspace(&id, &name).await? {
+    if let Some(name) = body.name {
+        workspace.name = validate_name(&name)?;
+    }
+    if let Some(notes_enabled) = body.notes_enabled {
+        workspace.notes_enabled = notes_enabled;
+    }
+    if let Some(board_enabled) = body.board_enabled {
+        workspace.board_enabled = board_enabled;
+    }
+    if !workspace.notes_enabled && !workspace.board_enabled {
+        return Err(ApiError::BadRequest(
+            "at least one workspace view must remain enabled".to_string(),
+        ));
+    }
+    if !state.repo.update_workspace(&workspace).await? {
         return Err(ApiError::NotFound);
     }
     notify_workspace(&state, &id).await;

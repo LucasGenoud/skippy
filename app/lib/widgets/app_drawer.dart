@@ -21,24 +21,27 @@ class AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
+    final workspace = store.activeWorkspace;
 
-    final destinations = <(ViewSelection, NavigationDrawerDestination)>[
-      (
-        ViewSelection.notes,
-        const NavigationDrawerDestination(
-          icon: Icon(Icons.sticky_note_2_outlined),
-          selectedIcon: Icon(Icons.sticky_note_2),
-          label: Text('Notes'),
+    final primaryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
+      if (workspace?.notesEnabled ?? true)
+        (
+          ViewSelection.notes,
+          const NavigationDrawerDestination(
+            icon: Icon(Icons.sticky_note_2_outlined),
+            selectedIcon: Icon(Icons.sticky_note_2),
+            label: Text('Notes'),
+          ),
         ),
-      ),
-      (
-        ViewSelection.board,
-        const NavigationDrawerDestination(
-          icon: Icon(Icons.view_kanban_outlined),
-          selectedIcon: Icon(Icons.view_kanban),
-          label: Text('Board'),
+      if (workspace?.boardEnabled ?? true)
+        (
+          ViewSelection.board,
+          const NavigationDrawerDestination(
+            icon: Icon(Icons.view_kanban_outlined),
+            selectedIcon: Icon(Icons.view_kanban),
+            label: Text('Board'),
+          ),
         ),
-      ),
       (
         ViewSelection.reminders,
         const NavigationDrawerDestination(
@@ -47,6 +50,8 @@ class AppDrawer extends StatelessWidget {
           label: Text('Reminders'),
         ),
       ),
+    ];
+    final labelDestinations = <(ViewSelection, NavigationDrawerDestination)>[
       for (final label in labels)
         (
           ViewSelection(NoteView.label, label.id),
@@ -65,6 +70,8 @@ class AppDrawer extends StatelessWidget {
             label: Text(label.name, overflow: TextOverflow.ellipsis),
           ),
         ),
+    ];
+    final libraryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
       (
         ViewSelection.archive,
         const NavigationDrawerDestination(
@@ -81,6 +88,11 @@ class AppDrawer extends StatelessWidget {
           label: Text('Trash'),
         ),
       ),
+    ];
+    final destinations = [
+      ...primaryDestinations,
+      ...labelDestinations,
+      ...libraryDestinations,
     ];
 
     final selectedIndex = destinations.indexWhere((d) => d.$1 == selection);
@@ -125,15 +137,13 @@ class AppDrawer extends StatelessWidget {
             },
           ),
         ),
-        destinations[0].$2,
-        destinations[1].$2,
-        destinations[2].$2,
+        for (final destination in primaryDestinations) destination.$2,
         const Padding(
           padding: EdgeInsets.fromLTRB(28, 12, 28, 8),
           child: Divider(height: 1),
         ),
         const _DrawerSectionHeader('Labels'),
-        for (var i = 3; i < destinations.length - 2; i++) destinations[i].$2,
+        for (final destination in labelDestinations) destination.$2,
         InkWell(
           onTap: () {
             final navigator = Navigator.of(context);
@@ -163,8 +173,7 @@ class AppDrawer extends StatelessWidget {
           child: Divider(height: 1),
         ),
         const _DrawerSectionHeader('Library'),
-        destinations[destinations.length - 2].$2,
-        destinations[destinations.length - 1].$2,
+        for (final destination in libraryDestinations) destination.$2,
         const SizedBox(height: 16),
       ],
     );
@@ -187,6 +196,7 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
+    final workspace = store.activeWorkspace;
     final scheme = Theme.of(context).colorScheme;
 
     // Only the width is implicitly animated. Handing the fill to
@@ -216,22 +226,24 @@ class AppSidebar extends StatelessWidget {
               // No divider: the switcher's own border already separates it
               // from the views below.
               const SizedBox(height: 8),
-              _SidebarItem(
-                icon: Icons.sticky_note_2_outlined,
-                selectedIcon: Icons.sticky_note_2,
-                label: 'Notes',
-                isSelected: selection == ViewSelection.notes,
-                isOpen: isOpen,
-                onTap: () => onSelect(ViewSelection.notes),
-              ),
-              _SidebarItem(
-                icon: Icons.view_kanban_outlined,
-                selectedIcon: Icons.view_kanban,
-                label: 'Board',
-                isSelected: selection == ViewSelection.board,
-                isOpen: isOpen,
-                onTap: () => onSelect(ViewSelection.board),
-              ),
+              if (workspace?.notesEnabled ?? true)
+                _SidebarItem(
+                  icon: Icons.sticky_note_2_outlined,
+                  selectedIcon: Icons.sticky_note_2,
+                  label: 'Notes',
+                  isSelected: selection == ViewSelection.notes,
+                  isOpen: isOpen,
+                  onTap: () => onSelect(ViewSelection.notes),
+                ),
+              if (workspace?.boardEnabled ?? true)
+                _SidebarItem(
+                  icon: Icons.view_kanban_outlined,
+                  selectedIcon: Icons.view_kanban,
+                  label: 'Board',
+                  isSelected: selection == ViewSelection.board,
+                  isOpen: isOpen,
+                  onTap: () => onSelect(ViewSelection.board),
+                ),
               _SidebarItem(
                 icon: Icons.notifications_outlined,
                 selectedIcon: Icons.notifications,
