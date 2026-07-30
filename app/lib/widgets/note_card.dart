@@ -283,7 +283,8 @@ class _NoteTileState extends State<NoteTile> {
           ),
         ),
         // Tap handling is ours: wide layouts open a centered modal
-        // instead of letting the container expand fullscreen.
+        // instead of letting the container expand fullscreen. Either way the
+        // editor grows out of this card and shrinks back into it.
         tappable: false,
         closedBuilder: (context, open) => InkWell(
           borderRadius: BorderRadius.circular(kRadius),
@@ -292,7 +293,12 @@ class _NoteTileState extends State<NoteTile> {
               widget.onSelectionChanged?.call(!widget.selected);
               return;
             }
-            openNoteEditor(context, openFullscreen: open, noteId: note.id);
+            openNoteEditor(
+              context,
+              openFullscreen: open,
+              noteId: note.id,
+              sourceRect: morphSourceRect(context),
+            );
           },
           onLongPress: widget.selectionMode
               ? () => widget.onSelectionChanged?.call(!widget.selected)

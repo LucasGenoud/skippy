@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
+
 import 'package:animations/animations.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -83,12 +86,30 @@ class EditorScreen extends StatefulWidget {
 bool wantsModalEditor(BuildContext context) =>
     MediaQuery.sizeOf(context).width >= 600;
 
-/// Open the editor for the current layout: a centered
-/// fade-scale modal over a dimmed barrier on wide screens, or the given
-/// fullscreen container-transform ([openFullscreen], from an enclosing
-/// OpenContainer) on narrow ones. Dismissing the modal — barrier tap,
-/// Escape, or the close button — finalizes the note exactly like popping
-/// the fullscreen editor.
+/// Width the wide-layout modal grows to. [_EditorMorph] needs it up front to
+/// know how far the opening surface has to scale.
+const double _modalMaxWidth = 600;
+
+/// Global-coordinate bounds of the widget that [context] belongs to — the box a
+/// container morph should grow out of. Pass the result to [openNoteEditor] as
+/// `sourceRect`; null (no render box yet, or none at all) simply falls back to
+/// the plain fade-scale entrance.
+Rect? morphSourceRect(BuildContext context) {
+  final box = context.findRenderObject();
+  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
+/// Open the editor for the current layout: a centered modal over a dimmed
+/// barrier on wide screens, or the given fullscreen container-transform
+/// ([openFullscreen], from an enclosing OpenContainer) on narrow ones.
+/// Dismissing the modal — barrier tap, Escape, or the close button —
+/// finalizes the note exactly like popping the fullscreen editor.
+///
+/// With [sourceRect] the modal morphs out of that box and shrinks back into it
+/// on close, so a card on a desktop grid expands into the editor the same way
+/// it does on a phone (see [morphSourceRect]); without one it fades in from
+/// the middle of the screen.
 Future<void> openNoteEditor(
   BuildContext context, {
   required VoidCallback openFullscreen,
@@ -96,6 +117,7 @@ Future<void> openNoteEditor(
   NoteKind kind = NoteKind.text,
   Set<String> labelIds = const {},
   String? stageId,
+  Rect? sourceRect,
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
   // composer). Without this the enclosing FocusScope remembers that field
@@ -111,13 +133,19 @@ Future<void> openNoteEditor(
     barrierDismissible: true,
     barrierLabel: 'Close note',
     barrierColor: Colors.black.withValues(alpha: 0.45),
-    transitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: Motion.slow,
     transitionBuilder: (context, animation, secondaryAnimation, child) =>
-        FadeScaleTransition(animation: animation, child: child),
+        sourceRect == null || Motion.reduced(context)
+        ? FadeScaleTransition(animation: animation, child: child)
+        : _EditorMorph(
+            animation: animation,
+            source: sourceRect,
+            child: child,
+          ),
     pageBuilder: (context, animation, secondaryAnimation) => Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: 600,
+          maxWidth: _modalMaxWidth,
           maxHeight: MediaQuery.sizeOf(context).height * 0.85,
         ),
         child: ClipRRect(
@@ -133,6 +161,66 @@ Future<void> openNoteEditor(
       ),
     ),
   );
+}
+
+/// The desktop half of the card→editor container transform: the modal grows out
+/// of the card (or button) that opened it and shrinks back into it on close,
+/// mirroring the fullscreen [OpenContainer] morph phones get.
+///
+/// It scales and slides the finished dialog rather than tweening its box,
+/// because the modal hugs its content — its final height isn't known when the
+/// route starts, and re-laying the editor out on every frame of a 250ms
+/// transition is exactly the kind of work that makes a morph stutter. The
+/// surface reaches full opacity early on, so the growing note reads as one
+/// opaque object leaving the grid instead of a fade.
+class _EditorMorph extends StatelessWidget {
+  final Animation<double> animation;
+
+  /// Global bounds of the widget the editor is growing out of.
+  final Rect source;
+
+  final Widget child;
+
+  const _EditorMorph({
+    required this.animation,
+    required this.source,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    // The dialog is centred in the route and as wide as its constraints allow,
+    // so both ends of the flight are known without measuring anything.
+    final center = screen.center(Offset.zero);
+    final width = math.min(_modalMaxWidth, screen.width);
+
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        // Emphasized on the way out of the card, calmer on the way back in.
+        final curve = animation.status == AnimationStatus.reverse
+            ? Motion.standard
+            : Motion.emphasized;
+        final t = curve.transform(animation.value.clamp(0.0, 1.0));
+        final scale = lerpDouble(source.width / width, 1.0, t)!;
+        final origin = Offset.lerp(source.center, center, t)!;
+        return Transform.translate(
+          offset: origin - center,
+          // Alignment.center is the child's centre, which is the dialog's
+          // centre too — so the surface swells around its own middle.
+          child: Transform.scale(
+            scale: scale,
+            child: Opacity(
+              opacity: (t * 4).clamp(0.0, 1.0),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _EditorScreenState extends State<EditorScreen> {

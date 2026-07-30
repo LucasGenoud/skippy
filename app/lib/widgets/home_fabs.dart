@@ -57,6 +57,7 @@ class NewNoteFabs extends StatelessWidget {
                 openFullscreen: open,
                 kind: kind,
                 labelIds: labelIds,
+                sourceRect: morphSourceRect(context),
               ),
               child: SizedBox(
                 width: size,
