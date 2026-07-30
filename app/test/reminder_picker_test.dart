@@ -117,6 +117,24 @@ void main() {
       expect(find.text('Tomorrow morning'), findsNothing);
     });
 
+    testWidgets('custom picker defaults to right now, not tomorrow', (
+      tester,
+    ) async {
+      tester.view.physicalSize = phoneSize;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      ReminderSelection? result;
+      await pumpPicker(tester, onResult: (value) => result = value);
+      await tester.tap(find.byKey(const ValueKey('custom-reminder-toggle')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('save-custom-reminder')));
+      await tester.pumpAndSettle();
+      expect(result?.at, now);
+    });
+
     testWidgets('can remove an existing reminder from the sheet', (
       tester,
     ) async {

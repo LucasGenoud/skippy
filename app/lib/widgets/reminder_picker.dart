@@ -137,7 +137,7 @@ class ReminderPicker {
       if (action != 'change') return null;
     }
 
-    final initial = current ?? DateTime(now.year, now.month, now.day + 1, 9);
+    final initial = current ?? now;
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -188,16 +188,10 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
   @override
   void initState() {
     super.initState();
-    final fallback = DateTime(
-      widget.now.year,
-      widget.now.month,
-      widget.now.day + 1,
-      9,
-    );
     final candidate = widget.current;
     _customValue = candidate != null && candidate.isAfter(widget.now)
         ? candidate
-        : fallback;
+        : widget.now;
   }
 
   String _whenLabel(BuildContext context, DateTime value) {
