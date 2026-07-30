@@ -10,7 +10,7 @@ import 'share_payload.dart';
 
 /// Mobile intake for the OS share sheet: listens for content shared into the
 /// app and creates a note for it (text/link → text note; media/files → an
-/// attachment note). Silent + optimistic — reports through [showMessage] so the
+/// attachment note). Silent + optimistic, reports through [showMessage] so the
 /// caller can toast.
 ///
 /// A payload can arrive before the user is signed in / the [NotesStore] exists

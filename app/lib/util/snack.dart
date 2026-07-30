@@ -5,7 +5,7 @@ import 'package:flutter/scheduler.dart' show SchedulerPhase;
 /// a route pops, e.g. "Empty note discarded" when the editor closes).
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-/// Semantic flavor of a notification — drives the leading icon chip's tint so
+/// Semantic flavor of a notification, drives the leading icon chip's tint so
 /// the message's nature (a plain confirmation, a destructive action, a
 /// problem) reads at a glance. Colors resolve from the active theme, so every
 /// kind works in both light and dark mode.
@@ -14,8 +14,8 @@ enum SnackKind { normal, success, warning, danger }
 /// Show a brief, non-blocking notification (a light elevated "toast").
 ///
 /// Only one is ever on screen: a new call replaces the current one instantly
-/// (no laggy cross-fade, no backlog) so rapid actions — delete, then archive,
-/// then undo — each read cleanly instead of queuing up behind each other.
+/// (no laggy cross-fade, no backlog) so rapid actions, delete, then archive,
+/// then undo, each read cleanly instead of queuing up behind each other.
 /// [icon] gets a tinted round chip whose color follows [kind]. An
 /// [actionLabel]/[onAction] pair adds a trailing button (e.g. Undo) and keeps
 /// the snack up a little longer so it's reachable.
@@ -84,7 +84,7 @@ void showAppSnack(
   }
 
   // Callers fire this from dispose() while a popped route unmounts, which
-  // happens mid-frame with the tree locked — showSnackBar's setState would
+  // happens mid-frame with the tree locked, showSnackBar's setState would
   // assert. Defer to the end of the in-flight frame in that case.
   if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.idle) {
     show();

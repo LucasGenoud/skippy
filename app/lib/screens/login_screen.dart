@@ -66,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _email.text.trim();
     final password = _password.text;
 
-    // Presence check — show an inline error and focus the first empty field
+    // Presence check, show an inline error and focus the first empty field
     // instead of returning silently (the old behaviour gave no feedback).
     final nameError = _creating && name.isEmpty ? 'Enter your name' : null;
     final emailError = email.isEmpty ? 'Enter your email' : null;
@@ -151,7 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final scheme = theme.colorScheme;
     final creating = _creating;
     // Flag the relevant fields red on a rejected submit: 401 = both credentials
-    // are wrong, 409 = the email is taken. A red outline (no extra text —
+    // are wrong, 409 = the email is taken. A red outline (no extra text,
     // the banner carries the message) so the inputs themselves signal the error.
     final emailRejected = auth.errorStatus == 401 || auth.errorStatus == 409;
     final passwordRejected = auth.errorStatus == 401;
@@ -159,7 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // so the inputs get all the available space.
     final isWide = MediaQuery.sizeOf(context).width >= 600;
     // This screen has no AppBar, so nothing sets the status-bar icon colour on
-    // its own — without this, iOS drew the notch clock/network glyphs in a shade
+    // its own, without this, iOS drew the notch clock/network glyphs in a shade
     // that vanished against the light background. Derive it from the theme so
     // the icons stay legible in both light and dark.
     final overlayStyle =
@@ -214,7 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            // Mode switch — makes Sign in vs Create explicit.
+                            // Mode switch, makes Sign in vs Create explicit.
                             SegmentedButton<bool>(
                               // No leading icons: on narrow phone widths the icon
                               // stole enough room that "Create account" wrapped to
@@ -341,7 +341,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ? _confirmFocus.requestFocus()
                                   : _submit(),
                             ),
-                            // Confirm password — only when creating an account.
+                            // Confirm password, only when creating an account.
                             AnimatedSize(
                               duration: const Duration(milliseconds: 180),
                               curve: Curves.easeOut,

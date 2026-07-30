@@ -63,8 +63,8 @@ class _HomeScreenState extends State<HomeScreen> {
     FocusManager.instance.addListener(_reclaimFocus);
   }
 
-  /// When focus falls back to the route's own scope — a dismissed editor
-  /// dialog, a collapsed quick-add — nothing inside the page is focused any
+  /// When focus falls back to the route's own scope, a dismissed editor
+  /// dialog, a collapsed quick-add, nothing inside the page is focused any
   /// more, so pick focus back up to keep the keyboard shortcuts live. Scopes
   /// of other routes, or the drawer's, never match the home route's scope.
   void _reclaimFocus() {
@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// The state's own context sits above the Scaffold, so Scaffold.of()
-  /// can't reach it — open the drawer through a key instead.
+  /// can't reach it, open the drawer through a key instead.
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   void _toggleSidebar() {
@@ -126,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     // Show the loading state right away (spinner in the bar, skeleton in the
-    // body on a first search) rather than only once the debounce fires — the
+    // body on a first search) rather than only once the debounce fires, the
     // user toggled/typed, so results are on their way.
     setState(() => _semanticBusy = true);
     _semanticDebounce = Timer(const Duration(milliseconds: 350), () async {
@@ -148,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // Network hiccup: keep whatever results we had.
       } finally {
         // Only the fetch for the query still in the box clears the loading
-        // state — a superseded fetch finishing must not switch off the
+        // state, a superseded fetch finishing must not switch off the
         // spinner/skeleton while the newer search is still on its way.
         if (mounted && _query.trim() == query) {
           setState(() => _semanticBusy = false);
@@ -210,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedNotes(store).map((note) => note.id),
       );
 
-  /// Bulk-file the selection into a column, then leave selection mode — the
+  /// Bulk-file the selection into a column, then leave selection mode, the
   /// selection was a means to the move, not a state to stay in.
   Future<void> _moveSelectedToStage(NotesStore store) async {
     await MoveToStageSheet.showForNotes(
@@ -505,7 +505,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Keyboard shortcuts (web/desktop). Printable keys use
     // CharacterActivator so they match what the keystroke actually produced
     // on any layout ("/" is Shift+7 on Swiss keyboards), and _HomeAction
-    // suppresses them while a text field has focus — the event then falls
+    // suppresses them while a text field has focus, the event then falls
     // through unhandled and the letter is typed instead of firing a shortcut.
     // Chords and Escape (whileTyping: true) stay live during typing; the
     // quick-add bar consumes its own Escape before it ever bubbles up here.
@@ -572,7 +572,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Padding(
                           // Desktop has no status bar to hold the bar off the
                           // window's top edge, so it gets breathing room here
-                          // instead — matched on the bottom so the bar sits
+                          // instead, matched on the bottom so the bar sits
                           // centered in the space above the divider rather
                           // than pinned to it.
                           padding: EdgeInsets.symmetric(
@@ -750,7 +750,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               ),
                                               // Inline quick add: wide screens,
                                               // in the views you compose into
-                                              // (all notes, or a label — where
+                                              // (all notes, or a label, where
                                               // it files the note for you).
                                               if ((_selection.view ==
                                                           NoteView.notes ||
@@ -1148,7 +1148,7 @@ class _OfflineBannerState extends State<_OfflineBanner> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              "Can't reach the server — showing your saved notes. "
+              "Can't reach the server, showing your saved notes. "
               'Changes sync when the connection is back.',
               style: Theme.of(
                 context,

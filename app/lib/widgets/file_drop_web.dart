@@ -9,7 +9,7 @@ import '../models/dropped_file.dart';
 import '../util/mime.dart';
 
 /// Snapshot a browser [web.FileList] into a Dart list. Must run
-/// synchronously inside the event handler — a drop's DataTransfer is
+/// synchronously inside the event handler, a drop's DataTransfer is
 /// neutered once the handler returns.
 List<web.File> _fileHandles(web.FileList? files) => [
   for (var i = 0; i < (files?.length ?? 0); i++)
@@ -37,7 +37,7 @@ Future<List<DroppedFile>> _readFiles(List<web.File> handles) async {
 ///
 /// Deliberately not file_picker: its web cancel detection treats a window
 /// focus event as "dialog dismissed" and swallows any selection that takes
-/// longer than a second — which on Firefox is every real pick. The
+/// longer than a second, which on Firefox is every real pick. The
 /// standardized `cancel` event (Firefox 91+/Chrome 113+) is all we need.
 Future<List<DroppedFile>> pickAnyFiles() {
   final completer = Completer<List<DroppedFile>>();
@@ -79,7 +79,7 @@ Future<List<DroppedFile>> pickAnyFiles() {
 /// document level. All mounted areas share one set of document listeners and
 /// a stack decides who receives the drop: the most recently mounted area
 /// whose route is current (the editor pushed over home wins; an area under
-/// an unrelated route — e.g. settings — is skipped).
+/// an unrelated route, e.g. settings, is skipped).
 class FileDropArea extends StatefulWidget {
   final String hint;
   final Future<void> Function(List<DroppedFile> files) onFiles;

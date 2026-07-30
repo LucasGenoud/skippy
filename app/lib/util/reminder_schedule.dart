@@ -1,7 +1,7 @@
 /// Pure rules for mirroring note reminders onto this device's OS alarm
 /// scheduler. Kept free of `flutter_local_notifications` so the decisions that
-/// matter for reliability — which reminders get armed, and what changed since
-/// the last pass — are unit-testable without a platform channel.
+/// matter for reliability (which reminders get armed, and what changed since
+/// the last pass) are unit-testable without a platform channel.
 library;
 
 import '../models/note.dart';
@@ -13,7 +13,7 @@ const int kNotificationBodyChars = 500;
 
 /// How many reminders may be armed at once. iOS keeps at most 64 pending local
 /// notifications per app and silently drops anything past that, so the soonest
-/// reminders win — a reminder set years out must never cost us a near one.
+/// reminders win: a reminder set years out must never cost us a near one.
 const int kMaxScheduledReminders = 64;
 
 /// Marks a notification payload as one of ours, so a reconcile can tell our
@@ -31,7 +31,7 @@ class ScheduledReminder {
   final String noteId;
 
   /// When it fires, in UTC. Converted to a device-local zoned time at the
-  /// platform boundary — scheduling must respect DST, so the offset can't be
+  /// platform boundary: scheduling must respect DST, so the offset can't be
   /// baked in here.
   final DateTime dueUtc;
   final String title;
@@ -47,7 +47,8 @@ class ScheduledReminder {
 
   /// Round-trips the note id and the exact due time through the OS, so a
   /// reconcile can tell an untouched alarm from a rescheduled one by reading
-  /// back what is actually pending — no local bookkeeping to drift out of sync.
+  /// back what is actually pending, so there is no local bookkeeping to drift
+  /// out of sync.
   String get payload =>
       '$_payloadPrefix$noteId$_payloadSeparator'
       '${dueUtc.millisecondsSinceEpoch}';
@@ -85,8 +86,8 @@ typedef PendingReminder = ({
 
 /// Stable 32-bit notification id for a note. Android notification ids are Java
 /// ints, so this is an FNV-1a hash masked to a positive value. Deriving it from
-/// the note id (rather than handing out counters) means any pass — including
-/// the first one after a cold start — can cancel or replace a note's alarm
+/// the note id (rather than handing out counters) means any pass, including
+/// the first one after a cold start, can cancel or replace a note's alarm
 /// without remembering what it assigned last time.
 int reminderNotificationId(String noteId) {
   var hash = 0x811c9dc5;
@@ -127,7 +128,7 @@ String _capBody(String body) {
 /// The reminders this device should have armed, soonest first.
 ///
 /// Matches the drawer's Reminders view (`NoteView.reminders`): any non-trashed
-/// note with a reminder, archived included. Reminders already due are skipped —
+/// note with a reminder, archived included. Reminders already due are skipped:
 /// the server's sweep owns those, and re-announcing a long-past reminder the
 /// moment the app syncs is noise rather than a reminder.
 List<ScheduledReminder> plannedReminders(
@@ -177,7 +178,7 @@ class ReminderScheduleDiff {
 /// How long a just-fired reminder is left alone before it counts as stale.
 ///
 /// [plannedReminders] drops a reminder the moment it is due, but the OS may not
-/// have delivered it yet — Doze can hold one for minutes. Cancelling in that
+/// have delivered it yet (Doze can hold one for minutes). Cancelling in that
 /// window would suppress a reminder seconds before it lands, so anything
 /// recently due is left armed; only reminders long past are cleaned up, so they
 /// can't sit forever occupying one of the [kMaxScheduledReminders] slots.
@@ -185,8 +186,8 @@ const Duration kFiredReminderGrace = Duration(hours: 6);
 
 /// Diff the OS's actual pending set against what it should be.
 ///
-/// [pending] is the authoritative input — read back from the platform rather
-/// than remembered — so an interrupted pass, a reboot, or an alarm the OS
+/// [pending] is the authoritative input, read back from the platform rather
+/// than remembered, so an interrupted pass, a reboot, or an alarm the OS
 /// dropped all self-heal on the next reconcile. Anything armed that we don't
 /// recognize is left alone: this app schedules nothing else today, but silently
 /// cancelling a stranger's notification would be a nasty surprise if it ever
@@ -216,7 +217,7 @@ ReminderScheduleDiff diffReminders({
   final cancel = <int>[];
   for (final p in pending) {
     if (desiredIds.contains(p.id)) continue;
-    // Not ours — leave it be.
+    // Not ours: leave it be.
     if (ScheduledReminder.noteIdFromPayload(p.payload) == null) continue;
     final due = ScheduledReminder.dueFromPayload(p.payload);
     // Due any moment now: let it fire rather than racing the OS.

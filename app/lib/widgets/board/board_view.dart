@@ -197,7 +197,7 @@ class _BoardViewState extends State<BoardView> {
               // The page gets the same trough the wide layout draws, for the
               // same reason: without it the cards sit straight on the canvas
               // and the page reads as the whole board rather than as one
-              // column of it — which is exactly what the peeking neighbours
+              // column of it, which is exactly what the peeking neighbours
               // are there to deny.
               return Container(
                 margin: const EdgeInsets.fromLTRB(4, 0, 4, 12),
@@ -342,14 +342,14 @@ class _EdgeScrollZoneState extends State<_EdgeScrollZone> {
 
 /// The phone board's column switcher: names and counts, scrollable, current
 /// one highlighted. Doubles as the header the paged columns leave out, and as
-/// the phone's drop target — a card is carried up to a chip rather than across
+/// the phone's drop target, a card is carried up to a chip rather than across
 /// pages, so nothing has to turn under the finger.
 class _StageStrip extends StatefulWidget {
   final List<BoardColumn> columns;
   final int current;
   final ValueChanged<int> onSelect;
 
-  /// Whether [noteId] may be dropped on [column] — false for the column it is
+  /// Whether [noteId] may be dropped on [column], false for the column it is
   /// already in, so the chip does not light up for a no-op.
   final bool Function(String noteId, BoardColumn column)? onWillDrop;
 
@@ -385,7 +385,7 @@ class _StageStripState extends State<_StageStrip> {
   }
 
   /// Keep the open column's chip on screen. Without this a chip can sit past
-  /// the right edge, which is not merely awkward to tap — it is unreachable as
+  /// the right edge, which is not merely awkward to tap, it is unreachable as
   /// a drop target, because you cannot scroll the strip while holding a card.
   void _revealCurrent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -405,7 +405,7 @@ class _StageStripState extends State<_StageStrip> {
   Widget build(BuildContext context) {
     // Every chip is built, not just the visible ones: a board has a handful of
     // columns, and [Scrollable.ensureVisible] can only reach a chip that
-    // exists — which is exactly the off-screen one it is needed for.
+    // exists, which is exactly the off-screen one it is needed for.
     return SizedBox(
       height: 44,
       child: SingleChildScrollView(
@@ -432,7 +432,7 @@ class _StageStripState extends State<_StageStrip> {
                 ),
               ),
             // Last in the strip, after the columns it adds to. The phone hides
-            // the column headers, so this is its only route to the editor —
+            // the column headers, so this is its only route to the editor,
             // rename and delete arrive with it.
             const _AddColumnChip(),
           ],

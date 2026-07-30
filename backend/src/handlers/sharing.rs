@@ -28,7 +28,7 @@ pub async fn add_collaborator(
         .ok_or_else(|| ApiError::BadRequest(format!("no account for '{}'", body.email.trim())))?;
     if target.id == user_id {
         return Err(ApiError::Conflict(
-            "that's you — the owner already has access".to_string(),
+            "that's you, the owner already has access".to_string(),
         ));
     }
     state.repo.add_collaborator(&id, &target.id).await?;

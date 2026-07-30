@@ -48,7 +48,7 @@ import '../widgets/transcribing_indicator.dart';
 /// in the store on the first actual change, so backing out of an untouched
 /// editor never produces a phantom note.
 ///
-/// The editor keeps a session history of the note's content — undo/redo
+/// The editor keeps a session history of the note's content, undo/redo
 /// buttons in the bottom bar (typing bursts group into single steps; checks,
 /// adds, removes, reorders and conversions are each their own step).
 class EditorScreen extends StatefulWidget {
@@ -61,7 +61,7 @@ class EditorScreen extends StatefulWidget {
   /// directly.
   final bool modal;
 
-  /// Labels a new note starts with — the view it was composed in (a label
+  /// Labels a new note starts with, the view it was composed in (a label
   /// filter) files it automatically. Ignored when [noteId] is given.
   final Set<String> labelIds;
 
@@ -90,7 +90,7 @@ bool wantsModalEditor(BuildContext context) =>
 /// know how far the opening surface has to scale.
 const double _modalMaxWidth = 600;
 
-/// Global-coordinate bounds of the widget that [context] belongs to — the box a
+/// Global-coordinate bounds of the widget that [context] belongs to, the box a
 /// container morph should grow out of. Pass the result to [openNoteEditor] as
 /// `sourceRect`; null (no render box yet, or none at all) simply falls back to
 /// the plain fade-scale entrance.
@@ -103,7 +103,7 @@ Rect? morphSourceRect(BuildContext context) {
 /// Open the editor for the current layout: a centered modal over a dimmed
 /// barrier on wide screens, or the given fullscreen container-transform
 /// ([openFullscreen], from an enclosing OpenContainer) on narrow ones.
-/// Dismissing the modal — barrier tap, Escape, or the close button —
+/// Dismissing the modal, barrier tap, Escape, or the close button,
 /// finalizes the note exactly like popping the fullscreen editor.
 ///
 /// With [sourceRect] the modal morphs out of that box and shrinks back into it
@@ -121,7 +121,7 @@ Future<void> openNoteEditor(
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
   // composer). Without this the enclosing FocusScope remembers that field
-  // and hands focus straight back when the editor pops — resummoning the
+  // and hands focus straight back when the editor pops, resummoning the
   // soft keyboard right as the note closes.
   FocusManager.instance.primaryFocus?.unfocus();
   if (!wantsModalEditor(context)) {
@@ -168,7 +168,7 @@ Future<void> openNoteEditor(
 /// mirroring the fullscreen [OpenContainer] morph phones get.
 ///
 /// It scales and slides the finished dialog rather than tweening its box,
-/// because the modal hugs its content — its final height isn't known when the
+/// because the modal hugs its content, its final height isn't known when the
 /// route starts, and re-laying the editor out on every frame of a 250ms
 /// transition is exactly the kind of work that makes a morph stutter. The
 /// surface reaches full opacity early on, so the growing note reads as one
@@ -209,7 +209,7 @@ class _EditorMorph extends StatelessWidget {
         return Transform.translate(
           offset: origin - center,
           // Alignment.center is the child's centre, which is the dialog's
-          // centre too — so the surface swells around its own middle.
+          // centre too, so the surface swells around its own middle.
           child: Transform.scale(
             scale: scale,
             child: Opacity(
@@ -272,7 +272,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _history = EditorHistory(_currentSnapshot());
     // A brand-new text/markdown note wants the body focused for immediate
     // typing. But focusing on mount makes iOS raise the keyboard while the open
-    // transition (container morph / fade-scale modal) is still animating —
+    // transition (container morph / fade-scale modal) is still animating,
     // the two animations fight and the layout resizes mid-open, which stutters.
     // Wait for the route to finish opening, then focus.
     if (widget.noteId == null && widget.kind != NoteKind.checklist) {
@@ -448,7 +448,7 @@ class _EditorScreenState extends State<EditorScreen> {
     // Row typing doesn't rebuild the editor: the row's own controller already
     // shows the character, and rebuilding here means rebuilding every other
     // row (each a TextField) plus the attachments and bottom bar on every
-    // keystroke — the thing that makes a long checklist feel laggy. The
+    // keystroke, the thing that makes a long checklist feel laggy. The
     // store's throttled notify refreshes us within 200ms instead.
     if (discrete) setState(() {});
   }
@@ -914,7 +914,7 @@ class _EditorScreenState extends State<EditorScreen> {
     return PopScope(
       // Release the keyboard the instant the close starts (close button,
       // system back, swipe-back, modal barrier tap) instead of when the
-      // route finishes disposing — otherwise it lingers through the whole
+      // route finishes disposing, otherwise it lingers through the whole
       // closing animation and can stay stuck up.
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) FocusManager.instance.primaryFocus?.unfocus();
@@ -968,7 +968,7 @@ class _EditorScreenState extends State<EditorScreen> {
                           child: GestureDetector(
                             onTap: trashed
                                 ? () => showAppSnack(
-                                    "Can't edit in Trash — restore the note first",
+                                    "Can't edit in Trash, restore the note first",
                                   )
                                 : null,
                             child: ListView(
@@ -1082,7 +1082,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                     note.id,
                                   ),
                             // Unlike workspaces, a column needs no second one
-                            // to move to — "Unassigned" is always a
+                            // to move to, "Unassigned" is always a
                             // destination, so this only asks that there be a
                             // board at all.
                             onMoveToStage:
@@ -1126,8 +1126,8 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  /// Fullscreen: a regular Scaffold. Modal: no Scaffold — it would expand to
-  /// the dialog's max height — so a min-height column lets the dialog hug the
+  /// Fullscreen: a regular Scaffold. Modal: no Scaffold, it would expand to
+  /// the dialog's max height, so a min-height column lets the dialog hug the
   /// note's content.
   Widget _editorShell({required Note? note, required Widget body}) {
     if (!widget.modal) {
@@ -1253,7 +1253,7 @@ class _EditorScreenState extends State<EditorScreen> {
     if (isDoubleClick) _editMarkdownFromPreview();
   }
 
-  /// Audio note: the clip player on top, then the transcript — a live
+  /// Audio note: the clip player on top, then the transcript, a live
   /// "Transcribing…" animation while Whisper runs, a retry affordance if it
   /// failed, otherwise the transcript as an editable text field.
   Widget _audioEditor({required bool trashed, required String query}) {
@@ -1347,7 +1347,7 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  /// The note's title + body, but only when it actually contains a URL — an
+  /// The note's title + body, but only when it actually contains a URL, an
   /// empty string otherwise so the preview strip is skipped entirely.
   String _linkText(Note note) {
     final combined = '${note.title}\n${note.content}';

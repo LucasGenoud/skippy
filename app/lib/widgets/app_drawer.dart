@@ -203,7 +203,7 @@ class AppSidebar extends StatelessWidget {
     // AnimatedContainer too made light/dark switches visibly drag: the theme
     // itself cross-fades over kThemeAnimationDuration, so the target colour
     // moves every frame and the container keeps restarting a 250ms tween
-    // toward it — the rail finished long after the rest of the app. Painted
+    // toward it, the rail finished long after the rest of the app. Painted
     // straight from the scheme, it lands exactly with everything else.
     //
     // The trailing seam matches the drawer's on narrow layouts and the top
@@ -422,7 +422,7 @@ class _SidebarItem extends StatelessWidget {
   /// grid (the masonry drag carries the note id as `Draggable<String>` data).
   final ValueChanged<String>? onAcceptNote;
 
-  /// Optional gate — a dragged note is only accepted when this returns true
+  /// Optional gate, a dragged note is only accepted when this returns true
   /// (e.g. Trash refuses notes you don't own).
   final bool Function(String noteId)? willAcceptNote;
 
@@ -525,7 +525,7 @@ class _SidebarItem extends StatelessWidget {
 /// from the live scheme on every frame. Animating the colours directly (what
 /// AnimatedContainer does) means chasing a target MaterialApp is already
 /// cross-fading, so a light/dark switch left the sidebar visibly trailing the
-/// rest of the app — the same reason [AppSidebar] paints its own fill.
+/// rest of the app, the same reason [AppSidebar] paints its own fill.
 class _RowHighlight extends StatelessWidget {
   final bool selected;
   final bool dropTarget;

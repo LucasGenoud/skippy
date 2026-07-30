@@ -8,7 +8,7 @@ import '../form_dialog.dart';
 
 /// Picks the column one or more notes belong in.
 ///
-/// The guaranteed way to move a card — available on every platform, and the
+/// The guaranteed way to move a card, available on every platform, and the
 /// keyboard and screen-reader path that dragging can never be. It also backs
 /// the selection bar's bulk move.
 class MoveToStageSheet extends StatelessWidget {

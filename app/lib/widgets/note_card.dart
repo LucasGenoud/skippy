@@ -212,7 +212,7 @@ class _NoteTileState extends State<NoteTile> {
       (store) => store.isRewritingNote(note.id),
     );
     // A coloured card used to go borderless at rest, losing the crisp edge
-    // plain cards keep — worst on pale fills, which dissolve into the canvas.
+    // plain cards keep, worst on pale fills, which dissolve into the canvas.
     // The border is the same palette entry from the *opposite* theme (the dark
     // shade in light mode, the light one in dark mode), so it is always the
     // card's own hue at contrasting depth, and it honours a custom palette for
@@ -233,7 +233,7 @@ class _NoteTileState extends State<NoteTile> {
           )!;
     // Two separate things: the footer slot the card always reserves (so its
     // height never depends on hover or selection), and whether the action
-    // icons in that slot are live. Selection mode only silences the icons —
+    // icons in that slot are live. Selection mode only silences the icons,
     // reserving the slot regardless is what keeps cards from resizing when
     // selection starts.
     final actionsSlot = !note.trashed && !isTouchPrimaryPlatform;
@@ -401,7 +401,7 @@ class _NoteCardContent extends StatelessWidget {
     final scheme = theme.colorScheme;
     final sharedBy = _sharedByLabel(note, store.currentUserId);
     // Joined with an unprintable separator (label names may contain spaces)
-    // because select needs a value with a meaningful == — a freshly built
+    // because select needs a value with a meaningful ==, a freshly built
     // List never equals the previous one.
     final joinedLabels = context.select<NotesStore, String>(
       (s) =>
@@ -708,7 +708,7 @@ class _NoteCardContent extends StatelessWidget {
 
 /// Pin control overlaying the card's top-right corner: revealed on hover
 /// (web/desktop), always shown when pinned so its state is visible at a
-/// glance. Lives beside — not inside — [_NoteCardContent] so hover flips
+/// glance. Lives beside, not inside, [_NoteCardContent] so hover flips
 /// only touch this small overlay, never the card body.
 class _PinButton extends StatelessWidget {
   /// Square tap target tucked into the corner. A default [IconButton] is
@@ -772,7 +772,7 @@ class _PinButton extends StatelessWidget {
 }
 
 /// The badge for entering or extending a selection. It sits on top of the
-/// card's top-left corner — half over the card, half over the canvas — shares
+/// card's top-left corner, half over the card, half over the canvas, shares
 /// the card's accent colour once selected, and stays hidden on desktop until
 /// the pointer is over the card.
 ///
@@ -784,7 +784,7 @@ class _SelectionButton extends StatelessWidget {
 
   /// How far the badge hangs past the card's corner. Enough to read as
   /// sitting on the corner, small enough that the badge stays mostly over the
-  /// card — the sliver outside the card's box is drawn (the parent [Stack]
+  /// card, the sliver outside the card's box is drawn (the parent [Stack]
   /// doesn't clip) but, like any overflow in Flutter, can't take a pointer.
   static const double _overhang = 5;
 
@@ -895,7 +895,7 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onArchive;
   final VoidCallback onDuplicate;
 
-  /// Moving a note changes who can see it, so it is the owner's call — and
+  /// Moving a note changes who can see it, so it is the owner's call, and
   /// there has to be somewhere else to move it to.
   final VoidCallback onMoveToWorkspace;
   final bool canMove;
@@ -1313,7 +1313,7 @@ class _FooterOverflowMarker extends StatelessWidget {
   }
 }
 
-/// Markdown parses its whole AST inside MarkdownBody.build — far too heavy
+/// Markdown parses its whole AST inside MarkdownBody.build, far too heavy
 /// to re-run every time the grid rebuilds. Returning the previously built
 /// instance when content and theme are unchanged makes Flutter skip the
 /// subtree entirely (identical widget == no rebuild).

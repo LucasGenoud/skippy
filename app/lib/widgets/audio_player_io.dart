@@ -64,7 +64,7 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
       }),
     );
     // Load the (public) file URL. Report load failures in the bar rather than
-    // failing silently — a silent inert bar is exactly the mobile bug we hit.
+    // failing silently, a silent inert bar is exactly the mobile bug we hit.
     _player
         .setUrl(widget.url)
         .then((_) {

@@ -1,4 +1,4 @@
-# Board Drag and Drop — Implementation Plan
+# Board Drag and Drop, Implementation Plan
 
 **Date:** 2026-07-27
 **Status:** Implemented. Two departures from this plan, both noted inline below.
@@ -7,7 +7,7 @@
 
 **The masonry was left untouched.** This plan had `AnimatedMasonry` become the
 `DragTarget` with a live placeholder gap. It cannot: an empty masonry renders
-`SizedBox.shrink()`, so an empty column could never receive a card — the one
+`SizedBox.shrink()`, so an empty column could never receive a card, the one
 drop every board needs on day one. The target went on the column instead, which
 also means it covers the header, and people aim at headers. The trade is no
 live gap preview; a hovering column highlights instead, matching how the
@@ -93,7 +93,7 @@ restart (extend the existing stage queue test).
 ### 2. Columns render through masonry (~0.5 d)
 
 Swap `board_column_view.dart`'s `ListView.builder` for a `SingleChildScrollView`
-wrapping `AnimatedMasonry(columns: 1)` with a per-column `ScrollController` —
+wrapping `AnimatedMasonry(columns: 1)` with a per-column `ScrollController`,
 masonry sizes itself to `layout.totalHeight` inside a `Stack`, so it needs an
 external scrollable, and it takes the controller for its own edge auto-scroll.
 
@@ -101,10 +101,10 @@ This also buys the column measured heights, glide-on-reflow, the staggered
 entrance, and the tile caching that exists because note cards are expensive
 ([masonry.dart:90](../../../app/lib/widgets/masonry.dart)).
 
-Keep the `_ShowAllTile` outside the masonry, below it in the scroll view — it is
+Keep the `_ShowAllTile` outside the masonry, below it in the scroll view, it is
 not a card and must not be draggable.
 
-### 3. Masonry accepts foreign cards (~1 d — the real work)
+### 3. Masonry accepts foreign cards (~1 d, the real work)
 
 Add two optional parameters, both null for every existing caller so the grid is
 untouched:
@@ -132,7 +132,7 @@ Wrap the `Stack` in a `DragTarget<String>` that:
 The placeholder is the fiddly part: `build` iterates `_orderIds` and looks each
 id up in `notesById`, skipping misses ([masonry.dart:463](../../../app/lib/widgets/masonry.dart)),
 so a placeholder id already renders as nothing while still occupying a slot.
-That is exactly the gap behaviour wanted, and it needs an estimated height —
+That is exactly the gap behaviour wanted, and it needs an estimated height,
 reuse `_estimatedHeight`, or better, carry the dragged card's measured height
 across in the drag data.
 
@@ -146,7 +146,7 @@ in `_orderIds`.
 
 Horizontal auto-scroll while dragging near the board's left/right edges,
 alongside the vertical auto-scroll each column already does. Model it on
-masonry's `_updateAutoScroll` — same edge-zone ramp, driven by the board's
+masonry's `_updateAutoScroll`, same edge-zone ramp, driven by the board's
 outer `ScrollController`.
 
 ### 5. Phone board: drop on the strip (~1 d)
@@ -154,7 +154,7 @@ outer `ScrollController`.
 Do **not** drag across pages. Instead, long-press lifts the card (masonry's
 touch path already does this with a 220ms delay so scrolling wins the arena),
 and the `_StageStrip` chips in `board_view.dart` become `DragTarget<String>`s.
-Drag up, drop on a chip, done — short travel, nothing turns under the finger,
+Drag up, drop on a chip, done, short travel, nothing turns under the finger,
 and it reuses the same note-id protocol the sidebar already accepts
 ([app_drawer.dart:392](../../../app/lib/widgets/app_drawer.dart)).
 
@@ -170,7 +170,7 @@ only keyboard/screen-reader one.
 Repeated midpoints into one gap eventually exhaust double precision. Guard it:
 when `positionBetween` produces a gap below an epsilon, renumber that column.
 
-Server side, that is an optional `stage_id` on `ReorderRequest` — present means
+Server side, that is an optional `stage_id` on `ReorderRequest`, present means
 write `stage_position` instead of `position`. The reorder `PendingOp` carries
 `data: {'ids': [...]}` today, and an added optional key stays readable by queues
 written by older builds.
@@ -180,7 +180,7 @@ This is a rare repair path, not the hot path, so it can land after the rest.
 ## Estimate
 
 **3–3.5 days**, down from the design doc's 2–3 days for drag *plus* the ordering
-machinery it assumed — the reduction comes from reusing masonry's reorder whole
+machinery it assumed, the reduction comes from reusing masonry's reorder whole
 and from both drop paths collapsing into one store call.
 
 Order: 1 → 2 → 3 → 4 → 5, with 6 whenever. Steps 1 and 2 are independently
@@ -194,7 +194,7 @@ shippable and leave the board working exactly as it does today.
    target lie about where the card will land. Carrying the measured height in
    the drag payload is the fix if `_estimatedHeight` reads badly.
 3. **Render cost.** Masonry computes positions for its full item set every build
-   with no viewport culling — a deliberate trade for one personal grid, now
+   with no viewport culling, a deliberate trade for one personal grid, now
    multiplied by column count. Measure with a wide board before assuming it is
    fine.
 4. **Two instances updating mid-drag** (step 3's watch item).

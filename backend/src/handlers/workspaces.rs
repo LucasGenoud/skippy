@@ -30,7 +30,7 @@ fn validate_name(name: &str) -> ApiResult<String> {
 }
 
 /// Load a workspace the caller belongs to. Non-members get 404 rather than
-/// 403, so workspace ids leak nothing — the same rule notes follow.
+/// 403, so workspace ids leak nothing, the same rule notes follow.
 async fn require_member(
     state: &AppState,
     workspace_id: &str,
@@ -90,7 +90,7 @@ pub async fn list_workspaces(
 }
 
 /// The caller's workspaces, creating the default one if the account somehow
-/// has none — a registration that failed between the user row and its
+/// has none, a registration that failed between the user row and its
 /// workspace. A user without a workspace has nowhere to put notes, and
 /// [`super::resolve_workspace`] depends on there always being one.
 pub async fn ensure_workspaces(state: &AppState, user_id: &str) -> ApiResult<Vec<WorkspaceView>> {
@@ -221,7 +221,7 @@ pub async fn add_workspace_member(
         .ok_or_else(|| ApiError::BadRequest(format!("no account for '{}'", body.email.trim())))?;
     if target.id == user_id {
         return Err(ApiError::Conflict(
-            "that's you — the owner already has access".to_string(),
+            "that's you, the owner already has access".to_string(),
         ));
     }
     state.repo.add_workspace_member(&id, &target.id).await?;

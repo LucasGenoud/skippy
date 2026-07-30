@@ -5,7 +5,7 @@
 # them in the bundled Garage object store instead (one S3 bucket per user):
 #   STICKY_NOTES_STORAGE=s3 docker compose up -d
 # (or put STICKY_NOTES_STORAGE=s3 in a .env file next to this compose file).
-# Pick ONE backend per deployment — switching later doesn't migrate existing
+# Pick ONE backend per deployment, switching later doesn't migrate existing
 # blobs.
 #
 # For local development you can run just the supporting services and keep
@@ -36,7 +36,7 @@ services:
 
       # ── Semantic search ─────────────────────────────────────────────────
       # Embeddings come from an external OpenAI-compatible API (Ollama,
-      # OpenAI, LM Studio, ...) — the server holds no model, so its memory
+      # OpenAI, LM Studio, ...), the server holds no model, so its memory
       # stays flat. Unset ⇒ semantic search (and notes chat) stay off.
       # Probed once at startup; unreachable then ⇒ off for the whole process.
       # For an Ollama on the host: http://host.docker.internal:11434/v1
@@ -65,7 +65,7 @@ services:
 
       # ── Notifications & link previews ───────────────────────────────────
       # STICKY_NOTES_TELEGRAM_API: https://api.telegram.org
-      # Lets link previews resolve private/loopback hosts — off by default as
+      # Lets link previews resolve private/loopback hosts, off by default as
       # an SSRF guard.
       # STICKY_NOTES_UNFURL_ALLOW_PRIVATE: "1"
       # Allows user-configured LLM/ntfy endpoints on the LAN. Keep off when
@@ -88,7 +88,7 @@ services:
       - ${STICKY_NOTES_BACKUPS_DIR:-./backups}:/backups
     depends_on:
       # Wait until Whisper's HTTP server actually answers, not just until its
-      # container starts — otherwise the server probes a not-yet-ready Whisper
+      # container starts, otherwise the server probes a not-yet-ready Whisper
       # and disables transcription for the whole life of the process.
       whisper:
         condition: service_healthy
@@ -123,7 +123,7 @@ services:
   # S3-compatible object storage for attachments, used when
   # STICKY_NOTES_STORAGE=s3. Fully self-bootstrapping: --single-node creates
   # the cluster layout on first start, --default-bucket imports the access key
-  # from the GARAGE_DEFAULT_* variables — no manual `garage` CLI setup. The
+  # from the GARAGE_DEFAULT_* variables, no manual `garage` CLI setup. The
   # app then creates one bucket per user with that key on each user's first
   # upload. CHANGE the three default secrets below (via .env or real env vars)
   # for any deployment reachable by others.

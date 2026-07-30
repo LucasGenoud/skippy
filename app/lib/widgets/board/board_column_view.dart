@@ -15,14 +15,14 @@ import 'stage_editor.dart';
 
 /// One column of the board: a header and the cards filed in it.
 ///
-/// The same widget serves both layouts — side by side on a wide screen, one per
+/// The same widget serves both layouts, side by side on a wide screen, one per
 /// page on a phone. Only the container around it differs, so the column's
 /// behaviour is defined once.
 ///
 /// Dragging is split along the line that keeps each half simple:
 ///
 /// - **Within the column**, [AnimatedMasonry] does the work it already does for
-///   the grid — lift, reflow around the pointer, edge auto-scroll — and reports
+///   the grid, lift, reflow around the pointer, edge auto-scroll, and reports
 ///   the reordered column, which becomes one midpoint write.
 /// - **Between columns**, this widget is a [DragTarget] for cards it does not
 ///   already hold. It holds a slot open under the carried card and drops it
@@ -110,7 +110,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
       !widget.column.notes.any((note) => note.id == noteId);
 
   /// Follow the carried card, but only rebuild when it crosses into a new
-  /// slot — pointer samples arrive far faster than the answer changes, and
+  /// slot, pointer samples arrive far faster than the answer changes, and
   /// each rebuild costs the masonry its tile cache.
   void _trackIncoming(Offset globalTop) {
     final index = _masonryKey.currentState?.insertionIndexAt(globalTop) ?? 0;
@@ -132,8 +132,8 @@ class _BoardColumnViewState extends State<BoardColumnView> {
   }
 
   /// The slot [index] names, as a position between the cards it falls between.
-  /// Null when the column never got a hover to place it — an empty column has
-  /// no masonry to aim at — which leaves the card at the end.
+  /// Null when the column never got a hover to place it, an empty column has
+  /// no masonry to aim at, which leaves the card at the end.
   double? _positionAt(int? index) {
     if (index == null) return null;
     final notes = widget.column.notes;
@@ -142,7 +142,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
   }
 
   /// A drag inside the column: exactly one card moved, so write exactly one
-  /// position — the midpoint between where it now sits.
+  /// position, the midpoint between where it now sits.
   void _reorderWithin(List<String> orderedIds) {
     final before = [for (final note in widget.column.notes) note.id];
     final movedId = movedCardId(before, orderedIds);
@@ -163,12 +163,12 @@ class _BoardColumnViewState extends State<BoardColumnView> {
 
   @override
   Widget build(BuildContext context) {
-    // The target covers the whole column, header included — aiming for a
+    // The target covers the whole column, header included, aiming for a
     // column means aiming at its title as often as at its cards.
     return DragTarget<String>(
       onWillAcceptWithDetails: (details) => _isForeign(details.data),
       // Every column the pointer is over hears this, including one that just
-      // refused the card — `_DragAvatar` reports moves to all entered targets,
+      // refused the card, `_DragAvatar` reports moves to all entered targets,
       // not only the accepting one. Without the check, a card being lifted out
       // of this column would open a slot in it for itself.
       onMove: (details) => _isForeign(details.data)
@@ -384,8 +384,8 @@ class _BoardColumnHeader extends StatelessWidget {
 ///
 /// Promoted from the 8px dot the header used to carry: at board zoom that dot
 /// was the smallest mark on the screen, and it was the only thing telling two
-/// columns apart. Uncolored stages — and Unassigned, which is not a stage at
-/// all — draw the rule in the column's own border colour, so every column is
+/// columns apart. Uncolored stages, and Unassigned, which is not a stage at
+/// all, draw the rule in the column's own border colour, so every column is
 /// capped the same way and only the ones you have coloured stand out.
 class _StageRule extends StatelessWidget {
   final BoardColumn column;

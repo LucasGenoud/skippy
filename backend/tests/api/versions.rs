@@ -22,7 +22,7 @@ async fn history_captures_edits_and_restores() {
     let note = create_note(&app, &ada, json!({"title": "Draft", "content": "first"})).await;
     let id = note["id"].as_str().unwrap().to_string();
 
-    // A fresh note has no history — nothing has changed yet.
+    // A fresh note has no history, nothing has changed yet.
     assert!(versions(&app, &ada, &id).await.is_empty());
 
     // The first content edit snapshots how the note started ("first").
@@ -82,7 +82,7 @@ async fn organizational_edits_are_not_versioned() {
     let note = create_note(&app, &ada, json!({"title": "keep"})).await;
     let id = note["id"].as_str().unwrap().to_string();
 
-    // Color, pin, archive, reminder — none of these are "content".
+    // Color, pin, archive, reminder, none of these are "content".
     for patch in [
         json!({"color": "red"}),
         json!({"pinned": true}),
@@ -132,7 +132,7 @@ async fn history_is_scoped_to_participants() {
         .unwrap()
         .to_string();
 
-    // A stranger can neither read the timeline nor restore from it — 404, so
+    // A stranger can neither read the timeline nor restore from it, 404, so
     // note ids leak nothing (same posture as get_note).
     let (status, _) = send(
         &app,

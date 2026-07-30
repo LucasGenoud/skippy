@@ -37,7 +37,7 @@ class WorkspaceMenu extends StatelessWidget {
       child: Material(
         // An ink surface of the switcher's own. Without it both the card
         // (an `Ink` decoration) and the tap ripple would paint onto the
-        // Scaffold's material, which the rail's opaque background covers —
+        // Scaffold's material, which the rail's opaque background covers,
         // leaving no card at all. Transparent: the rail still shows through.
         type: MaterialType.transparency,
         child: Tooltip(
@@ -115,7 +115,7 @@ class WorkspaceMenu extends StatelessWidget {
               ),
             ],
             borderRadius: kBorderRadius,
-            // The switcher reads as a card of its own — the drawer and the
+            // The switcher reads as a card of its own, the drawer and the
             // rail it heads are plain surfaces, so a bordered, slightly
             // raised tile marks it as the one thing here that opens a menu
             // rather than navigating. `Ink`, not a Container: it paints into
@@ -724,7 +724,7 @@ class MoveToWorkspaceSheet {
     showAppSnack(
       droppedLabels == 0
           ? 'Moved to "${store.workspaceById(target)?.name}"'
-          : 'Moved to "${store.workspaceById(target)?.name}" — '
+          : 'Moved to "${store.workspaceById(target)?.name}", '
                 '$droppedLabels ${droppedLabels == 1 ? 'label' : 'labels'} removed',
       icon: Icons.drive_file_move_outlined,
     );

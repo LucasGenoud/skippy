@@ -6,7 +6,7 @@
 //! Stages are intentionally a separate system from labels: a note carries any
 //! number of labels and at most one stage. Nothing in this module reads or
 //! writes labels, and nothing in `labels.rs` reads or writes stages. The two
-//! read alike on purpose — keeping them as two obvious modules is cheaper than
+//! read alike on purpose, keeping them as two obvious modules is cheaper than
 //! one shared abstraction that both have to be reasoned about through.
 
 use axum::Json;
@@ -106,7 +106,7 @@ pub async fn delete_stage(
         .await?
         .map(|s| s.workspace_id);
     // The repository sends the stage's notes back to unassigned in the same
-    // transaction — deleting a column never deletes notes.
+    // transaction, deleting a column never deletes notes.
     if !state.repo.delete_stage(&user_id, &id).await? {
         return Err(ApiError::NotFound);
     }

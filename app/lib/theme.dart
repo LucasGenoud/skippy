@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 // Note colors live in SettingsStore (user-customizable palette); this file
 // only builds the app-wide themes.
 
-/// The app's default accent — amber. Users can override it in Settings;
+/// The app's default accent, amber. Users can override it in Settings;
 /// [SettingsStore] stores the choice and feeds it back in as [buildTheme]'s
 /// seed, so one color reseeds the whole Material scheme for both brightnesses.
 const Color kDefaultAccent = Color(0xFFFBBC04);
 
 /// App-wide corner radius. The design favors near-square corners rather than
-/// the pill/circular shapes Material defaults to — every piece of chrome
+/// the pill/circular shapes Material defaults to, every piece of chrome
 /// (cards, inputs, buttons, menus, dialogs, chips) rounds to this so the look
 /// stays consistent. Change it here to retune the whole app.
 const double kRadius = 4;
@@ -38,8 +38,8 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
   borderRadius: kBorderRadius,
 );
 
-/// The quietest line in the app. Chrome seams — the top bar's underline, the
-/// sidebar and drawer edges, the separators inside them — should read as a
+/// The quietest line in the app. Chrome seams, the top bar's underline, the
+/// sidebar and drawer edges, the separators inside them, should read as a
 /// change of surface rather than a drawn rule, and `outlineVariant` at full
 /// strength is too present over spans this long.
 Color hairlineColor(ColorScheme scheme) =>
@@ -50,7 +50,7 @@ Color hairlineColor(ColorScheme scheme) =>
 /// Columns are the one place in the app where a container has to read as a
 /// *region* rather than as a seam: the canvas runs behind them and cards sit
 /// inside them, so they need to be legible as troughs from across the screen.
-/// One step of the surface ladder isn't enough for that — light-mode
+/// One step of the surface ladder isn't enough for that, light-mode
 /// `surfaceContainer` is three RGB units off the canvas, which left the columns
 /// looking like outlines drawn on the background.
 ///
@@ -73,7 +73,7 @@ Color boardColumnBorderColor(ColorScheme scheme) =>
 
 ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final light = brightness == Brightness.light;
-  // Neutralize the seed's cast on surfaces — the design pairs a colored accent with
+  // Neutralize the seed's cast on surfaces, the design pairs a colored accent with
   // plain gray/white neutrals, so we keep the surfaces neutral whatever the
   // accent is and let the seed drive only `primary` and its companions.
   final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness)
@@ -113,7 +113,7 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
       surfaceTintColor: Colors.transparent,
       // Material rounds the drawer's trailing edge to 16; that lone big curve
       // reads as a different app next to everything else here. The side gives
-      // it the same seam the top bar draws — only the trailing edge is ever
+      // it the same seam the top bar draws, only the trailing edge is ever
       // on screen, the other three sit under the device bezel.
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.horizontal(right: kRadiusCorner),
@@ -177,7 +177,7 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
       style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
     ),
     chipTheme: base.chipTheme.copyWith(shape: kRoundedShape),
-    // SegmentedButton defaults to a stadium (pill) shape — square it off.
+    // SegmentedButton defaults to a stadium (pill) shape, square it off.
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
         shape: WidgetStatePropertyAll(
@@ -188,7 +188,7 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
       shape: kRoundedShape,
     ),
-    // Light "elevated toast" snackbars — a raised surface card, not the dark
+    // Light "elevated toast" snackbars, a raised surface card, not the dark
     // inverse bar, so they read as native to the note cards. showAppSnack
     // (util/snack.dart) fills in a tinted leading icon chip.
     snackBarTheme: base.snackBarTheme.copyWith(

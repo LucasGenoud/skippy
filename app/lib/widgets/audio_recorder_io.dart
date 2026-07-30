@@ -11,7 +11,7 @@ const bool audioRecordingSupported = true;
 
 /// Records microphone audio on native platforms with the `record` plugin,
 /// mirroring the web recorder's API exactly so [RecordingSheet] never branches
-/// on platform. Encodes AAC in an m4a container (`audio/mp4`) — a format the
+/// on platform. Encodes AAC in an m4a container (`audio/mp4`), a format the
 /// ffmpeg-based Whisper service transcribes and that the app already maps to a
 /// `.m4a` upload in `NotesStore.createAudioNote`.
 class AudioRecorder {

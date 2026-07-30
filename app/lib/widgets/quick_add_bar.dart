@@ -26,7 +26,7 @@ import 'reminder_picker.dart';
 import 'share_dialog.dart';
 
 /// Inline quick add, shown above the grid on wide screens: pick a kind and
-/// compose the whole note inline — plain text, a checklist, or markdown —
+/// compose the whole note inline, plain text, a checklist, or markdown,
 /// without ever leaving the grid. Close / tap outside / Escape all save (an
 /// empty composer just collapses). The image icon creates an image note
 /// straight from the file dialog.
@@ -35,10 +35,10 @@ import 'share_dialog.dart';
 /// a reminder, images and files, collaborators, pinning, archiving and
 /// conversion between kinds. All of it is held locally until the note is
 /// created on save, so an abandoned composer never leaves a phantom note in
-/// the grid — and, because a draft is created with these already set, they
+/// the grid, and, because a draft is created with these already set, they
 /// ride along on the create request instead of trailing behind it.
 class QuickAddBar extends StatefulWidget {
-  /// Labels the composed note starts with — set when a label view is open, so
+  /// Labels the composed note starts with, set when a label view is open, so
   /// what you write there stays there.
   final Set<String> labelIds;
 
@@ -73,7 +73,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   final List<DroppedFile> _files = [];
 
   /// True while a picker, sheet or menu of ours is open. Those open their own
-  /// route, and the tap that lands on it reads as a tap outside the composer —
+  /// route, and the tap that lands on it reads as a tap outside the composer,
   /// which would otherwise save and collapse it mid-action.
   bool _modalOpen = false;
 
@@ -168,7 +168,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   }
 
   /// Uploads what was picked while composing, once the note it belongs to has
-  /// been created — the same path the editor's paperclip takes, including the
+  /// been created, the same path the editor's paperclip takes, including the
   /// force-create for a note whose only content is its files.
   Future<void> _uploadFiles(
     NotesStore store,
@@ -245,7 +245,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   // ---------------------------------------------------------------------
   // Note actions
 
-  /// Runs [action] with the outside-tap collapse suppressed — see [_modalOpen].
+  /// Runs [action] with the outside-tap collapse suppressed, see [_modalOpen].
   Future<void> _withModal(Future<void> Function() action) async {
     _modalOpen = true;
     try {
@@ -424,7 +424,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       Theme.of(context).brightness,
     );
     // Expanding is a pleasant, deliberate reveal. Closing follows a focus
-    // loss, however, and must get out of the way immediately — otherwise the
+    // loss, however, and must get out of the way immediately, otherwise the
     // still-visible composer makes the page feel like it ignored the click.
     return TapRegion(
       onTapOutside: (_) => _saveAndCollapse(),
@@ -700,7 +700,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   }
 
   /// The reminder and labels the note will be born with, as chips that can be
-  /// edited or cleared — the same affordance the editor gives a saved note.
+  /// edited or cleared, the same affordance the editor gives a saved note.
   Widget _metaChips(BuildContext context) {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();

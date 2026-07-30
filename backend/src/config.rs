@@ -2,10 +2,10 @@
 //! env vars. When an env var is set, its value **overrides** the per-user copy
 //! in the (otherwise client-owned) settings document, and the frontend locks
 //! the field so it can't be edited. Secret values (API keys, tokens) are never
-//! exposed to the frontend — [`ManagedSettings::public_view`] redacts them.
+//! exposed to the frontend, [`ManagedSettings::public_view`] redacts them.
 //!
 //! The set of manageable keys is a static registry ([`MANAGED_KEYS`]); adding
-//! one — e.g. a notification token — is a single entry here plus overlaying the
+//! one, e.g. a notification token, is a single entry here plus overlaying the
 //! user document at that feature's read sites (the way the LLM read sites do).
 
 use std::collections::HashMap;
@@ -102,7 +102,7 @@ impl ManagedSettings {
         self.values.is_empty()
     }
 
-    /// The managed value for a settings key, if any — includes secrets, so this
+    /// The managed value for a settings key, if any, includes secrets, so this
     /// is backend-internal (never serialize it toward a client).
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.values.get(key).map(|e| &e.value)

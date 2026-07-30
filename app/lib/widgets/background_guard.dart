@@ -6,21 +6,21 @@ import 'package:flutter/services.dart';
 ///
 /// Two things happen on the way out, both once per backgrounding:
 ///
-/// * [onBackground] runs (the app flushes pending note edits — iOS hands a
+/// * [onBackground] runs (the app flushes pending note edits, iOS hands a
 ///   suspended app only a short grace period and may kill it outright);
 /// * on mobile, the focused field is unfocused. iOS suspends the app with
 ///   the text-input session still live, and on return that session is often
-///   stale — the keyboard sticks around or typing goes dead entirely
+///   stale, the keyboard sticks around or typing goes dead entirely
 ///   (flutter/flutter#138403 and friends). Closing the editing session
 ///   before suspension sidesteps the whole family; the note itself is
 ///   already saved, so nothing is lost but the caret.
 ///
-/// On the way back in, [onForeground] runs once — a suspended app's sockets
+/// On the way back in, [onForeground] runs once, a suspended app's sockets
 /// and timers are dead, so whoever owns the network wants to know.
 class BackgroundGuard extends StatefulWidget {
   final VoidCallback? onBackground;
 
-  /// Called on `resumed`, and only after an actual trip to the background —
+  /// Called on `resumed`, and only after an actual trip to the background,
   /// never for the `inactive` blips that a control-center swipe or an
   /// incoming call produce.
   final VoidCallback? onForeground;

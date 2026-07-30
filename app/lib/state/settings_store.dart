@@ -69,7 +69,7 @@ class PaletteEntry {
   }
 }
 
-/// The default 8 colors — the palette users start from and can reset to.
+/// The default 8 colors, the palette users start from and can reset to.
 const List<PaletteEntry> kDefaultPalette = [
   PaletteEntry(
     key: 'red',
@@ -198,7 +198,7 @@ class SettingsStore extends ChangeNotifier {
 
   // Optional features. Each has a server *capability* (is the backing service
   // running?) fetched from /api/capabilities and NOT persisted, plus a synced
-  // user *toggle*. A feature is available only when both are true — so it
+  // user *toggle*. A feature is available only when both are true, so it
   // hides automatically when the service is down, and can be turned off by the
   // user even when it's up.
   bool semanticSearchCapable = false;
@@ -255,7 +255,7 @@ class SettingsStore extends ChangeNotifier {
   // Reminders scheduled with the OS on this device instead of pushed by the
   // server, so they fire offline and without a channel. Opt-in (unlike the
   // toggles above) because switching it on asks for a system permission, and
-  // because it only covers notes this device has already synced — see the
+  // because it only covers notes this device has already synced, see the
   // disclaimer in Settings → Notifications.
   bool deviceNotificationsEnabled = false;
 
@@ -277,7 +277,7 @@ class SettingsStore extends ChangeNotifier {
 
   /// Everything listeners can observe, serialized. [load] uses it to skip
   /// the notification when a refetch changed nothing: load() runs after
-  /// every WS change nudge — including the echo of our own edits — and an
+  /// every WS change nudge, including the echo of our own edits, and an
   /// unconditional notify would rebuild MaterialApp (fresh themes) and
   /// every note card each time.
   String _fingerprint() => jsonEncode({
@@ -330,7 +330,7 @@ class SettingsStore extends ChangeNotifier {
 
   /// Overlay the server-managed values onto the local fields, so the UI shows
   /// (and the store reports as "configured") what the server will actually use.
-  /// Secret keys are blanked — the server never sends their value, and the
+  /// Secret keys are blanked, the server never sends their value, and the
   /// client must never hold it.
   void _applyManaged() {
     String? text(String key) {
@@ -587,7 +587,7 @@ class SettingsStore extends ChangeNotifier {
     };
   }
 
-  /// "Today 9:00 AM", "Tomorrow 18:30", "Jul 24, 2026, 9:00 AM" — chips.
+  /// "Today 9:00 AM", "Tomorrow 18:30", "Jul 24, 2026, 9:00 AM", chips.
   String reminderLabel(DateTime t) {
     final now = DateTime.now();
     final day = DateTime(t.year, t.month, t.day);

@@ -7,7 +7,7 @@ use axum::http::request::Parts;
 use crate::AppState;
 use crate::error::ApiError;
 
-/// Argon2id — the hybrid variant, named rather than left to `Argon2::default()`
+/// Argon2id, the hybrid variant, named rather than left to `Argon2::default()`
 /// so a change in the crate's default can't quietly move us off it.
 fn hasher() -> Argon2<'static> {
     Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default())
@@ -26,7 +26,7 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
         return false;
     };
     // Variant, version and cost all come from the stored PHC string, not from
-    // [`hasher`] — so hashes written before this pin keep verifying.
+    // [`hasher`], so hashes written before this pin keep verifying.
     hasher().verify_password(password.as_bytes(), &parsed).is_ok()
 }
 

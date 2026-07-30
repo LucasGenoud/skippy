@@ -1,6 +1,6 @@
 /// Microphone capture. On the web this drives the browser's MediaRecorder; on
 /// native platforms (Android/iOS) it drives the `record` plugin. Both expose an
-/// identical API — a live input level plus `start`/`stop` — so callers never
+/// identical API, a live input level plus `start`/`stop`, so callers never
 /// branch on platform.
 library;
 

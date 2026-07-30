@@ -101,7 +101,7 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
     };
     let url = config.base_url.clone();
     // Probes the endpoint, which is also how the model's vector width is
-    // discovered — see ApiEmbedder::connect.
+    // discovered, see ApiEmbedder::connect.
     let embedder = match ApiEmbedder::connect(config).await {
         Ok(embedder) => Arc::new(embedder),
         Err(e) => {
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn escapes_url_so_it_cannot_break_out_of_the_script() {
         let out = inject_api_base("<head></head>", r#"https://x/"</script><script>alert(1)"#);
-        // No literal </script> can appear in the injected value — it's \u-escaped.
+        // No literal </script> can appear in the injected value, it's \u-escaped.
         let value_end = out.find(";</script>").unwrap();
         assert!(!out[..value_end].contains("</script>"));
         assert!(out.contains("\\u003c"));

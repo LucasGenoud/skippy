@@ -1,7 +1,7 @@
 /// Reminder-notification channels (ntfy, Telegram, …), described as data so
 /// the Settings UI, persistence and "configured" checks all render from one
-/// list. Adding a channel here — with a matching `Connector` on the backend,
-/// which reads the same keys out of the settings document — is all the app
+/// list. Adding a channel here, with a matching `Connector` on the backend,
+/// which reads the same keys out of the settings document, is all the app
 /// needs: the config dialog grows its fields, the summary line and the
 /// enabled checks pick it up automatically.
 library;

@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../util/motion.dart';
 
-/// Cascades a short, rarely-opened list's rows in on first mount — each row
+/// Cascades a short, rarely-opened list's rows in on first mount, each row
 /// fades and rises slightly, offset by [index] so they don't all land at
 /// once. Meant for dialog-sized lists (a handful of rows); the note grid has
 /// its own entrance built for hundreds of tiles (see `AnimatedMasonry`).
 ///
 /// Keyed items (e.g. `ValueKey(stage.id)`) only replay the entrance when the
-/// State is first created — a freshly-added row cascades in with the rest of
+/// State is first created, a freshly-added row cascades in with the rest of
 /// the list, but reordering or rebuilding an existing row does not.
 class StaggeredEntrance extends StatefulWidget {
   final int index;

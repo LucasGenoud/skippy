@@ -41,14 +41,14 @@ pub struct ReindexProgress {
 pub struct AppState {
     pub repo: Arc<dyn Repository>,
     pub hub: Hub,
-    /// Attachment blob storage — local disk or S3, chosen in `main` from
+    /// Attachment blob storage, local disk or S3, chosen in `main` from
     /// `STICKY_NOTES_STORAGE`.
     pub files: Arc<dyn FileStore>,
     /// Present when semantic search is enabled.
     pub search: Option<Arc<search::SearchService>>,
     /// Present when audio transcription (Whisper) is enabled.
     pub transcribe: Option<Arc<dyn transcribe::Transcriber>>,
-    /// Always present — LLM availability is per-user configuration (endpoint,
+    /// Always present, LLM availability is per-user configuration (endpoint,
     /// key, model in the user's settings document), not server wiring.
     pub llm: Arc<dyn llm::Llm>,
     /// Notification connectors (ntfy, Telegram, …). Always present, like
@@ -70,7 +70,7 @@ pub struct AppState {
     /// by default; `main` loads a persisted secret from the store via
     /// [`AppState::with_file_secret`] so URLs survive restarts.
     pub file_secret: Arc<Vec<u8>>,
-    /// Settings the self-hoster pinned via env vars — these override the
+    /// Settings the self-hoster pinned via env vars, these override the
     /// per-user copy in the settings document and lock the field in the app.
     /// Empty by default (nothing managed); `main` fills it from the env.
     pub managed: Arc<config::ManagedSettings>,

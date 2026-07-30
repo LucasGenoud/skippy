@@ -83,7 +83,7 @@ class NotesStore extends ChangeNotifier {
   Timer? _offlineConfirmTimer;
 
   /// The server has answered at least once since launch. Until it has, the
-  /// indicator says "connecting" rather than claiming everything is saved —
+  /// indicator says "connecting" rather than claiming everything is saved,
   /// the notes on screen came from the local cache, not from the server.
   bool _connectedOnce = false;
 
@@ -135,8 +135,8 @@ class NotesStore extends ChangeNotifier {
 
   /// How long a connection failure has to persist before the UI says so. A
   /// phone waking from sleep routinely drops the first request or two while
-  /// its radio comes back, and being told the server is unreachable — a
-  /// second before it plainly is reachable — is worse than saying nothing.
+  /// its radio comes back, and being told the server is unreachable, a
+  /// second before it plainly is reachable, is worse than saying nothing.
   /// Tests shorten it.
   final Duration offlineGrace;
 
@@ -221,7 +221,7 @@ class NotesStore extends ChangeNotifier {
     known: {for (final workspace in _workspaces) workspace.id},
   );
 
-  /// Notes in the open workspace, whatever their view — used by the pickers
+  /// Notes in the open workspace, whatever their view, used by the pickers
   /// and counts that must agree with what the grid shows.
   List<Note> get notesInActiveWorkspace {
     final scope = workspaceScope;
@@ -628,7 +628,7 @@ class NotesStore extends ChangeNotifier {
 
   /// A request failed. The failure is recorded right away for the retry
   /// machinery, but only surfaces to the user once it has lasted
-  /// [offlineGrace] — a blip that the next probe recovers from never shows.
+  /// [offlineGrace], a blip that the next probe recovers from never shows.
   void _markConnectionDown() {
     if (_connectionDown) return;
     _connectionDown = true;
@@ -656,8 +656,8 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// The app came back to the foreground. Everything it thought it knew about
-  /// the network is stale — a suspended app's socket is dead, its timers were
-  /// frozen, and the phone may have changed networks entirely — so drop any
+  /// the network is stale, a suspended app's socket is dead, its timers were
+  /// frozen, and the phone may have changed networks entirely, so drop any
   /// offline verdict rather than greeting the user with a complaint about a
   /// connection nothing has tested since. Then pull: the change socket was
   /// down while we were away, so anything edited elsewhere is still missing.
@@ -817,7 +817,7 @@ class NotesStore extends ChangeNotifier {
     return ViewSelection(view, labelId is String ? labelId : null);
   }
 
-  /// Load the on-disk snapshot so notes render instantly — before, and even
+  /// Load the on-disk snapshot so notes render instantly, before, and even
   /// without, a network round-trip. Runs once; the network fetch in [load]
   /// then reconciles (local unsynced edits win). Persisted pending writes are
   /// replayed right away.
@@ -904,7 +904,7 @@ class NotesStore extends ChangeNotifier {
       if (note != null) ops.add(_contentPatchOp(id, note).toJson());
     }
     return {
-      // Note.toJson carries attachment *metadata* only (id/mime/name/size) —
+      // Note.toJson carries attachment *metadata* only (id/mime/name/size),
       // never file bytes. Uploaded media stays on the server and is fetched by
       // URL on demand, so the cache stays small regardless of attachment size.
       'notes': [
@@ -1056,7 +1056,7 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Note mutations (all optimistic)
 
-  /// [labelIds] files the note from birth — what a note composed while a label
+  /// [labelIds] files the note from birth, what a note composed while a label
   /// view is open needs, so it doesn't vanish out of the view it was written
   /// in. They ride along on the create request, so a draft never loses them.
   Note createDraft({
@@ -1194,7 +1194,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Typing suggestions for checklist rows, drawn from items previously
-  /// checked off IN THIS NOTE — history never leaks across notes. Prefix
+  /// checked off IN THIS NOTE, history never leaks across notes. Prefix
   /// matches rank above substring matches; texts already on the list are
   /// excluded. An empty query suggests the note's whole history, most used
   /// first (the popup scrolls).
@@ -1459,7 +1459,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// The app is heading to background: the OS may suspend (or kill) us at
-  /// any moment, so stop waiting on debounce timers — enqueue what they were
+  /// any moment, so stop waiting on debounce timers, enqueue what they were
   /// holding (which persists the queue and starts pushing it) and snapshot
   /// the rest of the state while we still can.
   void flushForBackground() {
@@ -1928,7 +1928,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Rename and/or restyle a label. Passing null for [color]/[icon] clears it
-  /// (resets to the theme default) — these are set to exactly what's given, not
+  /// (resets to the theme default), these are set to exactly what's given, not
   /// merged, so the editor's "no colour"/"no icon" choice sticks. [position]
   /// moves the label in the sidebar; omitting it leaves the order alone.
   void updateLabel(
@@ -2075,7 +2075,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Drag-reorder a column. [newIndex] is the final resting index (the slot
-  /// the item lands in, counted *after* its own removal) — the convention
+  /// the item lands in, counted *after* its own removal), the convention
   /// `ReorderableListView.onReorderItem` reports, so that callback can call
   /// this directly. Recomputes a sparse position between the new neighbours
   /// rather than renumbering the board, same trick as [positionBetween].
@@ -2102,7 +2102,7 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
-  /// Delete a column. Its notes are not destroyed — they go back to unassigned,
+  /// Delete a column. Its notes are not destroyed, they go back to unassigned,
   /// locally and on the server.
   void deleteStage(String id) {
     _stages.removeWhere((s) => s.id == id);
@@ -2122,7 +2122,7 @@ class NotesStore extends ChangeNotifier {
   /// One patch carries both fields, so a move is a single queued write rather
   /// than a stage change chased by a reorder. That also makes reordering
   /// *within* a column the same operation as moving between two: it is a move
-  /// to the stage the card is already in. Labels are untouched — a card
+  /// to the stage the card is already in. Labels are untouched, a card
   /// changing column says nothing about its taxonomy.
   void setNoteStage(String noteId, String? stageId, {double? position}) {
     final note = noteById(noteId);
@@ -2141,7 +2141,7 @@ class NotesStore extends ChangeNotifier {
   /// The slot between two cards in a column, for a drop that landed there.
   ///
   /// Positions are sparse rather than densely renumbered, so placing a card
-  /// writes one row instead of the whole column — the same trick
+  /// writes one row instead of the whole column, the same trick
   /// [_frontPosition] uses for new notes. A null neighbour means the head or
   /// the tail of the column.
   static double positionBetween(Note? above, Note? below) {

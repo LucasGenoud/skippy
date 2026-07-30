@@ -10,7 +10,7 @@ import 'form_dialog.dart';
 import 'settings/accent_color.dart' show kAccentPresets;
 import 'staggered_entrance.dart';
 
-/// A small colour dot with the label's icon inside — the shared leading glyph
+/// A small colour dot with the label's icon inside, the shared leading glyph
 /// for a label across the assign sheet, the editor list, and the drawer.
 class LabelGlyph extends StatelessWidget {
   final Label label;
@@ -36,7 +36,7 @@ class LabelGlyph extends StatelessWidget {
   }
 }
 
-/// Bottom sheet for assigning labels to a note, with inline creation —
+/// Bottom sheet for assigning labels to a note, with inline creation,
 /// typing a name that doesn't exist offers "Create `name`".
 class LabelsSheet extends StatefulWidget {
   final List<String> noteIds;
@@ -238,7 +238,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                   if (visible.isEmpty && q.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(20),
-                      child: Text('No labels yet — type a name to create one.'),
+                      child: Text('No labels yet, type a name to create one.'),
                     ),
                 ],
               ),
@@ -255,7 +255,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
 /// with their colour/icon; each opens a [LabelEditorDialog] on tap.
 ///
 /// Shown through [showFormDialog]: a floating box on a wide screen, a page that
-/// slides up on a phone — where a list of labels and a delete button per row
+/// slides up on a phone, where a list of labels and a delete button per row
 /// have no business being squeezed into a boxed modal.
 class EditLabelsDialog extends StatelessWidget {
   const EditLabelsDialog({super.key});

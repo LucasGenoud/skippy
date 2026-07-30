@@ -126,11 +126,11 @@ String _toMarkdown(
   return '${buf.toString().trimRight()}\n';
 }
 
-/// One note as plain text: title, then the body — a checklist's rows as
+/// One note as plain text: title, then the body, a checklist's rows as
 /// `[x] item` lines. This is what "Copy to clipboard" puts on the clipboard
 /// and what a text export is built from, so the two never drift apart.
 /// [labels] is appended as a trailing line when given (the export does; the
-/// clipboard doesn't — you're pasting the note, not its filing).
+/// clipboard doesn't, you're pasting the note, not its filing).
 String noteToPlainText(Note note, {List<String> labels = const []}) {
   final buf = StringBuffer();
   final title = note.title.trim();

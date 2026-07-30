@@ -7,7 +7,7 @@ import '../form_dialog.dart';
 import 'probe_row.dart';
 
 /// Summary row for the user's notification channels; taps into the config
-/// dialog. Like the AI-provider tile there is no server capability —
+/// dialog. Like the AI-provider tile there is no server capability,
 /// availability is purely whether at least one channel from [kNotifyChannels]
 /// is configured.
 class NotifyConfigTile extends StatelessWidget {
@@ -18,7 +18,7 @@ class NotifyConfigTile extends StatelessWidget {
     final settings = context.watch<SettingsStore>();
     final channels = settings.configuredNotifyChannels;
     final summary = channels.isEmpty
-        ? 'Not configured — get reminders via ${[for (final c in kNotifyChannels) c.label].join(' or ')}'
+        ? 'Not configured, get reminders via ${[for (final c in kNotifyChannels) c.label].join(' or ')}'
         : channels.join(' + ');
     return ListTile(
       leading: const Icon(Icons.send_to_mobile_outlined),
@@ -32,7 +32,7 @@ class NotifyConfigTile extends StatelessWidget {
 
 /// Channel editor rendered entirely from [kNotifyChannels], with a delivery
 /// probe. Testing uses the current field values (not the saved settings), so
-/// the config can be validated before Save — the button literally sends a
+/// the config can be validated before Save, the button literally sends a
 /// test notification.
 class _NotifyConfigDialog extends StatefulWidget {
   const _NotifyConfigDialog();
@@ -162,7 +162,7 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
             onTest: _anyConfigured ? _test : null,
             icon: Icons.notifications_active_outlined,
             label: 'Send test',
-            successText: 'Sent — check your device',
+            successText: 'Sent, check your device',
           ),
         ],
       ),

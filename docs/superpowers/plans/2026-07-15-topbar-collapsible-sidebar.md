@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the slide-in-only `NavigationDrawer` and floating-search `SliverAppBar` with a fixed top bar (logo + search + account popover) and a persistent, collapsible left sidebar on wide screens — collapsing to a drawer on narrow screens (<600px).
+**Goal:** Replace the slide-in-only `NavigationDrawer` and floating-search `SliverAppBar` with a fixed top bar (logo + search + account popover) and a persistent, collapsible left sidebar on wide screens, collapsing to a drawer on narrow screens (<600px).
 
 **Architecture:** A new `AppShell` widget owns the responsive `Row(sidebar + body)` / `Scaffold(drawer + appBar)` layout. `HomeScreen` keeps all notes/grid logic and becomes the body of the shell. A shared `AppNavContent` widget (extracted from `AppDrawer`) is used by both the persistent sidebar and the narrow drawer so navigation logic is defined once. `AppDrawer` is deleted. Sidebar collapse state persists in `SettingsStore`.
 
@@ -36,7 +36,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `app/test/settings_store_test.dart` (inside `main()`, after the existing tests — find the last `test(...)` block and add before the closing `}` of `main`):
+Add to `app/test/settings_store_test.dart` (inside `main()`, after the existing tests, find the last `test(...)` block and add before the closing `}` of `main`):
 
 ```dart
   test('sidebarCollapsed defaults false and roundtrips', () async {
@@ -60,7 +60,7 @@ Add to `app/test/settings_store_test.dart` (inside `main()`, after the existing 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd app && flutter test test/settings_store_test.dart --plain-name "sidebarCollapsed"`
-Expected: FAIL — `sidebarCollapsed` getter and `setSidebarCollapsed` method don't exist (compile error / undefined name).
+Expected: FAIL, `sidebarCollapsed` getter and `setSidebarCollapsed` method don't exist (compile error / undefined name).
 
 - [ ] **Step 3: Add the field, parsing, serialization, and setter**
 
@@ -271,7 +271,7 @@ void main() {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd app && flutter test test/app_shell_test.dart --plain-name "AppNavContent"`
-Expected: FAIL — `AppNavContent` doesn't exist (compile error).
+Expected: FAIL, `AppNavContent` doesn't exist (compile error).
 
 - [ ] **Step 3: Implement `AppNavContent`**
 
@@ -608,7 +608,7 @@ And add the `AppTopBar` test group:
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd app && flutter test test/app_shell_test.dart --plain-name "AppTopBar"`
-Expected: FAIL — `AppTopBar` doesn't exist (compile error).
+Expected: FAIL, `AppTopBar` doesn't exist (compile error).
 
 - [ ] **Step 3: Implement `AppTopBar`**
 
@@ -755,7 +755,7 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
                                       : null,
                                 ),
                                 tooltip: semantic
-                                    ? 'Semantic search on — results ranked by meaning'
+                                    ? 'Semantic search on, results ranked by meaning'
                                     : 'Search by meaning',
                                 onPressed: onToggleSemantic,
                               ),
@@ -987,7 +987,7 @@ Add the test group inside `main()`:
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd app && flutter test test/app_shell_test.dart --plain-name "AppSidebar"`
-Expected: FAIL — `AppSidebar` doesn't exist (compile error).
+Expected: FAIL, `AppSidebar` doesn't exist (compile error).
 
 - [ ] **Step 3: Implement `AppSidebar`**
 
@@ -1190,7 +1190,7 @@ Add the test group:
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd app && flutter test test/app_shell_test.dart --plain-name "AppShell"`
-Expected: FAIL — `AppShell` doesn't exist (compile error).
+Expected: FAIL, `AppShell` doesn't exist (compile error).
 
 - [ ] **Step 3: Implement `AppShell`**
 
@@ -1330,9 +1330,9 @@ git commit -m "feat: add responsive AppShell"
 
 - [ ] **Step 1: Update the FAB-slot test to match the new shell**
 
-The existing test `'note FABs stay out of the Scaffold slot'` (`widget_test.dart:689`) finds `Scaffold` and asserts `floatingActionButton` is null. After wiring, the `HomeScreen` still uses a `Scaffold` in the narrow layout, and the FABs are still in the body. The assertion `scaffold.floatingActionButton` is null should still hold. But the test also does `find.byType(Scaffold).first` — with `AppShell`, on wide screens there's no `Scaffold` wrapping the body (it's a `Row`), so the test's default 800px-wide test surface is >=600, meaning wide layout, meaning no `Scaffold`. The test will fail because `find.byType(Scaffold)` finds nothing.
+The existing test `'note FABs stay out of the Scaffold slot'` (`widget_test.dart:689`) finds `Scaffold` and asserts `floatingActionButton` is null. After wiring, the `HomeScreen` still uses a `Scaffold` in the narrow layout, and the FABs are still in the body. The assertion `scaffold.floatingActionButton` is null should still hold. But the test also does `find.byType(Scaffold).first`, with `AppShell`, on wide screens there's no `Scaffold` wrapping the body (it's a `Row`), so the test's default 800px-wide test surface is >=600, meaning wide layout, meaning no `Scaffold`. The test will fail because `find.byType(Scaffold)` finds nothing.
 
-Update `app/test/widget_test.dart` — in the `'note FABs stay out of the Scaffold slot'` test, replace the assertion block. Find:
+Update `app/test/widget_test.dart`, in the `'note FABs stay out of the Scaffold slot'` test, replace the assertion block. Find:
 
 ```dart
         final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
@@ -1356,7 +1356,7 @@ Replace with:
 - [ ] **Step 2: Run the FAB test to confirm it still passes with the old HomeScreen (pre-refactor)**
 
 Run: `cd app && flutter test test/widget_test.dart --plain-name "note FABs stay out of the Scaffold slot"`
-Expected: PASS (the old `HomeScreen` still has a `Scaffold` at this point — we haven't refactored it yet, so this is a baseline).
+Expected: PASS (the old `HomeScreen` still has a `Scaffold` at this point, we haven't refactored it yet, so this is a baseline).
 
 - [ ] **Step 3: Refactor `HomeScreen.build` to use `AppShell`**
 
@@ -1541,7 +1541,7 @@ import '../widgets/app_shell.dart';
     );
 ```
 
-3c. Delete the `_SearchBar` class (lines 442–566) and the `_SortButton` class (lines 660–686) — they've moved to `AppTopBar`. Keep `_ViewHeader`, `_OfflineBanner`, `_NewNoteFabs`, `_AudioNoteFab`.
+3c. Delete the `_SearchBar` class (lines 442–566) and the `_SortButton` class (lines 660–686), they've moved to `AppTopBar`. Keep `_ViewHeader`, `_OfflineBanner`, `_NewNoteFabs`, `_AudioNoteFab`.
 
 - [ ] **Step 4: Delete `app_drawer.dart`**
 

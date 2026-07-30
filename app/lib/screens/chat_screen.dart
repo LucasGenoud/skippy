@@ -95,7 +95,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _send() {
     // Submitting via the keyboard (TextInputAction.send) unfocuses the field
-    // by default, and the send button steals focus on click — take it back
+    // by default, and the send button steals focus on click, take it back
     // first so the user can just keep typing, whatever happens below.
     _inputFocus.requestFocus();
     final message = _input.text.trim();
@@ -114,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _input.clear();
     });
     final api = context.read<SettingsStore>().api;
-    // Answer over the workspace the user is looking at — and file anything the
+    // Answer over the workspace the user is looking at, and file anything the
     // turn writes there too.
     _sub = api
         .chat(
@@ -155,7 +155,7 @@ class _ChatScreenState extends State<ChatScreen> {
         case ChatCreatedEvent():
           turn.created = event;
           // Pull the new/updated note into the local store now so the grid
-          // reflects it and the chip can label it — the WS change nudge would
+          // reflects it and the chip can label it, the WS change nudge would
           // do this too, a moment later.
           context.read<NotesStore>().load();
         case ChatDeltaEvent(:final text):
@@ -229,7 +229,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       Expanded(
                         // Never disabled: disabling while the answer streams
                         // tears down the engine's text editing element, and
-                        // (on Firefox) focus doesn't survive the re-enable —
+                        // (on Firefox) focus doesn't survive the re-enable,
                         // the composer went dead after the first reply. The
                         // user can type the follow-up during streaming; only
                         // sending is gated on _busy.
@@ -302,7 +302,7 @@ class _EmptyHint extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Ask about your notes — answers cite the notes they came from. '
+              'Ask about your notes, answers cite the notes they came from. '
               'You can also ask to create a note or add to one.',
               textAlign: TextAlign.center,
               style: Theme.of(
@@ -382,7 +382,7 @@ class _Bubble extends StatelessWidget {
           if (turn.error != null && turn.text.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
-              '— interrupted: ${turn.error}',
+              'Interrupted: ${turn.error}',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: scheme.error),

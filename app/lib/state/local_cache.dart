@@ -10,9 +10,9 @@ String notesCacheKey(String namespace, String? userId) {
   return '${Uri.encodeComponent(trimmed)}::$account';
 }
 
-/// A tiny persistence seam for the offline notes cache. Swappable — the app
+/// A tiny persistence seam for the offline notes cache. Swappable, the app
 /// uses [PrefsLocalCache] (shared_preferences, which is localStorage on web),
-/// tests inject an in-memory fake — mirroring how the store abstracts [Api].
+/// tests inject an in-memory fake, mirroring how the store abstracts [Api].
 ///
 /// Each signed-in server/user pair gets one JSON document (notes + labels +
 /// checklist history + the pending sync queue). [NotesStore] builds that

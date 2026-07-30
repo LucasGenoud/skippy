@@ -12,7 +12,7 @@ import 'login_field_decoration.dart';
 /// account, so hand out a fresh one each time.
 int _nextViewId = 0;
 
-/// Flutter's autofill hints are not all valid HTML `autocomplete` tokens —
+/// Flutter's autofill hints are not all valid HTML `autocomplete` tokens,
 /// `password` and `newPassword` in particular are `current-password` and
 /// `new-password` in the browser, and anything unrecognized is dropped on the
 /// floor, which is exactly the field a manager most needs to see.
@@ -28,7 +28,7 @@ const _browserAutocomplete = <String, String>{
 /// outline, the floating label and the icons exactly as [TextField] would,
 /// while the text itself lives in an `<input>` hosted by a platform view. The
 /// [controller] and the element mirror each other in both directions, so the
-/// rest of the screen — validation, submit, error clearing — is unchanged, and
+/// rest of the screen, validation, submit, error clearing, is unchanged, and
 /// a password manager writing into the element is indistinguishable from
 /// typing.
 class LoginField extends StatefulWidget {
@@ -38,7 +38,7 @@ class LoginField extends StatefulWidget {
   final IconData icon;
 
   /// The autofill hint, e.g. [AutofillHints.username]. Used verbatim as the
-  /// element's `autocomplete` attribute — the values line up.
+  /// element's `autocomplete` attribute, the values line up.
   final String autofillHint;
 
   /// The element's `name`/`id`. Password managers weigh those alongside
@@ -187,7 +187,7 @@ class _LoginFieldState extends State<LoginField> {
   }
 
   /// Pull the element's value into the controller. Covers typing as well as a
-  /// password manager writing the value in — both raise `input`.
+  /// password manager writing the value in, both raise `input`.
   void _readElement() {
     final value = _input.value;
     if (widget.controller.text != value) widget.controller.text = value;
@@ -200,8 +200,8 @@ class _LoginFieldState extends State<LoginField> {
       _input.value = widget.controller.text;
     }
     final empty = widget.controller.text.isEmpty;
-    // Only emptiness reaches the decoration — it decides whether the label
-    // floats — so leave the other keystrokes alone.
+    // Only emptiness reaches the decoration, it decides whether the label
+    // floats, so leave the other keystrokes alone.
     if (empty != _empty) setState(() => _empty = empty);
   }
 
@@ -217,7 +217,7 @@ class _LoginFieldState extends State<LoginField> {
   /// autofocus has to wait for it to land in the document.
   ///
   /// Waiting on frames would be the natural thing, but the app goes idle once
-  /// the login screen has settled and stops producing them — this has to be a
+  /// the login screen has settled and stops producing them, this has to be a
   /// timer, or the autofocus is simply lost.
   void _focusWhenAttached(int attemptsLeft) {
     if (!mounted) return;
@@ -239,7 +239,7 @@ class _LoginFieldState extends State<LoginField> {
   ///
   /// Every name is quoted: the theme's family on Apple platforms is
   /// `.SF UI Text`, and a leading dot makes an unquoted CSS identifier
-  /// invalid — the whole declaration is then dropped and the input falls back
+  /// invalid, the whole declaration is then dropped and the input falls back
   /// to the user agent's Arial, which matches nothing else on the screen.
   String _cssFontFamily(TextStyle style) => [
     if (style.fontFamily case final family?) '"$family"',
@@ -264,8 +264,8 @@ class _LoginFieldState extends State<LoginField> {
     return Focus(
       focusNode: widget.focusNode,
       child: GestureDetector(
-        // Clicks land on the element itself, but the decoration around it —
-        // padding, label, icons — is Flutter's, and tapping there should still
+        // Clicks land on the element itself, but the decoration around it,
+        // padding, label, icons, is Flutter's, and tapping there should still
         // put the caret in the field the way a TextField does.
         behavior: HitTestBehavior.opaque,
         onTap: () => _input.focus(),

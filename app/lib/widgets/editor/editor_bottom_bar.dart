@@ -29,7 +29,7 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onMoveToWorkspace;
 
   /// Open the column picker. On a phone the board opens a note full-screen,
-  /// which puts the card — and its drag gesture — out of reach; this is the
+  /// which puts the card, and its drag gesture, out of reach; this is the
   /// way back to the board without closing the note first.
   final VoidCallback? onMoveToStage;
   final VoidCallback? onCopyToClipboard;

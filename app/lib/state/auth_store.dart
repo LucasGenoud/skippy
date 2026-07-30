@@ -112,7 +112,7 @@ class AuthStore extends ChangeNotifier {
     if (cached != null) {
       // Open on the cached session immediately: the notes cache is keyed by
       // user id, so this is what lets the app paint real notes on launch with
-      // no network at all. The token is still checked — just off the critical
+      // no network at all. The token is still checked, just off the critical
       // path, in [_verifySession].
       user = cached;
       status = AuthStatus.signedIn;
@@ -150,7 +150,7 @@ class AuthStore extends ChangeNotifier {
   }
 
   /// Confirm a restored token after the UI is already up, and refresh the
-  /// stored profile. Only an outright rejection signs the user out — being
+  /// stored profile. Only an outright rejection signs the user out, being
   /// unable to reach the server is exactly the case the cached session exists
   /// for, and must never cost someone access to their notes.
   Future<void> _verifySession(SharedPreferences prefs) async {
@@ -179,7 +179,7 @@ class AuthStore extends ChangeNotifier {
   }
 
   /// Whether the server actively refused this session, as opposed to failing
-  /// to answer (5xx, timeouts) — which says nothing about the token.
+  /// to answer (5xx, timeouts), which says nothing about the token.
   bool _isRejection(ApiException e) =>
       e.statusCode == 401 || e.statusCode == 403;
 
@@ -240,7 +240,7 @@ class AuthStore extends ChangeNotifier {
       return false;
     } catch (_) {
       if (!isCurrent()) return false;
-      error = "Can't reach the server — is it running?";
+      error = "Can't reach the server, is it running?";
       return false;
     } finally {
       if (generation == _authGeneration) {
@@ -309,7 +309,7 @@ class AuthStore extends ChangeNotifier {
   /// Signing out is a local decision, so the session goes first and the server
   /// is told afterwards, best-effort. Waiting on that round trip meant that
   /// with no connection the button appeared dead for the length of the request
-  /// timeout — and then signed out anyway.
+  /// timeout, and then signed out anyway.
   Future<void> signOut() async {
     // Started before the token is cleared: [ApiClient.logout] builds its
     // headers synchronously, so the request still carries the token it is

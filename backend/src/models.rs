@@ -274,7 +274,7 @@ impl NoteRecord {
 }
 
 /// A past state of a note's content, kept for the version-history timeline.
-/// Only content fields are versioned — organizational state (color, pin,
+/// Only content fields are versioned, organizational state (color, pin,
 /// archive, labels, position) is not "content you'd want to roll back".
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteVersion {
@@ -298,7 +298,7 @@ pub struct Label {
     pub workspace_id: String,
     pub name: String,
     /// Hex colour (`#RRGGBB`) for the label's chip/dot, or `None` for the
-    /// theme default. Purely presentational — the server never interprets it.
+    /// theme default. Purely presentational, the server never interprets it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     /// Stable key into the client's curated icon set (e.g. `"work"`), or
@@ -310,8 +310,8 @@ pub struct Label {
     pub position: f64,
 }
 
-/// A board column. Stages are workspace state like labels — every member sees
-/// and uses the same set — but they are a separate system on purpose: a note
+/// A board column. Stages are workspace state like labels, every member sees
+/// and uses the same set, but they are a separate system on purpose: a note
 /// carries any number of labels and at most one stage, so the exclusivity a
 /// board needs is a schema fact rather than a rule the client has to maintain.
 /// Nothing here references labels, and nothing in labels references stages.
@@ -321,7 +321,7 @@ pub struct Stage {
     pub workspace_id: String,
     pub name: String,
     /// Hex colour (`#RRGGBB`) for the column header, or `None` for the theme
-    /// default. Purely presentational — the server never interprets it.
+    /// default. Purely presentational, the server never interprets it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     /// Left-to-right order of the column on the board.
@@ -330,7 +330,7 @@ pub struct Stage {
 
 /// A checklist item text previously checked off in a note; powers typing
 /// suggestions ("Mi…" -> "Milk") in that note's checklist rows. Scoped per
-/// note — suggestions never leak from one note to another.
+/// note, suggestions never leak from one note to another.
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryEntry {
     pub note_id: String,
@@ -348,7 +348,7 @@ pub struct CreateNote {
     #[serde(default)]
     pub id: Option<String>,
     /// Which workspace to file the note in. Absent means the caller's default
-    /// workspace — the API's deliberate default, relied on by the chat write
+    /// workspace, the API's deliberate default, relied on by the chat write
     /// path and by any caller that has no workspace in hand.
     #[serde(default)]
     pub workspace_id: Option<String>,

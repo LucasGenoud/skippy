@@ -18,7 +18,7 @@ class NoteHistoryScreen extends StatefulWidget {
   const NoteHistoryScreen({super.key, required this.noteId});
 
   /// Push the timeline over whatever's on screen (works from the fullscreen
-  /// editor and the wide-screen modal alike — it uses the root navigator).
+  /// editor and the wide-screen modal alike, it uses the root navigator).
   static Future<void> open(BuildContext context, String noteId) {
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => NoteHistoryScreen(noteId: noteId)),
@@ -166,7 +166,7 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
     );
   }
 
-  /// Show the editor's name only when it isn't the signed-in user — on a
+  /// Show the editor's name only when it isn't the signed-in user, on a
   /// personal note every version is "you", which is just noise.
   String? _authorLabel(NoteVersion version) {
     final editor = version.editedBy;

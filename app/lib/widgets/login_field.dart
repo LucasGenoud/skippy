@@ -6,7 +6,7 @@
 /// it only materializes once a field is focused and every input in it is sized
 /// `0x0` and painted transparent. Browsers' built-in managers fill it anyway
 /// (they go by the `autocomplete` attribute), while extensions such as
-/// Bitwarden and 1Password skip fields they consider not viewable — so on the
+/// Bitwarden and 1Password skip fields they consider not viewable, so on the
 /// web the fields are real, visible DOM inputs instead.
 library;
 

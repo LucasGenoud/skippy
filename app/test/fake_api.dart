@@ -58,7 +58,7 @@ class FakeApi implements Api {
   /// When set, every call throws it (network-down simulation).
   Exception? failWith;
 
-  /// Every API call, in order — lets tests assert on sync behavior.
+  /// Every API call, in order, lets tests assert on sync behavior.
   final List<String> log = [];
 
   final StreamController<void> _events = StreamController<void>.broadcast();
@@ -294,7 +294,7 @@ class FakeApi implements Api {
             ? (fields['label_ids'] as List).cast<String>().toSet()
             : null,
         // Present-but-null means "back to unassigned", so the key's presence
-        // is what decides — matching the server's nested Option. An absent
+        // is what decides, matching the server's nested Option. An absent
         // key re-passes the current value, the way reminder_at does above.
         stageId: fields.containsKey('stage_id')
             ? _resolveStage(fields['stage_id'] as String?)
@@ -305,7 +305,7 @@ class FakeApi implements Api {
     });
   }
 
-  /// A stage the server would refuse — unknown, or from another workspace —
+  /// A stage the server would refuse, unknown, or from another workspace,
   /// is dropped rather than honoured, so client tests meet the same rule the
   /// API tests pin down.
   String? _resolveStage(String? id) => stages.containsKey(id) ? id : null;
@@ -367,7 +367,7 @@ class FakeApi implements Api {
           (e) => e.id == versionId,
           orElse: () => throw ApiException(404, '{"error":"not found"}'),
         );
-        // Checkpoint the current state, then roll content back — mirrors the
+        // Checkpoint the current state, then roll content back, mirrors the
         // server so the store's optimistic replace is exercised faithfully.
         versions[noteId] = [
           NoteVersion(

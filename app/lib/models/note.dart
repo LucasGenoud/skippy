@@ -131,7 +131,7 @@ class Note {
   final double position;
 
   /// The board column holding this note, or null for unassigned. At most one,
-  /// unlike [labelIds] — stages are a separate, exclusive system, which is why
+  /// unlike [labelIds], stages are a separate, exclusive system, which is why
   /// the board never has to guess which column a note belongs in.
   final String? stageId;
 
@@ -307,7 +307,7 @@ class Note {
     );
   }
 
-  /// Full, lossless serialization — the inverse of [Note.fromJson], used to
+  /// Full, lossless serialization, the inverse of [Note.fromJson], used to
   /// cache notes locally for offline use. Keys match the wire format so a
   /// cached note reads back identically to one fetched from the server.
   Map<String, dynamic> toJson() => {
@@ -340,7 +340,7 @@ class Note {
 }
 
 /// A past state of a note's content from its edit history. Only content is
-/// versioned (title/body/checklist/kind) — never organizational state like
+/// versioned (title/body/checklist/kind), never organizational state like
 /// color, pins, or labels.
 class NoteVersion {
   final String id;
@@ -443,8 +443,8 @@ class Label {
       );
 }
 
-/// A board column. Stages are workspace state like labels — every member sees
-/// the same board — but a separate system on purpose: a note carries any number
+/// A board column. Stages are workspace state like labels, every member sees
+/// the same board, but a separate system on purpose: a note carries any number
 /// of labels and at most one stage. Nothing here refers to [Label], and nothing
 /// in [Label] refers to this.
 ///

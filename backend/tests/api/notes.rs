@@ -314,7 +314,7 @@ async fn trash_and_purge() {
 }
 
 /// Purging trash must remove attachment blobs from the file store, exactly
-/// like deleting a note directly does — otherwise every attachment on a note
+/// like deleting a note directly does, otherwise every attachment on a note
 /// that ages out of the trash leaks its bytes forever.
 #[tokio::test]
 async fn purging_trash_deletes_attachment_blobs() {

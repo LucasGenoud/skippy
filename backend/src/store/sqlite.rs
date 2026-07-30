@@ -862,7 +862,7 @@ impl Repository for SqliteRepository {
     }
 
     async fn purge_trash_before(&self, cutoff: &str) -> RepoResult<Vec<PurgedNote>> {
-        // Snapshot attachment ids before the DELETE cascades them away — the
+        // Snapshot attachment ids before the DELETE cascades them away, the
         // caller still has to remove the blobs from the file store.
         let mut tx = self.pool.begin().await?;
         let rows = sqlx::query(

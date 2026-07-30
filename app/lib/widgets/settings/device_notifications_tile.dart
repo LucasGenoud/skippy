@@ -87,9 +87,9 @@ class _DeviceNotificationsTileState extends State<DeviceNotificationsTile> {
           subtitle: Text(
             enabled
                 ? (_inexact
-                      ? 'On — may be delayed a few minutes until exact alarms '
+                      ? 'On, may be delayed a few minutes until exact alarms '
                             'are allowed in system settings'
-                      : 'On — fires without a network or a channel')
+                      : 'On, fires without a network or a channel')
                 : 'Let this device raise the notification itself, no channel '
                       'needed',
           ),
@@ -103,7 +103,7 @@ class _DeviceNotificationsTileState extends State<DeviceNotificationsTile> {
 }
 
 /// The honest limitation of device-scheduled reminders. Shown only once the
-/// feature is on — before that it's noise, after that it's the one thing a user
+/// feature is on: before that it's noise, after that it's the one thing a user
 /// needs to know to trust (or not trust) what they just enabled.
 class _SyncDisclaimer extends StatelessWidget {
   const _SyncDisclaimer();
@@ -132,7 +132,7 @@ class _SyncDisclaimer extends StatelessWidget {
               child: Text(
                 'This device can only ring for reminders it already knows '
                 'about. A reminder you set on another device arrives the next '
-                'time Skippy syncs here — so if this app stays closed until '
+                'time Skippy syncs here, so if this app stays closed until '
                 'after it was due, it will not ring. Add a notification '
                 'channel above for delivery that does not depend on this '
                 'device.',

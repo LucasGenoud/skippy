@@ -17,7 +17,7 @@ class DragReorderList<T> extends StatefulWidget {
   final List<T> items;
   final String Function(T item) idOf;
 
-  /// Builds one row. [handle] is the draggable grip — place it wherever the
+  /// Builds one row. [handle] is the draggable grip, place it wherever the
   /// row wants it (typically leading, beside an icon).
   final Widget Function(
     BuildContext context,
@@ -27,7 +27,7 @@ class DragReorderList<T> extends StatefulWidget {
   )
   rowBuilder;
 
-  /// Called with the dragged item's id and its final resting index — the
+  /// Called with the dragged item's id and its final resting index, the
   /// shape `NotesStore.moveStage`/`moveLabel` expect.
   final void Function(String id, int newIndex) onReorder;
 

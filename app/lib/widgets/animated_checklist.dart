@@ -15,7 +15,7 @@ import 'measure_size.dart';
 ///   checking an item visibly slides it down into the "checked" section;
 /// * that section starts collapsed behind its "N checked items" header, so
 ///   opening a long-lived list shows what is still to do rather than a wall
-///   of struck-through history — one tap unfolds it;
+///   of struck-through history, one tap unfolds it;
 /// * rows have a drag handle for reordering (immediate drag, no long-press);
 /// * typing in a row opens a suggestion popup anchored under the caret row,
 ///   fed by the user's checked-item history, with the matched prefix bolded.
@@ -136,7 +136,7 @@ const _kHeaderId = '__header__';
 
 /// Parked in an empty row while it holds focus, so backspace has something to
 /// delete. A field that is already empty absorbs the keypress silently on soft
-/// keyboards and in the browser's text input — nothing is deleted, so nothing
+/// keyboards and in the browser's text input, nothing is deleted, so nothing
 /// is reported, and the row never learns it was asked to go away. With the
 /// marker in place the same keypress arrives as an ordinary edit (the text
 /// goes from the marker to nothing), which is the signal to remove the row.
@@ -169,7 +169,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   /// Bumped whenever the popup's inputs change (the focused row's text, or
   /// which row is focused). The popup listens to this instead of riding a
-  /// `setState`, so a keystroke rebuilds one overlay — not thirty rows, each
+  /// `setState`, so a keystroke rebuilds one overlay, not thirty rows, each
   /// a TextField with its own gesture, focus and ink machinery.
   final ValueNotifier<int> _popupRevision = ValueNotifier(0);
 
@@ -183,7 +183,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   /// Built rows, kept across our own rebuilds. A row is a TextField with its
   /// own focus, gesture and ink machinery plus an animated checkbox, while a
-  /// drag step, a caret move or a store refresh changes where rows sit — not
+  /// drag step, a caret move or a store refresh changes where rows sit, not
   /// what they hold. Handing back the same instances lets the framework skip
   /// those subtrees outright (`Element.updateChild` short-circuits on an
   /// identical widget). An entry is dropped when its item changes, and all of
@@ -210,7 +210,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// merged into that row instead of each spawning its own new item.
   _Adoption? _adopting;
 
-  /// Whether [_adopting]'s row has shown up in a rebuild yet — see
+  /// Whether [_adopting]'s row has shown up in a rebuild yet, see
   /// [didUpdateWidget].
   bool _adoptionSeen = false;
   double _dragY = 0;
@@ -236,7 +236,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       if (mounted) _popup.show();
       // Ask for focus outright rather than leaning on the add row's
       // `autofocus`. Flutter only honours autofocus when nothing in the
-      // enclosing scope is focused yet — true inside the editor's own route,
+      // enclosing scope is focused yet, true inside the editor's own route,
       // but not on the home page, where the shortcut plumbing's page focus
       // already holds it and the quick-add checklist opened with no caret.
       if (mounted && widget.autofocusNew) _newRow.focusNode.requestFocus();
@@ -336,8 +336,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   void _onAnyFocusChange() {
     if (!mounted) return;
     // Where the caret is only changes the affordances on the row holding it
-    // and the suggestion popup. Rebuilding the whole list for it — twice per
-    // move, once for the blur and once for the focus — is what made a long
+    // and the suggestion popup. Rebuilding the whole list for it, twice per
+    // move, once for the blur and once for the focus, is what made a long
     // checklist stutter as the caret walked down it.
     _focusedId.value = _focusedRowId();
     _popupRevision.value++;
@@ -405,7 +405,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       }
       return KeyEventResult.ignored;
     };
-    // Reflect external (collaborator/undo) edits without fighting the caret —
+    // Reflect external (collaborator/undo) edits without fighting the caret,
     // or our own not-yet-echoed keystrokes.
     if (handles.unacknowledged == item.text) handles.unacknowledged = null;
     if (handles.unacknowledged == null &&
@@ -424,7 +424,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     // platform is also writing to (the marker goes in from inside the very
     // keystroke that emptied the row, and focus lands a microtask after it is
     // asked for), so a lost race would leave the row with nothing for the next
-    // backspace to delete — and no way to remove itself.
+    // backspace to delete, and no way to remove itself.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _parkMarker(handles);
     });
@@ -486,7 +486,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         handles.focusNode.requestFocus();
-        // Land the caret at the end so continuing to type appends — never a
+        // Land the caret at the end so continuing to type appends, never a
         // selection of the whole row (which would make the next keystroke
         // replace the text). On web/desktop the platform issues its own
         // select-all when a field gains focus a frame later, so re-assert the
@@ -617,7 +617,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   ({String rowId, LayerLink link, List<String> suggestions})? _popupTarget() {
     if (widget.readOnly) return null;
     // Only items still *active* (unchecked) block a suggestion. A checked-off
-    // item is done, so offering it back is exactly what you want — re-adding
+    // item is done, so offering it back is exactly what you want, re-adding
     // last week's groceries is the whole point of the history.
     final activeTexts = {
       for (final item in widget.items)
@@ -804,7 +804,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// [bandHeight] tall and the field is padded by [textPadding], which puts the
   /// middle of its first line exactly in the middle of that band. A one-line
   /// item is therefore centred in its row, and a wrapped one keeps the same
-  /// first line — later lines grow below the controls instead of dragging them
+  /// first line, later lines grow below the controls instead of dragging them
   /// down to the centre of the whole item.
   ({double bandHeight, double textPadding}) _rowMetrics() {
     final style = Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
@@ -840,7 +840,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
     // Hover changes twice per row the pointer crosses, and the caret moves
     // just as often. Routing both through notifiers keeps either from
-    // rebuilding every row in the list — only these three wrappers rebuild,
+    // rebuilding every row in the list, only these three wrappers rebuild,
     // and the subtrees they wrap (the drag gesture, the remove button, the
     // field) are passed straight through.
     Widget onRowState(
@@ -1125,7 +1125,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               child: TextField(
                 controller: _newRow.controller,
                 focusNode: _newRow.focusNode,
-                // Focus is requested from initState instead — see there.
+                // Focus is requested from initState instead, see there.
                 decoration: InputDecoration(
                   hintText: 'List item',
                   border: InputBorder.none,
@@ -1186,8 +1186,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// field just spawned (see [_Adoption]).
   void _mergeIntoAdoptedRow(_Adoption adopting, String text) {
     if (text.isEmpty) return;
-    // What arrives is either just the new character — the field really was
-    // cleared, so that is all the client has — or the whole accumulated value,
+    // What arrives is either just the new character, the field really was
+    // cleared, so that is all the client has, or the whole accumulated value,
     // because the client's own buffer hasn't caught up with the clear. Only
     // the second kind extends what was already taken, and only by growing;
     // treating it as a character would re-add the prefix, which is how
@@ -1202,7 +1202,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     adopting.text = merged;
     // Push the result into the row so it shows it, if the row exists yet: the
     // rebuild that creates it may still be a frame away, and then the item
-    // list — which onItemTextChanged has already been given — is what the row
+    // list, which onItemTextChanged has already been given, is what the row
     // is built from.
     final handles = _handles[adopting.id];
     if (handles != null) {
@@ -1360,7 +1360,7 @@ class _ChecklistRowEntrance extends StatelessWidget {
 }
 
 /// A Material [Checkbox] that gives a springy scale "pop" every time it's
-/// tapped — on top of Checkbox's own tick-draw and ripple. The pop is fired
+/// tapped, on top of Checkbox's own tick-draw and ripple. The pop is fired
 /// from the tap handler itself (not from a value diff), so it plays reliably
 /// even as the checked row immediately slides down to the completed section.
 class _PopCheckbox extends StatefulWidget {
@@ -1407,7 +1407,7 @@ class _PopCheckboxState extends State<_PopCheckbox>
   List<_Particle> _particles = const [];
 
   void _handleChanged(bool? value) {
-    // A tiny celebration burst — only when ticking something OFF the list,
+    // A tiny celebration burst, only when ticking something OFF the list,
     // not when unchecking it back.
     _particles = value == true ? _spawnParticles() : const [];
     _controller.forward(from: 0);

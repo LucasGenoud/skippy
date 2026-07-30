@@ -115,7 +115,7 @@ void main() {
     await tester.pumpWidget(loginApp());
     await tester.pumpAndSettle();
 
-    // Press Sign in without typing anything — the old behaviour returned
+    // Press Sign in without typing anything, the old behaviour returned
     // silently, leaving the user with no feedback.
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();

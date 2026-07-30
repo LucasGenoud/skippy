@@ -1,6 +1,6 @@
 /// Thin wrapper over `flutter_local_notifications` for device-scheduled
 /// reminders. All the decision-making lives in [reminder_schedule.dart]; this
-/// file is the platform boundary — permissions, the timezone database, and
+/// file is the platform boundary: permissions, the timezone database, and
 /// handing a [ReminderScheduleDiff] to the OS.
 library;
 
@@ -31,7 +31,7 @@ class LocalNotifications {
   bool _initialized = false;
 
   /// Whether Android will let us schedule *exact* alarms. When false we still
-  /// schedule, but the OS may slide delivery by several minutes — see
+  /// schedule, but the OS may slide delivery by several minutes; see
   /// [_scheduleMode].
   bool _exactAlarms = true;
   bool get exactAlarmsAllowed => _exactAlarms;
@@ -59,7 +59,7 @@ class LocalNotifications {
       tz.setLocalLocation(tz.getLocation(info.identifier));
     } catch (_) {
       // Unknown zone name: `timezone` falls back to UTC, which still fires at
-      // the right instant — only a DST shift near the boundary could nudge it.
+      // the right instant; only a DST shift near the boundary could nudge it.
     }
     // Permission prompts are deferred to [requestPermission] so nothing is
     // asked of the user until they turn the feature on.
@@ -86,8 +86,8 @@ class LocalNotifications {
   /// may now be posted.
   ///
   /// Two separate grants on Android 13+: posting notifications, and scheduling
-  /// *exact* alarms. Only the first is required — without the second, reminders
-  /// still arrive, just not to the minute — so a refused exact-alarm grant
+  /// *exact* alarms. Only the first is required: without the second, reminders
+  /// still arrive, just not to the minute, so a refused exact-alarm grant
   /// downgrades rather than fails.
   Future<bool> requestPermission() async {
     if (!await ensureInitialized()) return false;
@@ -194,7 +194,7 @@ class LocalNotifications {
   }
 
   /// Drop every armed reminder. Used on sign-out and when the feature is turned
-  /// off — a notification for someone else's notes would be a privacy leak.
+  /// off: a notification for someone else's notes would be a privacy leak.
   Future<void> cancelAll() async {
     if (!await ensureInitialized()) return;
     try {

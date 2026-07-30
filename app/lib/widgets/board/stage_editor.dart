@@ -11,7 +11,7 @@ import '../staggered_entrance.dart';
 
 /// Manage the board's columns: add, rename, recolour, remove.
 ///
-/// Parallel to `EditLabelsDialog` rather than sharing code with it — stages and
+/// Parallel to `EditLabelsDialog` rather than sharing code with it, stages and
 /// labels are independent systems, and two small dialogs are easier to change
 /// than one generic one.
 class EditStagesDialog extends StatelessWidget {
@@ -214,7 +214,7 @@ class _StageEditorDialogState extends State<StageEditorDialog> {
   }
 }
 
-/// The dot that stands in for a column in lists — a stage's whole visual
+/// The dot that stands in for a column in lists, a stage's whole visual
 /// identity, since stages carry no icon.
 class _StageDot extends StatelessWidget {
   final String? color;

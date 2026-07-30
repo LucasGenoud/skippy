@@ -122,7 +122,7 @@ class _GridPreview extends StatelessWidget {
           ),
           alignment: Alignment.topCenter,
           // Picking a new density/width should visibly reflow the preview,
-          // not jump-cut — that's the whole point of showing it live.
+          // not jump-cut, that's the whole point of showing it live.
           child: AnimatedContainer(
             duration: Motion.base,
             curve: Motion.standard,

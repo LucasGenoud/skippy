@@ -209,7 +209,7 @@ void main() {
       expect(find.text('Edit labels'), findsOneWidget);
       expect(find.byType(AlertDialog), findsNothing);
 
-      // And the editor it leads to gets the same treatment — a boxed dialog
+      // And the editor it leads to gets the same treatment, a boxed dialog
       // opening on top of a full-screen page is the worst of both.
       await tester.tap(find.text('Work'));
       await tester.pumpAndSettle();
@@ -251,7 +251,7 @@ void main() {
       // Grab "One"'s handle and drag it past two rows.
       final handle = find.byIcon(Icons.drag_indicator).first;
       final gesture = await tester.startGesture(tester.getCenter(handle));
-      // Several small moves, as a real pointer sends — one big jump would
+      // Several small moves, as a real pointer sends, one big jump would
       // hide a reorder that only tracks the drop point.
       for (var i = 0; i < 8; i++) {
         await gesture.moveBy(const Offset(0, 14));

@@ -2,8 +2,8 @@
 
 use crate::helpers::*;
 
-/// Labels belong to a workspace, so a direct collaborator — who is a
-/// participant on the note but not a member of the workspace holding it —
+/// Labels belong to a workspace, so a direct collaborator, who is a
+/// participant on the note but not a member of the workspace holding it,
 /// neither sees the workspace's labels nor can change them.
 #[tokio::test]
 async fn labels_stay_inside_their_workspace_on_directly_shared_notes() {
@@ -65,7 +65,7 @@ async fn labels_stay_inside_their_workspace_on_directly_shared_notes() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["label_ids"], json!([ada_label_id]));
     // Bob's own label is in his workspace, not the note's, so tagging with it
-    // is silently a no-op — and it must not clear what Ada attached.
+    // is silently a no-op, and it must not clear what Ada attached.
     let (status, view) = send(
         &app,
         "PATCH",
@@ -213,7 +213,7 @@ async fn label_rename_delete_scoped_to_owner() {
     assert_eq!(view["label_ids"], json!([]));
 }
 
-/// New labels append to the sidebar, and an explicit position reorders them —
+/// New labels append to the sidebar, and an explicit position reorders them,
 /// mirrors `stages_are_ordered_left_to_right`.
 #[tokio::test]
 async fn labels_are_ordered_by_custom_position() {
@@ -223,7 +223,7 @@ async fn labels_are_ordered_by_custom_position() {
     make_label(&app, &ada, "Errands").await;
     make_label(&app, &ada, "Chores").await;
 
-    // Creation order, not alphabetical — position beats name now.
+    // Creation order, not alphabetical, position beats name now.
     let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
     let names: Vec<&str> = labels
         .as_array()

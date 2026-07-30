@@ -88,7 +88,7 @@ void main() {
 
     // The server inlines small favicons as `data:` URIs so Flutter web can
     // render them (a cross-origin favicon is CORS-tainted on CanvasKit). Those
-    // must decode to bytes — mobile's NetworkImage can't fetch the data: scheme.
+    // must decode to bytes, mobile's NetworkImage can't fetch the data: scheme.
     testWidgets('renders an inlined data: favicon via MemoryImage', (
       tester,
     ) async {

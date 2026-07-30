@@ -11,8 +11,8 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// How long a freshly minted file URL stays valid. The issue time is floored to
 /// the hour (see [`signed_file_path`]) so the URL is byte-stable within each
-/// clock hour — the browser reuses its cache across the app's frequent note
-/// refetches instead of re-downloading every image — while a leaked URL still
+/// clock hour, the browser reuses its cache across the app's frequent note
+/// refetches instead of re-downloading every image, while a leaked URL still
 /// stops working within this window.
 const FILE_URL_TTL_SECS: i64 = 6 * 3600;
 const FILE_URL_STEP_SECS: i64 = 3600;
@@ -31,7 +31,7 @@ pub fn file_signature(secret: &[u8], attachment_id: &str, exp: i64) -> String {
 /// A signed, time-limited path for [`crate::handlers::serve_file`]. Relative to
 /// the server origin so it resolves whether the app is served same-origin or
 /// from a separate dev host. Anyone holding this URL can fetch the bytes until
-/// it expires — that is the point, it lets plain `<img>`/`<audio>` loads work —
+/// it expires, that is the point, it lets plain `<img>`/`<audio>` loads work,
 /// but only a note's participants are ever handed one (it is minted into note
 /// views, which are access-checked).
 pub fn signed_file_path(secret: &[u8], attachment_id: &str) -> String {
@@ -62,7 +62,7 @@ pub fn verify_file_access(secret: &[u8], attachment_id: &str, exp: i64, sig: &st
 /// [`crate::store::Repository`]: object storage is its own swap point, and
 /// `main` picks the implementation from `STICKY_NOTES_STORAGE`.
 ///
-/// `owner_id` is always the NOTE OWNER's user id — stable for the life of a
+/// `owner_id` is always the NOTE OWNER's user id, stable for the life of a
 /// note, so a blob is written and read under the same identity even when a
 /// collaborator uploaded it. [`DiskStore`] ignores it (flat directory, byte
 /// compatible with pre-trait deployments); [`S3Store`] maps it to a per-user
@@ -135,19 +135,19 @@ pub struct S3Config {
 }
 
 /// Attachment blobs in an S3-compatible object store, one bucket per note
-/// owner (created on that user's first upload — the access key needs bucket
+/// owner (created on that user's first upload, the access key needs bucket
 /// creation rights, which Garage's `GARAGE_DEFAULT_ACCESS_KEY` key has).
 ///
 /// Requests are signed with a hand-rolled AWS Signature V4 rather than an AWS
 /// SDK: the app only ever needs four calls (put/get/delete object, create
 /// bucket) on ASCII-safe paths with no query strings, and `hmac`/`sha2`/
-/// `reqwest` are already in the tree — matching how the LLM, Whisper and
+/// `reqwest` are already in the tree, matching how the LLM, Whisper and
 /// notification clients are plain reqwest too.
 pub struct S3Store {
     client: reqwest::Client,
     base: reqwest::Url,
     /// Exactly the Host header reqwest will send (port elided when it is the
-    /// scheme default) — SigV4 signs it, so the two must agree.
+    /// scheme default), SigV4 signs it, so the two must agree.
     host: String,
     /// Path prefix of the endpoint URL, for endpoints served under a subpath
     /// behind a reverse proxy. Empty for a root endpoint like Garage's.
@@ -190,7 +190,7 @@ impl S3Store {
     }
 
     /// One signed S3 request. `path` is the canonical path (`/bucket` or
-    /// `/bucket/key`) — components already sanitized, so no percent-encoding
+    /// `/bucket/key`), components already sanitized, so no percent-encoding
     /// is ever needed and the signed path always matches the sent path.
     async fn request(
         &self,
@@ -312,7 +312,7 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 
 /// AWS Signature Version 4 `Authorization` header for an S3 request with no
 /// query string. `headers` are the signed headers: lowercase names, sorted,
-/// values trimmed — the caller sends exactly these. Pure so tests can check it
+/// values trimmed, the caller sends exactly these. Pure so tests can check it
 /// against AWS's documented example signature.
 #[allow(clippy::too_many_arguments)]
 fn sigv4_authorization(
@@ -354,7 +354,7 @@ fn sigv4_authorization(
 mod tests {
     use super::*;
 
-    /// The worked "GET Object" example from AWS's SigV4 documentation — the
+    /// The worked "GET Object" example from AWS's SigV4 documentation, the
     /// one fixed vector every SigV4 implementation is checked against.
     #[test]
     fn sigv4_matches_aws_documented_example() {

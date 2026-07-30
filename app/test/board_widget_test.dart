@@ -18,7 +18,7 @@ import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
 import 'widget_test.dart' show homeApp;
 
-/// [theme] is only worth passing for tests that judge colour — everything else
+/// [theme] is only worth passing for tests that judge colour, everything else
 /// reads the same under Material's default.
 Widget boardApp(NotesStore store, {ThemeData? theme}) => MultiProvider(
   providers: [
@@ -107,7 +107,7 @@ void main() {
     expect(find.byType(PageView), findsOneWidget);
     expect(find.text('unplaced card'), findsOneWidget);
 
-    // Columns are narrower than the page so the neighbours peek in — what
+    // Columns are narrower than the page so the neighbours peek in, what
     // makes a phone read as a board rather than as one list.
     final viewport = tester.getSize(find.byType(BoardView)).width;
     final column = tester.getSize(find.byType(BoardColumnView).first).width;
@@ -320,7 +320,7 @@ void main() {
       await flushTimers(tester);
     });
 
-    /// A drag drop is silent — no confirmation snack, since the card visibly
+    /// A drag drop is silent, no confirmation snack, since the card visibly
     /// gliding into place already says where it went.
     testWidgets('dropping a card raises no confirmation', (tester) async {
       await seed(tester);
@@ -363,7 +363,7 @@ void main() {
       tester.getCenter(find.text('card c')),
     );
     await tester.pump(const Duration(milliseconds: 400));
-    // Up over its own neighbours first — this is what reflows Todo — and only
+    // Up over its own neighbours first, this is what reflows Todo, and only
     // then across into Doing.
     await gesture.moveTo(tester.getCenter(find.text('card a')));
     await tester.pump();
@@ -410,7 +410,7 @@ void main() {
   });
 
   /// A chip past the right edge cannot be dropped on, and you cannot scroll
-  /// the strip while holding a card — so opening a column has to bring its
+  /// the strip while holding a card, so opening a column has to bring its
   /// chip into view.
   testWidgets('the strip scrolls the open column into view', (tester) async {
     await setViewport(tester, const Size(390, 780));
@@ -433,7 +433,7 @@ void main() {
     }
 
     // The open column's chip has been scrolled back inside the viewport, so
-    // it can be tapped — and dropped on.
+    // it can be tapped, and dropped on.
     final viewport = tester.getSize(find.byType(BoardView)).width;
     final chip = tester.getRect(find.text('Column number 5'));
     expect(chip.right, lessThanOrEqualTo(viewport + 1));
@@ -670,7 +670,7 @@ void main() {
   });
 
   /// On a phone the board opens a note full-screen, which puts the card and
-  /// its drag gesture out of reach — so the only way to refile a note you are
+  /// its drag gesture out of reach, so the only way to refile a note you are
   /// reading was to close it first.
   testWidgets('a note opened from the board can be refiled from its menu', (
     tester,
@@ -702,7 +702,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.noteById('n1')?.stageId, 'doing');
-    // And the note stayed open — moving it is not a way out of the editor.
+    // And the note stayed open, moving it is not a way out of the editor.
     expect(find.byType(EditorScreen), findsOneWidget);
 
     Navigator.of(tester.element(find.byType(EditorScreen))).pop();
@@ -725,7 +725,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // The editor opens carrying the column. The draft itself stays unwritten
-    // until there is content — an empty one is never persisted — so what this
+    // until there is content, an empty one is never persisted, so what this
     // pins is that composing here files the note in this column.
     final editor = tester.widget<EditorScreen>(find.byType(EditorScreen));
     expect(editor.stageId, 'doing');
@@ -740,7 +740,7 @@ void main() {
 
   /// Cards were invisible on a freshly opened board: the masonry's entrance
   /// holds every tile at opacity 0 until all heights are measured, and on the
-  /// board that never resolved — the column showed its count but no cards, and
+  /// board that never resolved, the column showed its count but no cards, and
   /// only a resize or a rebuild brought them back. Every other test here
   /// settles first, which is exactly why they all missed it.
   testWidgets('cards are visible on the board\'s very first frame', (
@@ -751,7 +751,7 @@ void main() {
     await store.load();
 
     await tester.pumpWidget(boardApp(store));
-    // One frame only — deliberately no pumpAndSettle.
+    // One frame only, deliberately no pumpAndSettle.
     await tester.pump();
 
     final faded = tester

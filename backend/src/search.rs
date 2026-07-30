@@ -1,6 +1,6 @@
 //! Semantic search: notes are embedded by an external OpenAI-compatible
 //! embeddings API (Ollama, OpenAI, LM Studio, ...) and indexed in a vector
-//! store. Nothing about the model runs in this process — the server holds no
+//! store. Nothing about the model runs in this process, the server holds no
 //! weights, so its memory footprint stays flat regardless of model size.
 //!
 //! The only index backend is [`SqliteVectorIndex`], a zero-infrastructure
@@ -219,9 +219,9 @@ impl SqliteVectorIndex {
         // reindex repopulates the vec0 table, so this is safe to drop.
         sqlx::raw_sql("DROP TABLE IF EXISTS note_vectors").execute(&pool).await?;
         // Remember which embedding model built note_vec. A different model or
-        // dimension makes the existing vectors meaningless — and a same-
+        // dimension makes the existing vectors meaningless, and a same-
         // dimension model swap (e.g. quantized -> full precision) is invisible
-        // to a dimension check — so drop the table whenever the signature
+        // to a dimension check, so drop the table whenever the signature
         // changes. The startup reindex then repopulates it with the new
         // model's embeddings.
         sqlx::raw_sql(

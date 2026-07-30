@@ -372,7 +372,7 @@ void main() {
           matching: find.byType(PopupMenuItem<String>),
         ),
       );
-      // A frame into the dismiss — while the menu is still on screen — the
+      // A frame into the dismiss, while the menu is still on screen, the
       // tick has already moved, and there is still only ever one of it.
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 40));

@@ -105,7 +105,7 @@ abstract class Api {
   Future<Note> restoreNoteVersion(String noteId, String versionId);
 
   /// Previously checked item texts, grouped per note id, most used first.
-  /// Suggestions are scoped per note — one note's history never leaks into
+  /// Suggestions are scoped per note, one note's history never leaks into
   /// another's rows.
   Future<Map<String, List<String>>> fetchChecklistHistory();
 
@@ -128,7 +128,7 @@ abstract class Api {
   });
   Future<void> deleteLabel(String id);
 
-  // stages (board columns) — deliberately parallel to labels rather than
+  // stages (board columns), deliberately parallel to labels rather than
   // sharing an abstraction with them; the two are independent systems.
   Future<List<Stage>> fetchStages();
   Future<void> createStage(
@@ -228,8 +228,8 @@ abstract class Api {
 
   /// One notes-chat turn: sends [message] with prior [history] and emits the
   /// server's frames (sources, streamed deltas, then done/error). The stream
-  /// closes after the terminal event. [workspaceId] scopes retrieval — and any
-  /// note the turn writes — to the workspace the user has open.
+  /// closes after the terminal event. [workspaceId] scopes retrieval, and any
+  /// note the turn writes, to the workspace the user has open.
   Stream<ChatEvent> chat(
     String message,
     List<ChatMessage> history, {
@@ -239,7 +239,7 @@ abstract class Api {
 
 /// Wraps a client so no request can hang forever. A phone that is "connected"
 /// to a network with no route to the server (captive portal, VPN gone, server
-/// down) never gets a TCP reset — the socket just sits there until the OS gives
+/// down) never gets a TCP reset, the socket just sits there until the OS gives
 /// up, which can take a minute or more. Without a ceiling the app would wait
 /// that long before it could say anything about being offline.
 class _TimeoutClient extends http.BaseClient {
@@ -897,7 +897,7 @@ class ApiClient implements Api {
       if (data is! Map<String, dynamic>) return null;
       return LinkPreview.fromJson(data);
     } on ApiException {
-      // Invalid/blocked URL (400) or auth/transient error — no preview.
+      // Invalid/blocked URL (400) or auth/transient error, no preview.
       return null;
     }
   }

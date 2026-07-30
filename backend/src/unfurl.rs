@@ -23,7 +23,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION, USER_AGENT};
 use serde::Serialize;
 
 /// Metadata extracted from a page, mirrored by the Flutter `LinkPreview` model.
-/// Every field except `url` is optional — a bare link still yields a card with
+/// Every field except `url` is optional, a bare link still yields a card with
 /// the host as its title.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LinkPreview {
@@ -36,7 +36,7 @@ pub struct LinkPreview {
 }
 
 impl LinkPreview {
-    /// A minimal preview built only from the URL itself — used when the page
+    /// A minimal preview built only from the URL itself, used when the page
     /// can't be fetched or parsed, so the client always has something to show.
     fn host_only(parsed: &ParsedUrl) -> Self {
         LinkPreview {
@@ -52,7 +52,7 @@ impl LinkPreview {
 
 // Hard cap on how much of a body we'll pull. Metadata lives in `<head>`, and
 // big sites (YouTube, etc.) inline hundreds of KB of script/JSON *before* their
-// Open Graph tags, so this has to be generous — `read_capped` stops early once
+// Open Graph tags, so this has to be generous, `read_capped` stops early once
 // `</head>` arrives, so the full cap is only ever hit on pages with no head end.
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 6;
@@ -95,7 +95,7 @@ pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkP
         Err(_) => LinkPreview::host_only(&parsed),
     };
     // Inline the favicon as a `data:` URI. Flutter web (CanvasKit) can't render
-    // a cross-origin favicon fetched by `Image.network` — favicon servers don't
+    // a cross-origin favicon fetched by `Image.network`, favicon servers don't
     // send CORS headers, so the browser taints the fetch and the client falls
     // back to a generic globe. A same-origin data URI renders identically on web
     // and mobile. On any failure we keep the original absolute URL (mobile fetch
@@ -130,7 +130,7 @@ async fn inline_favicon(url: &str, allow_private: bool) -> Option<String> {
 
 /// Map a response `content-type` (falling back to magic-byte sniffing) to a MIME
 /// type Flutter decodes on every platform, or `None` for formats it can't
-/// (`.ico`, SVG) — those keep the generic globe as they always have.
+/// (`.ico`, SVG), those keep the generic globe as they always have.
 fn decodable_image_mime(content_type: &str, bytes: &[u8]) -> Option<&'static str> {
     let ct = content_type
         .split(';')
@@ -224,7 +224,7 @@ async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(S
         if !status.is_success() {
             bail!("upstream status {status}");
         }
-        // Skip non-HTML bodies (images, PDFs, JSON) — there's nothing to parse.
+        // Skip non-HTML bodies (images, PDFs, JSON), there's nothing to parse.
         if let Some(ct) = resp
             .headers()
             .get(CONTENT_TYPE)
@@ -287,7 +287,7 @@ async fn fetch_bytes(
         while let Some(chunk) = stream.next().await {
             buf.extend_from_slice(&chunk.context("read body")?);
             if buf.len() >= cap {
-                // Larger than any real favicon — treat as unusable and bail so
+                // Larger than any real favicon, treat as unusable and bail so
                 // the caller keeps the plain URL rather than inlining a huge blob.
                 bail!("favicon exceeds size cap");
             }
@@ -851,7 +851,7 @@ mod tests {
 
     #[tokio::test]
     async fn preview_inlines_a_png_favicon_as_data_uri() {
-        // Bytes only need the PNG magic header — the server labels them image/png
+        // Bytes only need the PNG magic header, the server labels them image/png
         // and the inliner never decodes, it just base64s.
         let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4];
         let html = r#"<html><head><title>T</title><link rel="icon" href="/fav.png"></head></html>"#;

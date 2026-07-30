@@ -206,7 +206,7 @@ impl Llm for OpenAiCompatLlm {
 /// stays buffered), returning the extracted content deltas and whether the
 /// `[DONE]` sentinel was seen. Comment/`event:` lines, role-only first deltas,
 /// finish chunks, and unparseable keep-alive lines are all skipped rather than
-/// treated as errors — providers differ in what they pepper into the stream.
+/// treated as errors, providers differ in what they pepper into the stream.
 pub fn drain_sse_deltas(buf: &mut String) -> (Vec<String>, bool) {
     let mut deltas = Vec::new();
     let mut done = false;

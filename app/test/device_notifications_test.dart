@@ -14,7 +14,7 @@ import 'notes_store_test.dart' show serverNote;
 
 /// Stands in for the OS scheduler. The plugin's platform instance is a `late`
 /// field only populated by the real plugin registrant, so a method-channel mock
-/// isn't enough — the seam has to be above it.
+/// isn't enough: the seam has to be above it.
 class FakeLocalNotifications extends LocalNotifications {
   bool grant = true;
   bool exact = true;

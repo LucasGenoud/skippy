@@ -68,7 +68,7 @@ pub async fn notify_test(
     }
     let notification = crate::notify::Notification {
         title: "Sticky Notes".to_string(),
-        body: "Test notification — reminders will arrive here.".to_string(),
+        body: "Test notification, reminders will arrive here.".to_string(),
     };
     let errors = crate::notify::send_configured(&state.notifiers, &body, &notification).await;
     let result = if errors.is_empty() {

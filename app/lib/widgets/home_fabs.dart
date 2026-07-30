@@ -14,7 +14,7 @@ import 'recording_sheet.dart';
 /// FABs that morph into the editor via container transform: a mini one for a
 /// new checklist, the main one for a new text note.
 class NewNoteFabs extends StatelessWidget {
-  /// Labels every note these buttons create — set when a label view is open,
+  /// Labels every note these buttons create, set when a label view is open,
   /// so writing a note there keeps it in the view you wrote it in. This is the
   /// only way to compose into a label on a phone (no quick-add bar there).
   final Set<String> labelIds;
@@ -162,7 +162,7 @@ class _AudioNoteFab extends StatelessWidget {
 }
 
 /// Subtle hover feedback for the note-creation FABs: the button scales up a
-/// touch under the pointer. Pointer-only by nature — touch never hovers.
+/// touch under the pointer. Pointer-only by nature, touch never hovers.
 class _HoverLift extends StatefulWidget {
   final Widget child;
   const _HoverLift({required this.child});

@@ -23,8 +23,8 @@ const List<Color> kAccentPresets = [
 
 /// Accent-color row: preset seeds plus a custom slot. The chosen seed reseeds
 /// the whole Material scheme via [buildTheme] (see [SettingsStore.accentColor]),
-/// so this recolors the app's chrome — FAB, checkboxes, selection, section
-/// headers — while surfaces stay neutral.
+/// so this recolors the app's chrome, FAB, checkboxes, selection, section
+/// headers, while surfaces stay neutral.
 class AccentColorTile extends StatelessWidget {
   const AccentColorTile({super.key});
 
@@ -142,7 +142,7 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
     text: PaletteEntry.colorToHex(widget.initial),
   );
 
-  // A vivid board spanning the hue wheel — good starting points before hex.
+  // A vivid board spanning the hue wheel, good starting points before hex.
   static const _board = [
     Color(0xFFFBBC04),
     Color(0xFFF9AB00),

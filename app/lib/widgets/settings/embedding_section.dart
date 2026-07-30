@@ -5,8 +5,8 @@ import '../../models/search_stats.dart';
 import '../../state/settings_store.dart';
 import '../../util/snack.dart';
 
-/// Diagnostics for the semantic-search index — embedding model, vector width,
-/// and how many of the user's notes are embedded — plus a button to re-run the
+/// Diagnostics for the semantic-search index, embedding model, vector width,
+/// and how many of the user's notes are embedded, plus a button to re-run the
 /// embeddings. Shown in Settings under the Semantic search toggle when the
 /// server supports semantic search.
 class EmbeddingStatsTile extends StatefulWidget {

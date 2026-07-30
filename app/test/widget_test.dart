@@ -689,7 +689,7 @@ void main() {
       'reordering moves tiles without rebuilding any of them',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {
-        // Twelve notes — the size at which the grid started dropping frames on
+        // Twelve notes, the size at which the grid started dropping frames on
         // slower devices, because every reorder step rebuilt every card (twice:
         // once for the tile, once for its unused drag feedback).
         final notes = [
@@ -723,7 +723,7 @@ void main() {
           tester.getCenter(find.text('Note 0')),
         );
         await tester.pump(const Duration(milliseconds: 300));
-        // The lifted card builds one more time — that copy is the feedback
+        // The lifted card builds one more time, that copy is the feedback
         // following the pointer, and it is the only extra build a drag costs.
         final afterLift = Map<String, int>.from(builds);
 
@@ -910,7 +910,7 @@ void main() {
       await tester.tap(find.byTooltip('New checklist'));
       await tester.pumpAndSettle();
 
-      // Editing happens in the bar itself — no editor route is pushed.
+      // Editing happens in the bar itself, no editor route is pushed.
       expect(find.byType(AnimatedChecklist), findsOneWidget);
       expect(find.byType(EditorScreen), findsNothing);
 
@@ -1151,7 +1151,7 @@ void main() {
       await tester.pump();
 
       // Filing a note is often the first thing you do, so the button is live
-      // on an empty note — no typing required first.
+      // on an empty note, no typing required first.
       final labels = find.widgetWithIcon(IconButton, Icons.label_outline);
       expect(
         tester.widget<IconButton>(labels).onPressed,
@@ -1334,7 +1334,7 @@ void main() {
         await tester.tap(find.widgetWithText(TextField, 'List item'));
         await tester.pump();
 
-        // One char per single frame — outrunning the focus handoff.
+        // One char per single frame, outrunning the focus handoff.
         for (final ch in 'Milk'.split('')) {
           final focused = tester
               .widgetList<EditableText>(find.byType(EditableText))
@@ -1449,7 +1449,7 @@ void main() {
       tester,
     ) async {
       // A keystroke used to setState both the checklist and the editor, and a
-      // hover setState the checklist — so every row (each a TextField with its
+      // hover setState the checklist, so every row (each a TextField with its
       // own gesture, focus and ink machinery) was rebuilt. On a 30-item list
       // that was ~2700 widgets per character, which is what made writing one
       // feel laggy. Only the field being typed in, the suggestion popup, and
@@ -1662,7 +1662,7 @@ void main() {
       }
 
       /// Every control of row [id] sits on the middle of its first text line,
-      /// and that line is centred in the 48px band the row starts from — so a
+      /// and that line is centred in the 48px band the row starts from, so a
       /// one-line item is centred in its own row.
       void expectRowAlignment(String id, String text) {
         final row = find.byKey(ValueKey('checklist-row-background-$id'));
@@ -1810,7 +1810,7 @@ void main() {
 
         // Soft keyboards (and the browser's text input) report nothing at all
         // when backspace lands in a field that is already empty, so a focused
-        // empty row holds a zero-width space for the keypress to delete —
+        // empty row holds a zero-width space for the keypress to delete,
         // which reaches us as an ordinary edit down to the empty string.
         final focused = tester
             .widgetList<EditableText>(find.byType(EditableText))
@@ -1951,7 +1951,7 @@ void main() {
         await tester.tap(row);
         await tester.pump();
 
-        // A real keyboard appends to what the field already holds — marker
+        // A real keyboard appends to what the field already holds, marker
         // included. It has to come back off before the text goes anywhere.
         tester.testTextInput.updateEditingValue(
           const TextEditingValue(
@@ -2023,7 +2023,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Drag the first row's handle well past the next two rows — pumping
+      // Drag the first row's handle well past the next two rows, pumping
       // between moves like a real browser does, so mid-gesture rebuilds
       // (which once canceled the drag) are exercised.
       final gesture = await tester.startGesture(
@@ -2090,14 +2090,14 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pump(const Duration(milliseconds: 50));
 
-      // Check it off — it stays on the list, struck through, and remembered.
+      // Check it off, it stays on the list, struck through, and remembered.
       await tester.tap(find.byType(Checkbox).first);
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byIcon(Icons.history), findsNothing);
 
       // Focusing the new-item row now suggests the checked item back, so it
-      // can be re-added — this is what was broken (checked items stayed on
+      // can be re-added, this is what was broken (checked items stayed on
       // the list and so were wrongly excluded from their own suggestions).
       await tester.tap(find.widgetWithText(TextField, 'List item'));
       await tester.pump();
@@ -2377,7 +2377,7 @@ void main() {
       expect(find.text('2 selected'), findsOneWidget);
 
       // Tapping the selected notes again empties the selection, which is what
-      // takes the screen back out of the mode — no Cancel needed.
+      // takes the screen back out of the mode, no Cancel needed.
       await tester.tap(find.text('Second note'));
       await tester.pump();
       expect(find.text('1 selected'), findsOneWidget);
@@ -2514,18 +2514,18 @@ void main() {
       await store.load();
       await tester.pumpWidget(homeApp(store));
 
-      expect(find.byTooltip('Theme: Auto — tap to change'), findsOneWidget);
-      await tester.tap(find.byTooltip('Theme: Auto — tap to change'));
+      expect(find.byTooltip('Theme: Auto, tap to change'), findsOneWidget);
+      await tester.tap(find.byTooltip('Theme: Auto, tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Theme: Light — tap to change'), findsOneWidget);
+      expect(find.byTooltip('Theme: Light, tap to change'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Theme: Light — tap to change'));
+      await tester.tap(find.byTooltip('Theme: Light, tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Theme: Dark — tap to change'), findsOneWidget);
+      expect(find.byTooltip('Theme: Dark, tap to change'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Theme: Dark — tap to change'));
+      await tester.tap(find.byTooltip('Theme: Dark, tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Theme: Auto — tap to change'), findsOneWidget);
+      expect(find.byTooltip('Theme: Auto, tap to change'), findsOneWidget);
       await flushTimers(tester);
     });
 
@@ -2581,7 +2581,7 @@ void main() {
       expect(find.byType(CircleAvatar), findsOneWidget);
 
       // Focusing the field collapses the trailing shortcuts (layout/avatar)
-      // into search mode — even before anything is typed. Settle first: the
+      // into search mode, even before anything is typed. Settle first: the
       // two control sets cross-fade, so the outgoing icons linger a few
       // frames.
       await tester.tap(find.byType(TextField).first);
@@ -2612,7 +2612,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(store.sortMode, SortMode.edited);
 
-      // The pill's menu button opens the drawer (via the scaffold key — the
+      // The pill's menu button opens the drawer (via the scaffold key, the
       // old Scaffold.of(context) lookup threw above the Scaffold).
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
@@ -2779,7 +2779,7 @@ void main() {
       await tester.pump(); // busy is set synchronously on schedule
 
       // Loading is visible immediately: skeleton in the body, spinner in the
-      // bar — before the debounce/fetch even runs.
+      // bar, before the debounce/fetch even runs.
       expect(find.byType(NotesSkeleton), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsWidgets);
 

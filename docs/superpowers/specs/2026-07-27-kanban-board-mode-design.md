@@ -1,4 +1,4 @@
-# Kanban Board Mode — Design and Estimate
+# Kanban Board Mode, Design and Estimate
 
 **Date:** 2026-07-27
 **Status:** v1 implemented. Drag (phase 6) deferred; see "What shipped".
@@ -6,7 +6,7 @@
 ## What shipped
 
 A first version, built to the recommendations in this document with **drag
-deliberately left out** — cards move via "Move to column" in the card menu,
+deliberately left out**, cards move via "Move to column" in the card menu,
 which was always meant to be the guaranteed and accessible path. That keeps the
 fragile gesture work (phase 6) cleanly separable and decidable after the board
 has been lived in.
@@ -45,13 +45,13 @@ Stages are their own system, deliberately **independent of labels**:
 
 An earlier draft derived columns from labels. It was rejected: labels are a set
 and columns are exclusive, so it required a client-side "first column wins"
-heuristic over a many-to-many table — an invariant nothing enforced, which the
+heuristic over a many-to-many table, an invariant nothing enforced, which the
 add-only auto-labeler ([`background.rs:107`](../../../backend/src/handlers/background.rs))
 would actively violate by unioning new labels onto a note in the background.
 A dedicated `stage_id` makes exclusivity a schema fact and deletes that entire
 problem class.
 
-The cost is a new workspace-scoped entity plus a persisted note field — both
+The cost is a new workspace-scoped entity plus a persisted note field, both
 prescribed change paths in `AGENTS.md` with explicit checklists. That trade is
 the point: prescribed CRUD is cheap to write and maintain; novel invariants
 enforced only by discipline are not.
@@ -70,7 +70,7 @@ later.
   touches stages; deleting a stage never touches labels.
 - **No implicit writes.** A note patch carrying `stage_id` must not write
   `note_labels`, and one carrying `label_ids` must not write `stage_id`. One
-  explicit test each — this is the kind of thing that regresses quietly.
+  explicit test each, this is the kind of thing that regresses quietly.
 - **Separate client types.** A `Stage` model, its own store list, its own editor
   dialog. `buildBoard` takes stages and notes, never labels.
 - **Shared code is allowed only over primitives.**
@@ -90,7 +90,7 @@ owner's.
 
 **Q1. Does every note appear on the board, or only staged ones?**
 An "Unassigned" column that holds every unstaged note means a workspace with 500
-notes opens the board on a 500-card column — worst on a phone, where that column
+notes opens the board on a 500-card column, worst on a phone, where that column
 is the whole screen. Options: (a) all notes, Unassigned first; (b) only notes
 explicitly added to the board, with Unassigned absent; (c) all notes, but
 Unassigned is capped at ~20 with a "show all" and is not the landing column.
@@ -124,7 +124,7 @@ permanently deletes every note the workspace contains.
 **Q6. Can the stage be changed from the note editor?**
 A stage chip in the editor bottom bar is the obvious place, but it is extra
 scope and another surface to keep in sync. *Recommendation: yes, read-write
-chip* — a card you opened to work on is exactly when you want to advance it.
+chip*, a card you opened to work on is exactly when you want to advance it.
 
 **Q7. Should a terminal stage optionally archive its notes?**
 "Done" auto-archiving after N days keeps the board from growing forever.
@@ -152,7 +152,7 @@ ALTER TABLE notes ADD COLUMN stage_id TEXT
 ALTER TABLE notes ADD COLUMN stage_position REAL
 ```
 
-`stage_id` is nullable — null means Unassigned.
+`stage_id` is nullable, null means Unassigned.
 
 **Backfill.** `ADDITIVE_MIGRATIONS` re-runs every statement on every startup and
 discards errors (`apply_additive_migrations`), so it is DDL-only. The
@@ -164,12 +164,12 @@ UPDATE notes SET stage_position = position WHERE stage_position IS NULL
 ```
 
 Safe to re-run, seeds every board in the order people already arranged their
-grid, and means `stage_position` is *always set* — no null handling in the sort,
+grid, and means `stage_position` is *always set*, no null handling in the sort,
 the decoder, or the Dart model.
 
 **Invariant:** a note's stage must belong to the note's workspace. There is
-already a template — `PRUNE_MISMATCHED_LABELS` in
-[`sqlite.rs:30`](../../../backend/src/store/sqlite.rs) — and `moveNoteToWorkspace`
+already a template, `PRUNE_MISMATCHED_LABELS` in
+[`sqlite.rs:30`](../../../backend/src/store/sqlite.rs), and `moveNoteToWorkspace`
 already drops foreign labels, so the workspace-move path clears `stage_id` by
 the same rule, via a separate guard.
 
@@ -193,12 +193,12 @@ PATCH /api/notes/{id}   {"stage_id": "...", "stage_position": 3584.0}
 ```
 
 A cross-stage move and an intra-stage reposition are therefore *the same
-operation* — one row written, one queued op, works offline through the existing
+operation*, one row written, one queued op, works offline through the existing
 queue unchanged. This is the same trick the create path already uses:
 `_frontPosition()` returns `min - 1024.0`
 ([`notes_store.dart:772`](../../../app/lib/state/notes_store.dart)).
 
-The alternative — renumbering the whole board on every drop — would write N rows
+The alternative, renumbering the whole board on every drop, would write N rows
 per drag and couple board order to the grid's custom `position`. A separate
 field avoids both.
 
@@ -206,7 +206,7 @@ field avoids both.
 precision. When a gap falls below an epsilon, the client renumbers that stage
 and calls the existing `POST /api/notes/reorder`, which gains an optional
 `stage_id`: present means write `stage_position`, absent means the current
-global behaviour. Note the persisted-queue detail — the reorder `PendingOp`
+global behaviour. Note the persisted-queue detail, the reorder `PendingOp`
 carries `data: {'ids': [...]}` today, and adding an optional key stays readable
 by queues written by older builds.
 
@@ -221,18 +221,18 @@ by queues written by older builds.
   returning ordered columns. Groups by `stage_id`, sorts by `stage_position`.
   No heuristics left to encode. Pure, so it tests without a widget tree.
 - `NotesStore` gains a stages list, stage CRUD passthrough, and
-  `setNoteStage(noteId, stageId, position)` issuing one `_patch` — following
+  `setNoteStage(noteId, stageId, position)` issuing one `_patch`, following
   `moveNoteToWorkspace` ([`notes_store.dart:1289`](../../../app/lib/state/notes_store.dart)),
   not a pair of calls that would enqueue two ops for one gesture.
 
 **One column widget, two containers.** A column is a vertical list of cards with
-drag-reorder — identical on every platform. Only the container around it and the
+drag-reorder, identical on every platform. Only the container around it and the
 cross-stage affordance differ. Build the column once.
 
 Reuse `AnimatedMasonry` at `columns: 1` for it: it already gives measured
 heights, glide-on-reflow, long-press touch drag, edge auto-scroll, entrance
 stagger, and the tile caching that exists because note cards are expensive to
-build ([`masonry.dart:90`](../../../app/lib/widgets/masonry.dart)) — which
+build ([`masonry.dart:90`](../../../app/lib/widgets/masonry.dart)), which
 matters more here, since a board mounts more cards at once than a grid does.
 
 ## Mobile
@@ -244,11 +244,11 @@ desktop does.
 - **Header:** a horizontally scrollable stage strip (~44px) showing name +
   card count, current stage highlighted, tap to jump.
 - **Reorder within a stage:** long-press drag, vertically, inside the visible
-  column. This already works — masonry's touch path is a `LongPressDraggable`
+  column. This already works, masonry's touch path is a `LongPressDraggable`
   with a 220ms delay ([`masonry.dart:404`](../../../app/lib/widgets/masonry.dart)),
   chosen so scrolling wins the gesture arena.
 - **Move across stages (primary gesture):** long-press lifts the card, and the
-  **stage strip becomes drop targets** — drag up, drop on a stage chip. The drag
+  **stage strip becomes drop targets**, drag up, drop on a stage chip. The drag
   is short, no page has to turn under the user's finger, and because it starts
   from a long press the `PageView` never claims the gesture. It reuses the exact
   `DragTarget<String>` note-id protocol the sidebar already uses
@@ -262,7 +262,7 @@ desktop does.
   reusing the `labelIds`-style pre-fill path that already backs label views.
 
 Vertical budget is tight: top bar plus stage strip, and the board takes the
-rest. The board must not nest inside the home `CustomScrollView` — it is a
+rest. The board must not nest inside the home `CustomScrollView`, it is a
 horizontal container of independently scrolling columns, so `HomeScreen`
 branches above the sliver stack.
 
@@ -296,22 +296,22 @@ path, with cross-column drag and horizontal edge auto-scroll while dragging.
 **Total: 10–12 days**, one developer, tests and docs included, at this repo's
 quality bar.
 
-Reduced scope — move via sheet and stage-strip tap only, no drag anywhere — is
+Reduced scope, move via sheet and stage-strip tap only, no drag anywhere, is
 **6–7 days** and still yields a board usable on both phone and desktop. Phase 6
 is the separable one; it can be decided after the board has been lived in.
 
 ## Files touched
 
-**New — backend:** `handlers/stages.rs`, `tests/api/stages.rs`.
-**Changed — backend:** `models.rs`, `store/mod.rs`, `store/sqlite.rs`,
+**New, backend:** `handlers/stages.rs`, `tests/api/stages.rs`.
+**Changed, backend:** `models.rs`, `store/mod.rs`, `store/sqlite.rs`,
 `store/sqlite_schema.rs`, `store/sqlite_rows.rs`, `handlers/mod.rs`,
 `handlers/notes.rs`, `lib.rs`, `tests/api/notes.rs`.
 
-**New — client:** `state/board_layout.dart`, `widgets/board/board_view.dart`,
+**New, client:** `state/board_layout.dart`, `widgets/board/board_view.dart`,
 `board_column.dart`, `board_stage_strip.dart`, `board_page_view.dart`,
 `stage_editor_dialog.dart`, `move_to_stage_sheet.dart`,
 `test/board_test.dart`, `test/board_widget_test.dart`.
-**Changed — client:** `models/note.dart`, `api/api_client.dart`,
+**Changed, client:** `models/note.dart`, `api/api_client.dart`,
 `state/notes_store.dart`, `state/note_collection.dart`,
 `screens/home_screen.dart`, `screens/editor_screen.dart`,
 `widgets/masonry.dart`, `widgets/app_drawer.dart`, `widgets/note_card.dart`,
@@ -331,14 +331,14 @@ is the separable one; it can be decided after the board has been lived in.
    sliver stack.
 4. **Unassigned overflow** (Q1). Unbounded on day one in a mature workspace.
 5. **Adoption gap.** People already organising with `todo`/`doing`/`done` labels
-   get nothing until they recreate those as stages — see below.
+   get nothing until they recreate those as stages, see below.
 
 ## Deferred
 
 - **One-shot "create stages from labels"** in the board's empty state: pick
   labels, copy their names into stages, optionally assign each note by its
   current label, then never read labels again. A one-time import on explicit
-  user action creates no ongoing coupling — nothing in the running system
+  user action creates no ongoing coupling, nothing in the running system
   consults labels afterward. This is the mitigation for risk 5 and is worth
   doing early if adoption matters.
 - WIP limits per stage.

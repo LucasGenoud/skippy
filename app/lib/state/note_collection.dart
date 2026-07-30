@@ -31,7 +31,7 @@ class ViewSelection {
 ///
 /// A note shared with you directly can live in a workspace you're not a member
 /// of. It still has to appear somewhere, so those fall into the default
-/// workspace — the one place every account has.
+/// workspace, the one place every account has.
 class WorkspaceScope {
   /// The open workspace, or null to show every note the user can see.
   final String? workspaceId;
@@ -50,7 +50,7 @@ class WorkspaceScope {
     required this.known,
   });
 
-  /// No filtering — used by exports, search, and tests that predate
+  /// No filtering, used by exports, search, and tests that predate
   /// workspaces.
   const WorkspaceScope.all()
     : workspaceId = null,
@@ -60,8 +60,8 @@ class WorkspaceScope {
   bool contains(Note note) => containsWorkspace(note.workspaceId);
 
   /// Whether content filed in [id] shows in this scope. Content from a
-  /// workspace the user doesn't belong to — a directly shared note, or a
-  /// cache written before workspaces existed — surfaces in the default one.
+  /// workspace the user doesn't belong to, a directly shared note, or a
+  /// cache written before workspaces existed, surfaces in the default one.
   bool containsWorkspace(String id) {
     final active = workspaceId;
     if (active == null) return true;

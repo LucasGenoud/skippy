@@ -97,7 +97,7 @@ async fn chat_route_model_query_drives_retrieval() {
         "the routed query must drive retrieval: {sources:?}"
     );
     assert_eq!(frames.last().unwrap()["type"], "done");
-    // Two model calls: the route, then the answer over the retrieved notes —
+    // Two model calls: the route, then the answer over the retrieved notes,
     // with checklist state intact (checked bread vs pending milk).
     let calls = calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
@@ -185,7 +185,7 @@ async fn chat_live_authorizes_stale_index_hits_after_revocation() {
 
 /// A turn routed to `{"search": null}` (thanks, chit-chat) answers from the
 /// conversation alone: no notes in the prompt and an empty sources frame, so
-/// the client shows no chips — and the model can't trip over irrelevant
+/// the client shows no chips, and the model can't trip over irrelevant
 /// notes and disavow its previous answer.
 #[tokio::test]
 async fn chat_route_direct_skips_retrieval_and_sources() {
@@ -251,7 +251,7 @@ async fn chat_route_direct_skips_retrieval_and_sources() {
 }
 
 /// A route reply the parser can't read (prose, wrong shape) must fall back
-/// to plain retrieval — blending recent user turns so a low-content
+/// to plain retrieval, blending recent user turns so a low-content
 /// follow-up ("nice") still surfaces the note the conversation is about.
 #[tokio::test]
 async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
@@ -278,7 +278,7 @@ async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
     )
     .await;
     // More decoys than the context window (6), every one sharing the
-    // follow-up's only token — embedding "nice" alone would rank all of them
+    // follow-up's only token, embedding "nice" alone would rank all of them
     // above the groceries note.
     for i in 0..7 {
         create_note(
@@ -322,7 +322,7 @@ async fn chat_retrieval_follows_the_conversation_not_just_the_last_message() {
 }
 
 /// A turn routed to `{"write": …}` runs the planner, which returns a note to
-/// create — the server persists it and announces it with a `created` frame.
+/// create, the server persists it and announces it with a `created` frame.
 /// A successful write makes exactly two model calls (route + plan) and no
 /// answer stream.
 #[tokio::test]

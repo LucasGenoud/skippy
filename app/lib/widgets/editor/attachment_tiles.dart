@@ -53,7 +53,7 @@ class ImageAttachmentTile extends StatelessWidget {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
-                          // Decode at (bucketed) display size — see the note
+                          // Decode at (bucketed) display size, see the note
                           // card's image strip for the rationale.
                           final dpr = MediaQuery.devicePixelRatioOf(context);
                           final width = constraints.maxWidth.isFinite
@@ -153,7 +153,7 @@ class _OverlayAction extends StatelessWidget {
   }
 }
 
-/// A placeholder for a file that is still uploading — shown in the same slot
+/// A placeholder for a file that is still uploading, shown in the same slot
 /// its real [ImageAttachmentTile]/[FileAttachmentTile] takes once the network
 /// call resolves, so the tile appears the instant a file is picked instead of
 /// popping into existence only on success. The bytes are already in memory

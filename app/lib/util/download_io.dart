@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Native (Android/iOS) downloads route through the system share sheet — that's
+/// Native (Android/iOS) downloads route through the system share sheet, that's
 /// where "Save Image", "Save to Files" and friends live. Mirrors the web
 /// build's [downloadTextFile]/[downloadUrl] API so callers never branch on
 /// platform. The bytes are written to a temp file first so the OS gets a real

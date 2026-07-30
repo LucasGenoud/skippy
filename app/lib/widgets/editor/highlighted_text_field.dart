@@ -7,7 +7,7 @@ import '../../util/linkify.dart';
 /// [buildTextSpan]: styles URLs as blue underlined links with a long-press
 /// recognizer that opens them, and tints find-in-note matches when [query] is
 /// set. Folding both into the real editing controller keeps the field fully
-/// editable (a normal tap still places the caret) — a proxy read-only overlay
+/// editable (a normal tap still places the caret), a proxy read-only overlay
 /// isn't needed.
 class LinkifyingController extends TextEditingController {
   final void Function(String url) onOpenUrl;

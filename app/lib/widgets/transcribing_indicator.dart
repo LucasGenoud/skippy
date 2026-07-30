@@ -25,7 +25,7 @@ class _TranscribingIndicatorState extends State<TranscribingIndicator>
 
   /// Transcription normally takes seconds. A note stuck in `pending` (say,
   /// the Whisper service died mid-job) must not keep the frame pipeline
-  /// running forever on a grid card — that's pure battery drain.
+  /// running forever on a grid card, that's pure battery drain.
   Timer? _animationCap;
 
   @override
@@ -85,7 +85,7 @@ class _TranscribingIndicatorState extends State<TranscribingIndicator>
   }
 }
 
-/// A row of bars that bob up and down out of phase — a lightweight "audio is
+/// A row of bars that bob up and down out of phase, a lightweight "audio is
 /// being processed" motif.
 class _Equalizer extends StatelessWidget {
   static const _bars = 4;
@@ -134,7 +134,7 @@ class _Equalizer extends StatelessWidget {
   }
 }
 
-/// Grey placeholder lines with a highlight band sweeping across — the classic
+/// Grey placeholder lines with a highlight band sweeping across, the classic
 /// content-loading shimmer.
 class _ShimmerLines extends StatelessWidget {
   final Animation<double> animation;

@@ -40,7 +40,7 @@ fn validate_update(record: &NoteRecord, user_id: &str, body: &UpdateNote) -> Api
             "only the owner can trash or restore a note",
         ));
     }
-    // Moving a note changes who can see it, which is the owner's call — the
+    // Moving a note changes who can see it, which is the owner's call, the
     // same reasoning as trashing.
     if body
         .workspace_id
@@ -285,7 +285,7 @@ pub async fn apply_note_update(
 
     // Version history: only content edits are versioned (color/pin/archive and
     // friends are organizational, not "content you'd roll back"). Capture the
-    // pre-edit state as a snapshot when this edit opens a new session — a
+    // pre-edit state as a snapshot when this edit opens a new session, a
     // different author, or a gap since the last content edit. Same-author
     // edits within the window coalesce, so history is one entry per sitting
     // rather than one per debounced save. The first-ever edit always snapshots
@@ -302,14 +302,14 @@ pub async fn apply_note_update(
     state.repo.update_note(&record).await?;
 
     // Items checked off in this patch feed this note's suggestion dictionary
-    // ("Milk" checked today autocompletes on next week's list) — scoped per
+    // ("Milk" checked today autocompletes on next week's list), scoped per
     // note, so suggestions never leak across notes.
     let newly_checked = newly_checked_texts(&old_items, &record.items);
     if !newly_checked.is_empty() {
         state.repo.record_checked_items(id, &newly_checked).await?;
     }
 
-    // A moved note leaves its old workspace's labels behind — they are that
+    // A moved note leaves its old workspace's labels behind, they are that
     // workspace's taxonomy, not this note's. Runs before the patch's own
     // label_ids so an explicit set still wins.
     if moving_to.is_some() {

@@ -9,7 +9,7 @@ import '../util/linkify.dart';
 /// opens the note). Used for note-card bodies.
 ///
 /// Owns the per-URL [LongPressGestureRecognizer]s and disposes them, so it must
-/// be a stateful widget — recognizers created inline in a build leak.
+/// be a stateful widget, recognizers created inline in a build leak.
 class LinkedText extends StatefulWidget {
   final String text;
   final String query;

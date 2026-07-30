@@ -1,4 +1,4 @@
-# Configuration for the bundled Garage object store — attachment storage when
+# Configuration for the bundled Garage object store, attachment storage when
 # STICKY_NOTES_STORAGE=s3 in docker-compose.yml. Bootstrap is automatic: the
 # container runs `garage server --single-node --default-bucket`, which
 # initializes the cluster layout on first start and imports the S3 access key
@@ -20,6 +20,6 @@ api_bind_addr = "[::]:3900"
 root_domain = ".s3.garage"
 
 [admin]
-# Serves GET /health (no token configured — token-gated admin endpoints stay
+# Serves GET /health (no token configured, token-gated admin endpoints stay
 # disabled; the app only uses the S3 API).
 api_bind_addr = "[::]:3903"

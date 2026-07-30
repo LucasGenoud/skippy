@@ -13,7 +13,7 @@ class LoginField extends StatelessWidget {
   /// `autocomplete` attribute on the web.
   final String autofillHint;
 
-  /// The `name`/`id` of the DOM input on the web — password managers weigh
+  /// The `name`/`id` of the DOM input on the web, password managers weigh
   /// those alongside `autocomplete`. Unused on this platform.
   final String fieldName;
 

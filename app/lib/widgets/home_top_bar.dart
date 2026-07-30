@@ -210,7 +210,7 @@ class HomeTopBar extends StatelessWidget {
                   onPressed: onToggleLayout,
                 ),
                 IconButton(
-                  // The sun/moon rotates in as the theme flips — a nod to the
+                  // The sun/moon rotates in as the theme flips, a nod to the
                   // day/night metaphor without slowing the switch down.
                   icon: AnimatedSwitcher(
                     duration: Motion.base,
@@ -227,7 +227,7 @@ class HomeTopBar extends StatelessWidget {
                       key: ValueKey(settings.themeMode),
                     ),
                   ),
-                  tooltip: 'Theme: ${themeAction.label} — tap to change',
+                  tooltip: 'Theme: ${themeAction.label}, tap to change',
                   onPressed: settings.cycleThemeMode,
                 ),
                 IconButton(
@@ -269,7 +269,7 @@ class HomeTopBar extends StatelessWidget {
                 color: semantic ? scheme.primary : null,
               ),
               tooltip: semantic
-                  ? 'Semantic search on — results ranked by meaning'
+                  ? 'Semantic search on, results ranked by meaning'
                   : 'Search by meaning',
               onPressed: onToggleSemantic,
             ),
@@ -522,7 +522,7 @@ class HomeTopBar extends StatelessWidget {
 /// The bar in selection mode. Entering selection swaps the whole bar at once,
 /// which read as a flicker: the actions now drop in from above, staggered left
 /// to right, so the row announces itself as arriving. The entrance runs once
-/// per stint in selection mode — picking further notes only re-enables the
+/// per stint in selection mode, picking further notes only re-enables the
 /// icons already on screen, and replaying it on every tap would be noise.
 class _SelectionBar extends StatefulWidget {
   final String label;
@@ -598,7 +598,7 @@ class _SelectionBarState extends State<_SelectionBar>
           ),
           Expanded(
             // The count changes as you pick notes, so it fades rather than
-            // dropping — it's the one thing here that isn't a new control.
+            // dropping, it's the one thing here that isn't a new control.
             child: FadeTransition(
               opacity: _enter,
               child: Text(
@@ -625,8 +625,8 @@ enum _BarSlot { left, centre, right }
 /// icons outweigh the branding the pill sat visibly right of centre.
 ///
 /// The clusters keep their natural widths; the pill takes whatever is left
-/// once both are cleared. When that drops below [_minCentre] — a narrow
-/// window, or a long enough action row — centring is abandoned rather than
+/// once both are cleared. When that drops below [_minCentre], a narrow
+/// window, or a long enough action row, centring is abandoned rather than
 /// squeezing the field to nothing, and the pill simply fills the gap.
 class _CentredBarLayout extends MultiChildLayoutDelegate {
   /// Breathing room between the pill and each cluster.
@@ -690,7 +690,7 @@ Widget _fadeScale({required Widget child}) {
 }
 
 /// The search pill's chrome. At rest it sits flush in the bar; when the field
-/// gains focus it lifts — surface fill plus a soft shadow — so the active
+/// gains focus it lifts, surface fill plus a soft shadow, so the active
 /// search state is unmistakable.
 class _SearchPill extends StatelessWidget {
   final FocusNode focusNode;
@@ -945,7 +945,7 @@ class _SyncBadgeState extends State<_SyncBadge>
       SyncStatus.offline => (
         Icons.cloud_off_rounded,
         scheme.error,
-        'Offline — changes will sync when you reconnect',
+        'Offline, changes will sync when you reconnect',
       ),
       SyncStatus.connecting => (
         Icons.sync_rounded,

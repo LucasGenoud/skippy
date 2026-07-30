@@ -1,6 +1,6 @@
 /// Open Graph / HTML metadata for a URL, fetched by the backend `/api/unfurl`
 /// endpoint and rendered as a rich preview card. Every field except [url] may
-/// be null — a bare link still yields a card titled with its host.
+/// be null, a bare link still yields a card titled with its host.
 class LinkPreview {
   final String url;
   final String? title;

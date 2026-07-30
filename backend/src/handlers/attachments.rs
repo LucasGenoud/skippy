@@ -185,7 +185,7 @@ fn is_safe_inline_mime(mime: &str) -> bool {
 }
 
 /// Serves attachment bytes, gated by a signed `?exp=..&sig=..` capability
-/// rather than a bearer token — so plain `<img>`/`<audio>` element loads work
+/// rather than a bearer token, so plain `<img>`/`<audio>` element loads work
 /// on web and mobile, while a stranger with just the id gets nothing. Only a
 /// note's participants are ever handed a signed URL (they are minted into
 /// access-checked note views), and the signature expires, so a leaked URL
@@ -240,7 +240,7 @@ pub async fn serve_file(
     let total = bytes.len() as u64;
     // Common headers on every response. `Accept-Ranges` advertises range
     // support so iOS AVPlayer (via `just_audio`) will stream and seek m4a/mp4
-    // audio — without it, remote audio playback silently fails on mobile.
+    // audio, without it, remote audio playback silently fails on mobile.
     let mut resp_headers = HeaderMap::new();
     if let Ok(value) = attachment.mime.parse() {
         resp_headers.insert(header::CONTENT_TYPE, value);
@@ -269,7 +269,7 @@ pub async fn serve_file(
         HeaderName::from_static("referrer-policy"),
         header::HeaderValue::from_static("no-referrer"),
     );
-    // The URL is a per-user, expiring capability — never let a shared cache
+    // The URL is a per-user, expiring capability, never let a shared cache
     // store it. `private` scopes caching to the user's own browser.
     resp_headers.insert(
         header::CACHE_CONTROL,
@@ -300,7 +300,7 @@ pub async fn serve_file(
 enum ByteRange {
     /// `bytes=start-` or `bytes=start-end`.
     From { start: u64, end: Option<u64> },
-    /// `bytes=-suffix` — the last `suffix` bytes.
+    /// `bytes=-suffix`, the last `suffix` bytes.
     Suffix(u64),
 }
 

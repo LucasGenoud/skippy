@@ -8,7 +8,7 @@
 //! Adding a channel = implement [`Connector`] (a self-contained struct that
 //! reads its own keys out of the settings document) and register it in
 //! [`default_connectors`]. The sweep, the `/api/notify/test` endpoint and
-//! per-user configuration pick it up with no further changes — the client
+//! per-user configuration pick it up with no further changes, the client
 //! saves connector keys under the same names in the same document.
 
 use std::sync::Arc;
@@ -33,7 +33,7 @@ pub struct Notification {
 }
 
 /// Render a due reminder: the note title (falling back to "Reminder") over a
-/// capped body — the note's content, or a checklist's still-pending items.
+/// capped body, the note's content, or a checklist's still-pending items.
 pub fn reminder_notification(record: &NoteRecord) -> Notification {
     let title = match record.title.trim() {
         "" => "Reminder".to_string(),
@@ -96,7 +96,7 @@ fn text(settings: &Value, key: &str) -> String {
         .to_string()
 }
 
-/// Master toggle (`reminder_notifications`), defaulting on — it only matters
+/// Master toggle (`reminder_notifications`), defaulting on, it only matters
 /// once a channel is configured.
 pub fn notifications_enabled(settings: &Value) -> bool {
     settings["reminder_notifications"] != false
@@ -130,7 +130,7 @@ async fn status_error(service: &str, response: reqwest::Response) -> anyhow::Err
 pub struct NtfyConnector;
 
 /// Split a full ntfy topic URL into (server base, topic). Publishing goes to
-/// the server root as JSON — unlike the header-based `POST {url}` style this
+/// the server root as JSON, unlike the header-based `POST {url}` style this
 /// keeps unicode titles intact. A missing scheme defaults to https.
 pub fn split_ntfy_url(url: &str) -> Option<(String, String)> {
     let url = url.trim().trim_end_matches('/');
@@ -288,7 +288,7 @@ pub async fn send_configured(
 
 /// One scheduler pass: find due, unfired reminders and push them to every
 /// participant with a configured channel. Each reminder is marked fired
-/// *before* delivery — at-most-once, so a broken channel can't wedge the
+/// *before* delivery, at-most-once, so a broken channel can't wedge the
 /// sweep into resending the same reminder forever. Delivery failures are
 /// logged and dropped.
 pub async fn sweep_due_reminders(state: &AppState) {

@@ -7,7 +7,7 @@ import 'managed_note.dart';
 import 'probe_row.dart';
 
 /// Summary row for the user's LLM endpoint; taps into the config dialog.
-/// There is no server capability involved — availability is purely whether
+/// There is no server capability involved, availability is purely whether
 /// the user has configured an endpoint and model.
 class LlmConfigTile extends StatelessWidget {
   const LlmConfigTile({super.key});
@@ -23,7 +23,7 @@ class LlmConfigTile extends StatelessWidget {
           '${settings.llmModel} @ ${(host == null || host.isEmpty) ? settings.llmBaseUrl : host}';
     } else {
       summary =
-          'Not configured — works with Ollama or any OpenAI-compatible API';
+          'Not configured, works with Ollama or any OpenAI-compatible API';
     }
     return ListTile(
       leading: const Icon(Icons.smart_toy_outlined),

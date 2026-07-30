@@ -132,7 +132,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         children: [
           const Text(
             'This permanently deletes your account, every workspace you own, '
-            'and every note inside those workspaces — including notes created '
+            'and every note inside those workspaces, including notes created '
             'by other people. Your other notes, attachments, settings, and '
             'sessions are also deleted. This cannot be undone.',
           ),

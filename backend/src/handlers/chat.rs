@@ -182,11 +182,11 @@ async fn chat_loop(
         None => None,
     };
 
-    // Phase 1 — route: the model decides whether this turn needs notes at
+    // Phase 1, route: the model decides whether this turn needs notes at
     // all and, if so, writes the search query itself (resolving references
     // from the conversation, so "and the plants?" looks up plants and a bare
     // "thanks" looks up nothing). A failed or unparseable routing call falls
-    // back to plain retrieval on a blend of recent user turns — a weak model
+    // back to plain retrieval on a blend of recent user turns, a weak model
     // can't make chat worse than ordinary RAG, only better.
     let decision = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -203,7 +203,7 @@ async fn chat_loop(
         crate::assist::RouteDecision::Search(crate::assist::retrieval_query(&history, message))
     });
 
-    // Phase 2 — retrieve when the turn needs notes. A Search reads them to
+    // Phase 2, retrieve when the turn needs notes. A Search reads them to
     // answer; a Write reads them as candidates to add to. Over-fetch because
     // trashed notes linger in the vector index; keep the best non-trashed hits.
     let mut notes: Vec<(String, String, String)> = Vec::new(); // (id, title, text)
@@ -255,7 +255,7 @@ async fn chat_loop(
         }
     }
 
-    // Phase 2b — write: turn a create/append request into one structured edit
+    // Phase 2b, write: turn a create/append request into one structured edit
     // and apply it, streaming a confirmation. A failed or unusable plan falls
     // through to answering over the retrieved notes, so a weak model can never
     // silently drop the turn (or, worse, touch a note it shouldn't).
@@ -349,7 +349,7 @@ async fn chat_loop(
 /// into one structured edit ([`assist::write_plan_messages`]), apply it through
 /// the shared create/update pipeline, and stream a `created` frame plus a short
 /// confirmation. Returns `true` when it fully handled the turn (a terminal
-/// frame was sent — success or a hard failure); `false` means the plan was
+/// frame was sent, success or a hard failure); `false` means the plan was
 /// unusable (timeout, unparseable, or a hallucinated append target) and the
 /// caller should fall through to answering over the retrieved notes rather than
 /// write something the user didn't ask for.
@@ -369,7 +369,7 @@ where
     async fn send<S: SinkExt<Message> + Unpin>(sink: &mut S, value: serde_json::Value) -> bool {
         sink.send(Message::text(value.to_string())).await.is_ok()
     }
-    // " \"Groceries\"" or "" for a blank title — folded into a sentence.
+    // " \"Groceries\"" or "" for a blank title, folded into a sentence.
     fn titled(title: &str) -> String {
         let t = title.trim();
         if t.is_empty() {
@@ -420,7 +420,7 @@ where
                 (content, structs)
             } else {
                 // A text note can't render checklist rows, so fold any items
-                // the model produced into the body — nothing is lost.
+                // the model produced into the body, nothing is lost.
                 let mut body = content;
                 for item in &items {
                     if !body.is_empty() {

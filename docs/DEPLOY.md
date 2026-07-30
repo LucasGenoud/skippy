@@ -2,7 +2,7 @@
 
 Pushing to `main` builds the full-stack image in a Forgejo Actions job and
 pushes it to the Forgejo container registry. A Watchtower container on the
-homeserver polls that registry and restarts `server` when a new image lands —
+homeserver polls that registry and restarts `server` when a new image lands,
 so a deploy is just `git push`.
 
 ```
@@ -16,14 +16,14 @@ restart untouched, and DB migrations run on startup.
 
 ### 1. Repo secrets (Forgejo → repo → Settings → Actions → Secrets)
 
-- `REGISTRY_USER` — your Forgejo username (`lucasgenoud`).
-- `REGISTRY_TOKEN` — a Forgejo access token with the **`write:package`** scope
+- `REGISTRY_USER`, your Forgejo username (`lucasgenoud`).
+- `REGISTRY_TOKEN`, a Forgejo access token with the **`write:package`** scope
   (User Settings → Applications → Generate New Token).
 
 ### 2. Runner
 
 - The workflow's `runs-on: homeserver-runner` must match a label your Forgejo runner
-  registered with — adjust if yours differs.
+  registered with, adjust if yours differs.
 - The runner must expose the host Docker daemon to jobs (forgejo-runner does
   this by default). The job shells out to `docker build`/`docker push`.
 

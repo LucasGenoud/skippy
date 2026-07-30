@@ -162,7 +162,7 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
 /// arbitrary one.
 ///
 /// This is a data backfill, not DDL, so it cannot live in
-/// [`ADDITIVE_MIGRATIONS`] — those re-run on every startup. The `IS NULL`
+/// [`ADDITIVE_MIGRATIONS`], those re-run on every startup. The `IS NULL`
 /// guard is what makes re-running it harmless, the same way
 /// [`migrate_user_accounts`] guards its own updates. Every row written after
 /// this point carries a stage position from the start.

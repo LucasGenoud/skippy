@@ -54,7 +54,7 @@ pub fn parse_llm_settings(settings_json: Option<&str>) -> LlmSettings {
     parse_llm_settings_value(&value)
 }
 
-/// Same as [`parse_llm_settings`] but over an already-parsed document — used
+/// Same as [`parse_llm_settings`] but over an already-parsed document, used
 /// after the server overlays its env-managed keys (see [`crate::config`]).
 pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
     let text = |key: &str| {
@@ -139,7 +139,7 @@ pub enum RouteDecision {
     /// Look notes up with the model's own standalone query.
     Search(String),
     /// The turn needs no notes (thanks, greetings, follow-ups on what was
-    /// already said) — answer from the conversation alone.
+    /// already said), answer from the conversation alone.
     Direct,
     /// The user asked to create a new note or add to an existing one. The
     /// string is a short topic query used to retrieve candidate notes to
@@ -171,13 +171,13 @@ pub fn route_messages(history: &[(String, String)], message: &str) -> Vec<ChatMe
             "You route messages for an assistant over the user's personal \
              sticky notes. Decide what the LAST user message needs. Reply with \
              ONLY a JSON object, no other text:\n\
-             {\"search\": \"<query>\"} — when answering needs their notes; \
+             {\"search\": \"<query>\"}, when answering needs their notes; \
              write a short standalone search query for what to look up, \
              resolving any references from the conversation.\n\
-             {\"search\": null} — when the message needs no lookup (greetings, \
+             {\"search\": null}, when the message needs no lookup (greetings, \
              thanks, chit-chat, or questions already answered in the \
              conversation).\n\
-             {\"write\": \"<topic>\"} — when the user asks to CREATE a new note \
+             {\"write\": \"<topic>\"}, when the user asks to CREATE a new note \
              or ADD something to a note (\"make a list\", \"add milk to my \
              groceries\", \"save this as a note\", \"note down …\"); set topic \
              to a few words describing the note's subject so an existing note \
@@ -188,7 +188,7 @@ pub fn route_messages(history: &[(String, String)], message: &str) -> Vec<ChatMe
 }
 
 /// Lenient parse of the routing reply: tolerates code fences and prose around
-/// the JSON object. `None` means unparseable — the caller should fall back to
+/// the JSON object. `None` means unparseable, the caller should fall back to
 /// plain retrieval rather than trust the model had no need for notes. A
 /// non-empty `write` string routes to the write path; otherwise the `search`
 /// key must be PRESENT (a wrong-shape object is not a decision), with `null`
@@ -216,7 +216,7 @@ pub fn parse_route_reply(reply: &str) -> Option<RouteDecision> {
 
 /// The text embedded for retrieval on a chat turn. Low-content follow-ups
 /// ("nice", "why?") carry none of the conversation's subject, so embedding
-/// them alone surfaces junk — and the junk then replaces the notes the
+/// them alone surfaces junk, and the junk then replaces the notes the
 /// previous answer was grounded in, confusing the model. Blend the last few
 /// user turns (oldest first, new message last) so the topic sticks.
 /// Used as the fallback when the routing call fails or is unparseable.
@@ -308,7 +308,7 @@ fn string_list(value: &serde_json::Value, key: &str) -> Vec<String> {
 
 /// Lenient parse of the write-planner reply into an executable action.
 /// `None` means the reply was unusable (unparseable, unknown action, an
-/// append to an unknown note, or an edit that adds nothing) — the caller then
+/// append to an unknown note, or an edit that adds nothing), the caller then
 /// falls back to answering rather than writing something unintended.
 pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteAction> {
     let start = reply.find('{')?;
@@ -335,7 +335,7 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
         "append" => {
             let note_id = value["note_id"].as_str()?.trim().to_string();
             if !valid_ids.iter().any(|id| id == &note_id) {
-                return None; // hallucinated target — don't touch a random note
+                return None; // hallucinated target, don't touch a random note
             }
             if content.is_empty() && items.is_empty() {
                 return None;
@@ -348,7 +348,7 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
 
 /// Render a note's body for the chat prompt (the title is printed by
 /// [`chat_messages`]). Unlike the embedding text ([`SearchService::note_text`]
-/// flattens item texts), checklist items keep their checked state — the model
+/// flattens item texts), checklist items keep their checked state, the model
 /// must be able to tell what's done from what's still pending, or it reads a
 /// half-finished grocery list as all still to buy.
 ///
@@ -374,14 +374,14 @@ pub fn chat_messages(
     message: &str,
 ) -> Vec<ChatMessage> {
     // The notes are looked up per turn against that turn's query, so they
-    // must read as *possible* context, never as the whole collection —
+    // must read as *possible* context, never as the whole collection,
     // otherwise a turn whose lookup surfaced different notes makes the model
     // disavow its own previous (correctly grounded) answer.
     let mut context = String::from(
         "You are an assistant for the user's personal sticky notes app. Below \
          is a selection of their notes looked up as possible context for the \
          latest message; it is not their whole collection, and some notes may \
-         be irrelevant — silently ignore those. Checklist items are marked \
+         be irrelevant, silently ignore those. Checklist items are marked \
          '- [x]' when checked off (done, already bought/handled) and '- [ ]' \
          when still pending; treat only pending items as open tasks. Each note \
          is shown in full, so a list you can see the end of is the whole list. \
@@ -522,7 +522,7 @@ mod tests {
             stage_id: None,
             stage_position: 0.0,
         };
-        // Checked stays visibly checked — the model must not re-list it as
+        // Checked stays visibly checked, the model must not re-list it as
         // still to buy.
         assert_eq!(note_prompt_text(&record), "- [x] bread\n- [ ] milk");
 
@@ -543,7 +543,7 @@ mod tests {
         let messages = chat_messages(&[("Groceries".into(), text.clone())], &[], "what's left?");
         let prompt = &messages[0].content;
         // The notes are the tail of the system prompt, so an intact list ends
-        // it — anything dropped would have left the truncation marker here.
+        // it, anything dropped would have left the truncation marker here.
         assert!(prompt.trim_end().ends_with("- [ ] item 199"), "tail of the list was cut");
     }
 
@@ -581,7 +581,7 @@ mod tests {
             Some(Search("plants".into()))
         );
         assert_eq!(
-            parse_route_reply("Sure! {\"search\": null} — no lookup needed."),
+            parse_route_reply("Sure! {\"search\": null}, no lookup needed."),
             Some(Direct)
         );
         // Unparseable replies must NOT read as Direct: the caller falls back

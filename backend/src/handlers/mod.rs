@@ -98,8 +98,8 @@ pub(super) async fn workspace_note_ids(
         .collect())
 }
 
-/// Resolve the workspace a request targets: the one it names — which the
-/// caller must belong to — or, when it names none, their default workspace.
+/// Resolve the workspace a request targets: the one it names, which the
+/// caller must belong to, or, when it names none, their default workspace.
 /// Absent is a deliberate default rather than an error, so callers with no
 /// workspace in hand (the chat write path, scripted creates) still work.
 async fn resolve_workspace(
@@ -131,7 +131,7 @@ pub async fn health() -> Json<serde_json::Value> {
 
 /// Which optional, service-backed features this server has enabled. The client
 /// uses it to show or hide the semantic-search toggle and the audio-note
-/// recorder — a feature whose backing service isn't running simply never
+/// recorder, a feature whose backing service isn't running simply never
 /// appears. Unauthenticated, like [`health`]: it leaks nothing user-specific.
 pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
@@ -141,7 +141,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Val
 }
 
 /// Which settings keys the self-hoster has pinned via env vars. The client
-/// locks these fields and reflects their values — except secrets, whose values
+/// locks these fields and reflects their values, except secrets, whose values
 /// are redacted (`{"secret": true, "value": null}`) so an env-set API key never
 /// reaches the frontend. Auth-gated: base URLs are server infrastructure, not
 /// for anonymous callers.

@@ -6,18 +6,18 @@ import '../state/settings_store.dart';
 /// Presentation for labels: a curated icon set and colour resolution.
 ///
 /// Labels carry an optional colour (hex) and an optional [icon] key. The key
-/// indexes [kLabelIcons] — a *fixed, curated* set rather than the full Material
+/// indexes [kLabelIcons], a *fixed, curated* set rather than the full Material
 /// catalogue, so the values stay `const` and Flutter's icon tree-shaking keeps
 /// working (a searchable full-catalogue picker would defeat it and bloat the
 /// web bundle). An unset or unknown key falls back to the default label glyph.
 
-/// The default glyph shown when a label has no custom icon — the same one the
+/// The default glyph shown when a label has no custom icon, the same one the
 /// app used before labels gained icons.
 const IconData kDefaultLabelIcon = Icons.label_outline;
 
 /// Curated icon set, keyed by a stable string persisted with the label. Add
 /// entries here to grow the picker; never rename a key (it would orphan labels
-/// that reference it — they'd just fall back to the default).
+/// that reference it, they'd just fall back to the default).
 const Map<String, IconData> kLabelIcons = {
   'star': Icons.star_outline,
   'flag': Icons.flag_outlined,
@@ -64,6 +64,6 @@ IconData labelIcon(Label label) => labelIconFor(label.icon);
 Color labelColor(Label label, Color fallback) =>
     PaletteEntry.hexToColor(label.color) ?? fallback;
 
-/// A label's resolved colour, or null when it has none — for callers that want
+/// A label's resolved colour, or null when it has none, for callers that want
 /// to fall back to an ambient/selection-aware colour rather than a fixed one.
 Color? labelColorOrNull(Label label) => PaletteEntry.hexToColor(label.color);

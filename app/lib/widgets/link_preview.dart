@@ -12,7 +12,7 @@ import '../util/linkify.dart';
 /// site on the right. Tapping it opens the URL. While metadata loads (or when
 /// the site exposes none) it shows just the host.
 ///
-/// [topDivider] draws a hairline at the top instead of a full border — used
+/// [topDivider] draws a hairline at the top instead of a full border, used
 /// when the strip is a full-bleed continuation attached to the bottom of a
 /// note card. [borderRadius] rounds its corners (bottom-only when attached,
 /// all-round when standalone in the editor).
@@ -168,7 +168,7 @@ class _Strip extends StatelessWidget {
 }
 
 /// An [ImageProvider] for a favicon. The server inlines small raster favicons
-/// as `data:` URIs (so Flutter web can render them — a cross-origin favicon
+/// as `data:` URIs (so Flutter web can render them, a cross-origin favicon
 /// fetched by `Image.network` is CORS-tainted on CanvasKit and fails). Those
 /// must be decoded to bytes: mobile's `NetworkImage` can't fetch the `data:`
 /// scheme. Anything else is a plain absolute URL. Returns null when unusable.

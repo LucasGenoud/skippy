@@ -21,7 +21,7 @@ impl<E: Into<anyhow::Error>> From<E> for RepoError {
 
 pub type RepoResult<T> = Result<T, RepoError>;
 
-/// What `purge_trash_before` removed — enough for the caller to clean up the
+/// What `purge_trash_before` removed, enough for the caller to clean up the
 /// state that lives outside the rows (attachment blobs keyed by the owner,
 /// search-index entries).
 pub struct PurgedNote {
@@ -109,8 +109,8 @@ pub trait Repository: Send + Sync {
     ) -> RepoResult<Option<Vec<String>>>;
 
     // -- notes ---------------------------------------------------------------
-    /// Every note the user can see — owned, shared with them directly, or held
-    /// by a workspace they belong to — decorated for that user.
+    /// Every note the user can see, owned, shared with them directly, or held
+    /// by a workspace they belong to, decorated for that user.
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>>;
     async fn note_view(&self, note_id: &str, viewer_id: &str) -> RepoResult<Option<NoteView>>;
     /// One note only when `user_id` can currently see it. Use this at request
@@ -157,7 +157,7 @@ pub trait Repository: Send + Sync {
         version_id: &str,
     ) -> RepoResult<Option<NoteVersion>>;
     /// Set an audio note's transcription status, and (when `content` is
-    /// `Some`) its transcript text. Server-owned — the transcription pipeline
+    /// `Some`) its transcript text. Server-owned, the transcription pipeline
     /// is the only writer. Bumps `updated_at` so viewers refetch.
     async fn set_transcript(
         &self,
@@ -212,13 +212,13 @@ pub trait Repository: Send + Sync {
         color: Option<&str>,
         position: Option<f64>,
     ) -> RepoResult<bool>;
-    /// Delete a stage, first sending the notes it held back to unassigned —
+    /// Delete a stage, first sending the notes it held back to unassigned,
     /// removing a column never removes notes.
     async fn delete_stage(&self, user_id: &str, stage_id: &str) -> RepoResult<bool>;
     /// Where a newly created column goes: to the right of the existing ones.
     async fn max_stage_position(&self, workspace_id: &str) -> RepoResult<f64>;
     /// Clear a note's stage when the stage does not belong to the note's
-    /// workspace — after a move, or when a stray id was patched in. The
+    /// workspace, after a move, or when a stray id was patched in. The
     /// single-stage counterpart of [`Repository::prune_foreign_labels`], and
     /// the reason a foreign stage id can never stick.
     async fn prune_foreign_stage(&self, note_id: &str) -> RepoResult<()>;

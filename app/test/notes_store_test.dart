@@ -290,7 +290,7 @@ void main() {
         expect(store.addLabelToNote('n1', 'l1'), isTrue);
         expect(store.noteById('n1')!.labelIds, contains('l1'));
 
-        // Dropping again is a no-op — never removes the label.
+        // Dropping again is a no-op, never removes the label.
         expect(store.addLabelToNote('n1', 'l1'), isFalse);
         expect(store.noteById('n1')!.labelIds, contains('l1'));
 
@@ -555,7 +555,7 @@ void main() {
 
       // Hold the reconnect fetch after it captured the old server note. The
       // 400ms debounce then sends the checklist patch before that stale fetch
-      // is allowed to finish—the ordering that used to discard the edit.
+      // is allowed to finish, the ordering that used to discard the edit.
       final gate = api.fetchHistoryGate = Completer<void>();
       final reconnect = store.checkConnectionNow();
       await settle();
@@ -642,7 +642,7 @@ void main() {
       store.updateNoteContent(draft.id, content: 'Pancakes');
       await settle();
 
-      // The label rides on the create request — a draft is never PATCHed, so
+      // The label rides on the create request, a draft is never PATCHed, so
       // sending it later was never an option.
       expect(api.notes[draft.id]!.labelIds, {label.id});
       // And it shows in the view it was written in.
@@ -715,7 +715,7 @@ void main() {
         store.startSync();
         await pumpEventQueue(); // launch probe
 
-        // One probe fails — the kind of blip a phone produces the instant its
+        // One probe fails, the kind of blip a phone produces the instant its
         // radio wakes up. Nothing is said about it...
         api.failWith = Exception('radio still waking');
         await store.checkConnectionNow();
@@ -743,7 +743,7 @@ void main() {
 
       final loaded = s.load();
       // The cache paints first, and while the server hasn't answered the badge
-      // must not claim everything is saved — nothing has been checked yet.
+      // must not claim everything is saved, nothing has been checked yet.
       expect(s.syncStatus, SyncStatus.connecting);
       await loaded;
       expect(s.noteById('n1')?.title, 'cached');
@@ -820,7 +820,7 @@ void main() {
       expect(note.attachments.first.mime, 'image/png');
       // The note exists on the server even though it has no text.
       expect(api.notes[id]!.id, id);
-      // A note whose only content is attachments is not "empty" — finalize
+      // A note whose only content is attachments is not "empty", finalize
       // must keep it.
       expect(store.finalizeNote(id), isFalse);
       expect(store.noteById(id), isNotNull);

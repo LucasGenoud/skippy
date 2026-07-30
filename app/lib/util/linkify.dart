@@ -67,7 +67,7 @@ int _count(String s, String ch) => s.split(ch).length - 1;
 /// Splits [text] into spans: URL runs get [linkStyle] plus the recognizer from
 /// [recognizerFor] (long-press to open); everything else runs through
 /// [highlightSpans] so search matches still tint. The caller owns the
-/// recognizers' lifecycle — never build them inline here.
+/// recognizers' lifecycle, never build them inline here.
 List<InlineSpan> buildLinkedSpans({
   required String text,
   required String query,
@@ -107,7 +107,7 @@ List<InlineSpan> buildLinkedSpans({
   return spans;
 }
 
-/// Open a detected link in the platform browser. Best-effort — a malformed or
+/// Open a detected link in the platform browser. Best-effort, a malformed or
 /// unlaunchable URL is silently ignored.
 Future<void> launchLinkUrl(String url) async {
   final uri = Uri.tryParse(url);

@@ -176,7 +176,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(api.lastNotifyTestConfig?['ntfy_url'], 'https://ntfy.sh/probe');
-      expect(find.text('Sent — check your device'), findsOneWidget);
+      expect(find.text('Sent, check your device'), findsOneWidget);
       // Nothing was saved by testing alone.
       expect(settings.notifyConfigured, isFalse);
 

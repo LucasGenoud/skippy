@@ -105,16 +105,16 @@ impl AppState {
     }
 
     /// Auto-label a note in the background (fire and forget): ask the user's
-    /// configured LLM which of their EXISTING labels apply and add those —
+    /// configured LLM which of their EXISTING labels apply and add those,
     /// add-only, never removes, never creates labels. No-op unless the user
     /// has an LLM configured with labeling enabled.
     ///
     /// Debounced per note via a generation counter: each trigger bumps the
     /// note's generation and the spawned task sleeps `label_delay` before
-    /// checking it's still the latest — so a burst of debounced autosaves
+    /// checking it's still the latest, so a burst of debounced autosaves
     /// costs one LLM call. Keyed by note id alone: if two collaborators edit
     /// within one window, only the last editor's task runs (with their own
-    /// labels), which is fine — the next edit re-triggers.
+    /// labels), which is fine, the next edit re-triggers.
     pub fn label_note_later(&self, note_id: &str, user_id: &str) {
         let state = self.clone();
         let note_id = note_id.to_string();
@@ -160,7 +160,7 @@ impl AppState {
             return;
         }
         let Ok(labels) = self.repo.labels_for_user(user_id).await else { return };
-        // Only the taxonomy of the note's own workspace is on offer — a label
+        // Only the taxonomy of the note's own workspace is on offer, a label
         // from another workspace could not be attached anyway.
         let labels: Vec<Label> =
             labels.into_iter().filter(|l| l.workspace_id == record.workspace_id).collect();

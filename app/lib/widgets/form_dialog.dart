@@ -54,7 +54,7 @@ Future<T?> showAdaptiveSelectionSurface<T>(
 }
 
 /// Presents a [FormDialog] the way the viewport wants it: a centred dialog on
-/// wide screens, a pushed full-screen page on phones — where a floating box
+/// wide screens, a pushed full-screen page on phones, where a floating box
 /// with several text fields fights the keyboard and wastes the screen.
 Future<T?> showFormDialog<T>(
   BuildContext context, {
@@ -82,8 +82,8 @@ Future<T?> showFormDialog<T>(
 }
 
 /// How the enclosing route was opened. [FormDialog] obeys this rather than
-/// re-measuring, so rotating a phone to landscape — which crosses the width
-/// threshold — can't leave a page route rendering a floating dialog.
+/// re-measuring, so rotating a phone to landscape, which crosses the width
+/// threshold, can't leave a page route rendering a floating dialog.
 class _FormDialogMode extends InheritedWidget {
   final bool fullScreen;
 

@@ -83,8 +83,8 @@ void main() {
       expect(board.columns[1].notes.map((n) => n.id), ['live']);
     });
 
-    /// A stage the client hasn't caught up on — deleted by a teammate, or left
-    /// behind by a workspace move — must not swallow the card.
+    /// A stage the client hasn't caught up on, deleted by a teammate, or left
+    /// behind by a workspace move, must not swallow the card.
     test('a note in an unknown stage falls back to unassigned', () {
       final board = buildBoard(
         notes: [note('orphan', stageId: 'deleted-elsewhere')],

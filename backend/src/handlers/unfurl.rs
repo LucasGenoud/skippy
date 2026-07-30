@@ -1,7 +1,7 @@
 //! Link-preview endpoint: fetch a URL server-side and return its Open Graph /
 //! HTML metadata for the client's preview card. Results are cached in memory
-//! (keyed by URL, time-limited) so repeated views of the same link — every
-//! grid card and the editor share the client cache too — don't refetch.
+//! (keyed by URL, time-limited) so repeated views of the same link, every
+//! grid card and the editor share the client cache too, don't refetch.
 
 use std::time::{Duration, Instant};
 

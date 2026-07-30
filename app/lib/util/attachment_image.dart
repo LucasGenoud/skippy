@@ -7,7 +7,7 @@ import 'package:flutter/painting.dart';
 /// File URLs carry a signed, time-limited capability that rotates every
 /// clock hour; keying the image cache on the URL would flush every rendered
 /// image at each rollover (a grid-wide burst of refetches and decodes).
-/// Attachment bytes are immutable, so the id is the correct identity — the
+/// Attachment bytes are immutable, so the id is the correct identity, the
 /// current signed URL is only consulted when the bytes actually need
 /// fetching.
 class AttachmentImage extends ImageProvider<AttachmentImage> {

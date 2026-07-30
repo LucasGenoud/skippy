@@ -43,7 +43,7 @@ class AnimatedMasonry extends StatefulWidget {
   /// measured, which is fail-closed for what is only decoration: anything that
   /// delays or drops a measurement leaves the content blank rather than
   /// unanimated. The grid accepts that trade for its entrance. The board does
-  /// not — its cards are already grouped into columns, so it renders them
+  /// not, its cards are already grouped into columns, so it renders them
   /// opaque from the first frame.
   final bool staggeredEntrance;
 
@@ -53,7 +53,7 @@ class AnimatedMasonry extends StatefulWidget {
   /// The grid holds a slot open at this index and marks it, so a drop from
   /// another column can promise a place rather than an unspecified arrival.
   /// Pair it with [insertionIndexAt], which reads a pointer back into one of
-  /// these indices. Reordering *within* the grid does not use this — a lifted
+  /// these indices. Reordering *within* the grid does not use this, a lifted
   /// tile is already in [notes] and reflows on its own.
   final int? incomingIndex;
 
@@ -113,14 +113,14 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   // Tile widgets, kept between our own rebuilds. A note card is expensive to
   // build (markdown, linkified spans, image resolution, an OpenContainer
-  // each), while a reorder changes where cards go, not what they are — so the
+  // each), while a reorder changes where cards go, not what they are, so the
   // same widget instances are handed back and the framework skips their
   // subtrees outright (`Element.updateChild` short-circuits on an identical
   // widget). Dragging is exactly this case: the grid setStates on every step
   // and nothing about the cards themselves has changed.
   //
   // The cache is dropped whenever the note object changes, and wholesale on
-  // every parent rebuild ([didUpdateWidget]) — the parent's [itemBuilder] can
+  // every parent rebuild ([didUpdateWidget]), the parent's [itemBuilder] can
   // read state of its own (selection, search query), so anything that could
   // make it produce a different card also empties this.
   final Map<String, Widget> _tiles = {};
@@ -207,7 +207,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   }
 
   // The packed layout only changes when the order, the heights, or the
-  // geometry do — not when a finger moves. Dragging asks for it on every
+  // geometry do, not when a finger moves. Dragging asks for it on every
   // pointer sample, so hand back the last one instead of rebuilding the slot
   // map dozens of times a second.
   _Layout? _layout;
@@ -275,7 +275,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   ///
   /// [globalTop] is the top edge of the card being carried, not the pointer:
   /// a [DragTarget] reports the corner of the feedback widget, and that is
-  /// also what the user sees hovering over the column — so the slot lines up
+  /// also what the user sees hovering over the column, so the slot lines up
   /// with the card they are holding. Tiles claim the half of themselves the
   /// card's edge has passed, which makes the answer stable while the pointer
   /// jitters inside one of them.
@@ -369,7 +369,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     HapticFeedback.selectionClick();
   }
 
-  /// [tookIt] means a [DragTarget] accepted the card — it belongs somewhere
+  /// [tookIt] means a [DragTarget] accepted the card, it belongs somewhere
   /// else now. On the way out, the pointer crosses this grid's own tiles and
   /// reflows them, but that rearrangement is of a card that is leaving: only
   /// the target gets to say where it ended up. Reporting it too would land a
@@ -475,7 +475,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
     // Built through a Builder so the second copy of the card only comes into
     // existence when a drag actually lifts one. Eagerly building feedback for
-    // every tile doubled the cost of every grid rebuild — and rebuilds happen
+    // every tile doubled the cost of every grid rebuild, and rebuilds happen
     // on each reorder step, which is exactly when the frame budget is tight.
     // It must be its own instance rather than the cached child: both are
     // mounted at once during a drag.
@@ -547,7 +547,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
           });
         }
         // Kick the one-shot entrance off once every tile has been measured
-        // (before that, tiles sit at the controller's 0 value — invisible —
+        // (before that, tiles sit at the controller's 0 value, invisible,
         // while their heights settle).
         if (widget.staggeredEntrance && _ready && !_entranceStarted) {
           _entranceStarted = true;

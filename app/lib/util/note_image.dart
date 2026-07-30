@@ -11,7 +11,7 @@ import 'attachment_image.dart';
 ///    handle, so those attachments render through [SvgPicture] instead.
 ///  * **Aspect-aware sizing.** Rather than force every image into a fixed
 ///    letterbox, the tile grows to the image's own aspect ratio (at the
-///    available width) up to [maxHeight] — so as much of the picture shows as
+///    available width) up to [maxHeight], so as much of the picture shows as
 ///    fits before it starts to crop. Anything taller than the cap crops from
 ///    the bottom (top-aligned cover); shorter images show in full.
 class NoteImage extends StatelessWidget {
@@ -44,7 +44,7 @@ class NoteImage extends StatelessWidget {
     if (_isSvg) {
       // Vector: scale the whole drawing to the column width and let its own
       // aspect ratio drive the height, capped so a tall SVG can't run away.
-      // A concrete width (not double.infinity) is required — infinity makes
+      // A concrete width (not double.infinity) is required, infinity makes
       // flutter_svg resolve the height to infinity, forcing the full cap.
       return ClipRect(
         child: ConstrainedBox(

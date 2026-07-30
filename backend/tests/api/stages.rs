@@ -206,7 +206,7 @@ async fn note_stage_round_trips_and_clears() {
 }
 
 /// A stage belongs to one workspace's board. A stray or foreign id is dropped
-/// rather than honoured — the same rule labels get.
+/// rather than honoured, the same rule labels get.
 #[tokio::test]
 async fn foreign_stage_never_sticks() {
     let app = app().await;
@@ -279,7 +279,7 @@ async fn deleting_a_stage_unassigns_its_notes() {
 }
 
 /// A board belongs to its workspace, so a note that leaves takes no column
-/// with it — the same reasoning that drops its old labels.
+/// with it, the same reasoning that drops its old labels.
 #[tokio::test]
 async fn moving_workspaces_clears_the_stage() {
     let app = app().await;
@@ -320,7 +320,7 @@ async fn moving_workspaces_clears_the_stage() {
 }
 
 /// Stages and labels are separate systems. Writing one must never write the
-/// other — the guarantee that keeps the board out of the taxonomy's business.
+/// other, the guarantee that keeps the board out of the taxonomy's business.
 #[tokio::test]
 async fn stages_and_labels_do_not_touch_each_other() {
     let app = app().await;

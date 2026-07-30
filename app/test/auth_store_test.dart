@@ -28,7 +28,7 @@ void main() {
   group('session restore', () {
     test('a cached session opens without waiting for the server', () async {
       seedSession();
-      // A phone with no route to the server doesn't get a refusal — the socket
+      // A phone with no route to the server doesn't get a refusal, the socket
       // just hangs. Nothing about opening the app may depend on it.
       final hung = Completer<http.Response>();
       final auth = storeWith(MockClient((_) => hung.future));

@@ -10,8 +10,8 @@ import 'settings_store.dart';
 /// Keeps this device's OS alarms in step with the notes that carry reminders.
 ///
 /// Reconciles against what the OS reports as pending rather than tracking its
-/// own state, so every trigger — a note edit, a sync, an app resume, a cold
-/// start after reboot — converges on the same correct set. Missing an alarm is
+/// own state, so every trigger (a note edit, a sync, an app resume, a cold
+/// start after reboot) converges on the same correct set. Missing an alarm is
 /// the failure that matters here, so passes are cheap and frequent rather than
 /// clever.
 class ReminderScheduler {
@@ -48,7 +48,7 @@ class ReminderScheduler {
     _schedulePass();
   }
 
-  /// Detaches listeners. Deliberately leaves armed alarms in place — they are
+  /// Detaches listeners. Deliberately leaves armed alarms in place: they are
   /// the whole point, and must survive the app being closed.
   void dispose() {
     _disposed = true;

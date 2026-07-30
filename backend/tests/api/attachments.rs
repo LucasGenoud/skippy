@@ -66,7 +66,7 @@ async fn attachment_upload_serve_delete() {
     let served = response.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(served.as_ref(), payload);
 
-    // The bare id (no signature) is rejected — the hole this fix closes.
+    // The bare id (no signature) is rejected, the hole this fix closes.
     let request = Request::builder()
         .uri(format!("/api/files/{att_id}"))
         .body(Body::empty())
@@ -93,7 +93,7 @@ async fn attachment_upload_serve_delete() {
 }
 
 /// Audio (and any media) must be range-servable so iOS AVPlayer / `just_audio`
-/// can stream and seek it — the plain-200 server used to make mobile playback
+/// can stream and seek it, the plain-200 server used to make mobile playback
 /// fail. Verify `Accept-Ranges`, a `206` slice, inline disposition, and `416`.
 #[tokio::test]
 async fn audio_files_serve_byte_ranges() {
@@ -255,7 +255,7 @@ async fn attachment_rules() {
     let note_id = note["id"].as_str().unwrap();
 
     // Any file type is stored, but non-images are forced to download with
-    // their filename — never rendered in the app's origin.
+    // their filename, never rendered in the app's origin.
     let (status, attachment) = upload(
         &app,
         &ada,

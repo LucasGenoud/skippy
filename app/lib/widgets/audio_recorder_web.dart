@@ -11,7 +11,7 @@ const bool audioRecordingSupported = true;
 /// live input level (0..1) for the recording UI.
 ///
 /// Every callback handed to JS is *synchronous* (the blob is read from an
-/// async `.then`, not an async closure) — passing an async Dart closure
+/// async `.then`, not an async closure), passing an async Dart closure
 /// through `.toJS` fails to compile under DDC/dart2js.
 class AudioRecorder {
   web.MediaStream? _stream;

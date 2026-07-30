@@ -3,7 +3,7 @@ import 'note_collection.dart';
 
 /// One column of the board: a stage and the cards filed in it.
 ///
-/// The unassigned column has a null [stage]. It is always first — it is the
+/// The unassigned column has a null [stage]. It is always first, it is the
 /// board's inbox, where every note that has not been placed yet turns up.
 class BoardColumn {
   /// The column's stage, or null for the unassigned column.
@@ -13,7 +13,7 @@ class BoardColumn {
   final List<Note> notes;
 
   /// How many cards the column actually holds. Differs from `notes.length`
-  /// only on the unassigned column, whose display is capped — see
+  /// only on the unassigned column, whose display is capped, see
   /// [buildBoard].
   final int totalCount;
 
@@ -37,7 +37,7 @@ class Board {
 
   const Board(this.columns);
 
-  /// True when the workspace has no stages at all — the board has never been
+  /// True when the workspace has no stages at all, the board has never been
   /// set up, as opposed to being set up and empty.
   bool get hasNoStages => columns.every((column) => column.isUnassigned);
 
@@ -49,7 +49,7 @@ class Board {
 /// a count.
 ///
 /// Without a cap, opening the board on a mature workspace means a first column
-/// holding every note ever written — worst on a phone, where that column is the
+/// holding every note ever written, worst on a phone, where that column is the
 /// whole screen. The cap keeps the inbox a place you triage from rather than
 /// something you have to scroll past.
 const int kUnassignedPreviewLimit = 20;
@@ -73,7 +73,7 @@ Board buildBoard({
 }) {
   // Semantic search replaces the keyword filter with the server's ranking, so
   // only what it returned stays on the board. The ranking itself is global,
-  // while a card's place is its column — so ranked cards keep stage order
+  // while a card's place is its column, so ranked cards keep stage order
   // rather than being re-sorted into a flat relevance list, which would stop
   // the result being a board.
   final normalizedQuery = rankedIds == null ? query.trim().toLowerCase() : '';
@@ -89,8 +89,8 @@ Board buildBoard({
     if (!_isOnBoard(note) || !scope.contains(note)) continue;
     if (rankedIds != null && !rankedIds.contains(note.id)) continue;
     if (!_matchesQuery(note, normalizedQuery)) continue;
-    // A stage the client hasn't caught up on yet — deleted elsewhere, or from
-    // a workspace this note was just moved out of — reads as unassigned rather
+    // A stage the client hasn't caught up on yet, deleted elsewhere, or from
+    // a workspace this note was just moved out of, reads as unassigned rather
     // than vanishing the card.
     final key = known.contains(note.stageId) ? note.stageId : null;
     buckets[key]!.add(note);
@@ -125,7 +125,7 @@ Board buildBoard({
 ///
 /// A drag reports the whole reordered column, but only one card actually moved,
 /// and moving one card is one write. This finds it by removing each candidate
-/// from both lists and asking whether what remains is identical — true for
+/// from both lists and asking whether what remains is identical, true for
 /// exactly the card that was picked up.
 String? movedCardId(List<String> before, List<String> after) {
   if (before.length != after.length) return null;
@@ -151,7 +151,7 @@ bool _isOnBoard(Note note) => !note.archived && !note.trashed;
 
 /// Pinned cards ride at the top of their column; everything else follows the
 /// board's own order. The board always uses [Note.stagePosition] rather than
-/// the grid's sort mode — a board whose cards reshuffle themselves is not a
+/// the grid's sort mode, a board whose cards reshuffle themselves is not a
 /// board.
 int _byPinnedThenPosition(Note a, Note b) {
   if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
