@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'api/api_client.dart';
+import 'screens/editor_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'state/auth_store.dart';
@@ -47,6 +48,10 @@ class _SkippyAppState extends State<SkippyApp> {
   /// requests permissions through it while [_reminders] schedules through it.
   late final LocalNotifications _localNotifications = LocalNotifications();
 
+  /// Lets a notification tap push the editor from outside the widget tree
+  /// that built it (the tap callback has no BuildContext of its own).
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
   /// Live above the MaterialApp so that pushed routes (editor, dialogs) can
   /// read them; created per signed-in user, torn down on sign-out.
   NotesStore? _store;
@@ -61,6 +66,40 @@ class _SkippyAppState extends State<SkippyApp> {
     _auth.addListener(_onAuthChanged);
     _auth.loadSavedUrls().then((_) => _auth.restore());
     _shareIntake.start();
+    // Set up early (not gated on sign-in) so a tap that launched the app
+    // fresh from a terminated state is captured before anything else runs.
+    _localNotifications.ensureInitialized();
+    _localNotifications.tappedNoteId.addListener(_openTappedNote);
+  }
+
+  /// Opens the note a reminder notification was tapped for. The note may not
+  /// have synced onto this device yet (or the store may not exist yet, on a
+  /// cold start still restoring auth); either way this keeps retrying against
+  /// the store rather than dropping the tap.
+  void _openTappedNote() {
+    final noteId = _localNotifications.tappedNoteId.value;
+    final store = _store;
+    if (noteId == null || store == null) return;
+    if (store.noteById(noteId) == null) {
+      void retry() {
+        // Superseded by a newer tap, or already consumed some other way.
+        if (_localNotifications.tappedNoteId.value != noteId) {
+          store.removeListener(retry);
+          return;
+        }
+        if (store.noteById(noteId) != null) {
+          store.removeListener(retry);
+          _openTappedNote();
+        }
+      }
+
+      store.addListener(retry);
+      return;
+    }
+    _localNotifications.tappedNoteId.value = null;
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => EditorScreen(noteId: noteId)),
+    );
   }
 
   void _onAuthChanged() {
@@ -94,6 +133,9 @@ class _SkippyAppState extends State<SkippyApp> {
             ..start();
       _shareIntake.setStore(_store);
       setState(() {});
+      // A cold start can finish auth restore after the launch-notification
+      // check already ran, so re-check now that the store exists.
+      _openTappedNote();
     } else if (!signedIn && _store != null) {
       _store!.dispose();
       _settings?.dispose();
@@ -112,6 +154,7 @@ class _SkippyAppState extends State<SkippyApp> {
   @override
   void dispose() {
     _auth.removeListener(_onAuthChanged);
+    _localNotifications.tappedNoteId.removeListener(_openTappedNote);
     _shareIntake.dispose();
     _store?.dispose();
     _settings?.dispose();
@@ -138,6 +181,7 @@ class _SkippyAppState extends State<SkippyApp> {
         builder: (context, _) => MaterialApp(
           title: 'Skippy',
           debugShowCheckedModeBanner: false,
+          navigatorKey: _navigatorKey,
           scaffoldMessengerKey: scaffoldMessengerKey,
           builder: (context, child) => BackgroundGuard(
             onBackground: () => _store?.flushForBackground(),

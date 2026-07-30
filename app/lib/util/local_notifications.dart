@@ -30,6 +30,12 @@ class LocalNotifications {
 
   bool _initialized = false;
 
+  /// The note id of the reminder the user last tapped, whether that tap
+  /// foregrounded a running app, resumed a backgrounded one, or launched the
+  /// app fresh from a terminated state. Null once consumed; callers should
+  /// reset it back to null after navigating so the same tap doesn't replay.
+  final ValueNotifier<String?> tappedNoteId = ValueNotifier<String?>(null);
+
   /// Whether Android will let us schedule *exact* alarms. When false we still
   /// schedule, but the OS may slide delivery by several minutes; see
   /// [_scheduleMode].
@@ -77,9 +83,23 @@ class LocalNotifications {
           requestSoundPermission: false,
         ),
       ),
+      onDidReceiveNotificationResponse: _onResponse,
     );
     _initialized = true;
+    // A tap that launched the app fresh from a terminated state never fires
+    // onDidReceiveNotificationResponse above, since nothing was listening yet;
+    // this is the only way to recover that tap.
+    final launch = await _plugin.getNotificationAppLaunchDetails();
+    final response = launch?.notificationResponse;
+    if ((launch?.didNotificationLaunchApp ?? false) && response != null) {
+      _onResponse(response);
+    }
     return true;
+  }
+
+  void _onResponse(NotificationResponse response) {
+    final noteId = ScheduledReminder.noteIdFromPayload(response.payload);
+    if (noteId != null) tappedNoteId.value = noteId;
   }
 
   /// Ask for the permissions a reminder needs, returning whether notifications
