@@ -88,11 +88,19 @@ class LocalNotifications {
     _initialized = true;
     // A tap that launched the app fresh from a terminated state never fires
     // onDidReceiveNotificationResponse above, since nothing was listening yet;
-    // this is the only way to recover that tap.
-    final launch = await _plugin.getNotificationAppLaunchDetails();
-    final response = launch?.notificationResponse;
-    if ((launch?.didNotificationLaunchApp ?? false) && response != null) {
-      _onResponse(response);
+    // this is the only way to recover that tap. Bounded: this runs on every
+    // app start (not just for people using reminders), so a slow or wedged
+    // platform call here must never hold up the rest of startup.
+    try {
+      final launch = await _plugin
+          .getNotificationAppLaunchDetails()
+          .timeout(const Duration(seconds: 2));
+      final response = launch?.notificationResponse;
+      if ((launch?.didNotificationLaunchApp ?? false) && response != null) {
+        _onResponse(response);
+      }
+    } catch (e) {
+      debugPrint('getNotificationAppLaunchDetails failed: $e');
     }
     return true;
   }
