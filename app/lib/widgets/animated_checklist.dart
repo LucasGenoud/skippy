@@ -902,6 +902,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     decoration: const InputDecoration(
                       border: InputBorder.none,
                       isDense: true,
+                      // Centre the first line on the checkbox. Further lines
+                      // continue below it instead of moving the checkbox.
+                      contentPadding: EdgeInsets.only(top: 8),
                     ),
                     onChanged: (text) {
                       final prefix = handles.handoffPrefix;

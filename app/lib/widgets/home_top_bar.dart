@@ -125,7 +125,7 @@ class HomeTopBar extends StatelessWidget {
                   onPressed: onToggleSidebar,
                 ),
                 const SizedBox(width: 4),
-                const AppLogo(size: 26),
+                const AppLogo(size: 30),
                 const SizedBox(width: 10),
                 Text(
                   'Skippy',

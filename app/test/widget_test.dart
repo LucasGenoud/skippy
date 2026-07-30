@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1609,9 +1610,10 @@ void main() {
       },
     );
 
-    testWidgets('a long checklist item wraps onto multiple visible lines', (
+    testWidgets('checklist checkbox aligns with single-line and wrapped text', (
       tester,
     ) async {
+      const shortItem = 'Single line';
       const longItem =
           'This is a very long checklist item that wraps onto several '
           'visible lines on a narrow mobile screen';
@@ -1622,28 +1624,63 @@ void main() {
       api.notes['n1'] = serverNote(
         'n1',
         kind: NoteKind.checklist,
-        items: [ChecklistItem(id: 'i1', text: longItem)],
+        items: const [
+          ChecklistItem(id: 'short', text: shortItem),
+          ChecklistItem(id: 'long', text: longItem),
+        ],
       );
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pump(const Duration(milliseconds: 100));
 
-      final row = find.widgetWithText(TextField, longItem);
-      final editable = tester.widget<EditableText>(
-        find.descendant(of: row, matching: find.byType(EditableText)),
+      void expectFirstLineAlignment(String id, String text) {
+        final row = find.byKey(ValueKey('checklist-row-background-$id'));
+        final editableFinder = find.descendant(
+          of: row,
+          matching: find.byType(EditableText),
+        );
+        final editable = tester.widget<EditableText>(editableFinder);
+        expect(editable.maxLines, isNull);
+
+        RenderEditable? renderEditable;
+        void findRenderEditable(RenderObject child) {
+          if (child case final RenderEditable editable) {
+            renderEditable = editable;
+          } else {
+            child.visitChildren(findRenderEditable);
+          }
+        }
+
+        findRenderEditable(tester.renderObject(editableFinder));
+        expect(renderEditable, isNotNull);
+        final editableRenderObject = renderEditable!;
+        final firstLineCaret = editableRenderObject.getLocalRectForCaret(
+          const TextPosition(offset: 0),
+        );
+        final firstLineCenter = editableRenderObject.localToGlobal(
+          firstLineCaret.center,
+        );
+        final checkbox = find.descendant(
+          of: row,
+          matching: find.byType(Checkbox),
+        );
+        expect(
+          tester.getCenter(checkbox).dy,
+          closeTo(firstLineCenter.dy, 1),
+          reason: text,
+        );
+      }
+
+      final shortRow = find.byKey(
+        const ValueKey('checklist-row-background-short'),
       );
-      expect(editable.maxLines, isNull);
-      expect(tester.getSize(row).height, greaterThan(48));
-      final checkbox = find
-          .descendant(
-            of: find.byType(AnimatedChecklist),
-            matching: find.byType(Checkbox),
-          )
-          .first;
-      expect(
-        tester.getTopLeft(checkbox).dy,
-        closeTo(tester.getTopLeft(row).dy, 1),
+      final longRow = find.byKey(
+        const ValueKey('checklist-row-background-long'),
       );
+      expect(tester.getSize(shortRow).height, closeTo(48, 1));
+      expect(tester.getSize(longRow).height, greaterThan(48));
+      expectFirstLineAlignment('short', shortItem);
+      expectFirstLineAlignment('long', longItem);
       await flushTimers(tester);
     });
 
