@@ -202,28 +202,39 @@ class _SkippyAppState extends State<SkippyApp> {
             seed: settings?.accentColor ?? kDefaultAccent,
           ),
           themeMode: settings?.themeMode ?? ThemeMode.system,
+          // Reads `_store` live instead of the `store` local above. This
+          // closure builds the initial route's page, which the route caches
+          // and rebuilds on its own terms, so anything captured from an
+          // enclosing build can stay pinned to what it was when the route was
+          // first laid down: null, leaving a permanent spinner. What does get
+          // through is the AuthStore notification driving this Consumer, and
+          // `_onAuthChanged` (subscribed in initState, before this Consumer
+          // exists) has already set `_store` by the time it arrives.
           home: Consumer<AuthStore>(
-            builder: (context, auth, _) => AnimatedSwitcher(
-              duration: Motion.slow,
-              switchInCurve: Motion.standard,
-              switchOutCurve: Motion.standard,
-              child: switch (auth.status) {
-                AuthStatus.restoring => const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                ),
-                AuthStatus.signedOut => const LoginScreen(),
-                AuthStatus.signedIn =>
-                  store == null
-                      ? const Scaffold(
-                          body: Center(child: CircularProgressIndicator()),
-                        )
-                      : HomeScreen(
-                          key: ValueKey(
-                            '${_api.baseUrl}:${store.currentUserId}',
+            builder: (context, auth, _) {
+              final store = _store;
+              return AnimatedSwitcher(
+                duration: Motion.slow,
+                switchInCurve: Motion.standard,
+                switchOutCurve: Motion.standard,
+                child: switch (auth.status) {
+                  AuthStatus.restoring => const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  ),
+                  AuthStatus.signedOut => const LoginScreen(),
+                  AuthStatus.signedIn =>
+                    store == null
+                        ? const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          )
+                        : HomeScreen(
+                            key: ValueKey(
+                              '${_api.baseUrl}:${store.currentUserId}',
+                            ),
                           ),
-                        ),
-              },
-            ),
+                },
+              );
+            },
           ),
         ),
       ),
