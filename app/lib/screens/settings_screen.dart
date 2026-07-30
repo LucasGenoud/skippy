@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../state/settings_store.dart';
 import '../widgets/settings/account_section.dart';
 import '../widgets/settings/accent_color.dart';
+import '../widgets/settings/device_notifications_tile.dart';
 import '../widgets/settings/embedding_section.dart';
 import '../widgets/settings/export_section.dart';
 import '../widgets/settings/grid_layout_section.dart';
@@ -154,6 +155,7 @@ class SettingsScreen extends StatelessWidget {
                     ? settings.setReminderNotificationsEnabled
                     : null,
               ),
+              const DeviceNotificationsTile(),
               const Divider(height: 32),
               const _SectionHeader('Date & time'),
               Padding(

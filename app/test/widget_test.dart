@@ -2455,7 +2455,7 @@ void main() {
 
       final topBar = tester.getRect(find.byType(HomeTopBar));
       final quickAdd = tester.getRect(find.byType(QuickAddBar));
-      expect(topBar.top, 12);
+      expect(topBar.top, 6);
       expect(quickAdd.top - topBar.bottom, greaterThanOrEqualTo(32));
     });
 

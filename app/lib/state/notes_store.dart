@@ -273,6 +273,14 @@ class NotesStore extends ChangeNotifier {
   String _effectiveWorkspaceId(Note note) =>
       note.workspaceId.isEmpty ? defaultWorkspace?.id ?? '' : note.workspaceId;
 
+  /// Notes carrying a reminder, across every workspace. Deliberately not
+  /// workspace-scoped: which workspace happens to be open must not decide
+  /// whether an alarm fires. Consumed by `ReminderScheduler`.
+  List<Note> get notesWithReminders => [
+    for (final note in _notes)
+      if (note.reminderAt != null) note,
+  ];
+
   /// Non-trashed notes in every owned workspace, in workspace/grid order.
   List<Note> get notesForExport {
     final owned = _ownedWorkspaceIds;

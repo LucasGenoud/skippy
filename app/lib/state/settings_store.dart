@@ -252,6 +252,13 @@ class SettingsStore extends ChangeNotifier {
   Map<String, String> notifyValues = {};
   bool reminderNotificationsEnabled = true;
 
+  // Reminders scheduled with the OS on this device instead of pushed by the
+  // server, so they fire offline and without a channel. Opt-in (unlike the
+  // toggles above) because switching it on asks for a system permission, and
+  // because it only covers notes this device has already synced — see the
+  // disclaimer in Settings → Notifications.
+  bool deviceNotificationsEnabled = false;
+
   bool get notifyConfigured =>
       kNotifyChannels.any((c) => c.configuredIn(notifyValues));
 
@@ -380,6 +387,7 @@ class SettingsStore extends ChangeNotifier {
         key: ((json[key] as String?) ?? '').trim(),
     };
     reminderNotificationsEnabled = json['reminder_notifications'] != false;
+    deviceNotificationsEnabled = json['device_notifications'] == true;
     final rawPalette = json['palette'];
     if (rawPalette is List) {
       final parsed = [
@@ -416,6 +424,7 @@ class SettingsStore extends ChangeNotifier {
     // appear here or a save from this device would erase it.
     for (final key in kNotifyFieldKeys) key: notifyValues[key] ?? '',
     'reminder_notifications': reminderNotificationsEnabled,
+    'device_notifications': deviceNotificationsEnabled,
     'palette': [for (final entry in palette) entry.toJson()],
   };
 
@@ -482,6 +491,8 @@ class SettingsStore extends ChangeNotifier {
   });
   void setReminderNotificationsEnabled(bool value) =>
       _mutate(() => reminderNotificationsEnabled = value);
+  void setDeviceNotificationsEnabled(bool value) =>
+      _mutate(() => deviceNotificationsEnabled = value);
 
   // -- palette ---------------------------------------------------------------
 
