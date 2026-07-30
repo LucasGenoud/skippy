@@ -239,8 +239,37 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       // enclosing scope is focused yet, true inside the editor's own route,
       // but not on the home page, where the shortcut plumbing's page focus
       // already holds it and the quick-add checklist opened with no caret.
-      if (mounted && widget.autofocusNew) _newRow.focusNode.requestFocus();
+      if (mounted && widget.autofocusNew) _requestNewRowFocusWhenReady();
     });
+  }
+
+  /// Focusing the add row the instant a brand-new checklist note is still
+  /// mid open-transition (container morph / fade-scale modal) makes iOS raise
+  /// the keyboard while that animation is still running: the two fight, and
+  /// the first keystrokes can be dropped before the platform's text input
+  /// connection has caught up, taking the first word with them. Mirrors
+  /// EditorScreen's `_focusBodyAfterOpen` for the plain-text body. The
+  /// quick-add bar's embedded checklist has no route transition of its own
+  /// (its enclosing route, the home page, is already fully open), so this
+  /// still focuses immediately there.
+  void _requestNewRowFocusWhenReady() {
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.isCompleted) {
+      _newRow.focusNode.requestFocus();
+      return;
+    }
+    void onStatus(AnimationStatus status) {
+      if (status != AnimationStatus.completed &&
+          status != AnimationStatus.dismissed) {
+        return;
+      }
+      animation.removeStatusListener(onStatus);
+      if (mounted && status == AnimationStatus.completed) {
+        _newRow.focusNode.requestFocus();
+      }
+    }
+
+    animation.addStatusListener(onStatus);
   }
 
   @override
