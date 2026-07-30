@@ -432,9 +432,17 @@ class _NoteCardContent extends StatelessWidget {
     final visibleFileCount = compactMetadata ? 1 : 2;
     final visibleLabelCount = compactMetadata ? 2 : 3;
 
-    // A single rich preview for the note's first link (grid space is tight).
+    // Keep repeated links from producing repeated cards, and cap the attached
+    // preview stack so a link-heavy note does not dominate the grid.
     final linkMatches = findUrls('${note.title}\n${note.content}');
-    final firstLinkUrl = linkMatches.isEmpty ? null : linkMatches.first.url;
+    final linkPreviewUrls = <String>[];
+    for (final match in linkMatches) {
+      if (!linkPreviewUrls.contains(match.url)) {
+        linkPreviewUrls.add(match.url);
+        if (linkPreviewUrls.length == 3) break;
+      }
+    }
+    final hasLinkPreviews = linkPreviewUrls.isNotEmpty;
 
     final hasTextBlock =
         note.title.isNotEmpty ||
@@ -459,7 +467,7 @@ class _NoteCardContent extends StatelessWidget {
               16,
               images.isNotEmpty || hasFooter
                   ? 0
-                  : (firstLinkUrl != null ? 12 : (reserveActions ? 4 : 16)),
+                  : (hasLinkPreviews ? 12 : (reserveActions ? 4 : 16)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -591,7 +599,7 @@ class _NoteCardContent extends StatelessWidget {
               store: store,
               borderRadius: BorderRadius.vertical(
                 top: hasTextBlock ? Radius.zero : kRadiusCorner,
-                bottom: hasFooter || firstLinkUrl != null || reserveActions
+                bottom: hasFooter || hasLinkPreviews || reserveActions
                     ? Radius.zero
                     : kRadiusCorner,
               ),
@@ -603,7 +611,7 @@ class _NoteCardContent extends StatelessWidget {
               16,
               hasTextBlock || images.isNotEmpty ? 12 : 16,
               16,
-              firstLinkUrl != null ? 12 : (reserveActions ? 4 : 16),
+              hasLinkPreviews ? 12 : (reserveActions ? 4 : 16),
             ),
             child: Wrap(
               spacing: 6,
@@ -655,15 +663,14 @@ class _NoteCardContent extends StatelessWidget {
               ],
             ),
           ),
-        // The link preview is a full-bleed strip attached to the bottom of the
-        // card — a continuation of the note square, not a card floating inside
-        // it. Bottom corners follow the card; a hairline divides it from the
-        // note body above.
-        if (firstLinkUrl != null)
+        // Up to three unique previews form one full-bleed stack attached to
+        // the note. Each strip supplies the dividing hairline; only the final
+        // one follows the card's bottom corners.
+        for (var i = 0; i < linkPreviewUrls.length; i++)
           LinkPreviewCard(
-            url: firstLinkUrl,
+            url: linkPreviewUrls[i],
             topDivider: true,
-            borderRadius: reserveActions
+            borderRadius: reserveActions || i < linkPreviewUrls.length - 1
                 ? BorderRadius.zero
                 : const BorderRadius.vertical(bottom: kRadiusCorner),
           ),

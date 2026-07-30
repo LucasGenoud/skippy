@@ -7,6 +7,7 @@ import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../screens/editor_screen.dart';
 import '../../theme.dart';
+import '../../util/motion.dart';
 import '../form_dialog.dart';
 import '../masonry.dart';
 import '../note_card.dart';
@@ -180,6 +181,9 @@ class _BoardColumnViewState extends State<BoardColumnView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Outside the header on purpose: the phone hides the header but
+            // still wants its column capped in the stage's colour.
+            _StageRule(column: widget.column),
             if (widget.showHeader) _BoardColumnHeader(column: widget.column),
             if (!widget.showHeader && widget.onAddCard != null)
               Align(
@@ -201,7 +205,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
     if (widget.column.notes.isEmpty) return _EmptyColumn(column: widget.column);
     return SingleChildScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 96),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -270,11 +274,18 @@ class _DropHighlight extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 140),
+      duration: Motion.fast,
+      curve: Motion.standard,
       decoration: BoxDecoration(
         color: active
             ? scheme.primary.withValues(alpha: 0.08)
             : Colors.transparent,
+        borderRadius: kBorderRadius,
+      ),
+      // The ring is a *foreground* decoration: a real border would inset the
+      // column by its own width, and the header's stage rule has to reach the
+      // column's edges whether a card is hovering or not.
+      foregroundDecoration: BoxDecoration(
         borderRadius: kBorderRadius,
         border: Border.all(
           color: active ? scheme.primary : Colors.transparent,
@@ -293,49 +304,47 @@ class _BoardColumnHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent =
-        PaletteEntry.hexToColor(column.stage?.color) ?? scheme.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  column.title,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              _CountChip(count: column.totalCount),
+              IconButton(
+                icon: const Icon(Icons.add, size: 18),
+                tooltip: 'Add a note to ${column.title}',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => addCardToStage(context, column.stage?.id),
+              ),
+              if (column.stage case final Stage stage)
+                IconButton(
+                  icon: const Icon(Icons.more_vert, size: 18),
+                  tooltip: 'Column options',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showColumnMenu(context, stage),
+                )
+              else
+                const SizedBox(width: 8),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              column.title,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ),
-          Text(
-            '${column.totalCount}',
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            tooltip: 'Add a note to ${column.title}',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => addCardToStage(context, column.stage?.id),
-          ),
-          if (column.stage case final Stage stage)
-            IconButton(
-              icon: const Icon(Icons.more_vert, size: 18),
-              tooltip: 'Column options',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _showColumnMenu(context, stage),
-            )
-          else
-            const SizedBox(width: 8),
-        ],
-      ),
+        ),
+        // Separates the title bar from the cards without boxing it: the stage
+        // rule above and this one below are what turn the header into a header.
+        Divider(height: 1, thickness: 1, color: boardColumnBorderColor(scheme)),
+      ],
     );
   }
 
@@ -368,6 +377,58 @@ class _BoardColumnHeader extends StatelessWidget {
     } else {
       store.deleteStage(stage.id);
     }
+  }
+}
+
+/// The stage's colour, capping the column.
+///
+/// Promoted from the 8px dot the header used to carry: at board zoom that dot
+/// was the smallest mark on the screen, and it was the only thing telling two
+/// columns apart. Uncolored stages — and Unassigned, which is not a stage at
+/// all — draw the rule in the column's own border colour, so every column is
+/// capped the same way and only the ones you have coloured stand out.
+class _StageRule extends StatelessWidget {
+  final BoardColumn column;
+
+  const _StageRule({required this.column});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 3,
+      color:
+          PaletteEntry.hexToColor(column.stage?.color) ??
+          boardColumnBorderColor(scheme),
+    );
+  }
+}
+
+/// How many cards a column holds. Drawn on the card fill rather than as bare
+/// text, so it reads as a tally attached to the column instead of as a number
+/// floating between the title and the buttons.
+class _CountChip extends StatelessWidget {
+  final int count;
+
+  const _CountChip({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: kBorderRadius,
+        border: Border.all(color: boardColumnBorderColor(scheme)),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
   }
 }
 

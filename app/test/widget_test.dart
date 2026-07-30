@@ -14,6 +14,7 @@ import 'package:skippy/screens/history_screen.dart';
 import 'package:skippy/screens/home_screen.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/state/link_preview_cache.dart';
 import 'package:skippy/theme.dart';
 import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
@@ -21,6 +22,7 @@ import 'package:skippy/widgets/animated_checklist.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
 import 'package:skippy/widgets/linked_text.dart';
+import 'package:skippy/widgets/link_preview.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
@@ -35,6 +37,7 @@ Widget harness(NotesStore store, Widget child) {
     providers: [
       ChangeNotifierProvider.value(value: store),
       ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+      Provider(create: (_) => LinkPreviewCache(api: store.api)),
     ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
@@ -75,6 +78,44 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
+    testWidgets('shows up to three unique website preview cards', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        title: 'Links https://one.example',
+        content:
+            'https://one.example repeated\n'
+            'https://two.example\n'
+            'https://three.example\n'
+            'https://four.example',
+      );
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          SizedBox(width: 280, child: NoteTile(note: store.noteById('n1')!)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final previews = tester
+          .widgetList<LinkPreviewCard>(find.byType(LinkPreviewCard))
+          .toList();
+      expect(previews.map((preview) => preview.url), [
+        'https://one.example',
+        'https://two.example',
+        'https://three.example',
+      ]);
+      expect(previews.every((preview) => preview.topDivider), isTrue);
+      expect(previews[0].borderRadius, BorderRadius.zero);
+      expect(previews[1].borderRadius, BorderRadius.zero);
+      expect(
+        previews[2].borderRadius,
+        const BorderRadius.vertical(bottom: kRadiusCorner),
+      );
+    });
+
     testWidgets('renders checklist preview with checked summary', (
       tester,
     ) async {
@@ -1011,6 +1052,35 @@ void main() {
   });
 
   group('EditorScreen', () {
+    testWidgets(
+      'full-screen editor separates the content from both mobile action bars',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote('n1', title: 'Separated');
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        final scheme = Theme.of(
+          tester.element(find.byType(EditorScreen)),
+        ).colorScheme;
+        final top = tester.widget<Container>(
+          find.byKey(const Key('editor-top-separator')),
+        );
+        expect(top.color, hairlineColor(scheme));
+
+        final bottom = tester.widget<DecoratedBox>(
+          find.byKey(const Key('editor-bottom-separator')),
+        );
+        final border = (bottom.decoration as BoxDecoration).border! as Border;
+        expect(border.top.color, hairlineColor(scheme));
+      },
+    );
+
     testWidgets('markdown opens in preview and double-clicking edits source', (
       tester,
     ) async {
@@ -1459,43 +1529,67 @@ void main() {
       },
     );
 
+    testWidgets('a long checklist item wraps onto multiple visible lines', (
+      tester,
+    ) async {
+      const longItem =
+          'This is a very long checklist item that wraps onto several '
+          'visible lines on a narrow mobile screen';
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [ChecklistItem(id: 'i1', text: longItem)],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final row = find.widgetWithText(TextField, longItem);
+      final editable = tester.widget<EditableText>(
+        find.descendant(of: row, matching: find.byType(EditableText)),
+      );
+      expect(editable.maxLines, isNull);
+      expect(tester.getSize(row).height, greaterThan(48));
+      final checkbox = find
+          .descendant(
+            of: find.byType(AnimatedChecklist),
+            matching: find.byType(Checkbox),
+          )
+          .first;
+      expect(
+        tester.getTopLeft(checkbox).dy,
+        closeTo(tester.getTopLeft(row).dy, 1),
+      );
+      await flushTimers(tester);
+    });
+
     testWidgets(
-      'a long checklist row returns to its start after focus leaves',
+      'an empty IME reset cannot erase the first word during focus handoff',
       (tester) async {
-        final longItem = List.filled(
-          12,
-          'This is a very long checklist item that cannot fit on one row',
-        ).join(' ');
-        api.notes['n1'] = serverNote(
-          'n1',
-          kind: NoteKind.checklist,
-          items: [ChecklistItem(id: 'i1', text: longItem)],
-        );
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
         await store.load();
         await tester.pumpWidget(
           harness(store, const EditorScreen(noteId: 'n1')),
         );
-        await tester.pump(const Duration(milliseconds: 100));
-
-        final row = find.widgetWithText(TextField, longItem);
-        final editable = tester.widget<EditableText>(
-          find.descendant(of: row, matching: find.byType(EditableText)),
-        );
-        final horizontalScroll = editable.scrollController!;
-        await tester.tap(row);
-        expect(editable.focusNode.hasFocus, isTrue);
-        tester.testTextInput.enterText('$longItem with more text');
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
 
-        expect(horizontalScroll.position.maxScrollExtent, greaterThan(0));
-        horizontalScroll.jumpTo(horizontalScroll.position.maxScrollExtent);
-        expect(horizontalScroll.offset, greaterThan(0));
-
-        await tester.tap(find.widgetWithText(TextField, 'Title'));
+        await tester.tap(find.widgetWithText(TextField, 'List item'));
+        tester.testTextInput.enterText('Pancake');
         await tester.pump();
         await tester.pump();
-        expect(horizontalScroll.offset, 0);
+
+        tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        await tester.pump();
+
+        expect(store.noteById('n1')!.items.single.text, 'Pancake');
+        final focused = tester
+            .widgetList<EditableText>(find.byType(EditableText))
+            .singleWhere((field) => field.focusNode.hasFocus);
+        expect(focused.controller.text, 'Pancake');
         await flushTimers(tester);
       },
     );

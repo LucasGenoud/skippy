@@ -110,46 +110,47 @@ class _SkippyAppState extends State<SkippyApp> {
         if (store != null) ChangeNotifierProvider.value(value: store),
         if (settings != null) ChangeNotifierProvider.value(value: settings),
       ],
-      child: BackgroundGuard(
-        onBackground: () => _store?.flushForBackground(),
-        onForeground: () => _store?.onResumed(),
-        child: ListenableBuilder(
-          listenable: Listenable.merge([?settings]),
-          builder: (context, _) => MaterialApp(
-            title: 'Skippy',
-            debugShowCheckedModeBanner: false,
-            scaffoldMessengerKey: scaffoldMessengerKey,
-            theme: buildTheme(
-              Brightness.light,
-              seed: settings?.accentColor ?? kDefaultAccent,
-            ),
-            darkTheme: buildTheme(
-              Brightness.dark,
-              seed: settings?.accentColor ?? kDefaultAccent,
-            ),
-            themeMode: settings?.themeMode ?? ThemeMode.system,
-            home: Consumer<AuthStore>(
-              builder: (context, auth, _) => AnimatedSwitcher(
-                duration: Motion.slow,
-                switchInCurve: Motion.standard,
-                switchOutCurve: Motion.standard,
-                child: switch (auth.status) {
-                  AuthStatus.restoring => const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  ),
-                  AuthStatus.signedOut => const LoginScreen(),
-                  AuthStatus.signedIn =>
-                    store == null
-                        ? const Scaffold(
-                            body: Center(child: CircularProgressIndicator()),
-                          )
-                        : HomeScreen(
-                            key: ValueKey(
-                              '${_api.baseUrl}:${store.currentUserId}',
-                            ),
+      child: ListenableBuilder(
+        listenable: Listenable.merge([?settings]),
+        builder: (context, _) => MaterialApp(
+          title: 'Skippy',
+          debugShowCheckedModeBanner: false,
+          scaffoldMessengerKey: scaffoldMessengerKey,
+          builder: (context, child) => BackgroundGuard(
+            onBackground: () => _store?.flushForBackground(),
+            onForeground: () => _store?.onResumed(),
+            child: child ?? const SizedBox.shrink(),
+          ),
+          theme: buildTheme(
+            Brightness.light,
+            seed: settings?.accentColor ?? kDefaultAccent,
+          ),
+          darkTheme: buildTheme(
+            Brightness.dark,
+            seed: settings?.accentColor ?? kDefaultAccent,
+          ),
+          themeMode: settings?.themeMode ?? ThemeMode.system,
+          home: Consumer<AuthStore>(
+            builder: (context, auth, _) => AnimatedSwitcher(
+              duration: Motion.slow,
+              switchInCurve: Motion.standard,
+              switchOutCurve: Motion.standard,
+              child: switch (auth.status) {
+                AuthStatus.restoring => const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                ),
+                AuthStatus.signedOut => const LoginScreen(),
+                AuthStatus.signedIn =>
+                  store == null
+                      ? const Scaffold(
+                          body: Center(child: CircularProgressIndicator()),
+                        )
+                      : HomeScreen(
+                          key: ValueKey(
+                            '${_api.baseUrl}:${store.currentUserId}',
                           ),
-                },
-              ),
+                        ),
+              },
             ),
           ),
         ),

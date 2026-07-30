@@ -10,14 +10,30 @@ void main() {
       var returns = 0;
       final focus = FocusNode();
       await tester.pumpWidget(
-        MaterialApp(
-          home: BackgroundGuard(
-            onBackground: () => flushes++,
-            onForeground: () => returns++,
-            child: Scaffold(body: TextField(focusNode: focus)),
+        MediaQuery(
+          data: const MediaQueryData(viewInsets: EdgeInsets.only(bottom: 300)),
+          child: MaterialApp(
+            home: BackgroundGuard(
+              onBackground: () => flushes++,
+              onForeground: () => returns++,
+              child: Builder(
+                builder: (context) => Scaffold(
+                  body: Column(
+                    children: [
+                      TextField(focusNode: focus),
+                      Text(
+                        'bottom inset: '
+                        '${MediaQuery.viewInsetsOf(context).bottom}',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       );
+      expect(find.text('bottom inset: 300.0'), findsOneWidget);
       await tester.tap(find.byType(TextField));
       await tester.pump();
       expect(focus.hasFocus, isTrue);
@@ -38,6 +54,7 @@ void main() {
       await tester.pump();
       expect(focus.hasFocus, isFalse);
       expect(flushes, 1);
+      expect(find.text('bottom inset: 0.0'), findsOneWidget);
 
       // Coming back re-arms the guard for the next trip, and reports once.
       lifecycle(const [

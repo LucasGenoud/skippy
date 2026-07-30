@@ -45,6 +45,32 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
 Color hairlineColor(ColorScheme scheme) =>
     scheme.outlineVariant.withValues(alpha: 0.5);
 
+/// The fill behind a board column.
+///
+/// Columns are the one place in the app where a container has to read as a
+/// *region* rather than as a seam: the canvas runs behind them and cards sit
+/// inside them, so they need to be legible as troughs from across the screen.
+/// One step of the surface ladder isn't enough for that — light-mode
+/// `surfaceContainer` is three RGB units off the canvas, which left the columns
+/// looking like outlines drawn on the background.
+///
+/// Light columns go *darker* than the canvas so white cards lift out of them.
+/// Dark ones go *lighter*, which is the same move: it opens a gap to the dark
+/// card fill, keeping the app's rule that dark cards sit a shade below their
+/// surroundings (see the canvas note in [buildTheme]).
+Color boardColumnColor(ColorScheme scheme) =>
+    scheme.brightness == Brightness.light
+    ? const Color(0xFFE8EAED)
+    : const Color(0xFF313236);
+
+/// The edge of a board column. Quieter than [hairlineColor] would be here: the
+/// fill already carries the shape, so the border only has to keep the corner
+/// crisp instead of drawing the column a second time.
+Color boardColumnBorderColor(ColorScheme scheme) =>
+    scheme.brightness == Brightness.light
+    ? const Color(0xFFDADCE0)
+    : const Color(0xFF3B3C40);
+
 ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final light = brightness == Brightness.light;
   // Neutralize the seed's cast on surfaces — the design pairs a colored accent with

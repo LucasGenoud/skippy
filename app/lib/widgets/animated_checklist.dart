@@ -5,6 +5,7 @@ import '../theme.dart';
 import 'package:flutter/services.dart';
 
 import '../models/note.dart';
+import '../util/motion.dart';
 import '../util/platform.dart';
 import 'measure_size.dart';
 
@@ -56,12 +57,11 @@ class AnimatedChecklist extends StatefulWidget {
   State<AnimatedChecklist> createState() => _AnimatedChecklistState();
 }
 
-const _kFocusHandoffWindow = Duration(milliseconds: 250);
+const _kFocusHandoffWindow = Duration(milliseconds: 750);
 
 class _RowHandles {
   final TextEditingController controller;
   final FocusNode focusNode;
-  final ScrollController scrollController = ScrollController();
   final LayerLink link = LayerLink();
 
   /// The text that materialized this row from the add field. Some desktop
@@ -103,7 +103,6 @@ class _RowHandles {
     disposed = true;
     controller.dispose();
     focusNode.dispose();
-    scrollController.dispose();
   }
 }
 
@@ -148,10 +147,9 @@ const _kEmptyRowMarker = '\u200b';
 String _withoutMarker(String text) => text.replaceAll(_kEmptyRowMarker, '');
 
 class _AnimatedChecklistState extends State<AnimatedChecklist> {
-  /// Every item row (and the new-item row) is exactly this tall, so the list
-  /// stays perfectly even, hover state can never move the layout, and a long
-  /// list can be laid out without measuring a single row.
-  static const double _rowHeight = 48;
+  /// A one-line item and the new-item row are this tall. Item rows may grow
+  /// beyond it when their text wraps.
+  static const double _minimumRowHeight = 48;
 
   /// Only the checked-section header has a height of its own (it follows the
   /// text scale), so it is the only thing that gets measured.
@@ -159,6 +157,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   static const Duration _moveDuration = Duration(milliseconds: 230);
 
   final Map<String, _RowHandles> _handles = {};
+  final Map<String, double> _rowHeights = {};
+  final Set<String> _enteringIds = {};
   late final _RowHandles _newRow = _RowHandles('');
   double? _headerHeight;
   final OverlayPortalController _popup = OverlayPortalController();
@@ -286,6 +286,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       ];
     }
     final ids = {for (final item in widget.items) item.id};
+    final oldIds = {for (final item in oldWidget.items) item.id};
+    _enteringIds.addAll(ids.difference(oldIds));
     // An adopted row that is missing from a rebuild that once contained it is
     // gone for good (removed, or the note was swapped out), so stop merging
     // keystrokes into it. Its mere absence proves nothing on its own: the
@@ -303,6 +305,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     }
     _rows.removeWhere((id, _) => !ids.contains(id));
     _rowItems.removeWhere((id, _) => !ids.contains(id));
+    _rowHeights.removeWhere((id, _) => !ids.contains(id));
+    _enteringIds.removeWhere((id) => !ids.contains(id));
   }
 
   void _syncItems() {
@@ -377,18 +381,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               h.controller.text != current.text) {
             h.controller.text = current.text;
           }
-          // Single-line fields keep their horizontal offset after editing.
-          // Once the row is no longer active, show its beginning again so a
-          // long checklist item remains scannable on narrow/mobile layouts.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted ||
-                h.focusNode.hasFocus ||
-                _handles[item.id] != h ||
-                !h.scrollController.hasClients) {
-              return;
-            }
-            h.scrollController.jumpTo(0);
-          });
         }
         _onAnyFocusChange();
       });
@@ -510,12 +502,25 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     }
   }
 
-  double _h(String id) =>
-      id == _kHeaderId ? (_headerHeight ?? _estimatedHeaderHeight) : _rowHeight;
+  double _h(String id) {
+    if (id == _kHeaderId) {
+      return _headerHeight ?? _estimatedHeaderHeight;
+    }
+    if (id == _kNewRowId) return _minimumRowHeight;
+    return _rowHeights[id] ?? _minimumRowHeight;
+  }
 
   void _measuredHeader(double height) {
     if (!mounted || _headerHeight == height) return;
     setState(() => _headerHeight = height);
+  }
+
+  void _measuredRow(String id, double height) {
+    final previous = _rowHeights[id];
+    if (!mounted || (previous != null && (previous - height).abs() < 0.5)) {
+      return;
+    }
+    setState(() => _rowHeights[id] = math.max(_minimumRowHeight, height));
   }
 
   // -------------------------------------------------------------------
@@ -824,10 +829,13 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         // Every row keeps the exact same height and widget shape whether
         // hovered or not: controls fade in with Opacity instead of being
         // added to the tree, so hovering never shifts the layout.
-        SizedBox(
-          height: _rowHeight,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _minimumRowHeight),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            // Every control belongs to the first text line. A multiline field
+            // grows downward without pulling its checkbox into the vertical
+            // centre of the whole item.
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               onRowState(
                 MouseRegion(
@@ -842,8 +850,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                         _dragUpdate(details.delta.dy),
                     onVerticalDragEnd: (_) => _dragEnd(),
                     onVerticalDragCancel: _dragEnd,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: SizedBox(
+                      width: 24,
+                      height: 40,
                       child: Icon(
                         Icons.drag_indicator,
                         size: 20,
@@ -875,10 +884,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   child: TextField(
                     controller: handles.controller,
                     focusNode: handles.focusNode,
-                    scrollController: handles.scrollController,
                     readOnly: widget.readOnly,
                     enabled: !widget.readOnly,
-                    maxLines: 1,
+                    minLines: 1,
+                    maxLines: null,
                     textInputAction: TextInputAction.next,
                     style: TextStyle(
                       decoration: item.done ? TextDecoration.lineThrough : null,
@@ -896,6 +905,22 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                           ) ??
                           false;
                       var effectiveText = _withoutMarker(text);
+                      if (prefix != null &&
+                          prefixStillFresh &&
+                          effectiveText.isEmpty &&
+                          prefix.isNotEmpty) {
+                        // Mobile IMEs can briefly attach the new field with an
+                        // empty editing value while focus moves off the add
+                        // row. That is a transport reset, not the user
+                        // deleting the word they just typed.
+                        handles.controller.value = TextEditingValue(
+                          text: prefix,
+                          selection: TextSelection.collapsed(
+                            offset: prefix.length,
+                          ),
+                        );
+                        return;
+                      }
                       if (effectiveText.isEmpty &&
                           (handles.unacknowledged ?? item.text).isEmpty &&
                           !widget.readOnly) {
@@ -944,10 +969,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                       // the row itself is already showing it.
                       _popupRevision.value++;
                     },
+                    // TextField's default "next" completion asks the focus
+                    // scope for a widget that does not exist until the insert
+                    // rebuild. Keep the current text-input connection alive;
+                    // onSubmitted performs the deliberate handoff below.
+                    onEditingComplete: () {},
                     onSubmitted: (_) {
                       // Enter continues the list: new row right below this
                       // one.
                       if (widget.onInsertAfter != null && !item.done) {
+                        // Give the keyboard an already-mounted target inside
+                        // the submit callback, before creating the row that
+                        // will ultimately own the caret.
+                        _newRow.focusNode.requestFocus();
                         _pendingFocusId = widget.onInsertAfter!(item.id);
                         setState(() {});
                       } else {
@@ -1027,7 +1061,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   Widget _newItemRow() {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      height: _rowHeight,
+      height: _minimumRowHeight,
       child: Row(
         children: [
           const SizedBox(width: 24),
@@ -1048,6 +1082,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   border: InputBorder.none,
                   isDense: true,
                 ),
+                textInputAction: TextInputAction.next,
+                // Retain focus on this mounted field while a real row is
+                // created, so the soft keyboard never has to resign.
+                onEditingComplete: () {},
                 onChanged: (text) {
                   // Focus hasn't finished moving to the row we just spawned and
                   // a keystroke leaked back into the (cleared) add field: merge
@@ -1173,6 +1211,20 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     Widget positioned(String id, Widget child) {
       final dragging = id == _draggingId;
       final top = dragging ? _dragY : (layout.tops[id] ?? 0);
+      final isItem = id != _kNewRowId && id != _kHeaderId;
+      var positionedChild = child;
+      if (isItem) {
+        positionedChild = MeasureSize(
+          onChange: (size) => _measuredRow(id, size.height),
+          child: positionedChild,
+        );
+        if (_enteringIds.contains(id)) {
+          positionedChild = _ChecklistRowEntrance(
+            key: ValueKey('checklist-entrance-$id'),
+            child: positionedChild,
+          );
+        }
+      }
       // One widget shape for dragged and resting rows: swapping widget types
       // mid-gesture would rebuild the row's element tree and cancel the very
       // drag recognizer driving it. The dragged row just animates with
@@ -1184,7 +1236,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         left: 0,
         right: 0,
         top: top,
-        child: child,
+        child: positionedChild,
       );
     }
 
@@ -1212,6 +1264,32 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               for (final item in _checked)
                 positioned(item.id, _rowFor(item, dragging: false)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Gives a newly-created checklist item a short horizontal glide and fade.
+/// Existing rows only move through [AnimatedPositioned], so opening a note
+/// never makes the whole list replay its entrance.
+class _ChecklistRowEntrance extends StatelessWidget {
+  final Widget child;
+
+  const _ChecklistRowEntrance({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+      curve: Motion.emphasized,
+      child: child,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(20 * (1 - value), 0),
+          child: child,
         ),
       ),
     );

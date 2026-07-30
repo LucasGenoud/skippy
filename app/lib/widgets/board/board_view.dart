@@ -120,15 +120,17 @@ class _BoardViewState extends State<BoardView> {
               return Container(
                 width: BoardView._columnWidth,
                 margin: const EdgeInsets.only(right: 12),
+                // A trough, not a step of the surface ladder: see
+                // [boardColumnColor] for why the theme's containers are too
+                // close to the canvas to hold a column.
                 decoration: BoxDecoration(
-                  // A step off the canvas, not `surfaceContainerLow` — in light
-                  // mode that is the *same* colour as the scaffold, which left
-                  // the columns as bordered outlines on the background rather
-                  // than as troughs the cards sit in.
-                  color: scheme.surfaceContainer,
+                  color: boardColumnColor(scheme),
                   borderRadius: kBorderRadius,
-                  border: Border.all(color: hairlineColor(scheme)),
+                  border: Border.all(color: boardColumnBorderColor(scheme)),
                 ),
+                // The header's stage rule runs to the column's edge, so the
+                // corners have to cut it.
+                clipBehavior: Clip.antiAlias,
                 child: BoardColumnView(
                   column: column,
                   query: widget.query,
@@ -169,6 +171,7 @@ class _BoardViewState extends State<BoardView> {
     // A stage deleted while the board is open can leave the controller past
     // the end; clamp rather than page into nothing.
     final page = _page.clamp(0, board.columns.length - 1);
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         _StageStrip(
@@ -191,17 +194,31 @@ class _BoardViewState extends State<BoardView> {
             onPageChanged: (index) => setState(() => _page = index),
             itemBuilder: (context, index) {
               final column = board.columns[index];
-              return BoardColumnView(
-                column: column,
-                query: widget.query,
-                onShowAll: column.isUnassigned ? _showAll : null,
-                selectionMode: widget.selectionMode,
-                selectedIds: widget.selectedIds,
-                onSelectionChanged: widget.onSelectionChanged,
-                // The strip above already names the column and counts it,
-                // but the add button has nowhere else to live on a phone.
-                showHeader: false,
-                onAddCard: () => addCardToStage(context, column.stage?.id),
+              // The page gets the same trough the wide layout draws, for the
+              // same reason: without it the cards sit straight on the canvas
+              // and the page reads as the whole board rather than as one
+              // column of it — which is exactly what the peeking neighbours
+              // are there to deny.
+              return Container(
+                margin: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                decoration: BoxDecoration(
+                  color: boardColumnColor(scheme),
+                  borderRadius: kBorderRadius,
+                  border: Border.all(color: boardColumnBorderColor(scheme)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: BoardColumnView(
+                  column: column,
+                  query: widget.query,
+                  onShowAll: column.isUnassigned ? _showAll : null,
+                  selectionMode: widget.selectionMode,
+                  selectedIds: widget.selectedIds,
+                  onSelectionChanged: widget.onSelectionChanged,
+                  // The strip above already names the column and counts it,
+                  // but the add button has nowhere else to live on a phone.
+                  showHeader: false,
+                  onAddCard: () => addCardToStage(context, column.stage?.id),
+                ),
               );
             },
           ),
@@ -214,8 +231,8 @@ class _BoardViewState extends State<BoardView> {
 /// The board's tail on wide screens: opens the column editor.
 ///
 /// Sits where the next column would go, which is where you reach for it. Drawn
-/// as an outline rather than a filled column so it reads as an invitation and
-/// not as a column holding nothing.
+/// at half the fill of a real column so it reads as an invitation and not as a
+/// column holding nothing.
 class _AddColumnTile extends StatelessWidget {
   const _AddColumnTile();
 
@@ -230,8 +247,12 @@ class _AddColumnTile extends StatelessWidget {
         borderRadius: kBorderRadius,
         child: Container(
           decoration: BoxDecoration(
+            // A half-strength trough: a column that isn't there yet. At full
+            // strength it would read as an empty column, and with no fill at
+            // all it disappeared next to the filled ones.
+            color: boardColumnColor(scheme).withValues(alpha: 0.5),
             borderRadius: kBorderRadius,
-            border: Border.all(color: hairlineColor(scheme)),
+            border: Border.all(color: boardColumnBorderColor(scheme)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

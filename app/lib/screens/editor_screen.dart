@@ -691,8 +691,22 @@ class _EditorScreenState extends State<EditorScreen> {
   AppBar _buildAppBar(Note? note) {
     final trashed = note?.trashed ?? false;
     final pinned = note?.pinned ?? false;
+    final scheme = Theme.of(context).colorScheme;
     return AppBar(
       backgroundColor: Colors.transparent,
+      // Full-screen editors are the phone presentation. A quiet rule keeps
+      // their action bar visually separate from the editable note below;
+      // desktop modals remain one compact surface.
+      bottom: widget.modal
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(1),
+              child: Container(
+                key: const Key('editor-top-separator'),
+                height: 1,
+                color: hairlineColor(scheme),
+              ),
+            ),
       leading: widget.modal
           ? CloseButton(onPressed: () => Navigator.of(context).maybePop())
           : BackButton(onPressed: () => Navigator.of(context).maybePop()),
@@ -920,79 +934,97 @@ class _EditorScreenState extends State<EditorScreen> {
                           ),
                         if (_uploading)
                           const LinearProgressIndicator(minHeight: 2),
-                        EditorBottomBar(
-                          trashed: trashed,
-                          isOwner: isOwner,
-                          archived: note?.archived ?? false,
-                          kind: _kind,
-                          editedStamp: note == null
-                              ? ''
-                              : 'Edited ${settings.editedLabel(note.updatedAt)}',
-                          onPalette: trashed
+                        DecoratedBox(
+                          key: widget.modal
                               ? null
-                              : () => ColorPickerSheet.show(
-                                  context,
-                                  selected: () => _note?.color ?? 'default',
-                                  onSelect: _setColor,
-                                ),
-                          // Labelling is available from the first moment, like
-                          // colour and pin: filing a note is often the first
-                          // thing you do, and the draft materializes on demand.
-                          onLabels: trashed ? null : _editLabels,
-                          onReminder: trashed ? null : _editReminder,
-                          onImage: trashed || _uploading ? null : _pickImage,
-                          onAttach: trashed || _uploading ? null : _pickFile,
-                          onShare: trashed ? null : _openShare,
-                          onArchive: trashed || autoDiscardable
-                              ? null
-                              : _archiveAndClose,
-                          onUndo: trashed || !_history.canUndo ? null : _undo,
-                          onRedo: trashed || !_history.canRedo ? null : _redo,
-                          onDelete: trashed || autoDiscardable || !isOwner
-                              ? null
-                              : _deleteAndClose,
-                          onDuplicate: trashed || note == null || note.isEmpty
-                              ? null
-                              : _duplicateNote,
-                          onMoveToWorkspace:
-                              trashed ||
-                                  note == null ||
-                                  note.isEmpty ||
-                              !isOwner ||
-                                  _store.workspaces.length < 2
-                              ? null
-                              : () => MoveToWorkspaceSheet.show(
-                                  context,
-                                  note.id,
-                                ),
-                          // Unlike workspaces, a column needs no second one to
-                          // move to — "Unassigned" is always a destination, so
-                          // this only asks that there be a board at all.
-                          onMoveToStage:
-                              trashed ||
-                                  note == null ||
-                                  note.isEmpty ||
-                                  _store.stages.isEmpty
-                              ? null
-                              : () => MoveToStageSheet.show(context, note.id),
-                          // Copying to the clipboard reads the note; a trashed
-                          // one is still readable, so this stays available.
-                          onCopyToClipboard: note == null || note.isEmpty
-                              ? null
-                              : _copyNoteToClipboard,
-                          onHistory: note == null || note.isEmpty
-                              ? null
-                              : () => NoteHistoryScreen.open(context, note.id),
-                          onConvert: trashed ? null : _convertKind,
-                          onRewrite:
-                              trashed ||
-                                  note == null ||
-                                  note.isEmpty ||
-                                  note.isAudio ||
-                                  !settings.noteWritingAvailable
-                              ? null
-                              : _rewriteWithAi,
-                          rewriting: isRewriting,
+                              : const Key('editor-bottom-separator'),
+                          decoration: BoxDecoration(
+                            border: widget.modal
+                                ? null
+                                : Border(
+                                    top: BorderSide(
+                                      color: hairlineColor(scheme),
+                                    ),
+                                  ),
+                          ),
+                          child: EditorBottomBar(
+                            trashed: trashed,
+                            isOwner: isOwner,
+                            archived: note?.archived ?? false,
+                            kind: _kind,
+                            editedStamp: note == null
+                                ? ''
+                                : 'Edited ${settings.editedLabel(note.updatedAt)}',
+                            onPalette: trashed
+                                ? null
+                                : () => ColorPickerSheet.show(
+                                    context,
+                                    selected: () => _note?.color ?? 'default',
+                                    onSelect: _setColor,
+                                  ),
+                            // Labelling is available from the first moment,
+                            // like colour and pin: filing a note is often the
+                            // first thing you do, and the draft materializes
+                            // on demand.
+                            onLabels: trashed ? null : _editLabels,
+                            onReminder: trashed ? null : _editReminder,
+                            onImage: trashed || _uploading ? null : _pickImage,
+                            onAttach: trashed || _uploading ? null : _pickFile,
+                            onShare: trashed ? null : _openShare,
+                            onArchive: trashed || autoDiscardable
+                                ? null
+                                : _archiveAndClose,
+                            onUndo: trashed || !_history.canUndo ? null : _undo,
+                            onRedo: trashed || !_history.canRedo ? null : _redo,
+                            onDelete: trashed || autoDiscardable || !isOwner
+                                ? null
+                                : _deleteAndClose,
+                            onDuplicate: trashed || note == null || note.isEmpty
+                                ? null
+                                : _duplicateNote,
+                            onMoveToWorkspace:
+                                trashed ||
+                                    note == null ||
+                                    note.isEmpty ||
+                                    !isOwner ||
+                                    _store.workspaces.length < 2
+                                ? null
+                                : () => MoveToWorkspaceSheet.show(
+                                    context,
+                                    note.id,
+                                  ),
+                            // Unlike workspaces, a column needs no second one
+                            // to move to — "Unassigned" is always a
+                            // destination, so this only asks that there be a
+                            // board at all.
+                            onMoveToStage:
+                                trashed ||
+                                    note == null ||
+                                    note.isEmpty ||
+                                    _store.stages.isEmpty
+                                ? null
+                                : () => MoveToStageSheet.show(context, note.id),
+                            // Copying to the clipboard reads the note; a
+                            // trashed one is still readable, so this stays
+                            // available.
+                            onCopyToClipboard: note == null || note.isEmpty
+                                ? null
+                                : _copyNoteToClipboard,
+                            onHistory: note == null || note.isEmpty
+                                ? null
+                                : () =>
+                                      NoteHistoryScreen.open(context, note.id),
+                            onConvert: trashed ? null : _convertKind,
+                            onRewrite:
+                                trashed ||
+                                    note == null ||
+                                    note.isEmpty ||
+                                    note.isAudio ||
+                                    !settings.noteWritingAvailable
+                                ? null
+                                : _rewriteWithAi,
+                            rewriting: isRewriting,
+                          ),
                         ),
                       ],
                     ),
