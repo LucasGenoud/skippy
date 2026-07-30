@@ -18,7 +18,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - **Version history** groups content edits into sessions, attributes collaborator edits, and supports reversible restores
 
 **Organization**
-- **Workspaces**: every account starts with a default workspace and can create more, switching from the header of the drawer/sidebar. Notes, labels, archive, trash, search, and chat are all scoped to the open one, and a note can be moved between workspaces from its menu. Each workspace can expose Notes, Board, or both; both views are enabled by default.
+- **Workspaces**: every account starts with a default workspace and can create more, switching from the header of the drawer/sidebar. Notes, labels, archive, trash, search, and chat are all scoped to the open one, and a note can be moved between workspaces from its menu. Each workspace can expose Notes, Board, or both; both views are enabled by default. On each device, every workspace reopens its last-used view.
 - An 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
 - Flat labels per workspace (create/rename/delete; filter from the drawer)
 - **Board view**: a kanban board whose columns are the workspace's *stages* — a system deliberately separate from labels, so a note carries any number of labels and sits in at most one column. Columns are side by side on wide screens and paged behind a name strip on phones; cards move with "Move to column" from the card menu. Unplaced notes collect in a capped **Unassigned** column.

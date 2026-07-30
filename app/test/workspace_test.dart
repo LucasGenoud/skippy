@@ -463,6 +463,43 @@ void main() {
       },
     );
 
+    testWidgets('each workspace reopens its own last view', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      final sidebar = find.byType(AppSidebar);
+      await tester.tap(
+        find.descendant(of: sidebar, matching: find.text('Board')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsOneWidget);
+
+      // An unseen workspace inherits the current destination.
+      store.setActiveWorkspace(work);
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsOneWidget);
+
+      await tester.tap(
+        find.descendant(of: sidebar, matching: find.text('Notes')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsNothing);
+
+      store.setActiveWorkspace('w-default');
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsOneWidget);
+
+      store.setActiveWorkspace(work);
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsNothing);
+      store.dispose();
+    });
+
     testWidgets('creating one from the menu switches straight into it', (
       tester,
     ) async {
@@ -582,11 +619,12 @@ void main() {
     });
   });
 
-  test('the open workspace survives a restart', () async {
+  test('the open workspace and its view survive a restart', () async {
     final cache = MemoryLocalCache();
     final first = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
     await first.load();
     first.setActiveWorkspace(work);
+    first.rememberWorkspaceView(ViewSelection.board);
     await settle();
     first.dispose();
 
@@ -595,6 +633,7 @@ void main() {
     final second = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
     await second.load();
     expect(second.activeWorkspaceId, work);
+    expect(second.lastWorkspaceView(work), ViewSelection.board);
     second.dispose();
   });
 }

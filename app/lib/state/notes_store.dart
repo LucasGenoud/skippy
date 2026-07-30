@@ -63,6 +63,11 @@ class NotesStore extends ChangeNotifier {
   /// (the cached choice, or the default workspace).
   String? _activeWorkspaceId;
 
+  /// The last drawer/sidebar destination used in each workspace. This is
+  /// device-local navigation state, like [_activeWorkspaceId], rather than a
+  /// shared workspace setting.
+  final Map<String, ViewSelection> _lastWorkspaceViews = {};
+
   /// Previously checked item texts, keyed by note id (suggestions are
   /// per-note by design).
   Map<String, List<String>> _checklistHistory = {};
@@ -230,6 +235,18 @@ class NotesStore extends ChangeNotifier {
     if (_activeWorkspaceId == id || workspaceById(id) == null) return;
     _activeWorkspaceId = id;
     notifyListeners();
+    _persistNow();
+  }
+
+  ViewSelection? lastWorkspaceView(String? workspaceId) =>
+      workspaceId == null ? null : _lastWorkspaceViews[workspaceId];
+
+  void rememberWorkspaceView(ViewSelection selection) {
+    final workspaceId = _activeWorkspaceId;
+    if (workspaceId == null || _lastWorkspaceViews[workspaceId] == selection) {
+      return;
+    }
+    _lastWorkspaceViews[workspaceId] = selection;
     _persistNow();
   }
 
@@ -768,9 +785,29 @@ class NotesStore extends ChangeNotifier {
     'labels': <dynamic>[],
     'stages': <dynamic>[],
     'workspaces': <dynamic>[],
+    'workspace_views': <String, dynamic>{},
     'history': <String, dynamic>{},
     'queue': <dynamic>[],
   };
+
+  static ViewSelection? _workspaceViewFromJson(Object? value) {
+    if (value is! Map) return null;
+    final name = value['view'];
+    if (name is! String) return null;
+    NoteView? view;
+    for (final candidate in NoteView.values) {
+      if (candidate.name == name) {
+        view = candidate;
+        break;
+      }
+    }
+    if (view == null) return null;
+    final labelId = value['label_id'];
+    if (view == NoteView.label && (labelId is! String || labelId.isEmpty)) {
+      return null;
+    }
+    return ViewSelection(view, labelId is String ? labelId : null);
+  }
 
   /// Load the on-disk snapshot so notes render instantly — before, and even
   /// without, a network round-trip. Runs once; the network fetch in [load]
@@ -814,6 +851,14 @@ class NotesStore extends ChangeNotifier {
         ];
         _activeWorkspaceId = doc['active_workspace'] as String?;
         _reconcileActiveWorkspace();
+        _lastWorkspaceViews.clear();
+        for (final entry
+            in (doc['workspace_views'] as Map? ?? const {}).entries) {
+          final selection = _workspaceViewFromJson(entry.value);
+          if (entry.key is String && selection != null) {
+            _lastWorkspaceViews[entry.key as String] = selection;
+          }
+        }
         _checklistHistory = {
           for (final e in (doc['history'] as Map? ?? const {}).entries)
             e.key as String: (e.value as List).cast<String>(),
@@ -864,6 +909,13 @@ class NotesStore extends ChangeNotifier {
       // Which workspace to reopen in. Deliberately local rather than a synced
       // setting: it is where this device was, not a preference.
       'active_workspace': _activeWorkspaceId,
+      'workspace_views': {
+        for (final entry in _lastWorkspaceViews.entries)
+          entry.key: {
+            'view': entry.value.view.name,
+            if (entry.value.labelId != null) 'label_id': entry.value.labelId,
+          },
+      },
       'history': _checklistHistory,
       'queue': ops,
     };
@@ -1494,6 +1546,7 @@ class NotesStore extends ChangeNotifier {
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((workspace) => workspace.id == id);
+    _lastWorkspaceViews.remove(id);
     _reconcileActiveWorkspace();
     notifyListeners();
     _enqueue(PendingOp(PendingOpKind.workspaceDelete, id: id));
@@ -1510,6 +1563,7 @@ class NotesStore extends ChangeNotifier {
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((w) => w.id == id);
+    _lastWorkspaceViews.remove(id);
     _reconcileActiveWorkspace();
     notifyListeners();
     _enqueue(

@@ -39,6 +39,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   ViewSelection _selection = ViewSelection.notes;
+  String? _shownWorkspaceId;
   String _query = '';
   late bool _listMode = context.read<SettingsStore>().defaultListMode;
   bool _isSidebarOpen = true;
@@ -157,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectView(ViewSelection selection) {
+    context.read<NotesStore>().rememberWorkspaceView(selection);
     setState(() {
       _selection = selection;
       _query = '';
@@ -415,22 +417,47 @@ class _HomeScreenState extends State<HomeScreen> {
       ? ViewSelection.notes
       : ViewSelection.board;
 
-  /// Workspace switches and shared setting changes must not leave the screen
-  /// parked on a view that the active workspace no longer exposes. A label
-  /// can go stale for the same reason, so both cases share this reconciliation.
+  bool _viewIsAvailable(
+    ViewSelection selection,
+    NotesStore store,
+  ) => switch (selection.view) {
+    NoteView.notes => store.activeWorkspace?.notesEnabled ?? true,
+    NoteView.board => store.activeWorkspace?.boardEnabled ?? true,
+    NoteView.label =>
+      store.labels.any((label) => label.id == selection.labelId),
+    NoteView.reminders || NoteView.archive || NoteView.trash => true,
+  };
+
+  /// Each workspace reopens its own last navigation destination. Shared
+  /// setting changes and deleted labels can invalidate that destination; in
+  /// those cases use the remaining primary view and remember the fallback.
   void _reconcileWorkspaceView(NotesStore store) {
     final workspace = store.activeWorkspace;
     if (workspace == null) return;
-    final staleLabel =
-        _selection.view == NoteView.label &&
-        !store.labels.any((label) => label.id == _selection.labelId);
-    final disabledPrimary =
-        (_selection.view == NoteView.notes && !workspace.notesEnabled) ||
-        (_selection.view == NoteView.board && !workspace.boardEnabled);
-    if (!staleLabel && !disabledPrimary) return;
+    final workspaceChanged = _shownWorkspaceId != workspace.id;
+    final remembered = store.lastWorkspaceView(workspace.id);
+    final candidate = workspaceChanged && remembered != null
+        ? remembered
+        : _selection;
+    final target = _viewIsAvailable(candidate, store)
+        ? candidate
+        : _primaryView(store);
+    _shownWorkspaceId = workspace.id;
+    if (target == _selection) {
+      if (workspaceChanged && remembered == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && store.activeWorkspaceId == workspace.id) {
+            store.rememberWorkspaceView(target);
+          }
+        });
+      }
+      return;
+    }
     // Called from build; defer so the reset lands in its own frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _selection = _primaryView(store));
+      if (!mounted || store.activeWorkspaceId != workspace.id) return;
+      store.rememberWorkspaceView(target);
+      setState(() => _selection = target);
     });
   }
 
