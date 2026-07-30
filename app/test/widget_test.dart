@@ -1633,7 +1633,8 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pump(const Duration(milliseconds: 100));
 
-      void expectFirstLineAlignment(String id, String text) {
+      /// The centre of the first text line of row [id], in global coordinates.
+      double firstLineCenterOf(String id) {
         final row = find.byKey(ValueKey('checklist-row-background-$id'));
         final editableFinder = find.descendant(
           of: row,
@@ -1657,18 +1658,34 @@ void main() {
         final firstLineCaret = editableRenderObject.getLocalRectForCaret(
           const TextPosition(offset: 0),
         );
-        final firstLineCenter = editableRenderObject.localToGlobal(
-          firstLineCaret.center,
-        );
-        final checkbox = find.descendant(
-          of: row,
-          matching: find.byType(Checkbox),
-        );
+        return editableRenderObject.localToGlobal(firstLineCaret.center).dy;
+      }
+
+      /// Every control of row [id] sits on the middle of its first text line,
+      /// and that line is centred in the 48px band the row starts from — so a
+      /// one-line item is centred in its own row.
+      void expectRowAlignment(String id, String text) {
+        final row = find.byKey(ValueKey('checklist-row-background-$id'));
+        final firstLineCenter = firstLineCenterOf(id);
         expect(
-          tester.getCenter(checkbox).dy,
-          closeTo(firstLineCenter.dy, 1),
+          firstLineCenter,
+          closeTo(tester.getTopLeft(row).dy + 24, 1),
           reason: text,
         );
+        final controls = {
+          'checkbox': find.byType(Checkbox),
+          'drag handle': find.byIcon(Icons.drag_indicator),
+          'remove button': find.byIcon(Icons.close),
+        };
+        for (final control in controls.entries) {
+          expect(
+            tester
+                .getCenter(find.descendant(of: row, matching: control.value))
+                .dy,
+            closeTo(firstLineCenter, 1),
+            reason: '${control.key} of "$text"',
+          );
+        }
       }
 
       final shortRow = find.byKey(
@@ -1679,8 +1696,22 @@ void main() {
       );
       expect(tester.getSize(shortRow).height, closeTo(48, 1));
       expect(tester.getSize(longRow).height, greaterThan(48));
-      expectFirstLineAlignment('short', shortItem);
-      expectFirstLineAlignment('long', longItem);
+      expectRowAlignment('short', shortItem);
+      expectRowAlignment('long', longItem);
+      // A one-line item is centred in its row: equal space above and below.
+      expect(
+        firstLineCenterOf('short'),
+        closeTo(tester.getCenter(shortRow).dy, 1),
+      );
+      // The add row's icon and hint share that same line box.
+      final addIcon = find.byIcon(Icons.add);
+      expect(
+        tester.getCenter(addIcon).dy,
+        closeTo(
+          tester.getCenter(find.widgetWithText(TextField, 'List item')).dy,
+          1,
+        ),
+      );
       await flushTimers(tester);
     });
 
