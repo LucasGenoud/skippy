@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import 'form_dialog.dart';
 
 /// The app's keyboard shortcut reference. This dialog is the in-app source of
@@ -154,7 +155,7 @@ class _KeyCap extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: kBorderRadius,
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Text(

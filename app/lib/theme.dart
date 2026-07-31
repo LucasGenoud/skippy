@@ -203,9 +203,7 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
       ),
       actionTextColor: scheme.primary,
       closeIconColor: scheme.onSurfaceVariant,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-      ),
+      shape: kRoundedShape,
     ),
     tooltipTheme: base.tooltipTheme.copyWith(
       waitDuration: const Duration(milliseconds: 600),

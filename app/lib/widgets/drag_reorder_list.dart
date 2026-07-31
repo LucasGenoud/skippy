@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import '../util/motion.dart';
 
 /// A short, non-scrolling list of fixed-height rows reordered by dragging a
@@ -141,7 +142,7 @@ class _DragReorderListState<T> extends State<DragReorderList<T>> {
                       ? scheme.surfaceContainerHigh
                       : Colors.transparent,
                   elevation: entry.value == _draggingId ? 3 : 0,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: kBorderRadius,
                   child: widget.rowBuilder(
                     context,
                     item,

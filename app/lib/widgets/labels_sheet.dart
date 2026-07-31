@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../theme.dart';
 import '../util/label_style.dart';
 import 'drag_reorder_list.dart';
 import 'form_dialog.dart';
@@ -579,12 +580,12 @@ class _IconGrid extends StatelessWidget {
       final isSel = selected == key;
       return InkWell(
         onTap: () => onSelect(key),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: kBorderRadius,
         child: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: kBorderRadius,
             color: isSel ? tint.withValues(alpha: 0.18) : null,
             border: Border.all(
               color: isSel ? tint : scheme.outlineVariant,

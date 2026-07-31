@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
+import '../../theme.dart';
 import '../../util/local_notifications.dart';
 import '../../util/snack.dart';
 
@@ -117,7 +118,7 @@ class _SyncDisclaimer extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: kBorderRadius,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

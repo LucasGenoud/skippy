@@ -148,7 +148,7 @@ class WorkspaceMenu extends StatelessWidget {
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: scheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: kBorderRadius,
                       ),
                       child: Text(
                         _initial(name),

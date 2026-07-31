@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
+import '../../theme.dart';
 import '../../util/motion.dart';
 
 /// Settings block for the note-grid layout: card density, how wide the centered
@@ -117,7 +118,7 @@ class _GridPreview extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: kBorderRadius,
             border: Border.all(color: scheme.outlineVariant),
           ),
           alignment: Alignment.topCenter,

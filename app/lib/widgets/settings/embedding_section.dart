@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/search_stats.dart';
 import '../../state/settings_store.dart';
+import '../../theme.dart';
 import '../../util/snack.dart';
 
 /// Diagnostics for the semantic-search index, embedding model, vector width,
@@ -227,7 +228,7 @@ class _ReindexProgress extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: kBorderRadius,
             child: LinearProgressIndicator(value: value, minHeight: 6),
           ),
           if (p != null) ...[
