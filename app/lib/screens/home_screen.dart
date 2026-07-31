@@ -24,6 +24,7 @@ import '../widgets/home_top_bar.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
+import '../widgets/particle_field.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
@@ -417,16 +418,15 @@ class _HomeScreenState extends State<HomeScreen> {
       ? ViewSelection.notes
       : ViewSelection.board;
 
-  bool _viewIsAvailable(
-    ViewSelection selection,
-    NotesStore store,
-  ) => switch (selection.view) {
-    NoteView.notes => store.activeWorkspace?.notesEnabled ?? true,
-    NoteView.board => store.activeWorkspace?.boardEnabled ?? true,
-    NoteView.label =>
-      store.labels.any((label) => label.id == selection.labelId),
-    NoteView.reminders || NoteView.archive || NoteView.trash => true,
-  };
+  bool _viewIsAvailable(ViewSelection selection, NotesStore store) =>
+      switch (selection.view) {
+        NoteView.notes => store.activeWorkspace?.notesEnabled ?? true,
+        NoteView.board => store.activeWorkspace?.boardEnabled ?? true,
+        NoteView.label => store.labels.any(
+          (label) => label.id == selection.labelId,
+        ),
+        NoteView.reminders || NoteView.archive || NoteView.trash => true,
+      };
 
   /// Each workspace reopens its own last navigation destination. Shared
   /// setting changes and deleted labels can invalidate that destination; in
@@ -620,8 +620,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _addLabelToSelected(store),
                             onMoveToStageSelected: () =>
                                 _moveSelectedToStage(store),
-                            canMoveToStage:
-                                _selection.view == NoteView.board,
+                            canMoveToStage: _selection.view == NoteView.board,
                             onSetColorSelected: () =>
                                 _setColorForSelected(store),
                             onPinSelected: () => _setPinnedForSelected(
@@ -654,6 +653,19 @@ class _HomeScreenState extends State<HomeScreen> {
                             Expanded(
                               child: Stack(
                                 children: [
+                                  // Decorative only, and behind every view:
+                                  // the particles belong to the canvas the
+                                  // cards sit on, not to one layout.
+                                  Positioned.fill(
+                                    child: ParticleField(
+                                      effect: settings.particleEffect,
+                                      intensity: settings.particleIntensity,
+                                      palette: [
+                                        for (final entry in settings.palette)
+                                          entry.light,
+                                      ],
+                                    ),
+                                  ),
                                   // The board is a horizontal container of
                                   // independently scrolling columns, so it
                                   // replaces the sliver stack rather than
@@ -674,229 +686,236 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     )
                                   else
-                                  Positioned.fill(
-                                    child: LayoutBuilder(
-                                      builder: (context, constraints) {
-                                        final width = constraints.maxWidth;
-                                        final horizontalPad = width >= 900
-                                            ? 32.0
-                                            : 16.0;
-                                        final contentWidth =
-                                            width - horizontalPad * 2;
-                                        final density = settings.gridDensity;
-                                        final gridMaxWidth = _listMode
-                                            ? 600.0
-                                            : settings.gridWidth.maxWidth;
-                                        final effectiveWidth =
-                                            contentWidth > gridMaxWidth
-                                            ? gridMaxWidth
-                                            : contentWidth;
-                                        final columns = _listMode
-                                            ? 1
-                                            : (effectiveWidth /
-                                                      density.targetWidth)
-                                                  .floor()
-                                                  .clamp(2, density.maxColumns);
+                                    Positioned.fill(
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final width = constraints.maxWidth;
+                                          final horizontalPad = width >= 900
+                                              ? 32.0
+                                              : 16.0;
+                                          final contentWidth =
+                                              width - horizontalPad * 2;
+                                          final density = settings.gridDensity;
+                                          final gridMaxWidth = _listMode
+                                              ? 600.0
+                                              : settings.gridWidth.maxWidth;
+                                          final effectiveWidth =
+                                              contentWidth > gridMaxWidth
+                                              ? gridMaxWidth
+                                              : contentWidth;
+                                          final columns = _listMode
+                                              ? 1
+                                              : (effectiveWidth /
+                                                        density.targetWidth)
+                                                    .floor()
+                                                    .clamp(
+                                                      2,
+                                                      density.maxColumns,
+                                                    );
 
-                                        final refreshScheme = Theme.of(
-                                          context,
-                                        ).colorScheme;
-                                        return RefreshIndicator(
-                                          // refresh, not load: the indicator
-                                          // draws its own spinner, so flipping
-                                          // `loading` would swap the grid for
-                                          // skeletons under the user's finger.
-                                          onRefresh: store.refresh,
-                                          edgeOffset: 16,
-                                          color: refreshScheme.primary,
-                                          backgroundColor:
-                                              refreshScheme.surfaceContainerHigh,
-                                          elevation: 2,
-                                          child: CustomScrollView(
-                                            controller: _scrollController,
-                                            physics:
-                                                const AlwaysScrollableScrollPhysics(),
-                                            slivers: [
-                                              const SliverToBoxAdapter(
-                                                child: SizedBox(height: 16),
-                                              ),
-                                              // Always present so going on/off
-                                              // line grows/shrinks the banner
-                                              // smoothly instead of jolting
-                                              // the grid below it.
-                                              SliverToBoxAdapter(
-                                                child: AnimatedSize(
-                                                  duration: Motion.base,
-                                                  curve: Motion.emphasized,
-                                                  alignment:
-                                                      Alignment.topCenter,
-                                                  child: AnimatedSwitcher(
+                                          final refreshScheme = Theme.of(
+                                            context,
+                                          ).colorScheme;
+                                          return RefreshIndicator(
+                                            // refresh, not load: the indicator
+                                            // draws its own spinner, so flipping
+                                            // `loading` would swap the grid for
+                                            // skeletons under the user's finger.
+                                            onRefresh: store.refresh,
+                                            edgeOffset: 16,
+                                            color: refreshScheme.primary,
+                                            backgroundColor: refreshScheme
+                                                .surfaceContainerHigh,
+                                            elevation: 2,
+                                            child: CustomScrollView(
+                                              controller: _scrollController,
+                                              physics:
+                                                  const AlwaysScrollableScrollPhysics(),
+                                              slivers: [
+                                                const SliverToBoxAdapter(
+                                                  child: SizedBox(height: 16),
+                                                ),
+                                                // Always present so going on/off
+                                                // line grows/shrinks the banner
+                                                // smoothly instead of jolting
+                                                // the grid below it.
+                                                SliverToBoxAdapter(
+                                                  child: AnimatedSize(
                                                     duration: Motion.base,
-                                                    switchInCurve:
-                                                        Motion.standard,
-                                                    switchOutCurve:
-                                                        Motion.standard,
-                                                    child: store.offline
-                                                        ? _OfflineBanner(
-                                                            onRetry:
-                                                                store.retryNow,
-                                                          )
-                                                        : const SizedBox(
-                                                            width:
-                                                                double.infinity,
-                                                          ),
+                                                    curve: Motion.emphasized,
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: AnimatedSwitcher(
+                                                      duration: Motion.base,
+                                                      switchInCurve:
+                                                          Motion.standard,
+                                                      switchOutCurve:
+                                                          Motion.standard,
+                                                      child: store.offline
+                                                          ? _OfflineBanner(
+                                                              onRetry: store
+                                                                  .retryNow,
+                                                            )
+                                                          : const SizedBox(
+                                                              width: double
+                                                                  .infinity,
+                                                            ),
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                              // Inline quick add: wide screens,
-                                              // in the views you compose into
-                                              // (all notes, or a label, where
-                                              // it files the note for you).
-                                              if ((_selection.view ==
-                                                          NoteView.notes ||
-                                                      _selection.view ==
-                                                          NoteView.label) &&
-                                                  !searching &&
-                                                  width >= 600)
-                                                SliverToBoxAdapter(
-                                                  child: Center(
-                                                    child: ConstrainedBox(
-                                                      constraints:
-                                                          const BoxConstraints(
-                                                            maxWidth: 600,
-                                                          ),
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets.fromLTRB(
-                                                              16,
-                                                              16,
-                                                              16,
-                                                              24,
+                                                // Inline quick add: wide screens,
+                                                // in the views you compose into
+                                                // (all notes, or a label, where
+                                                // it files the note for you).
+                                                if ((_selection.view ==
+                                                            NoteView.notes ||
+                                                        _selection.view ==
+                                                            NoteView.label) &&
+                                                    !searching &&
+                                                    width >= 600)
+                                                  SliverToBoxAdapter(
+                                                    child: Center(
+                                                      child: ConstrainedBox(
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                              maxWidth: 600,
                                                             ),
-                                                        child: QuickAddBar(
-                                                          labelIds:
-                                                              _composeLabelIds,
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.fromLTRB(
+                                                                16,
+                                                                16,
+                                                                16,
+                                                                24,
+                                                              ),
+                                                          child: QuickAddBar(
+                                                            labelIds:
+                                                                _composeLabelIds,
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                              if (_viewTitle(store).isNotEmpty)
-                                                _alignedToGrid(
-                                                  _ViewHeader(
-                                                    title: _viewTitle(store),
-                                                    isTrash:
-                                                        _selection.view ==
-                                                        NoteView.trash,
-                                                    hasTrashedNotes: sections
-                                                        .others
-                                                        .isNotEmpty,
-                                                    onEmptyTrash: () =>
-                                                        _confirmEmptyTrash(
-                                                          store,
-                                                        ),
-                                                  ),
-                                                  horizontalPad,
-                                                  gridMaxWidth,
-                                                ),
-                                              if (store.loading ||
-                                                  semanticLoading)
-                                                SliverToBoxAdapter(
-                                                  child: Center(
-                                                    child: ConstrainedBox(
-                                                      constraints:
-                                                          BoxConstraints(
-                                                            maxWidth:
-                                                                gridMaxWidth,
+                                                if (_viewTitle(
+                                                  store,
+                                                ).isNotEmpty)
+                                                  _alignedToGrid(
+                                                    _ViewHeader(
+                                                      title: _viewTitle(store),
+                                                      isTrash:
+                                                          _selection.view ==
+                                                          NoteView.trash,
+                                                      hasTrashedNotes: sections
+                                                          .others
+                                                          .isNotEmpty,
+                                                      onEmptyTrash: () =>
+                                                          _confirmEmptyTrash(
+                                                            store,
                                                           ),
-                                                      child: Padding(
-                                                        padding:
-                                                            EdgeInsets.fromLTRB(
-                                                              horizontalPad,
-                                                              8,
-                                                              horizontalPad,
-                                                              0,
-                                                            ),
-                                                        child: NotesSkeleton(
-                                                          columns: columns,
-                                                        ),
-                                                      ),
                                                     ),
-                                                  ),
-                                                )
-                                              else if (sections.isEmpty)
-                                                SliverFillRemaining(
-                                                  hasScrollBody: false,
-                                                  child: EmptyState(
-                                                    icon: searching
-                                                        ? Icons.search_off
-                                                        : _emptyIcon,
-                                                    message: searching
-                                                        ? 'No matching notes'
-                                                        : _emptyMessage,
-                                                    actionLabel: searching
-                                                        ? null
-                                                        : _emptyActionLabel,
-                                                    onAction: searching
-                                                        ? null
-                                                        : _emptyAction,
-                                                    actionIcon: searching
-                                                        ? Icons.add
-                                                        : _emptyActionIcon,
-                                                    showBrandMark:
-                                                        !searching &&
-                                                        _selection.view ==
-                                                            NoteView.notes,
-                                                  ),
-                                                )
-                                              else ...[
-                                                if (sections
-                                                    .pinned
-                                                    .isNotEmpty) ...[
-                                                  _sectionLabel(
-                                                    context,
-                                                    'Pinned',
                                                     horizontalPad,
                                                     gridMaxWidth,
                                                   ),
+                                                if (store.loading ||
+                                                    semanticLoading)
+                                                  SliverToBoxAdapter(
+                                                    child: Center(
+                                                      child: ConstrainedBox(
+                                                        constraints:
+                                                            BoxConstraints(
+                                                              maxWidth:
+                                                                  gridMaxWidth,
+                                                            ),
+                                                        child: Padding(
+                                                          padding:
+                                                              EdgeInsets.fromLTRB(
+                                                                horizontalPad,
+                                                                8,
+                                                                horizontalPad,
+                                                                0,
+                                                              ),
+                                                          child: NotesSkeleton(
+                                                            columns: columns,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  )
+                                                else if (sections.isEmpty)
+                                                  SliverFillRemaining(
+                                                    hasScrollBody: false,
+                                                    child: EmptyState(
+                                                      icon: searching
+                                                          ? Icons.search_off
+                                                          : _emptyIcon,
+                                                      message: searching
+                                                          ? 'No matching notes'
+                                                          : _emptyMessage,
+                                                      actionLabel: searching
+                                                          ? null
+                                                          : _emptyActionLabel,
+                                                      onAction: searching
+                                                          ? null
+                                                          : _emptyAction,
+                                                      actionIcon: searching
+                                                          ? Icons.add
+                                                          : _emptyActionIcon,
+                                                      showBrandMark:
+                                                          !searching &&
+                                                          _selection.view ==
+                                                              NoteView.notes,
+                                                    ),
+                                                  )
+                                                else ...[
+                                                  if (sections
+                                                      .pinned
+                                                      .isNotEmpty) ...[
+                                                    _sectionLabel(
+                                                      context,
+                                                      'Pinned',
+                                                      horizontalPad,
+                                                      gridMaxWidth,
+                                                    ),
+                                                    _grid(
+                                                      store,
+                                                      sections.pinned,
+                                                      columns,
+                                                      horizontalPad,
+                                                      gridMaxWidth,
+                                                      dragEnabled,
+                                                      section: 'pinned',
+                                                    ),
+                                                    if (sections
+                                                        .others
+                                                        .isNotEmpty)
+                                                      _sectionLabel(
+                                                        context,
+                                                        'Others',
+                                                        horizontalPad,
+                                                        gridMaxWidth,
+                                                      ),
+                                                  ],
                                                   _grid(
                                                     store,
-                                                    sections.pinned,
+                                                    sections.others,
                                                     columns,
                                                     horizontalPad,
                                                     gridMaxWidth,
                                                     dragEnabled,
-                                                    section: 'pinned',
+                                                    section: 'others',
                                                   ),
-                                                  if (sections
-                                                      .others
-                                                      .isNotEmpty)
-                                                    _sectionLabel(
-                                                      context,
-                                                      'Others',
-                                                      horizontalPad,
-                                                      gridMaxWidth,
+                                                  const SliverToBoxAdapter(
+                                                    child: SizedBox(
+                                                      height: 200,
                                                     ),
+                                                  ),
                                                 ],
-                                                _grid(
-                                                  store,
-                                                  sections.others,
-                                                  columns,
-                                                  horizontalPad,
-                                                  gridMaxWidth,
-                                                  dragEnabled,
-                                                  section: 'others',
-                                                ),
-                                                const SliverToBoxAdapter(
-                                                  child: SizedBox(height: 200),
-                                                ),
                                               ],
-                                            ],
-                                          ),
-                                        );
-                                      },
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
                                   Positioned(
                                     right: 16,
                                     bottom: 16,
@@ -940,21 +959,28 @@ class _HomeScreenState extends State<HomeScreen> {
   };
 
   String get _emptyActionLabel => switch (_selection.view) {
-    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
-      'Create note',
+    NoteView.notes ||
+    NoteView.board ||
+    NoteView.reminders ||
+    NoteView.label => 'Create note',
     NoteView.archive || NoteView.trash => 'Browse notes',
   };
 
   VoidCallback get _emptyAction => switch (_selection.view) {
-    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
-      () => _newNote(NoteKind.text),
-    NoteView.archive || NoteView.trash =>
-      () => _selectView(_primaryView(context.read<NotesStore>())),
+    NoteView.notes ||
+    NoteView.board ||
+    NoteView.reminders ||
+    NoteView.label => () => _newNote(NoteKind.text),
+    NoteView.archive || NoteView.trash => () => _selectView(
+      _primaryView(context.read<NotesStore>()),
+    ),
   };
 
   IconData get _emptyActionIcon => switch (_selection.view) {
-    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
-      Icons.add,
+    NoteView.notes ||
+    NoteView.board ||
+    NoteView.reminders ||
+    NoteView.label => Icons.add,
     NoteView.archive || NoteView.trash => Icons.sticky_note_2_outlined,
   };
 

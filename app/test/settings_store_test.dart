@@ -28,6 +28,8 @@ void main() {
     expect(settings.use24hTime, isTrue);
     expect(settings.gridDensity, GridDensity.comfortable);
     expect(settings.gridWidth, GridWidth.medium);
+    expect(settings.particleEffect, ParticleEffect.none);
+    expect(settings.particleIntensity, ParticleIntensity.medium);
     expect(settings.palette.length, kDefaultPalette.length);
     await settings.load();
     expect(settings.loaded, isTrue);
@@ -54,6 +56,8 @@ void main() {
     settings.setDefaultListMode(true);
     settings.setGridDensity(GridDensity.compact);
     settings.setGridWidth(GridWidth.full);
+    settings.setParticleEffect(ParticleEffect.snow);
+    settings.setParticleIntensity(ParticleIntensity.subtle);
     settings.addPaletteColor(
       'Lava',
       const Color(0xFFFF5722),
@@ -67,6 +71,8 @@ void main() {
     expect(api.settings['default_view'], 'list');
     expect(api.settings['grid_density'], 'compact');
     expect(api.settings['grid_width'], 'full');
+    expect(api.settings['particle_effect'], 'snow');
+    expect(api.settings['particle_intensity'], 'subtle');
     expect(
       (api.settings['palette'] as List).length,
       kDefaultPalette.length + 1,
@@ -81,6 +87,8 @@ void main() {
     expect(other.defaultListMode, isTrue);
     expect(other.gridDensity, GridDensity.compact);
     expect(other.gridWidth, GridWidth.full);
+    expect(other.particleEffect, ParticleEffect.snow);
+    expect(other.particleIntensity, ParticleIntensity.subtle);
     expect(other.palette.last.name, 'Lava');
     expect(other.palette.last.light, const Color(0xFFFF5722));
     other.dispose();
@@ -121,6 +129,8 @@ void main() {
     api.settings = {
       'theme': 'disco',
       'date_format': 'whenever',
+      'particle_effect': 'lasers',
+      'particle_intensity': 'ludicrous',
       'palette': [
         {'key': 'ok', 'name': 'OK', 'light': '#112233', 'dark': '#445566'},
         {'key': 'broken', 'light': 'not-a-color'},
@@ -130,6 +140,8 @@ void main() {
     await settings.load();
     expect(settings.themeMode, ThemeMode.system);
     expect(settings.dateFormat, AppDateFormat.dayFirst);
+    expect(settings.particleEffect, ParticleEffect.none);
+    expect(settings.particleIntensity, ParticleIntensity.medium);
     // Only the valid palette entry survives.
     expect(settings.palette.single.key, 'ok');
     expect(settings.palette.single.light, const Color(0xFF112233));

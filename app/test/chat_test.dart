@@ -277,7 +277,9 @@ void main() {
     ) async {
       settings.semanticSearchCapable = true;
       await tester.pumpWidget(harness());
-      await tester.scrollUntilVisible(find.text('Notes chat'), 200);
+      // Scroll to the last of the three AI switches, so all of them are laid
+      // out regardless of what sits above the section.
+      await tester.scrollUntilVisible(find.text('AI note editing'), 200);
 
       // Unconfigured: every provider-backed feature is inert and explains why.
       expect(find.text('Configure an AI provider first'), findsNWidgets(3));
@@ -309,7 +311,9 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.textContaining('llama3.1 @ localhost'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('Notes chat'), 200);
+      // Scroll to the last of the three AI switches, so all of them are laid
+      // out regardless of what sits above the section.
+      await tester.scrollUntilVisible(find.text('AI note editing'), 200);
       expect(
         tester.widget<SwitchListTile>(aiSwitch('Automatic labeling')).onChanged,
         isNotNull,
@@ -336,7 +340,9 @@ void main() {
         model: 'llama3.1',
       );
       await tester.pumpWidget(harness());
-      await tester.scrollUntilVisible(find.text('Notes chat'), 200);
+      // Scroll to the last of the three AI switches, so all of them are laid
+      // out regardless of what sits above the section.
+      await tester.scrollUntilVisible(find.text('AI note editing'), 200);
 
       expect(
         find.text('Requires semantic search on this server'),

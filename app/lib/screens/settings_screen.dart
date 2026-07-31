@@ -11,6 +11,7 @@ import '../widgets/settings/grid_layout_section.dart';
 import '../widgets/settings/llm_section.dart';
 import '../widgets/settings/managed_note.dart';
 import '../widgets/settings/notify_section.dart';
+import '../widgets/settings/particle_section.dart';
 import '../widgets/settings/palette_section.dart';
 import '../widgets/shortcut_help.dart';
 
@@ -61,6 +62,7 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: settings.setDefaultListMode,
               ),
               const GridLayoutSection(),
+              const ParticleSection(),
               const Divider(height: 32),
               const _SectionHeader('Features'),
               _FeatureToggle(
