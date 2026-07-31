@@ -33,18 +33,14 @@ jobs:
           IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
           # --no-cache: never reuse layers from a previous run.
           # --pull: re-resolve the base images instead of trusting the local copy.
-          docker build --no-cache --pull -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" .
+          docker build --no-cache --pull -t "$IMAGE:latest" .
           docker push "$IMAGE:latest"
-          docker push "$IMAGE:${{ github.sha }}"
 
-      - name: Drop older builds of this image
+      - name: Drop dangling layers left by this build
         run: |
-          IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
-          # Scoped to this repository only: `reference` limits it to skippy tags,
-          # `before` limits it to builds older than the one we just pushed. Images
-          # a container is still running are refused by docker, hence `|| true`.
-          OLD=$(docker image ls -q \
-            --filter "reference=$IMAGE" \
-            --filter "before=$IMAGE:${{ github.sha }}" | sort -u)
-          [ -n "$OLD" ] && docker rmi $OLD || true
+          # Only the "latest" tag is ever pushed now, so the previous build's
+          # image is left dangling (untagged, <none>:<none>) rather than under
+          # another tag. Images a container is still running are refused by
+          # docker, hence `|| true`.
+          docker image prune -f
           exit 0
