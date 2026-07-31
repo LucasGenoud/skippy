@@ -125,6 +125,14 @@ class _LoginFieldState extends State<LoginField> {
       ..padding = '0'
       ..margin = '0'
       ..backgroundColor = 'transparent';
+    // Flutter's web surface disables selection by default for its gesture
+    // layer. This field is a real DOM input, so opt it back into the browser's
+    // native selection and context-menu behavior. Without this, text cannot
+    // be selected in either sign-in or create-account mode.
+    _input.style
+      ..setProperty('user-select', 'text')
+      ..setProperty('-webkit-user-select', 'text')
+      ..setProperty('-webkit-touch-callout', 'default');
     _input.style.setProperty('box-sizing', 'border-box');
 
     _onInputJs = ((web.Event _) => _readElement()).toJS;
