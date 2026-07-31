@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'api/api_client.dart';
@@ -183,15 +184,31 @@ class _SkippyAppState extends State<SkippyApp> {
           debugShowCheckedModeBanner: false,
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: scaffoldMessengerKey,
-          builder: (context, child) => BackgroundGuard(
-            onBackground: () => _store?.flushForBackground(),
-            onForeground: () {
-              _store?.onResumed();
-              // Time, permissions and the device's timezone can all have moved
-              // while we were away; re-arm against what the OS actually holds.
-              _reminders?.reconcile();
-            },
-            child: child ?? const SizedBox.shrink(),
+          builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+            // No screen in the tree owns an AppBar consistently enough to set
+            // this itself, so nothing was asserting it: the icons kept
+            // whatever style the launch screen (or the last screen before a
+            // background trip) happened to leave behind, which on iOS could
+            // land as light-on-light over a light background. Set from the
+            // resolved theme (this `context` sits inside MaterialApp's
+            // AnimatedTheme, so brightness already reflects `themeMode`) on
+            // every build, including the one BackgroundGuard's onForeground
+            // triggers after a resume.
+            value:
+                (Theme.of(context).brightness == Brightness.dark
+                        ? SystemUiOverlayStyle.light
+                        : SystemUiOverlayStyle.dark)
+                    .copyWith(statusBarColor: Colors.transparent),
+            child: BackgroundGuard(
+              onBackground: () => _store?.flushForBackground(),
+              onForeground: () {
+                _store?.onResumed();
+                // Time, permissions and the device's timezone can all have moved
+                // while we were away; re-arm against what the OS actually holds.
+                _reminders?.reconcile();
+              },
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
           theme: buildTheme(
             Brightness.light,
