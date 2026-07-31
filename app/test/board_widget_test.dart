@@ -27,8 +27,7 @@ Widget boardApp(NotesStore store, {ThemeData? theme}) => MultiProvider(
   ],
   child: MaterialApp(
     theme: theme,
-    // showAppSnack posts through this key; without it the Undo action in a
-    // move confirmation would never render.
+    // Notification behavior in board actions posts through this key.
     scaffoldMessengerKey: scaffoldMessengerKey,
     home: const Scaffold(body: BoardView()),
   ),
@@ -588,38 +587,7 @@ void main() {
 
       expect(store.noteById('a')!.stageId, 'doing');
       expect(store.noteById('b')!.stageId, 'doing');
-      // The confirmation outlives the test otherwise, and its deferred
-      // post-frame show fires into the next one.
-      scaffoldMessengerKey.currentState?.clearSnackBars();
-      await flushTimers(tester);
-    });
-
-    /// Undo has to put each note back where it personally came from, not into
-    /// one shared previous column.
-    testWidgets('undo returns each note to its own column', (tester) async {
-      await setViewport(tester, const Size(1200, 900));
-      api.notes['a'] = serverNote('a', title: 'card a');
-      api.notes['b'] = serverNote(
-        'b',
-        title: 'card b',
-      ).copyWith(stageId: 'todo');
-      await store.load();
-      await tester.pumpWidget(boardApp(store));
-      await tester.pumpAndSettle();
-
-      MoveToStageSheet.showForNotes(
-        tester.element(find.byType(BoardView)),
-        ['a', 'b'],
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ListTile, 'Doing'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Undo'));
-      await tester.pumpAndSettle();
-      expect(store.noteById('a')!.stageId, isNull);
-      expect(store.noteById('b')!.stageId, 'todo');
-      scaffoldMessengerKey.currentState?.clearSnackBars();
+      expect(find.byType(SnackBar), findsNothing);
       await flushTimers(tester);
     });
   });

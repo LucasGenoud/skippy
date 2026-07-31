@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../api/api_client.dart';
 import '../../state/auth_store.dart';
-import '../../util/snack.dart';
 import '../form_dialog.dart';
 
 enum _AccountField { name, email, password }
@@ -279,7 +278,6 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
       };
       if (!mounted) return;
       Navigator.of(context).pop();
-      showAppSnack('$_title saved', icon: Icons.check_circle_outline);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {

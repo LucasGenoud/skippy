@@ -269,7 +269,6 @@ class _WorkspaceNameDialogState extends State<WorkspaceNameDialog> {
     Navigator.of(context).pop();
     if (existing == null) {
       store.createWorkspace(name);
-      showAppSnack('Switched to "$name"', icon: Icons.workspaces_outlined);
     } else {
       store.renameWorkspace(existing.id, name);
     }
@@ -554,7 +553,6 @@ class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
     store.removeWorkspaceMember(workspace.id, userId);
     if (leaving) {
       Navigator.of(context).pop();
-      showAppSnack('You left "${workspace.name}"', icon: Icons.logout);
     }
   }
 
@@ -721,12 +719,12 @@ class MoveToWorkspaceSheet {
         .where((id) => store.labelById(id)?.workspaceId != target)
         .length;
     store.moveNoteToWorkspace(noteId, target);
-    showAppSnack(
-      droppedLabels == 0
-          ? 'Moved to "${store.workspaceById(target)?.name}"'
-          : 'Moved to "${store.workspaceById(target)?.name}", '
-                '$droppedLabels ${droppedLabels == 1 ? 'label' : 'labels'} removed',
-      icon: Icons.drive_file_move_outlined,
-    );
+    if (droppedLabels > 0) {
+      showAppSnack(
+        '$droppedLabels ${droppedLabels == 1 ? 'label was' : 'labels were'} removed when moving the note',
+        icon: Icons.warning_amber_outlined,
+        kind: SnackKind.warning,
+      );
+    }
   }
 }

@@ -121,7 +121,6 @@ class _ShareDialogState extends State<ShareDialog> {
                         );
                         if (leaving) {
                           Navigator.of(context).pop(true);
-                          showAppSnack('You left the note');
                         }
                       },
                     )

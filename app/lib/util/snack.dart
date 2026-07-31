@@ -13,6 +13,11 @@ enum SnackKind { normal, success, warning, danger }
 
 /// Show a brief, non-blocking notification (a light elevated "toast").
 ///
+/// Reserve these for failures that need attention, destructive changes (and
+/// their Undo affordance), and significant background work. Routine optimistic
+/// actions, such as duplicating, labeling, copying, or moving a note, are
+/// already visible in the interface and should not raise a notification.
+///
 /// Only one is ever on screen: a new call replaces the current one instantly
 /// (no laggy cross-fade, no backlog) so rapid actions, delete, then archive,
 /// then undo, each read cleanly instead of queuing up behind each other.

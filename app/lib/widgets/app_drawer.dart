@@ -322,11 +322,7 @@ class AppSidebar extends StatelessWidget {
 
   void _dropOnLabel(BuildContext context, String noteId, Label label) {
     final store = context.read<NotesStore>();
-    if (store.addLabelToNote(noteId, label.id)) {
-      showAppSnack('Labelled "${label.name}"', icon: labelIcon(label));
-    } else {
-      showAppSnack('Already labelled "${label.name}"', icon: labelIcon(label));
-    }
+    store.addLabelToNote(noteId, label.id);
   }
 
   void _dropOnArchive(BuildContext context, String noteId) {

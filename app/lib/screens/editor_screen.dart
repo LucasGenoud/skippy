@@ -334,7 +334,6 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_closing) return;
     _closing = true;
     if (_noteId == null) {
-      showAppSnack('Empty note discarded');
       return;
     }
     final note = _note;
@@ -348,8 +347,7 @@ class _EditorScreenState extends State<EditorScreen> {
         _store.updateNoteContent(_noteId!, items: pruned);
       }
     }
-    final discarded = _store.finalizeNote(_noteId!);
-    if (discarded) showAppSnack('Empty note discarded');
+    _store.finalizeNote(_noteId!);
   }
 
   void _onTextChanged() {
@@ -545,7 +543,6 @@ class _EditorScreenState extends State<EditorScreen> {
     final note = _note;
     if (note == null || note.isEmpty) return;
     _store.duplicate(note.id);
-    showAppSnack('Note duplicated', icon: Icons.copy_all_outlined);
   }
 
   Future<void> _copyNoteToClipboard() async {
@@ -554,7 +551,6 @@ class _EditorScreenState extends State<EditorScreen> {
     await Clipboard.setData(
       ClipboardData(text: noteToPlainText(note).trimRight()),
     );
-    showAppSnack('Note copied to clipboard', icon: Icons.content_copy_outlined);
   }
 
   Future<void> _rewriteWithAi(NoteRewriteMode mode) async {
@@ -851,11 +847,6 @@ class _EditorScreenState extends State<EditorScreen> {
               onPressed: () {
                 _store.restoreFromTrash(note!.id);
                 Navigator.of(context).pop();
-                showAppSnack(
-                  'Note restored',
-                  icon: Icons.restore_outlined,
-                  kind: SnackKind.success,
-                );
               },
             ),
             IconButton(

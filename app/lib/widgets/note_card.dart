@@ -129,7 +129,6 @@ class _NoteTileState extends State<NoteTile> {
 
   void _duplicate() {
     context.read<NotesStore>().duplicate(widget.note.id);
-    showAppSnack('Note duplicated', icon: Icons.copy_all_outlined);
   }
 
   Future<void> _copyToClipboard() async {
@@ -140,7 +139,6 @@ class _NoteTileState extends State<NoteTile> {
     await Clipboard.setData(
       ClipboardData(text: noteToPlainText(note).trimRight()),
     );
-    showAppSnack('Note copied to clipboard', icon: Icons.content_copy_outlined);
   }
 
   void _delete() {

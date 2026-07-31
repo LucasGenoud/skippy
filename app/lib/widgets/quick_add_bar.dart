@@ -357,11 +357,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   }
 
   void _discard() {
-    final hadContent = _hasContent;
     _reset();
-    if (hadContent) {
-      showAppSnack('Note discarded', icon: Icons.delete_outline);
-    }
   }
 
   /// Convert what has been composed so far to another kind, running the same

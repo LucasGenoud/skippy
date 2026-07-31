@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
-import '../../util/snack.dart';
 import '../form_dialog.dart';
 
 /// Picks the column one or more notes belong in.
@@ -67,14 +66,14 @@ class MoveToStageSheet extends StatelessWidget {
               label: 'Unassigned',
               color: null,
               selected: stageIds.length == 1 && current == null,
-              onTap: () => _move(context, store, null, 'Unassigned'),
+              onTap: () => _move(context, store, null),
             ),
             for (final stage in store.stages)
               _StageOption(
                 label: stage.name,
                 color: PaletteEntry.hexToColor(stage.color),
                 selected: current == stage.id,
-                onTap: () => _move(context, store, stage.id, stage.name),
+                onTap: () => _move(context, store, stage.id),
               ),
             const SizedBox(height: 8),
           ],
@@ -87,35 +86,17 @@ class MoveToStageSheet extends StatelessWidget {
     BuildContext context,
     NotesStore store,
     String? stageId,
-    String name,
   ) {
-    // Snapshot where each note came from so one Undo puts them all back, even
-    // though they may have started in different columns.
-    final before = {
-      for (final id in noteIds)
-        if (store.noteById(id) case final note?) id: note.stageId,
-    };
     Navigator.of(context).pop();
     final moved = [
-      for (final entry in before.entries)
-        if (entry.value != stageId) entry.key,
+      for (final id in noteIds)
+        if (store.noteById(id) case final note? when note.stageId != stageId)
+          id,
     ];
     if (moved.isEmpty) return;
     for (final id in moved) {
       store.setNoteStage(id, stageId);
     }
-    showAppSnack(
-      moved.length == 1
-          ? 'Moved to $name'
-          : '${moved.length} notes moved to $name',
-      icon: Icons.view_kanban_outlined,
-      actionLabel: 'Undo',
-      onAction: () {
-        for (final id in moved) {
-          store.setNoteStage(id, before[id]);
-        }
-      },
-    );
   }
 }
 

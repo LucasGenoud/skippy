@@ -238,12 +238,6 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final note in notes) {
       if (note.pinned != pinned) store.togglePin(note.id);
     }
-    if (notes.isNotEmpty) {
-      showAppSnack(
-        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} ${pinned ? 'pinned' : 'unpinned'}',
-        icon: pinned ? Icons.push_pin_outlined : Icons.push_pin,
-      );
-    }
   }
 
   Future<void> _shareSelected(NotesStore store) => BulkShareDialog.show(
@@ -259,12 +253,6 @@ class _HomeScreenState extends State<HomeScreen> {
       store.setArchived(note.id, archived);
     }
     _cancelSelection();
-    if (notes.isNotEmpty) {
-      showAppSnack(
-        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} ${archived ? 'archived' : 'unarchived'}',
-        icon: archived ? Icons.archive_outlined : Icons.unarchive_outlined,
-      );
-    }
   }
 
   void _restoreSelected(NotesStore store) {
@@ -273,12 +261,6 @@ class _HomeScreenState extends State<HomeScreen> {
       store.restoreFromTrash(note.id);
     }
     _cancelSelection();
-    if (notes.isNotEmpty) {
-      showAppSnack(
-        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} restored',
-        icon: Icons.restore_outlined,
-      );
-    }
   }
 
   void _trashSelected(NotesStore store) {
@@ -295,6 +277,12 @@ class _HomeScreenState extends State<HomeScreen> {
         '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} moved to Trash${skipped > 0 ? '; shared notes were skipped' : ''}',
         icon: Icons.delete_outline,
         kind: SnackKind.danger,
+        actionLabel: 'Undo',
+        onAction: () {
+          for (final note in notes) {
+            store.restoreFromTrash(note.id);
+          }
+        },
       );
     } else if (skipped > 0) {
       showAppSnack(
@@ -377,10 +365,6 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: Icons.error_outline,
         kind: SnackKind.danger,
       );
-    } else if (_selection != ViewSelection.notes && labelIds.isEmpty) {
-      // A note dropped into a label view lands *in* that view, so only the
-      // views that can't hold a new note need the "went to Notes" nudge.
-      showAppSnack('Note created in Notes', icon: Icons.sticky_note_2_outlined);
     }
   }
 
