@@ -12,6 +12,34 @@ import 'login_field_decoration.dart';
 /// account, so hand out a fresh one each time.
 int _nextViewId = 0;
 
+/// Marks the inputs the stylesheet below re-enables selection on.
+const _fieldClass = 'skippy-login-field';
+
+bool _selectionStyleInstalled = false;
+
+/// Flutter's engine puts `user-select: none` on `<body>`, so every element it
+/// hosts inherits it. Setting `user-select: text` on the `<input>` alone is
+/// enough for Blink, but Gecko keeps the field unselectable while an ancestor
+/// still says `none` — so the host `<flt-platform-view>` has to be cleared as
+/// well. Injected once, as a stylesheet rather than inline styles, because the
+/// host element belongs to the engine and is recreated whenever the view is
+/// recomposited.
+void _installSelectionStyle() {
+  if (_selectionStyleInstalled) return;
+  _selectionStyleInstalled = true;
+  final style = web.HTMLStyleElement()
+    ..textContent =
+        '''
+flt-platform-view:has(> input.$_fieldClass),
+input.$_fieldClass {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+}
+''';
+  web.document.head!.append(style);
+}
+
 /// Flutter's autofill hints are not all valid HTML `autocomplete` tokens,
 /// `password` and `newPassword` in particular are `current-password` and
 /// `new-password` in the browser, and anything unrecognized is dropped on the
@@ -99,7 +127,9 @@ class _LoginFieldState extends State<LoginField> {
     super.initState();
     _empty = widget.controller.text.isEmpty;
     _viewType = 'login-field-${_nextViewId++}';
+    _installSelectionStyle();
     _input = web.HTMLInputElement()
+      ..className = _fieldClass
       ..type = widget.obscureText ? 'password' : 'text'
       ..name = widget.fieldName
       ..id = 'skippy-${widget.fieldName}'
@@ -125,14 +155,9 @@ class _LoginFieldState extends State<LoginField> {
       ..padding = '0'
       ..margin = '0'
       ..backgroundColor = 'transparent';
-    // Flutter's web surface disables selection by default for its gesture
-    // layer. This field is a real DOM input, so opt it back into the browser's
-    // native selection and context-menu behavior. Without this, text cannot
-    // be selected in either sign-in or create-account mode.
-    _input.style
-      ..setProperty('user-select', 'text')
-      ..setProperty('-webkit-user-select', 'text')
-      ..setProperty('-webkit-touch-callout', 'default');
+    // Selection itself is re-enabled by [_installSelectionStyle]; this only
+    // restores the long-press callout it also suppresses on touch.
+    _input.style.setProperty('-webkit-touch-callout', 'default');
     _input.style.setProperty('box-sizing', 'border-box');
 
     _onInputJs = ((web.Event _) => _readElement()).toJS;
@@ -215,9 +240,18 @@ class _LoginFieldState extends State<LoginField> {
 
   /// Mirror a focus request made on the Flutter side (`Enter` moving to the
   /// next field, a validation error jumping back) onto the element.
+  ///
+  /// Giving the element up again matters as much as taking it: the browser
+  /// only has one focused node, and Flutter putting focus somewhere else (the
+  /// server dialog, a menu) does not move it off a plain DOM input. Left
+  /// focused, the element keeps swallowing every keystroke meant for whatever
+  /// opened on top of the form.
   void _focusChanged() {
-    if (widget.focusNode.hasFocus && web.document.activeElement != _input) {
-      _input.focus();
+    final focusedElement = web.document.activeElement;
+    if (widget.focusNode.hasFocus) {
+      if (focusedElement != _input) _input.focus();
+    } else if (focusedElement == _input) {
+      _input.blur();
     }
   }
 
