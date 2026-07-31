@@ -1361,38 +1361,62 @@ class _ChecklistRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final canToggle = !note.trashed && (kIsWeb || !isTouchPrimaryPlatform);
+    final textStyle =
+        (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).copyWith(
+          height: 1.35,
+          decoration: item.done ? TextDecoration.lineThrough : null,
+          color: item.done ? scheme.onSurfaceVariant : scheme.onSurface,
+        );
+    final painter = TextPainter(
+      text: TextSpan(text: 'x', style: textStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    );
+    final lineHeight = painter.preferredLineHeight;
+    painter.dispose();
+    // The card's checkbox is visually 18px. Give it a first-line-sized band
+    // and centre it there so larger text and wrapped labels never leave it
+    // stuck at the top of the row.
+    final controlBandHeight = lineHeight > 18 ? lineHeight : 18.0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Enlarge the checkbox hit target without growing the visible icon.
+          // Enlarge the checkbox hit target without growing the visible icon,
+          // while keeping the icon centred on the first text line.
           SizedBox(
             width: 18,
-            height: 18,
-            child: InkWell(
-              onTap: canToggle
-                  ? () => context.read<NotesStore>().toggleChecklistItem(
-                      note.id,
-                      item.id,
-                    )
-                  : null,
-              borderRadius: BorderRadius.circular(kRadius),
-              // Checking an item pops the box and fades the text toward its
-              // done color, instead of both flipping on the same frame.
-              child: AnimatedSwitcher(
-                duration: Motion.fast,
-                switchInCurve: Curves.easeOutBack,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (child, animation) =>
-                    ScaleTransition(scale: animation, child: child),
-                child: Icon(
-                  item.done
-                      ? Icons.check_box_outlined
-                      : Icons.check_box_outline_blank,
-                  key: ValueKey(item.done),
-                  size: 18,
-                  color: scheme.onSurfaceVariant,
+            height: controlBandHeight,
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: InkWell(
+                  onTap: canToggle
+                      ? () => context.read<NotesStore>().toggleChecklistItem(
+                          note.id,
+                          item.id,
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(kRadius),
+                  // Checking an item pops the box and fades the text toward its
+                  // done color, instead of both flipping on the same frame.
+                  child: AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) =>
+                        ScaleTransition(scale: animation, child: child),
+                    child: Icon(
+                      item.done
+                          ? Icons.check_box_outlined
+                          : Icons.check_box_outline_blank,
+                      key: ValueKey(item.done),
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1402,17 +1426,7 @@ class _ChecklistRow extends StatelessWidget {
             child: AnimatedDefaultTextStyle(
               duration: Motion.fast,
               curve: Motion.standard,
-              style:
-                  (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
-                      .copyWith(
-                        height: 1.35,
-                        decoration: item.done
-                            ? TextDecoration.lineThrough
-                            : null,
-                        color: item.done
-                            ? scheme.onSurfaceVariant
-                            : scheme.onSurface,
-                      ),
+              style: textStyle,
               child: Text(
                 item.text,
                 maxLines: 2,

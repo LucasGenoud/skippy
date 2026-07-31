@@ -145,6 +145,51 @@ void main() {
       expect(find.text('Eggs'), findsNothing);
     });
 
+    testWidgets('centres a card checkbox on a wrapped first line', (
+      tester,
+    ) async {
+      const item =
+          'A long checklist item that wraps while text is scaled up for '
+          'accessibility';
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: const [ChecklistItem(id: 'i1', text: item)],
+      );
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(1.8)),
+              child: SizedBox(
+                width: 240,
+                child: NoteTile(note: store.noteById('n1')!),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final text = find.text(item);
+      final textContext = tester.element(text);
+      final painter = TextPainter(
+        text: TextSpan(text: 'x', style: DefaultTextStyle.of(textContext).style),
+        textDirection: Directionality.of(textContext),
+        textScaler: MediaQuery.textScalerOf(textContext),
+      );
+      final lineHeight = painter.preferredLineHeight;
+      painter.dispose();
+      expect(tester.getSize(text).height, greaterThan(lineHeight));
+      expect(
+        tester.getCenter(find.byIcon(Icons.check_box_outline_blank)).dy,
+        closeTo(tester.getTopLeft(text).dy + lineHeight / 2, 1),
+      );
+    });
+
     testWidgets('markdown card renders formatted and clips long content', (
       tester,
     ) async {
