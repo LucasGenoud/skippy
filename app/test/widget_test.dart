@@ -2292,6 +2292,27 @@ void main() {
   });
 
   group('home screen layout', () {
+    testWidgets('desktop grid stays still when its notes fit in the viewport', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'Short note');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      final scrollView = tester.widget<CustomScrollView>(
+        find.byType(CustomScrollView),
+      );
+      expect(scrollView.physics, isNull);
+
+      final scrollable = Scrollable.of(tester.element(find.text('Short note')));
+      expect(scrollable.position.maxScrollExtent, 0);
+      await flushTimers(tester);
+    });
+
     testWidgets('selects multiple masonry notes and applies a label', (
       tester,
     ) async {

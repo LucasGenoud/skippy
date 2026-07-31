@@ -714,8 +714,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                           elevation: 2,
                                           child: CustomScrollView(
                                             controller: _scrollController,
-                                            physics:
-                                                const AlwaysScrollableScrollPhysics(),
+                                            // Phones keep pull-to-refresh
+                                            // available even when the list is
+                                            // short. On desktop, forcing that
+                                            // physics makes a fully visible
+                                            // grid move despite having
+                                            // nowhere to scroll.
+                                            physics: width < 600
+                                                ? const AlwaysScrollableScrollPhysics()
+                                                : null,
                                             slivers: [
                                               const SliverToBoxAdapter(
                                                 child: SizedBox(height: 16),
@@ -887,8 +894,23 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   dragEnabled,
                                                   section: 'others',
                                                 ),
-                                                const SliverToBoxAdapter(
-                                                  child: SizedBox(height: 200),
+                                                // Phones need clearance for
+                                                // their overlaid FAB stack.
+                                                // Desktop keeps only the
+                                                // ordinary bottom gutter; the
+                                                // inline composer is primary
+                                                // there, and a permanent
+                                                // 200px tail made short grids
+                                                // scroll for no visible
+                                                // reason. Fill unused space
+                                                // without extending it.
+                                                SliverFillRemaining(
+                                                  hasScrollBody: false,
+                                                  child: SizedBox(
+                                                    height: width < 600
+                                                        ? 200
+                                                        : 16,
+                                                  ),
                                                 ),
                                               ],
                                             ],
