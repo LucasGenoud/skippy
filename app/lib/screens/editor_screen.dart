@@ -986,7 +986,13 @@ class _EditorScreenState extends State<EditorScreen> {
                                 // Images sit directly under the text; other
                                 // files follow as download tiles.
                                 ..._buildAttachments(note),
-                                // Rich preview cards for any links in the note.
+                                if (note != null &&
+                                    (note.reminderAt != null ||
+                                        labels.isNotEmpty))
+                                  _metaChips(note, settings, labels),
+                                // Rich preview cards for any links in the
+                                // note, kept as the very last thing so they
+                                // always sit below everything else.
                                 if (note != null && _linkText(note).isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 12),
@@ -994,10 +1000,6 @@ class _EditorScreenState extends State<EditorScreen> {
                                       text: _linkText(note),
                                     ),
                                   ),
-                                if (note != null &&
-                                    (note.reminderAt != null ||
-                                        labels.isNotEmpty))
-                                  _metaChips(note, settings, labels),
                               ],
                             ),
                           ),
