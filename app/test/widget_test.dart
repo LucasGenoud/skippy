@@ -145,16 +145,20 @@ void main() {
       expect(find.text('Eggs'), findsNothing);
     });
 
-    testWidgets('centres a card checkbox on a wrapped first line', (
+    testWidgets('optically aligns card checkboxes with the first text line', (
       tester,
     ) async {
-      const item =
+      const shortItem = 'Single line';
+      const wrappedItem =
           'A long checklist item that wraps while text is scaled up for '
           'accessibility';
       api.notes['n1'] = serverNote(
         'n1',
         kind: NoteKind.checklist,
-        items: const [ChecklistItem(id: 'i1', text: item)],
+        items: const [
+          ChecklistItem(id: 'short', text: shortItem),
+          ChecklistItem(id: 'wrapped', text: wrappedItem),
+        ],
       );
       await store.load();
       await tester.pumpWidget(
@@ -174,19 +178,39 @@ void main() {
         ),
       );
 
-      final text = find.text(item);
-      final textContext = tester.element(text);
-      final painter = TextPainter(
-        text: TextSpan(text: 'x', style: DefaultTextStyle.of(textContext).style),
-        textDirection: Directionality.of(textContext),
-        textScaler: MediaQuery.textScalerOf(textContext),
+      double expectFirstLineAlignment(String id, String item) {
+        final row = find.byKey(ValueKey('checklist-card-row-$id'));
+        final text = find.descendant(of: row, matching: find.text(item));
+        final textContext = tester.element(text);
+        final painter = TextPainter(
+          text: TextSpan(
+            text: 'x',
+            style: DefaultTextStyle.of(textContext).style,
+          ),
+          textDirection: Directionality.of(textContext),
+          textScaler: MediaQuery.textScalerOf(textContext),
+        );
+        final lineHeight = painter.preferredLineHeight;
+        painter.dispose();
+        final checkbox = find.descendant(
+          of: row,
+          matching: find.byIcon(Icons.check_box_outline_blank),
+        );
+        expect(
+          tester.getCenter(checkbox).dy,
+          closeTo(tester.getTopLeft(text).dy + lineHeight / 2 - 1.5, 0.25),
+        );
+        return lineHeight;
+      }
+
+      expectFirstLineAlignment('short', shortItem);
+      final wrappedLineHeight = expectFirstLineAlignment(
+        'wrapped',
+        wrappedItem,
       );
-      final lineHeight = painter.preferredLineHeight;
-      painter.dispose();
-      expect(tester.getSize(text).height, greaterThan(lineHeight));
       expect(
-        tester.getCenter(find.byIcon(Icons.check_box_outline_blank)).dy,
-        closeTo(tester.getTopLeft(text).dy + lineHeight / 2, 1),
+        tester.getSize(find.text(wrappedItem)).height,
+        greaterThan(wrappedLineHeight),
       );
     });
 
