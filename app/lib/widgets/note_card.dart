@@ -1353,12 +1353,6 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
 /// checkbox toggles in place; on native mobile it stays inert so the whole
 /// tap opens the editor (avoids accidental checks on a tiny grid target).
 class _ChecklistRow extends StatelessWidget {
-  // A font's line box includes descender and leading space below its visible
-  // glyphs. A mathematically centred icon therefore reads slightly low beside
-  // the text, especially on desktop. Keep the control tied to the first line,
-  // but compensate for that optical imbalance.
-  static const _controlOpticalOffset = -1.5;
-
   final Note note;
   final ChecklistItem item;
   const _ChecklistRow({required this.note, required this.item});
@@ -1396,36 +1390,33 @@ class _ChecklistRow extends StatelessWidget {
             width: 18,
             height: controlBandHeight,
             child: Center(
-              child: Transform.translate(
-                offset: const Offset(0, _controlOpticalOffset),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: InkWell(
-                    onTap: canToggle
-                        ? () => context.read<NotesStore>().toggleChecklistItem(
-                            note.id,
-                            item.id,
-                          )
-                        : null,
-                    borderRadius: BorderRadius.circular(kRadius),
-                    // Checking an item pops the box and fades the text toward
-                    // its done color, instead of both flipping on the same
-                    // frame.
-                    child: AnimatedSwitcher(
-                      duration: Motion.fast,
-                      switchInCurve: Curves.easeOutBack,
-                      switchOutCurve: Curves.easeIn,
-                      transitionBuilder: (child, animation) =>
-                          ScaleTransition(scale: animation, child: child),
-                      child: Icon(
-                        item.done
-                            ? Icons.check_box_outlined
-                            : Icons.check_box_outline_blank,
-                        key: ValueKey(item.done),
-                        size: 18,
-                        color: scheme.onSurfaceVariant,
-                      ),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: InkWell(
+                  onTap: canToggle
+                      ? () => context.read<NotesStore>().toggleChecklistItem(
+                          note.id,
+                          item.id,
+                        )
+                      : null,
+                  borderRadius: BorderRadius.circular(kRadius),
+                  // Checking an item pops the box and fades the text toward
+                  // its done color, instead of both flipping on the same
+                  // frame.
+                  child: AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) =>
+                        ScaleTransition(scale: animation, child: child),
+                    child: Icon(
+                      item.done
+                          ? Icons.check_box_outlined
+                          : Icons.check_box_outline_blank,
+                      key: ValueKey(item.done),
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                 ),

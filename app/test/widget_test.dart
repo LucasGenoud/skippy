@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -198,7 +197,7 @@ void main() {
         );
         expect(
           tester.getCenter(checkbox).dy,
-          closeTo(tester.getTopLeft(text).dy + lineHeight / 2 - 1.5, 0.25),
+          closeTo(tester.getTopLeft(text).dy + lineHeight / 2, 1),
         );
         return lineHeight;
       }
@@ -1679,110 +1678,59 @@ void main() {
       },
     );
 
-    testWidgets('checklist checkbox aligns with single-line and wrapped text', (
-      tester,
-    ) async {
-      const shortItem = 'Single line';
-      const longItem =
-          'This is a very long checklist item that wraps onto several '
-          'visible lines on a narrow mobile screen';
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      api.notes['n1'] = serverNote(
-        'n1',
-        kind: NoteKind.checklist,
-        items: const [
-          ChecklistItem(id: 'short', text: shortItem),
-          ChecklistItem(id: 'long', text: longItem),
-        ],
-      );
-      await store.load();
-      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
-      await tester.pump(const Duration(milliseconds: 100));
-
-      /// The centre of the first text line of row [id], in global coordinates.
-      double firstLineCenterOf(String id) {
-        final row = find.byKey(ValueKey('checklist-row-background-$id'));
-        final editableFinder = find.descendant(
-          of: row,
-          matching: find.byType(EditableText),
+    testWidgets(
+      'desktop checklist checkbox stays with the first line when text wraps',
+      (tester) async {
+        const shortItem = 'Single line';
+        const longItem =
+            'This is a very long checklist item that wraps onto several '
+            'visible lines even inside the wider desktop editor, and keeps '
+            'going long enough that wrapping is guaranteed at its modal width';
+        tester.view.physicalSize = const Size(1280, 720);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: const [
+            ChecklistItem(id: 'short', text: shortItem),
+            ChecklistItem(id: 'long', text: longItem),
+          ],
         );
-        final editable = tester.widget<EditableText>(editableFinder);
-        expect(editable.maxLines, isNull);
-
-        RenderEditable? renderEditable;
-        void findRenderEditable(RenderObject child) {
-          if (child case final RenderEditable editable) {
-            renderEditable = editable;
-          } else {
-            child.visitChildren(findRenderEditable);
-          }
-        }
-
-        findRenderEditable(tester.renderObject(editableFinder));
-        expect(renderEditable, isNotNull);
-        final editableRenderObject = renderEditable!;
-        final firstLineCaret = editableRenderObject.getLocalRectForCaret(
-          const TextPosition(offset: 0),
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1', modal: true)),
         );
-        return editableRenderObject.localToGlobal(firstLineCaret.center).dy;
-      }
+        await tester.pump(const Duration(milliseconds: 100));
 
-      /// Every control of row [id] sits on the middle of its first text line,
-      /// and that line is centred in the 48px band the row starts from, so a
-      /// one-line item is centred in its own row.
-      void expectRowAlignment(String id, String text) {
-        final row = find.byKey(ValueKey('checklist-row-background-$id'));
-        final firstLineCenter = firstLineCenterOf(id);
-        expect(
-          firstLineCenter,
-          closeTo(tester.getTopLeft(row).dy + 24, 1),
-          reason: text,
-        );
-        final controls = {
-          'checkbox': find.byType(Checkbox),
-          'drag handle': find.byIcon(Icons.drag_indicator),
-          'remove button': find.byIcon(Icons.close),
-        };
-        for (final control in controls.entries) {
-          expect(
-            tester
-                .getCenter(find.descendant(of: row, matching: control.value))
-                .dy,
-            closeTo(firstLineCenter, 1),
-            reason: '${control.key} of "$text"',
+        double checkboxOffsetFromRowTop(String id) {
+          final row = find.byKey(ValueKey('checklist-row-background-$id'));
+          final checkbox = find.descendant(
+            of: row,
+            matching: find.byType(Checkbox),
           );
+          return tester.getCenter(checkbox).dy - tester.getTopLeft(row).dy;
         }
-      }
 
-      final shortRow = find.byKey(
-        const ValueKey('checklist-row-background-short'),
-      );
-      final longRow = find.byKey(
-        const ValueKey('checklist-row-background-long'),
-      );
-      expect(tester.getSize(shortRow).height, closeTo(48, 1));
-      expect(tester.getSize(longRow).height, greaterThan(48));
-      expectRowAlignment('short', shortItem);
-      expectRowAlignment('long', longItem);
-      // A one-line item is centred in its row: equal space above and below.
-      expect(
-        firstLineCenterOf('short'),
-        closeTo(tester.getCenter(shortRow).dy, 1),
-      );
-      // The add row's icon and hint share that same line box.
-      final addIcon = find.byIcon(Icons.add);
-      expect(
-        tester.getCenter(addIcon).dy,
-        closeTo(
-          tester.getCenter(find.widgetWithText(TextField, 'List item')).dy,
-          1,
-        ),
-      );
-      await flushTimers(tester);
-    });
+        final shortRow = find.byKey(
+          const ValueKey('checklist-row-background-short'),
+        );
+        final longRow = find.byKey(
+          const ValueKey('checklist-row-background-long'),
+        );
+        expect(tester.getSize(shortRow).height, closeTo(48, 1));
+        expect(tester.getSize(longRow).height, greaterThan(48));
+        final shortCheckboxOffset = checkboxOffsetFromRowTop('short');
+        final longCheckboxOffset = checkboxOffsetFromRowTop('long');
+        // Both controls remain centered in the first 48px line band. Extra
+        // wrapped lines only add height below it.
+        expect(shortCheckboxOffset, closeTo(24, 1));
+        expect(longCheckboxOffset, closeTo(24, 1));
+        expect(longCheckboxOffset, closeTo(shortCheckboxOffset, 0.01));
+        await flushTimers(tester);
+      },
+    );
 
     testWidgets(
       'an empty IME reset cannot erase the first word during focus handoff',

@@ -835,8 +835,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// item is therefore centred in its row, and a wrapped one keeps the same
   /// first line, later lines grow below the controls instead of dragging them
   /// down to the centre of the whole item.
-  ({double bandHeight, double textPadding}) _rowMetrics() {
-    final style = Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
+  ({double bandHeight, double textPadding}) _rowMetrics(TextStyle style) {
     final painter = TextPainter(
       text: TextSpan(text: 'x', style: style),
       textDirection: Directionality.of(context),
@@ -858,7 +857,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   Widget _itemRow(ChecklistItem item, {required bool dragging}) {
     final handles = _handleFor(item);
     final scheme = Theme.of(context).colorScheme;
-    final metrics = _rowMetrics();
+    final textStyle =
+        (Theme.of(context).textTheme.bodyLarge ?? const TextStyle()).copyWith(
+          decoration: item.done ? TextDecoration.lineThrough : null,
+          color: item.done ? scheme.onSurfaceVariant : null,
+        );
+    final metrics = _rowMetrics(textStyle);
     final query = widget.highlightQuery.trim().toLowerCase();
     final matches = query.isNotEmpty && item.text.toLowerCase().contains(query);
     // Touch has no hover: keep affordances visible. Desktop reveals them on
@@ -955,15 +959,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     minLines: 1,
                     maxLines: null,
                     textInputAction: TextInputAction.next,
-                    style: TextStyle(
-                      decoration: item.done ? TextDecoration.lineThrough : null,
-                      color: item.done ? scheme.onSurfaceVariant : null,
-                    ),
+                    style: textStyle,
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       isDense: true,
-                      // Centres the first line on the checkbox, and a one-line
-                      // item in its own row (see [_rowMetrics]).
                       contentPadding: EdgeInsets.symmetric(
                         vertical: metrics.textPadding,
                       ),
@@ -1137,7 +1136,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   Widget _newItemRow() {
     final scheme = Theme.of(context).colorScheme;
-    final metrics = _rowMetrics();
+    final textStyle =
+        Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
+    final metrics = _rowMetrics(textStyle);
     return SizedBox(
       height: metrics.bandHeight,
       child: Row(
@@ -1154,13 +1155,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               child: TextField(
                 controller: _newRow.controller,
                 focusNode: _newRow.focusNode,
+                style: textStyle,
                 // Focus is requested from initState instead, see there.
                 decoration: InputDecoration(
                   hintText: 'List item',
                   border: InputBorder.none,
                   isDense: true,
-                  // Same line box as the item rows, so the hint and the items
-                  // share one baseline grid.
                   contentPadding: EdgeInsets.symmetric(
                     vertical: metrics.textPadding,
                   ),
