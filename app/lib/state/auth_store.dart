@@ -88,6 +88,25 @@ class AuthStore extends ChangeNotifier {
     await setActiveUrl(normalized);
   }
 
+  /// Edit a saved URL in place, preserving its position in the list. Editing
+  /// the active URL updates the live connection too.
+  Future<void> editUrl(String oldUrl, String newUrl) async {
+    final normalized = newUrl.trimRight().replaceAll(RegExp(r'/+$'), '');
+    if (normalized.isEmpty || normalized == oldUrl) return;
+    if (savedUrls.contains(normalized)) return;
+    final index = savedUrls.indexOf(oldUrl);
+    if (index == -1) return;
+    savedUrls[index] = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_urlsKey, savedUrls);
+    if (oldUrl == api.baseUrl) {
+      await _clearSession();
+      api.baseUrl = normalized;
+      await prefs.setString(_activeUrlKey, normalized);
+    }
+    notifyListeners();
+  }
+
   /// Remove a saved URL (cannot remove the currently active one).
   Future<void> removeUrl(String url) async {
     if (url == api.baseUrl || savedUrls.length <= 1) return;

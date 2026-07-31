@@ -107,40 +107,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _showAddUrlDialog() async {
-    final urlController = TextEditingController();
-    final result = await showFormDialog<String>(
-      context,
-      builder: (context) => FormDialog(
-        title: const Text('Add Server'),
-        width: 400,
-        content: TextField(
-          controller: urlController,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(
-            labelText: 'Server URL',
-            hintText: 'http://example.com:8787',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.dns_outlined),
-          ),
-          onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(context).pop(urlController.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    urlController.dispose();
+    final result = await _ServerUrlDialog.show(context);
     if (result != null && result.isNotEmpty && mounted) {
       await context.read<AuthStore>().addUrl(result);
+    }
+  }
+
+  Future<void> _showEditUrlDialog(String url) async {
+    final result = await _ServerUrlDialog.show(context, initial: url);
+    if (result != null && result.isNotEmpty && result != url && mounted) {
+      await context.read<AuthStore>().editUrl(url, result);
     }
   }
 
@@ -393,6 +369,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     savedUrls: auth.savedUrls,
                     onSelected: (url) => auth.setActiveUrl(url),
                     onAdd: _showAddUrlDialog,
+                    onEdit: _showEditUrlDialog,
                     onRemove: (url) => auth.removeUrl(url),
                   ),
                 ],
@@ -435,6 +412,71 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
+/// Adds a new backend URL, or edits a saved one when [initial] is given.
+/// Returns the entered URL, or null when dismissed.
+class _ServerUrlDialog extends StatefulWidget {
+  final String? initial;
+
+  const _ServerUrlDialog({this.initial});
+
+  static Future<String?> show(BuildContext context, {String? initial}) =>
+      showFormDialog<String>(
+        context,
+        builder: (_) => _ServerUrlDialog(initial: initial),
+      );
+
+  @override
+  State<_ServerUrlDialog> createState() => _ServerUrlDialogState();
+}
+
+class _ServerUrlDialogState extends State<_ServerUrlDialog> {
+  late final TextEditingController _url;
+
+  bool get _editing => widget.initial != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _url = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FormDialog(
+      title: Text(_editing ? 'Edit Server' : 'Add Server'),
+      width: 400,
+      content: TextField(
+        controller: _url,
+        autofocus: true,
+        keyboardType: TextInputType.url,
+        decoration: const InputDecoration(
+          labelText: 'Server URL',
+          hintText: 'http://example.com:8787',
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.dns_outlined),
+        ),
+        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_url.text.trim()),
+          child: Text(_editing ? 'Save' : 'Add'),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Backend URL selector widget ──────────────────────────────────────────────
 
 class _BackendUrlSelector extends StatelessWidget {
@@ -442,6 +484,7 @@ class _BackendUrlSelector extends StatelessWidget {
   final List<String> savedUrls;
   final ValueChanged<String> onSelected;
   final VoidCallback onAdd;
+  final ValueChanged<String> onEdit;
   final ValueChanged<String> onRemove;
 
   const _BackendUrlSelector({
@@ -449,6 +492,7 @@ class _BackendUrlSelector extends StatelessWidget {
     required this.savedUrls,
     required this.onSelected,
     required this.onAdd,
+    required this.onEdit,
     required this.onRemove,
   });
 
@@ -500,8 +544,21 @@ class _BackendUrlSelector extends StatelessWidget {
               leadingIcon: url == activeUrl
                   ? Icon(Icons.check, size: 18, color: scheme.primary)
                   : const SizedBox(width: 18),
-              trailingIcon: savedUrls.length > 1 && url != activeUrl
-                  ? IconButton(
+              trailingIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      size: 16,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    onPressed: () => onEdit(url),
+                    tooltip: 'Edit',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  if (savedUrls.length > 1 && url != activeUrl)
+                    IconButton(
                       icon: Icon(
                         Icons.close,
                         size: 16,
@@ -510,8 +567,9 @@ class _BackendUrlSelector extends StatelessWidget {
                       onPressed: () => onRemove(url),
                       tooltip: 'Remove',
                       visualDensity: VisualDensity.compact,
-                    )
-                  : null,
+                    ),
+                ],
+              ),
               onPressed: () => onSelected(url),
               child: Text(
                 _displayUrl(url),

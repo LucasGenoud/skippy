@@ -294,6 +294,62 @@ void main() {
       expect(auth.user, isNull);
     });
   });
+
+  group('backend urls', () {
+    test('editing a saved url keeps its place in the list', () async {
+      SharedPreferences.setMockInitialValues({
+        'sticky_notes_backend_urls': [
+          'http://a.test',
+          'http://b.test',
+          'http://server.test',
+        ],
+      });
+      final auth = storeWith(MockClient((_) async => http.Response('{}', 200)));
+      await auth.loadSavedUrls();
+
+      await auth.editUrl('http://b.test', 'http://renamed.test/');
+
+      // Trailing slashes are normalised away, as they are when adding.
+      expect(auth.savedUrls, [
+        'http://a.test',
+        'http://renamed.test',
+        'http://server.test',
+      ]);
+      // A non-active url was edited, so the connection is untouched.
+      expect(auth.activeUrl, 'http://server.test');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('sticky_notes_backend_urls'), auth.savedUrls);
+    });
+
+    test('editing the active url signs out and switches to it', () async {
+      seedSession();
+      final auth = storeWith(MockClient((_) async => http.Response('{}', 200)));
+      await auth.loadSavedUrls();
+      await auth.restore();
+      expect(auth.status, AuthStatus.signedIn);
+
+      await auth.editUrl('http://server.test', 'http://moved.test');
+
+      expect(auth.activeUrl, 'http://moved.test');
+      expect(auth.savedUrls, ['http://moved.test']);
+      // The session belonged to the old address, so it cannot carry over.
+      expect(auth.status, AuthStatus.signedOut);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('sticky_notes_active_url'), 'http://moved.test');
+    });
+
+    test('editing to an address already saved is refused', () async {
+      SharedPreferences.setMockInitialValues({
+        'sticky_notes_backend_urls': ['http://a.test', 'http://server.test'],
+      });
+      final auth = storeWith(MockClient((_) async => http.Response('{}', 200)));
+      await auth.loadSavedUrls();
+
+      await auth.editUrl('http://a.test', 'http://server.test');
+
+      expect(auth.savedUrls, ['http://a.test', 'http://server.test']);
+    });
+  });
 }
 
 /// Stands in for a transport failure (`SocketException` on mobile) without
