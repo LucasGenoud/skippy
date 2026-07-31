@@ -244,6 +244,11 @@ class _NoteTileState extends State<NoteTile> {
     // its menu triggers MouseRegion.onExit. Keep the footer visible until that
     // menu closes instead of making the controls vanish underneath the cursor.
     final actionsVisible = _hovered || _menuOpen;
+    // Link previews are always the card's true bottom-most content, so the
+    // action row's reserved slot has to float above their combined height.
+    final actionsBottomInset =
+        _NoteCardContent._linkPreviewUrls(note).length *
+        kLinkPreviewStripHeight;
 
     // The selection badge straddles the card's top-left corner, so it hangs
     // outside the card's box: it can't live in the OpenContainer's stack,
@@ -339,6 +344,7 @@ class _NoteTileState extends State<NoteTile> {
                   onRewrite: _rewrite,
                   onMenuOpened: () => setState(() => _menuOpen = true),
                   onMenuClosed: () => setState(() => _menuOpen = false),
+                  bottomInset: actionsBottomInset,
                 ),
               // In selection mode the action icons are gone, so the reserved
               // slot shows the labels for good instead of only at rest.
@@ -346,6 +352,7 @@ class _NoteTileState extends State<NoteTile> {
                 _NoteFooterLabels(
                   note: note,
                   visible: !(desktopActions && actionsVisible),
+                  bottomInset: actionsBottomInset,
                 ),
             ],
           ),
@@ -389,6 +396,20 @@ class _NoteCardContent extends StatelessWidget {
     this.reserveActions = false,
     this.showLabelsInBody = true,
   });
+
+  // Keep repeated links from producing repeated cards, and cap the attached
+  // preview stack so a link-heavy note does not dominate the grid.
+  static List<String> _linkPreviewUrls(Note note) {
+    final matches = findUrls('${note.title}\n${note.content}');
+    final urls = <String>[];
+    for (final match in matches) {
+      if (!urls.contains(match.url)) {
+        urls.add(match.url);
+        if (urls.length == 3) break;
+      }
+    }
+    return urls;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -436,16 +457,7 @@ class _NoteCardContent extends StatelessWidget {
     final visibleFileCount = compactMetadata ? 1 : 2;
     final visibleLabelCount = compactMetadata ? 2 : 3;
 
-    // Keep repeated links from producing repeated cards, and cap the attached
-    // preview stack so a link-heavy note does not dominate the grid.
-    final linkMatches = findUrls('${note.title}\n${note.content}');
-    final linkPreviewUrls = <String>[];
-    for (final match in linkMatches) {
-      if (!linkPreviewUrls.contains(match.url)) {
-        linkPreviewUrls.add(match.url);
-        if (linkPreviewUrls.length == 3) break;
-      }
-    }
+    final linkPreviewUrls = _linkPreviewUrls(note);
     final hasLinkPreviews = linkPreviewUrls.isNotEmpty;
 
     final hasTextBlock =
@@ -667,6 +679,10 @@ class _NoteCardContent extends StatelessWidget {
               ],
             ),
           ),
+        // The action-icon overlay's reserved slot sits above the link
+        // previews, so the previews stay the card's true bottom-most content
+        // (see _NoteActions' matching bottom offset).
+        if (reserveActions) const SizedBox(height: 48),
         // Up to three unique previews form one full-bleed stack attached to
         // the note. Each strip supplies the dividing hairline; only the final
         // one follows the card's bottom corners.
@@ -674,11 +690,10 @@ class _NoteCardContent extends StatelessWidget {
           LinkPreviewCard(
             url: linkPreviewUrls[i],
             topDivider: true,
-            borderRadius: reserveActions || i < linkPreviewUrls.length - 1
+            borderRadius: i < linkPreviewUrls.length - 1
                 ? BorderRadius.zero
                 : const BorderRadius.vertical(bottom: kRadiusCorner),
           ),
-        if (reserveActions) const SizedBox(height: 48),
       ],
     );
   }
@@ -907,6 +922,11 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onMenuOpened;
   final VoidCallback onMenuClosed;
 
+  /// Extra lift above the card's bottom edge, so the reserved slot clears
+  /// any attached link-preview cards instead of floating over them — those
+  /// stay the card's true bottom-most content.
+  final double bottomInset;
+
   const _NoteActions({
     required this.note,
     required this.visible,
@@ -927,6 +947,7 @@ class _NoteActions extends StatelessWidget {
     required this.onRewrite,
     required this.onMenuOpened,
     required this.onMenuClosed,
+    this.bottomInset = 0,
   });
 
   Widget _button({
@@ -954,7 +975,7 @@ class _NoteActions extends StatelessWidget {
     return Positioned(
       left: 8,
       right: 8,
-      bottom: 4,
+      bottom: 4 + bottomInset,
       height: 40,
       child: AnimatedOpacity(
         key: ValueKey('note-actions-${note.id}'),
@@ -1143,7 +1164,12 @@ class _NoteActions extends StatelessWidget {
 class _NoteFooterLabels extends StatelessWidget {
   final Note note;
   final bool visible;
-  const _NoteFooterLabels({required this.note, required this.visible});
+  final double bottomInset;
+  const _NoteFooterLabels({
+    required this.note,
+    required this.visible,
+    this.bottomInset = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1163,7 +1189,7 @@ class _NoteFooterLabels extends StatelessWidget {
     return Positioned(
       left: 16,
       right: 16,
-      bottom: 8,
+      bottom: 8 + bottomInset,
       height: 40,
       child: AnimatedOpacity(
         key: ValueKey('note-footer-labels-${note.id}'),

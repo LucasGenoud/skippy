@@ -49,7 +49,10 @@ class LinkPreviewCard extends StatelessWidget {
   }
 }
 
-const double _stripHeight = 60;
+/// Fixed row height of a single [LinkPreviewCard], exposed so callers that
+/// reserve layout space for a stack of previews (e.g. the note grid's action
+/// row overlay) can compute how much room a given count will take.
+const double kLinkPreviewStripHeight = 60;
 
 class _Strip extends StatelessWidget {
   final String url;
@@ -76,13 +79,13 @@ class _Strip extends StatelessWidget {
     final subtitle = rich ? (preview!.siteName ?? host) : null;
 
     final row = SizedBox(
-      height: _stripHeight,
+      height: kLinkPreviewStripHeight,
       child: Row(
         children: [
           _Thumb(
             image: preview?.image,
             favicon: preview?.favicon,
-            size: _stripHeight,
+            size: kLinkPreviewStripHeight,
           ),
           Expanded(
             child: Padding(
