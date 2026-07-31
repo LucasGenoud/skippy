@@ -180,37 +180,6 @@ enum GridWidth {
   const GridWidth({required this.label, required this.maxWidth});
 }
 
-/// A decorative particle layer drawn behind the notes.
-///
-/// Every effect is deliberately cheap: a few dozen shapes whose positions are
-/// a pure function of elapsed time (see `widgets/particle_field.dart`), so
-/// there is no simulation to step and a skipped frame costs nothing. [none]
-/// is the default, the layer isn't built at all then.
-enum ParticleEffect {
-  none(label: 'None', blurb: 'A plain background'),
-  snow(label: 'Snow', blurb: 'Flakes drifting down'),
-  glitter(label: 'Glitter', blurb: 'Sparkles twinkling in your accent color'),
-  confetti(label: 'Confetti', blurb: 'Paper tumbling in your note colors'),
-  bubbles(label: 'Bubbles', blurb: 'Rings floating up'),
-  fireflies(label: 'Fireflies', blurb: 'Warm lights wandering slowly');
-
-  final String label;
-  final String blurb;
-  const ParticleEffect({required this.label, required this.blurb});
-}
-
-/// How many particles the chosen effect puts on screen, as a multiplier on
-/// each effect's per-area baseline.
-enum ParticleIntensity {
-  subtle(label: 'Sparse', factor: 0.5),
-  medium(label: 'Balanced', factor: 1.0),
-  lively(label: 'Busy', factor: 1.9);
-
-  final String label;
-  final double factor;
-  const ParticleIntensity({required this.label, required this.factor});
-}
-
 /// Per-user preferences, synced to the server as an opaque JSON document so
 /// they follow the user across devices. All reads are safe against missing
 /// or malformed fields (unknown values fall back to defaults).
@@ -224,8 +193,6 @@ class SettingsStore extends ChangeNotifier {
   bool defaultListMode = false;
   GridDensity gridDensity = GridDensity.comfortable;
   GridWidth gridWidth = GridWidth.medium;
-  ParticleEffect particleEffect = ParticleEffect.none;
-  ParticleIntensity particleIntensity = ParticleIntensity.medium;
   List<PaletteEntry> palette = List.of(kDefaultPalette);
   bool loaded = false;
 
@@ -404,12 +371,6 @@ class SettingsStore extends ChangeNotifier {
         GridDensity.comfortable;
     gridWidth =
         GridWidth.values.asNameMap()[json['grid_width']] ?? GridWidth.medium;
-    particleEffect =
-        ParticleEffect.values.asNameMap()[json['particle_effect']] ??
-        ParticleEffect.none;
-    particleIntensity =
-        ParticleIntensity.values.asNameMap()[json['particle_intensity']] ??
-        ParticleIntensity.medium;
     // Feature toggles default ON when absent (they only take effect when the
     // server also advertises the capability).
     semanticSearchEnabled = json['semantic_search'] != false;
@@ -450,8 +411,6 @@ class SettingsStore extends ChangeNotifier {
     'default_view': defaultListMode ? 'list' : 'grid',
     'grid_density': gridDensity.name,
     'grid_width': gridWidth.name,
-    'particle_effect': particleEffect.name,
-    'particle_intensity': particleIntensity.name,
     'semantic_search': semanticSearchEnabled,
     'semantic_ranking': semanticRanking,
     'audio_notes': audioNotesEnabled,
@@ -504,10 +463,6 @@ class SettingsStore extends ChangeNotifier {
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
   void setGridDensity(GridDensity value) => _mutate(() => gridDensity = value);
   void setGridWidth(GridWidth value) => _mutate(() => gridWidth = value);
-  void setParticleEffect(ParticleEffect value) =>
-      _mutate(() => particleEffect = value);
-  void setParticleIntensity(ParticleIntensity value) =>
-      _mutate(() => particleIntensity = value);
   void setSemanticSearchEnabled(bool value) =>
       _mutate(() => semanticSearchEnabled = value);
   void setSemanticRanking(bool value) => _mutate(() => semanticRanking = value);

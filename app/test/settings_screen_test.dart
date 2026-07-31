@@ -12,7 +12,6 @@ import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/util/backup.dart';
-import 'package:skippy/widgets/particle_field.dart';
 import 'package:skippy/widgets/settings/export_section.dart';
 
 import 'fake_api.dart';
@@ -297,36 +296,6 @@ void main() {
     await tester.tap(find.text('Full'));
     await tester.pumpAndSettle();
     expect(settings.gridWidth, GridWidth.full);
-  });
-
-  testWidgets('background effect controls render and update the store', (
-    tester,
-  ) async {
-    final api = FakeApi();
-    final settings = await pumpSettings(tester, api);
-    expect(settings.particleEffect, ParticleEffect.none);
-
-    // Every effect is offered, and the intensity control is present but has
-    // nothing to act on while the layer is off.
-    for (final effect in ParticleEffect.values) {
-      expect(find.text(effect.label), findsOneWidget);
-    }
-    expect(find.byType(ParticleField), findsNothing);
-
-    await tester.ensureVisible(find.text(ParticleEffect.snow.label));
-    await tester.tap(find.text(ParticleEffect.snow.label));
-    // The preview animates forever, so settling is not an option here. One
-    // pump past the settings save debounce leaves no timer behind.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
-    expect(settings.particleEffect, ParticleEffect.snow);
-    expect(find.byType(ParticleField), findsOneWidget);
-
-    await tester.ensureVisible(find.text(ParticleIntensity.subtle.label));
-    await tester.tap(find.text(ParticleIntensity.subtle.label));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
-    expect(settings.particleIntensity, ParticleIntensity.subtle);
   });
 
   testWidgets('date format uses the standard form dropdown', (tester) async {

@@ -151,7 +151,6 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/screens/settings_screen.dart`: settings composition and optional-service probes.
 - `app/lib/screens/chat_screen.dart`: streamed notes chat, citations, and write confirmation/result UI.
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
-- `app/lib/widgets/particle_field.dart`: the decorative background particle layer behind the note views. Purely visual, seeded per effect, positions are a pure function of elapsed time, and it repaints its own boundary at a capped rate instead of rebuilding widgets. Keep new effects inside that shape.
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
 - `app/lib/widgets/note_card.dart`: card rendering for all note types.
 - `app/lib/widgets/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions.
