@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,7 +8,9 @@ import 'api/api_client.dart';
 import 'screens/editor_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/widget_config_screen.dart';
 import 'state/auth_store.dart';
+import 'state/home_widget_bridge.dart';
 import 'state/link_preview_cache.dart';
 import 'state/local_cache.dart';
 import 'state/notes_store.dart';
@@ -14,6 +18,7 @@ import 'state/reminder_scheduler.dart';
 import 'state/settings_store.dart';
 import 'state/share_intake.dart';
 import 'theme.dart';
+import 'util/home_widgets.dart';
 import 'util/local_notifications.dart';
 import 'util/motion.dart';
 import 'util/snack.dart';
@@ -49,6 +54,12 @@ class _SkippyAppState extends State<SkippyApp> {
   /// requests permissions through it while [_reminders] schedules through it.
   late final LocalNotifications _localNotifications = LocalNotifications();
 
+  /// One shared handle on the home-screen widgets: [_widgets] publishes through
+  /// it, and taps on a widget arrive through it here.
+  late final HomeWidgets _homeWidgets = HomeWidgets();
+
+  StreamSubscription<String?>? _widgetTaps;
+
   /// Lets a notification tap push the editor from outside the widget tree
   /// that built it (the tap callback has no BuildContext of its own).
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -61,6 +72,9 @@ class _SkippyAppState extends State<SkippyApp> {
   /// Mirrors the signed-in user's reminders onto this device's alarms.
   ReminderScheduler? _reminders;
 
+  /// Mirrors the signed-in user's notes onto this device's home-screen widgets.
+  HomeWidgetBridge? _widgets;
+
   @override
   void initState() {
     super.initState();
@@ -70,37 +84,85 @@ class _SkippyAppState extends State<SkippyApp> {
     // Set up early (not gated on sign-in) so a tap that launched the app
     // fresh from a terminated state is captured before anything else runs.
     _localNotifications.ensureInitialized();
-    _localNotifications.tappedNoteId.addListener(_openTappedNote);
+    _localNotifications.tappedNoteId.addListener(_onNotificationTap);
+    // Same reasoning for a home-screen widget: the stream only carries taps
+    // that arrive while the app runs, so a cold launch is asked about directly.
+    _widgetTaps = _homeWidgets.tappedNoteIds.listen((noteId) {
+      if (noteId != null) _requestOpenNote(noteId);
+    });
+    _homeWidgets.initialTappedNoteId().then((noteId) {
+      if (noteId != null && mounted) _requestOpenNote(noteId);
+    });
+    // Android only: the launcher opened us to ask which note a newly added
+    // widget should show, and is holding that widget until we answer.
+    _homeWidgets.pendingConfigureWidgetId().then((id) {
+      if (id != null && mounted) setState(() => _configuringWidgetId = id);
+    });
   }
 
-  /// Opens the note a reminder notification was tapped for. The note may not
-  /// have synced onto this device yet (or the store may not exist yet, on a
-  /// cold start still restoring auth); either way this keeps retrying against
-  /// the store rather than dropping the tap.
-  void _openTappedNote() {
+  /// The widget the launcher is waiting for us to configure, if any.
+  int? _configuringWidgetId;
+
+  void _onNotificationTap() {
     final noteId = _localNotifications.tappedNoteId.value;
+    if (noteId != null) _requestOpenNote(noteId);
+  }
+
+  /// A note that something outside the widget tree asked to open: a tapped
+  /// reminder notification, or a tapped home-screen widget. Held until the
+  /// store actually has it.
+  String? _pendingOpenNoteId;
+
+  /// The listener waiting for [_pendingOpenNoteId] to arrive in the store, kept
+  /// so a second tap replaces it rather than stacking another one.
+  VoidCallback? _openRetry;
+
+  void _requestOpenNote(String noteId) {
+    _pendingOpenNoteId = noteId;
+    _openPendingNote();
+  }
+
+  /// Opens the pending note. It may not have synced onto this device yet (or
+  /// the store may not exist yet, on a cold start still restoring auth); either
+  /// way this keeps waiting on the store rather than dropping the tap.
+  void _openPendingNote() {
+    final noteId = _pendingOpenNoteId;
     final store = _store;
     if (noteId == null || store == null) return;
     if (store.noteById(noteId) == null) {
+      _cancelOpenRetry(store);
       void retry() {
         // Superseded by a newer tap, or already consumed some other way.
-        if (_localNotifications.tappedNoteId.value != noteId) {
-          store.removeListener(retry);
+        if (_pendingOpenNoteId != noteId) {
+          _cancelOpenRetry(store);
           return;
         }
         if (store.noteById(noteId) != null) {
-          store.removeListener(retry);
-          _openTappedNote();
+          _cancelOpenRetry(store);
+          _openPendingNote();
         }
       }
 
+      _openRetry = retry;
       store.addListener(retry);
       return;
     }
-    _localNotifications.tappedNoteId.value = null;
+    _cancelOpenRetry(store);
+    _pendingOpenNoteId = null;
+    // Consume the notification tap too, so it can't replay on the next pass.
+    if (_localNotifications.tappedNoteId.value == noteId) {
+      _localNotifications.tappedNoteId.value = null;
+    }
     _navigatorKey.currentState?.push(
       MaterialPageRoute(builder: (_) => EditorScreen(noteId: noteId)),
     );
+  }
+
+  void _cancelOpenRetry(NotesStore store) {
+    final retry = _openRetry;
+    if (retry == null) return;
+    store.removeListener(retry);
+    _openRetry = null;
   }
 
   void _onAuthChanged() {
@@ -132,20 +194,34 @@ class _SkippyAppState extends State<SkippyApp> {
               platform: _localNotifications,
             )
             ..start();
+      _widgets =
+          HomeWidgetBridge(
+              notes: _store!,
+              settings: settings,
+              api: _api,
+              platform: _homeWidgets,
+            )
+            ..start();
       _shareIntake.setStore(_store);
       setState(() {});
       // A cold start can finish auth restore after the launch-notification
       // check already ran, so re-check now that the store exists.
-      _openTappedNote();
+      _openPendingNote();
     } else if (!signedIn && _store != null) {
+      _cancelOpenRetry(_store!);
+      _pendingOpenNoteId = null;
       _store!.dispose();
       _settings?.dispose();
-      // Drop this account's alarms before forgetting whose they were.
+      // Drop this account's alarms and home-screen widgets before forgetting
+      // whose they were: either would otherwise keep showing their notes.
       _reminders?.clear();
       _reminders?.dispose();
+      _widgets?.clear();
+      _widgets?.dispose();
       _store = null;
       _settings = null;
       _reminders = null;
+      _widgets = null;
       _linkPreviews = null;
       _shareIntake.setStore(null);
       setState(() {});
@@ -155,11 +231,13 @@ class _SkippyAppState extends State<SkippyApp> {
   @override
   void dispose() {
     _auth.removeListener(_onAuthChanged);
-    _localNotifications.tappedNoteId.removeListener(_openTappedNote);
+    _localNotifications.tappedNoteId.removeListener(_onNotificationTap);
+    _widgetTaps?.cancel();
     _shareIntake.dispose();
     _store?.dispose();
     _settings?.dispose();
     _reminders?.dispose();
+    _widgets?.dispose();
     _auth.dispose();
     super.dispose();
   }
@@ -206,6 +284,9 @@ class _SkippyAppState extends State<SkippyApp> {
                 // Time, permissions and the device's timezone can all have moved
                 // while we were away; re-arm against what the OS actually holds.
                 _reminders?.reconcile();
+                // A widget may have been ticked while we were away, and it is
+                // holding that tick for us.
+                _widgets?.syncNow();
               },
               child: child ?? const SizedBox.shrink(),
             ),
@@ -230,6 +311,7 @@ class _SkippyAppState extends State<SkippyApp> {
           home: Consumer<AuthStore>(
             builder: (context, auth, _) {
               final store = _store;
+              final configuring = _configuringWidgetId;
               return AnimatedSwitcher(
                 duration: Motion.slow,
                 switchInCurve: Motion.standard,
@@ -243,6 +325,13 @@ class _SkippyAppState extends State<SkippyApp> {
                     store == null
                         ? const Scaffold(
                             body: Center(child: CircularProgressIndicator()),
+                          )
+                        // Answering the launcher takes precedence over the
+                        // grid: it is holding a half-created widget until we do.
+                        : configuring != null
+                        ? WidgetConfigScreen(
+                            widgetId: configuring,
+                            widgets: _homeWidgets,
                           )
                         : HomeScreen(
                             key: ValueKey(

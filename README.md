@@ -62,6 +62,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Web drag-and-drop and file picking; native file/image pickers on mobile
 - Adaptive overlays: input-heavy editors use full-screen pages on phones and compact dialogs on web; quick choices use phone bottom sheets and centered web surfaces.
 - Android/iOS share-sheet intake turns shared text/links into text notes and shared files into attachment notes
+- **Home-screen widgets** pin a note to the phone home screen: tap to open it, or **tick checklist items straight from the widget** without opening the app. Ticks apply instantly (offline included), sync to the server in the background, and are queued and replayed by the app if that fails. See [Home-screen widgets](#home-screen-widgets).
 - Offline startup from a per-user local cache, with pending writes persisted and replayed after connectivity returns
 
 **Out of scope:** drawings/handwriting, OCR, calendar synchronization, and CRDT-style conflict-free collaborative editing.
@@ -82,6 +83,47 @@ Web/desktop. Press **`?`** on the notes screen for the in-app cheat sheet (also 
 | `Ctrl`/`⌘` `Z` · `Shift` + `Ctrl`/`⌘` `Z` | Editor | Undo · redo |
 | `Esc` | Editor (modal) | Close and save |
 | `Esc` | Quick add | Save and close |
+
+## Home-screen widgets
+
+Pin any note to the phone home screen. Tapping the widget opens that note in the
+app; on a checklist, the items can be ticked without opening the app at all.
+
+**Adding one**
+
+- **Android** — the editor's ⋮ menu → *Add to Home Screen* asks the launcher to
+  place a widget, then opens a picker for the note. You can also add it from the
+  launcher's widget tray, which opens the same picker.
+- **iOS** — iOS gives apps no API to place a widget, so this is the system
+  gesture: touch and hold the Home Screen → **+** → *Skippy* → pick a size, then
+  touch and hold the new widget → *Edit Widget* → choose the note. The editor's
+  ⋮ menu shows these steps.
+
+**What differs between the platforms**
+
+WidgetKit has no scroll view at any widget size, so a long checklist cannot
+scroll on iOS. Both platforms publish **pending items first**; iOS shows as many
+as the widget size fits and adds a `+N more` footer that opens the note, while
+**Android widgets do scroll** and show the whole list.
+
+Interactive ticking needs **iOS 17+** (`AppIntent`-backed buttons); below that
+the widget still renders and still opens the note. The app itself supports
+iOS 14+.
+
+**How a tick reaches the server**
+
+The widget writes to shared storage the app publishes into (an App Group on
+iOS, private `SharedPreferences` on Android). A tick flips the item there
+immediately, so the widget responds instantly and correctly with no network,
+then queues the change and pushes it to `PATCH /api/notes/{id}` from the widget
+process. Anything that fails to send stays queued and is replayed by the app on
+its next launch, through the same optimistic path as an edit made in the app.
+The bearer token is mirrored into that shared storage for this, and is cleared
+on sign-out.
+
+Only recently-edited notes are published (60, trimmed to 40 items each). A
+widget showing a note outside that window records that it still needs it, and
+the app keeps publishing it.
 
 ## Architecture
 

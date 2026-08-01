@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rounded card behind the widget. Tinted with the note's own colour on
+     API 31+ (see SkippyWidgetProvider.applyColor), which is why the fill is a
+     solid colour rather than a gradient: a tint would flatten it anyway. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_background" />
+    <corners android:radius="16dp" />
+</shape>

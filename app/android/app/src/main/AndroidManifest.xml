@@ -55,7 +55,38 @@
                 <data android:mimeType="video/*"/>
                 <data android:mimeType="application/*"/>
             </intent-filter>
+            <!-- Home-screen widget setup: the launcher opens the app to pick
+                 which note a new widget shows, so the picker is a Flutter
+                 screen rather than a separate native one. -->
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <!-- Tapping a widget opens the note it shows. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="skippy" android:host="note"/>
+            </intent-filter>
         </activity>
+
+        <!-- Home-screen widget: the provider draws the note and handles ticks,
+             the service supplies the scrollable checklist rows. -->
+        <receiver
+            android:name=".SkippyWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/skippy_widget_info"/>
+        </receiver>
+        <service
+            android:name=".SkippyWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false"/>
         <!-- On-device reminders: the first receiver posts a scheduled
              notification when its alarm fires, the second re-arms every pending
              alarm after a reboot or an app update, which Android otherwise

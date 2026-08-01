@@ -17,12 +17,14 @@ import '../models/note.dart';
 import '../state/editor_history.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
+import '../util/home_widgets.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/note_export.dart';
 import '../util/snack.dart';
+import '../util/widget_payload.dart';
 import 'history_screen.dart';
 import '../widgets/animated_checklist.dart';
 import '../widgets/audio_player.dart';
@@ -550,6 +552,40 @@ class _EditorScreenState extends State<EditorScreen> {
     if (note == null || note.isEmpty) return;
     await Clipboard.setData(
       ClipboardData(text: noteToPlainText(note).trimRight()),
+    );
+  }
+
+  /// Put this note on the device home screen.
+  ///
+  /// Only Android can place a widget for the user (`requestPinAppWidget`);
+  /// iOS gives apps no such API at all, so there the honest thing is to explain
+  /// where the control lives rather than pretend to do it.
+  Future<void> _addToHomeScreen() async {
+    // A draft has no id to hand a widget, and an unsaved edit would leave the
+    // widget showing yesterday's text. Both are fixed by materializing first.
+    _ensureNote();
+    final note = _note;
+    if (note == null) return;
+    _store.updateNoteContent(
+      note.id,
+      title: _titleController.text,
+      content: _contentController.text,
+    );
+
+    final widgets = HomeWidgets();
+    if (await widgets.canPin()) {
+      // The launcher opens the widget's configuration screen next; this is the
+      // note it should offer first.
+      await widgets.setPreselectedNote(note.id);
+      await widgets.requestPin();
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _AddToHomeScreenHelp(
+        noteTitle: widgetDisplayTitle(note),
+      ),
     );
   }
 
@@ -1095,6 +1131,12 @@ class _EditorScreenState extends State<EditorScreen> {
                                 ? null
                                 : () =>
                                       NoteHistoryScreen.open(context, note.id),
+                            // A trashed note must not be pinnable: the widget
+                            // would outlive the note itself.
+                            onAddToHomeScreen:
+                                HomeWidgets.supported && !trashed
+                                ? _addToHomeScreen
+                                : null,
                             onConvert: trashed ? null : _convertKind,
                             onRewrite:
                                 trashed ||
@@ -1388,5 +1430,95 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       for (final file in pendingFiles) UploadingAttachmentTile(file: file),
     ];
+  }
+}
+
+/// How to add a widget where the app cannot do it itself.
+///
+/// iOS exposes no API for placing a widget, so this walks through the system
+/// gesture instead. Naming the note in the last step matters: the widget's own
+/// picker is where the note is actually chosen, and it is not obvious that the
+/// choice happens there rather than here.
+class _AddToHomeScreenHelp extends StatelessWidget {
+  const _AddToHomeScreenHelp({required this.noteTitle});
+
+  final String noteTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const steps = [
+      'Touch and hold an empty area of your Home Screen.',
+      'Tap the + button in the corner.',
+      'Search for Skippy and pick a widget size.',
+    ];
+    return AlertDialog(
+      icon: const Icon(Icons.widgets_outlined),
+      title: const Text('Add a Skippy widget'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < steps.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _Step(number: i + 1, text: steps[i]),
+            ),
+          _Step(
+            number: steps.length + 1,
+            text: 'Touch and hold the new widget, tap Edit Widget, '
+                'then choose "$noteTitle".',
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Checklist items can be ticked straight from the widget.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Got it'),
+        ),
+      ],
+    );
+  }
+}
+
+class _Step extends StatelessWidget {
+  const _Step({required this.number, required this.text});
+
+  final int number;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.secondaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            '$number',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSecondaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
+      ],
+    );
   }
 }

@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+
+    <!-- Home-screen widget. The background here is only the fallback: a
+         coloured note paints its own palette colour over it at build time. -->
+    <color name="widget_background">#FFFFFF</color>
+    <color name="widget_text">#1F1F1F</color>
+    <color name="widget_text_secondary">#5F6368</color>
 </resources>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  `android:configure` points at MainActivity: the note picker is a Flutter
+  screen, reached through home_widget's configuration flow, so the picker looks
+  like the rest of the app and reads the same published index.
+
+  updatePeriodMillis is 0 on purpose. Everything the widget shows comes from
+  shared storage, and both writers (the app publishing, a tick) refresh it
+  explicitly, so there is nothing for a polling wake-up to discover.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="3"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/skippy_widget"
+    android:previewLayout="@layout/skippy_widget"
+    android:previewImage="@mipmap/ic_launcher"
+    android:configure="com.lucasgenoud.skippy.MainActivity"
+    android:description="@string/widget_description"
+    android:updatePeriodMillis="0" />

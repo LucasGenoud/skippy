@@ -34,6 +34,10 @@ class EditorBottomBar extends StatelessWidget {
   final VoidCallback? onMoveToStage;
   final VoidCallback? onCopyToClipboard;
   final VoidCallback? onHistory;
+
+  /// Put this note on the device home screen. Null where widgets don't exist
+  /// (web, desktop), so the row simply isn't offered there.
+  final VoidCallback? onAddToHomeScreen;
   final void Function(NoteKind target)? onConvert;
   final ValueChanged<NoteRewriteMode>? onRewrite;
   final bool rewriting;
@@ -60,6 +64,7 @@ class EditorBottomBar extends StatelessWidget {
     this.onMoveToStage,
     this.onCopyToClipboard,
     this.onHistory,
+    this.onAddToHomeScreen,
     this.onConvert,
     this.onRewrite,
     this.rewriting = false,
@@ -136,6 +141,7 @@ class EditorBottomBar extends StatelessWidget {
       if (value == 'stage') onMoveToStage?.call();
       if (value == 'clipboard') onCopyToClipboard?.call();
       if (value == 'history') onHistory?.call();
+      if (value == 'homescreen') onAddToHomeScreen?.call();
       if (value == 'concise') onRewrite?.call(NoteRewriteMode.concise);
       if (value == 'grammar') onRewrite?.call(NoteRewriteMode.grammar);
       for (final target in NoteKind.values) {
@@ -306,6 +312,14 @@ class EditorBottomBar extends StatelessWidget {
                     label: 'Version history',
                     enabled: onHistory != null,
                   ),
+                  // Only where the device has a home screen to put it on.
+                  if (onAddToHomeScreen != null)
+                    _menuItem(
+                      value: 'homescreen',
+                      icon: Icons.widgets_outlined,
+                      label: 'Add to Home Screen',
+                      enabled: true,
+                    ),
                   _menuItem(
                     value: 'clipboard',
                     icon: Icons.content_copy_outlined,

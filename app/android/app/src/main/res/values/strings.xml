@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_name">Note</string>
+    <string name="widget_description">Keep a note on your Home Screen. Checklists can be ticked here.</string>
+    <string name="widget_toggle_item">Toggle item</string>
+</resources>

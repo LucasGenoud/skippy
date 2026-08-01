@@ -281,6 +281,14 @@ class NotesStore extends ChangeNotifier {
       if (note.reminderAt != null) note,
   ];
 
+  /// Notes that may be put on the home screen.
+  ///
+  /// Every note this device holds, workspace ownership included rather than
+  /// filtered: a list shared with you (the household groceries) is exactly what
+  /// a widget is for. Trashed notes are dropped by the payload builder, which
+  /// also owns the ordering and the caps.
+  List<Note> get notesForWidgets => List.unmodifiable(_notes);
+
   /// Non-trashed notes in every owned workspace, in workspace/grid order.
   List<Note> get notesForExport {
     final owned = _ownedWorkspaceIds;
@@ -1170,17 +1178,40 @@ class NotesStore extends ChangeNotifier {
     },
   );
 
+  ChecklistItem? _itemById(String noteId, String itemId) {
+    final note = noteById(noteId);
+    if (note == null) return null;
+    for (final item in note.items) {
+      if (item.id == itemId) return item;
+    }
+    return null;
+  }
+
   /// Toggle a checklist box (works from the card without opening the note).
   void toggleChecklistItem(String noteId, String itemId) {
+    final item = _itemById(noteId, itemId);
+    if (item == null) return;
+    setChecklistItemDone(noteId, itemId, !item.done);
+  }
+
+  /// Set a checklist box to an absolute state.
+  ///
+  /// Absolute rather than a flip so replaying a tick made somewhere else (a
+  /// home-screen widget, queued while the app was closed) is idempotent: the
+  /// same op applied twice, or applied after the server already took it, still
+  /// lands on the value the user chose. A no-op when nothing changes, so a
+  /// replay costs neither a rebuild nor a redundant patch.
+  void setChecklistItemDone(String noteId, String itemId, bool done) {
     final note = noteById(noteId);
     if (note == null) return;
+    final current = _itemById(noteId, itemId);
+    if (current == null || current.done == done) return;
     final items = [
       for (final item in note.items)
-        item.id == itemId ? item.copyWith(done: !item.done) : item,
+        item.id == itemId ? item.copyWith(done: done) : item,
     ];
     // Keep the local suggestion dictionary warm; the server records it too.
-    final toggled = items.firstWhere((i) => i.id == itemId);
-    if (toggled.done) rememberCheckedText(noteId, toggled.text);
+    if (done) rememberCheckedText(noteId, current.text);
     updateNoteContent(noteId, items: items);
   }
 

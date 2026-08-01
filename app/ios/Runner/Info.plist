@@ -14,6 +14,16 @@
 				<string>ShareMedia-$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.lucasgenoud.skippy.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>skippy</string>
+			</array>
+		</dict>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>

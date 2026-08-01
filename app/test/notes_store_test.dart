@@ -409,6 +409,44 @@ void main() {
     );
   });
 
+  group('setChecklistItemDone', () {
+    test('is idempotent, so a replayed widget tick costs nothing', () async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [const ChecklistItem(id: 'i1', text: 'Milk')],
+      );
+      await store.load();
+
+      store.setChecklistItemDone('n1', 'i1', true);
+      await settle();
+      final afterFirst = store.noteById('n1')!.updatedAt;
+      final patches = api.log.where((l) => l.startsWith('patchNote')).length;
+
+      // Same absolute value again: no edit, no rebuild, no second patch.
+      store.setChecklistItemDone('n1', 'i1', true);
+      await settle();
+      expect(store.noteById('n1')!.items.single.done, isTrue);
+      expect(store.noteById('n1')!.updatedAt, afterFirst);
+      expect(api.log.where((l) => l.startsWith('patchNote')).length, patches);
+    });
+
+    test('ignores an unknown note or item', () async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [const ChecklistItem(id: 'i1', text: 'Milk')],
+      );
+      await store.load();
+
+      store.setChecklistItemDone('nope', 'i1', true);
+      store.setChecklistItemDone('n1', 'nope', true);
+      await settle();
+
+      expect(store.noteById('n1')!.items.single.done, isFalse);
+    });
+  });
+
   group('checklist history & suggestions', () {
     test('checking an item feeds local suggestions immediately', () async {
       api.notes['n1'] = serverNote(
