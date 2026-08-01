@@ -24,7 +24,8 @@ use serde::Serialize;
 
 /// Metadata extracted from a page, mirrored by the Flutter `LinkPreview` model.
 /// Every field except `url` is optional, a bare link still yields a card with
-/// the host as its title.
+/// the host as its title. Raster preview images are inlined when small enough,
+/// which lets Flutter web render them without a cross-origin image request.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LinkPreview {
     pub url: String,
@@ -103,6 +104,16 @@ pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkP
     if is_verification_preview(&preview) {
         preview =
             reddit_permalink_preview(&parsed).unwrap_or_else(|| LinkPreview::host_only(&parsed));
+    }
+    // Open Graph images are usually hosted on a CDN without CORS headers.
+    // Inline a thumbnail-sized image so Flutter web doesn't drop down to the
+    // favicon even though the page supplied a preview image.
+    if let Some(image) = preview.image.take() {
+        preview.image = Some(
+            inline_raster_image(&image, allow_private, MAX_PREVIEW_IMAGE_BYTES)
+                .await
+                .unwrap_or(image),
+        );
     }
     // Inline the favicon as a `data:` URI. Flutter web (CanvasKit) can't render
     // a cross-origin favicon fetched by `Image.network`, favicon servers don't
@@ -199,22 +210,34 @@ fn hex_value(byte: u8) -> Option<u8> {
 /// inlining into the (cached, JSON) preview.
 const MAX_FAVICON_BYTES: usize = 256 * 1024;
 
-/// Fetch `url` and return it as a `data:` URI when it's a raster image Flutter
-/// can decode everywhere. Returns `None` on any failure or for formats Flutter
-/// can't decode (`.ico`, SVG) so the caller falls back to the absolute URL.
-async fn inline_favicon(url: &str, allow_private: bool) -> Option<String> {
+/// Preview cards only show a 60 px thumbnail, so downloading or retaining a
+/// multi-megabyte Open Graph image is wasteful. This bound still covers the
+/// small social-card thumbnails sites normally provide.
+const MAX_PREVIEW_IMAGE_BYTES: usize = 256 * 1024;
+
+/// Fetch a raster image and return it as a `data:` URI. Unlike the page itself,
+/// image hosts often omit CORS headers; inlining makes the thumbnail work in
+/// Flutter web as well as on mobile. `None` leaves the original URL in place,
+/// preserving the existing best-effort direct load for large or unsupported
+/// images.
+async fn inline_raster_image(url: &str, allow_private: bool, cap: usize) -> Option<String> {
     if url.starts_with("data:") {
         return Some(url.to_string());
     }
     let parsed = validate_public_http_url(url, allow_private).await.ok()?;
-    let (content_type, bytes) = fetch_bytes(&parsed, allow_private, MAX_FAVICON_BYTES)
-        .await
-        .ok()?;
+    let (content_type, bytes) = fetch_bytes(&parsed, allow_private, cap).await.ok()?;
     if bytes.is_empty() {
         return None;
     }
     let mime = decodable_image_mime(&content_type, &bytes)?;
     Some(format!("data:{mime};base64,{}", base64_encode(&bytes)))
+}
+
+/// Fetch `url` and return it as a `data:` URI when it's a raster image Flutter
+/// can decode everywhere. Returns `None` on any failure or for formats Flutter
+/// can't decode (`.ico`, SVG) so the caller falls back to the absolute URL.
+async fn inline_favicon(url: &str, allow_private: bool) -> Option<String> {
+    inline_raster_image(url, allow_private, MAX_FAVICON_BYTES).await
 }
 
 /// Map a response `content-type` (falling back to magic-byte sniffing) to a MIME
@@ -950,9 +973,10 @@ mod tests {
         assert_eq!(decodable_image_mime("image/svg+xml", b"<svg/>"), None);
     }
 
-    /// Minimal HTTP/1.1 server: serves `page_html` at `/` and `favicon_bytes`
-    /// (as image/png) at `/fav.png`. Returns its base URL. Handles one request
-    /// per connection, enough connections for a full unfurl (page + favicon).
+    /// Minimal HTTP/1.1 server: serves `page_html` at `/` and `image_bytes`
+    /// (as image/png) at `/fav.png` or `/cover.png`. Returns its base URL.
+    /// Handles one request per connection, enough connections for a full
+    /// unfurl (page + thumbnail + favicon).
     async fn serve_page(page_html: String, favicon_bytes: Vec<u8>) -> String {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -967,8 +991,9 @@ mod tests {
                     let mut buf = [0u8; 1024];
                     let n = sock.read(&mut buf).await.unwrap_or(0);
                     let req = String::from_utf8_lossy(&buf[..n]);
-                    let wants_favicon = req.starts_with("GET /fav.png");
-                    let (ctype, body) = if wants_favicon {
+                    let wants_image =
+                        req.starts_with("GET /fav.png") || req.starts_with("GET /cover.png");
+                    let (ctype, body) = if wants_image {
                         ("image/png".to_string(), fav)
                     } else {
                         ("text/html; charset=utf-8".to_string(), html.into_bytes())
@@ -1000,6 +1025,21 @@ mod tests {
         assert_eq!(
             fav,
             format!("data:image/png;base64,{}", base64_encode(&png))
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_inlines_a_png_open_graph_image_as_data_uri() {
+        // Like a favicon, an OG image needs to become same-origin data for
+        // Flutter web; otherwise a CDN that omits CORS headers becomes a globe.
+        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 5, 6, 7, 8];
+        let html = r#"<html><head><title>T</title><meta property="og:image" content="/cover.png"></head></html>"#;
+        let base = serve_page(html.to_string(), png.to_vec()).await;
+
+        let p = preview_for(&base, true).await.unwrap();
+        assert_eq!(
+            p.image,
+            Some(format!("data:image/png;base64,{}", base64_encode(&png)))
         );
     }
 

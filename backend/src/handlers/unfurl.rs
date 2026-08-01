@@ -16,9 +16,9 @@ use crate::unfurl::{self, LinkPreview};
 
 /// How long a cached preview stays fresh.
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
-/// Soft cap on cache size; cleared wholesale when exceeded (previews are cheap
-/// to rebuild and this only bounds memory).
-const CACHE_CAP: usize = 512;
+/// Soft cap on cache size; cleared wholesale when exceeded. Preview images can
+/// be inlined for CORS-safe display, so this deliberately bounds memory too.
+const CACHE_CAP: usize = 128;
 
 #[derive(Deserialize)]
 pub struct UnfurlQuery {

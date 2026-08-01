@@ -170,17 +170,16 @@ class _Strip extends StatelessWidget {
   }
 }
 
-/// An [ImageProvider] for a favicon. The server inlines small raster favicons
-/// as `data:` URIs (so Flutter web can render them, a cross-origin favicon
-/// fetched by `Image.network` is CORS-tainted on CanvasKit and fails). Those
-/// must be decoded to bytes: mobile's `NetworkImage` can't fetch the `data:`
-/// scheme. Anything else is a plain absolute URL. Returns null when unusable.
-ImageProvider? _faviconProvider(String favicon) {
-  if (!favicon.startsWith('data:')) return NetworkImage(favicon);
-  final comma = favicon.indexOf(',');
+/// An [ImageProvider] for a preview image or favicon. The server inlines small
+/// raster images as `data:` URIs because a cross-origin [NetworkImage] can be
+/// CORS-tainted on Flutter web. Mobile's [NetworkImage] cannot load that
+/// scheme, so data URIs are decoded directly.
+ImageProvider? _previewImageProvider(String imageUrl) {
+  if (!imageUrl.startsWith('data:')) return NetworkImage(imageUrl);
+  final comma = imageUrl.indexOf(',');
   if (comma < 0) return null;
-  final isBase64 = favicon.substring(5, comma).contains(';base64');
-  final payload = favicon.substring(comma + 1);
+  final isBase64 = imageUrl.substring(5, comma).contains(';base64');
+  final payload = imageUrl.substring(comma + 1);
   try {
     final bytes = isBase64
         ? base64Decode(payload)
@@ -209,11 +208,13 @@ class _Thumb extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final tile = scheme.onSurface.withValues(alpha: 0.06);
     if (image != null && image!.isNotEmpty) {
+      final provider = _previewImageProvider(image!);
+      if (provider == null) return _faviconTile(context, tile, favicon, size);
       return SizedBox(
         width: size,
         height: size,
-        child: Image.network(
-          image!,
+        child: Image(
+          image: provider,
           fit: BoxFit.cover,
           gaplessPlayback: true,
           loadingBuilder: (context, child, progress) =>
@@ -235,7 +236,7 @@ class _Thumb extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final globe = Icon(Icons.public, size: 22, color: scheme.onSurfaceVariant);
     final provider = (favicon != null && favicon.isNotEmpty)
-        ? _faviconProvider(favicon)
+        ? _previewImageProvider(favicon)
         : null;
     return Container(
       width: size,

@@ -118,6 +118,28 @@ void main() {
       expect(find.byIcon(Icons.public), findsNothing);
     });
 
+    testWidgets('renders an inlined data: Open Graph image via MemoryImage', (
+      tester,
+    ) async {
+      const dataUri =
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFc'
+          'SJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      final api = FakeApi();
+      api.previews['https://example.com/article'] = const LinkPreview(
+        url: 'https://example.com/article',
+        title: 'Example article',
+        image: dataUri,
+      );
+      await tester.pumpWidget(
+        harness(api, const LinkPreviewCard(url: 'https://example.com/article')),
+      );
+      await tester.pumpAndSettle();
+
+      final images = tester.widgetList<Image>(find.byType(Image));
+      expect(images.any((i) => i.image is MemoryImage), isTrue);
+      expect(find.byIcon(Icons.public), findsNothing);
+    });
+
     testWidgets('renders an absolute-URL favicon via NetworkImage', (
       tester,
     ) async {
