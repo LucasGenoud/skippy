@@ -10,6 +10,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
 import '../util/motion.dart';
+import '../util/note_routes.dart';
 import 'editor_screen.dart';
 
 /// Ask questions about your notes. Each turn the server retrieves the most
@@ -175,9 +176,12 @@ class _ChatScreenState extends State<ChatScreen> {
       noteId: id,
       // Narrow layouts get a plain fullscreen push (there's no enclosing
       // OpenContainer to morph from on this screen).
-      openFullscreen: () => Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => EditorScreen(noteId: id))),
+      openFullscreen: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          settings: RouteSettings(name: noteRouteName(id)),
+          builder: (_) => EditorScreen(noteId: id),
+        ),
+      ),
     );
   }
 

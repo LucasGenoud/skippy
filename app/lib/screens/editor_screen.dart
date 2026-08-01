@@ -22,6 +22,7 @@ import '../util/linkify.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/note_export.dart';
+import '../util/note_routes.dart';
 import '../util/snack.dart';
 import '../util/widget_payload.dart';
 import 'history_screen.dart';
@@ -131,6 +132,11 @@ Future<void> openNoteEditor(
   }
   return showGeneralDialog<void>(
     context: context,
+    // Named so a widget or notification tap can tell this note is already
+    // open and raise it instead of stacking a second editor over it.
+    routeSettings: noteId == null
+        ? null
+        : RouteSettings(name: noteRouteName(noteId)),
     barrierDismissible: true,
     barrierLabel: 'Close note',
     barrierColor: Colors.black.withValues(alpha: 0.45),

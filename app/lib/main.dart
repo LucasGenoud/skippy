@@ -21,6 +21,7 @@ import 'theme.dart';
 import 'util/home_widgets.dart';
 import 'util/local_notifications.dart';
 import 'util/motion.dart';
+import 'util/note_routes.dart';
 import 'util/snack.dart';
 import 'widgets/background_guard.dart';
 
@@ -63,6 +64,9 @@ class _SkippyAppState extends State<SkippyApp> {
   /// Lets a notification tap push the editor from outside the widget tree
   /// that built it (the tap callback has no BuildContext of its own).
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  /// Which notes are open, so a repeat tap raises one instead of stacking it.
+  final OpenNoteRoutes _openNotes = OpenNoteRoutes();
 
   /// Live above the MaterialApp so that pushed routes (editor, dialogs) can
   /// read them; created per signed-in user, torn down on sign-out.
@@ -153,9 +157,9 @@ class _SkippyAppState extends State<SkippyApp> {
     if (_localNotifications.tappedNoteId.value == noteId) {
       _localNotifications.tappedNoteId.value = null;
     }
-    _navigatorKey.currentState?.push(
-      MaterialPageRoute(builder: (_) => EditorScreen(noteId: noteId)),
-    );
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    _openNotes.showNote(navigator, noteId, (_) => EditorScreen(noteId: noteId));
   }
 
   void _cancelOpenRetry(NotesStore store) {
@@ -261,6 +265,7 @@ class _SkippyAppState extends State<SkippyApp> {
           title: 'Skippy',
           debugShowCheckedModeBanner: false,
           navigatorKey: _navigatorKey,
+          navigatorObservers: [_openNotes],
           scaffoldMessengerKey: scaffoldMessengerKey,
           builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
             // No screen in the tree owns an AppBar consistently enough to set

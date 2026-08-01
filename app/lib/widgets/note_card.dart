@@ -13,6 +13,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/note_export.dart';
+import '../util/note_routes.dart';
 import '../util/snack.dart';
 import 'board/move_to_stage_sheet.dart';
 import 'color_picker.dart';
@@ -269,6 +270,9 @@ class _NoteTileState extends State<NoteTile> {
         ],
       ),
       child: OpenContainer<void>(
+        // See [noteRouteName]: naming the route it pushes is what lets a
+        // widget tap raise this editor rather than open the note twice.
+        routeSettings: RouteSettings(name: noteRouteName(note.id)),
         transitionDuration: Motion.slow,
         transitionType: ContainerTransitionType.fade,
         closedElevation: 0,
