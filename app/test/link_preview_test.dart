@@ -10,19 +10,24 @@ import 'fake_api.dart';
 
 void main() {
   group('LinkedText', () {
-    testWidgets('long-pressing a URL opens it', (tester) async {
-      final opened = <String>[];
+    testWidgets('long-pressing a URL keeps the enclosing gesture behavior', (
+      tester,
+    ) async {
+      var longPressed = false;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: LinkedText(text: 'https://example.com', onOpen: opened.add),
+            body: GestureDetector(
+              onLongPress: () => longPressed = true,
+              child: const LinkedText(text: 'https://example.com'),
+            ),
           ),
         ),
       );
 
       await tester.longPress(find.byType(LinkedText));
       await tester.pump();
-      expect(opened, ['https://example.com']);
+      expect(longPressed, isTrue);
     });
 
     testWidgets('renders plain text when there are no links', (tester) async {

@@ -64,16 +64,16 @@ String _openFor(String close) => switch (close) {
 
 int _count(String s, String ch) => s.split(ch).length - 1;
 
-/// Splits [text] into spans: URL runs get [linkStyle] plus the recognizer from
-/// [recognizerFor] (long-press to open); everything else runs through
-/// [highlightSpans] so search matches still tint. The caller owns the
-/// recognizers' lifecycle, never build them inline here.
+/// Splits [text] into spans: URL runs get [linkStyle], and optionally the
+/// recognizer from [recognizerFor]; everything else runs through
+/// [highlightSpans] so search matches still tint. Without a recognizer, long
+/// presses retain their enclosing widget's default behavior.
 List<InlineSpan> buildLinkedSpans({
   required String text,
   required String query,
   required TextStyle? linkStyle,
   required TextStyle? highlight,
-  required GestureRecognizer Function(UrlMatch match) recognizerFor,
+  GestureRecognizer Function(UrlMatch match)? recognizerFor,
 }) {
   final urls = findUrls(text);
   if (urls.isEmpty) return highlightSpans(text, query, highlight: highlight);
@@ -94,7 +94,7 @@ List<InlineSpan> buildLinkedSpans({
       TextSpan(
         text: text.substring(u.start, u.end),
         style: linkStyle,
-        recognizer: recognizerFor(u),
+        recognizer: recognizerFor?.call(u),
       ),
     );
     cursor = u.end;

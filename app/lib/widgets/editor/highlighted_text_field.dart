@@ -1,20 +1,16 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../util/linkify.dart';
 
 /// The editor's body controller. On top of plain editing it does two things in
-/// [buildTextSpan]: styles URLs as blue underlined links with a long-press
-/// recognizer that opens them, and tints find-in-note matches when [query] is
-/// set. Folding both into the real editing controller keeps the field fully
-/// editable (a normal tap still places the caret), a proxy read-only overlay
-/// isn't needed.
+/// [buildTextSpan]: styles URLs as blue underlined links and tints find-in-note
+/// matches when [query] is set. Folding both into the real editing controller
+/// keeps the field fully editable, including its default long-press behavior;
+/// a proxy read-only overlay isn't needed.
 class LinkifyingController extends TextEditingController {
-  final void Function(String url) onOpenUrl;
-  final Map<String, LongPressGestureRecognizer> _recognizers = {};
   String _query = '';
 
-  LinkifyingController({super.text, required this.onOpenUrl});
+  LinkifyingController({super.text});
 
   /// Find-in-note query; matches get highlighted on the next repaint. Does
   /// NOT notify listeners: it's set from [HighlightedTextField.build], and the
@@ -22,20 +18,6 @@ class LinkifyingController extends TextEditingController {
   /// [buildTextSpan] re-runs with the new query. Notifying here instead would
   /// fire the editor's text listener mid-build (query is not a text change).
   set query(String q) => _query = q;
-
-  @override
-  void dispose() {
-    for (final r in _recognizers.values) {
-      r.dispose();
-    }
-    _recognizers.clear();
-    super.dispose();
-  }
-
-  GestureRecognizer _recognizerFor(UrlMatch match) {
-    return _recognizers.putIfAbsent(match.url, LongPressGestureRecognizer.new)
-      ..onLongPress = () => onOpenUrl(match.url);
-  }
 
   @override
   TextSpan buildTextSpan({
@@ -54,19 +36,11 @@ class LinkifyingController extends TextEditingController {
       color: scheme.onTertiaryContainer,
     );
 
-    // Drop recognizers for URLs no longer in the text.
-    final live = findUrls(text).map((u) => u.url).toSet();
-    for (final gone
-        in _recognizers.keys.where((k) => !live.contains(k)).toList()) {
-      _recognizers.remove(gone)!.dispose();
-    }
-
     final spans = buildLinkedSpans(
       text: text,
       query: _query,
       linkStyle: linkStyle,
       highlight: _query.isEmpty ? null : highlight,
-      recognizerFor: _recognizerFor,
     );
     return TextSpan(style: style, children: spans);
   }

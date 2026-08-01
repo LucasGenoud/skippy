@@ -261,7 +261,6 @@ class _EditorScreenState extends State<EditorScreen> {
     _titleController = TextEditingController(text: note?.title ?? '');
     _contentController = LinkifyingController(
       text: note?.content ?? '',
-      onOpenUrl: launchLinkUrl,
     );
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
