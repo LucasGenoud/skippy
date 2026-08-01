@@ -34,9 +34,9 @@ struct NoteWidgetView: View {
   /// heights; a row is a single line of body text plus its spacing.
   private var rowLimit: Int {
     switch family {
-    case .systemSmall: return 3
-    case .systemMedium: return 4
-    default: return 10
+    case .systemSmall: return 2
+    case .systemMedium: return 3
+    default: return 8
     }
   }
 
@@ -56,7 +56,7 @@ struct NoteWidgetView: View {
   private func content(for note: WidgetNote) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(note.title)
-        .font(.subheadline.weight(.semibold))
+        .font(.headline.weight(.semibold))
         .lineLimit(1)
         .foregroundStyle(.primary)
 
@@ -82,7 +82,7 @@ private struct ChecklistBody: View {
 
     if note.items.isEmpty {
       Text("No items")
-        .font(.caption)
+        .font(.subheadline)
         .foregroundStyle(.secondary)
     } else {
       VStack(alignment: .leading, spacing: 5) {
@@ -99,31 +99,32 @@ private struct ChecklistBody: View {
   }
 }
 
-/// One tickable row.
-///
-/// The whole row is the button, not just the box: a checkbox alone is a small
-/// target on a home screen, and the text beside it is the thing being aimed at.
+/// One tickable row. Only the checkbox and its visible label are buttons; the
+/// empty remainder of the row keeps the widget's normal open-note behavior.
 @available(iOS 17.0, *)
 private struct ChecklistRow: View {
   let noteId: String
   let item: WidgetItem
 
   var body: some View {
-    Button(intent: ToggleItemIntent(noteId: noteId, itemId: item.id, done: !item.done)) {
-      HStack(alignment: .firstTextBaseline, spacing: 6) {
+    let intent = ToggleItemIntent(noteId: noteId, itemId: item.id, done: !item.done)
+    HStack(alignment: .firstTextBaseline, spacing: 6) {
+      Button(intent: intent) {
         Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
-          .font(.caption)
+          .font(.subheadline)
           .foregroundStyle(item.done ? .secondary : .primary)
+      }
+      .buttonStyle(.plain)
+      Button(intent: intent) {
         Text(item.text)
-          .font(.caption)
+          .font(.subheadline)
           .lineLimit(1)
           .strikethrough(item.done, color: .secondary)
           .foregroundStyle(item.done ? .secondary : .primary)
-        Spacer(minLength: 0)
       }
-      .contentShape(Rectangle())
+      .buttonStyle(.plain)
+      Spacer(minLength: 0)
     }
-    .buttonStyle(.plain)
   }
 }
 
@@ -135,11 +136,11 @@ private struct TextBody: View {
   var body: some View {
     if note.content.isEmpty {
       Text("Empty note")
-        .font(.caption)
+        .font(.subheadline)
         .foregroundStyle(.secondary)
     } else {
       Text(note.content)
-        .font(.caption)
+        .font(.subheadline)
         // One extra line than a checklist fits: no checkboxes to make room for.
         .lineLimit(limit + 1)
         .foregroundStyle(.primary)

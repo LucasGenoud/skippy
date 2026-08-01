@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:animations/animations.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
@@ -244,9 +243,6 @@ class _EditorScreenState extends State<EditorScreen> {
   final List<DroppedFile> _pendingUploads = [];
   bool _previewMarkdown = false;
   bool _reminderPickerOpen = false;
-  final Map<int, Offset> _previewPointerStarts = {};
-  Duration? _lastPreviewTapTime;
-  Offset? _lastPreviewTapPosition;
 
   // Undo/redo session history (see EditorHistory for the grouping rules).
   late final EditorHistory _history;
@@ -1212,32 +1208,25 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_kind == NoteKind.markdown && _previewMarkdown) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        // A MarkdownBody with `selectable: true` creates a separate selection
-        // scope for every rendered block. SelectionArea keeps one scope around
-        // the whole preview, so a drag can cross line and paragraph breaks.
-        child: Listener(
-          // Listen rather than join the gesture arena: SelectionArea keeps
-          // ownership of drag/long-press selection while two ordinary clicks
-          // still provide the explicit edit shortcut.
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: trashed ? null : _recordPreviewPointerDown,
-          onPointerUp: trashed ? null : _handlePreviewPointerUp,
-          onPointerCancel: trashed ? null : _clearPreviewPointer,
-          child: SelectionArea(
-            child: MarkdownBody(
-              data: _contentController.text.isEmpty
-                  ? '*Nothing to preview*'
-                  : _contentController.text,
-              onTapLink: (text, href, title) {
-                if (href != null) {
-                  launchUrl(
-                    Uri.parse(href),
-                    mode: LaunchMode.externalApplication,
-                  );
-                }
-              },
-            ),
-          ),
+        // MarkdownBody's selectable mode owns the selection paint and gesture
+        // handling. Wrapping it in a SelectionArea creates a second, offset
+        // selection highlight on web.
+        child: MarkdownBody(
+          data: _contentController.text.isEmpty
+              ? '*Nothing to preview*'
+              : _contentController.text,
+          selectable: true,
+          // A tap on preview text returns to its markdown source. Drag and
+          // long-press gestures remain owned by the selectable text.
+          onTapText: trashed ? null : _editMarkdownFromPreview,
+          onTapLink: (text, href, title) {
+            if (href != null) {
+              launchUrl(
+                Uri.parse(href),
+                mode: LaunchMode.externalApplication,
+              );
+            }
+          },
         ),
       );
     }
@@ -1260,32 +1249,6 @@ class _EditorScreenState extends State<EditorScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _contentFocus.requestFocus();
     });
-  }
-
-  void _recordPreviewPointerDown(PointerDownEvent event) {
-    _previewPointerStarts[event.pointer] = event.position;
-  }
-
-  void _clearPreviewPointer(PointerCancelEvent event) {
-    _previewPointerStarts.remove(event.pointer);
-  }
-
-  void _handlePreviewPointerUp(PointerUpEvent event) {
-    final start = _previewPointerStarts.remove(event.pointer);
-    // A drag belongs to text selection, never to the double-click shortcut.
-    if (start == null || (event.position - start).distance > kTouchSlop) {
-      return;
-    }
-    final previousTime = _lastPreviewTapTime;
-    final previousPosition = _lastPreviewTapPosition;
-    final isDoubleClick =
-        previousTime != null &&
-        previousPosition != null &&
-        event.timeStamp - previousTime <= kDoubleTapTimeout &&
-        (event.position - previousPosition).distance <= kDoubleTapSlop;
-    _lastPreviewTapTime = isDoubleClick ? null : event.timeStamp;
-    _lastPreviewTapPosition = isDoubleClick ? null : event.position;
-    if (isDoubleClick) _editMarkdownFromPreview();
   }
 
   /// Audio note: the clip player on top, then the transcript, a live

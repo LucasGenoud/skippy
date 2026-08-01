@@ -73,15 +73,16 @@ private class SkippyRemoteViewsFactory(
         row.setFloat(R.id.row_text, "setAlpha", if (item.done) 0.6f else 1f)
 
         // Collection children cannot carry their own PendingIntent; they fill in
-        // the template the provider set on the list.
-        row.setOnClickFillInIntent(
-            R.id.row_root,
-            Intent().apply {
-                putExtra(SkippyWidgetProvider.EXTRA_NOTE_ID, note)
-                putExtra(SkippyWidgetProvider.EXTRA_ITEM_ID, item.id)
-                putExtra(SkippyWidgetProvider.EXTRA_DONE, !item.done)
-            },
-        )
+        // the template the provider set on the list. Intentionally attach it to
+        // the checkbox and label only: the rest of a row remains safe to touch
+        // while scrolling or reaching for another item.
+        val toggle = Intent().apply {
+            putExtra(SkippyWidgetProvider.EXTRA_NOTE_ID, note)
+            putExtra(SkippyWidgetProvider.EXTRA_ITEM_ID, item.id)
+            putExtra(SkippyWidgetProvider.EXTRA_DONE, !item.done)
+        }
+        row.setOnClickFillInIntent(R.id.row_check, toggle)
+        row.setOnClickFillInIntent(R.id.row_text, toggle)
         return row
     }
 

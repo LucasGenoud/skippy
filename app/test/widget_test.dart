@@ -1150,7 +1150,7 @@ void main() {
       },
     );
 
-    testWidgets('markdown opens in preview and double-clicking edits source', (
+    testWidgets('markdown opens in preview and tapping edits source', (
       tester,
     ) async {
       api.notes['n1'] = serverNote(
@@ -1162,25 +1162,12 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
 
       final preview = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
-      expect(preview.selectable, isFalse);
-      expect(find.byType(SelectionArea), findsOneWidget);
+      expect(preview.selectable, isTrue);
+      expect(find.byType(SelectionArea), findsNothing);
+      expect(find.byType(SelectableText), findsWidgets);
       expect(find.byTooltip('Edit markdown'), findsOneWidget);
 
-      final previewPosition = tester.getCenter(find.byType(SelectionArea));
-
-      // A single click leaves preview open for native selection.
-      final singleClick = await tester.startGesture(previewPosition);
-      await singleClick.up();
-      await tester.pump();
-      expect(find.byType(MarkdownBody), findsOneWidget);
-
-      final firstClick = await tester.startGesture(previewPosition, pointer: 2);
-      await firstClick.up(timeStamp: const Duration(milliseconds: 350));
-      final secondClick = await tester.startGesture(
-        previewPosition,
-        pointer: 3,
-      );
-      await secondClick.up(timeStamp: const Duration(milliseconds: 400));
+      await tester.tap(find.byType(SelectableText).first);
       await tester.pump();
       expect(find.byTooltip('Preview'), findsOneWidget);
       final source = tester

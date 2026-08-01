@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  One tickable checklist row.
-
-  The whole row is the tap target, not just the box: a checkbox alone is small
-  on a home screen, and the text beside it is what people aim at.
+  One tickable checklist row. The row itself deliberately has no click action:
+  only the checkbox and its label can toggle an item, so touching the empty
+  space beside a label never changes the checklist.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/row_root"
@@ -11,25 +10,25 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:minHeight="36dp"
+    android:minHeight="42dp"
     android:paddingTop="3dp"
     android:paddingBottom="3dp">
 
     <ImageView
         android:id="@+id/row_check"
-        android:layout_width="18dp"
-        android:layout_height="18dp"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
         android:layout_marginEnd="8dp"
         android:contentDescription="@string/widget_toggle_item"
         android:src="@drawable/ic_widget_unchecked" />
 
     <TextView
         android:id="@+id/row_text"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textSize="14sp"
+        android:textSize="16sp"
         android:textColor="@color/widget_text" />
 
 </LinearLayout>
