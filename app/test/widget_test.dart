@@ -1681,7 +1681,6 @@ void main() {
     testWidgets(
       'desktop checklist checkbox stays with the first line when text wraps',
       (tester) async {
-        const shortItem = 'Single line';
         const longItem =
             'This is a very long checklist item that wraps onto several '
             'visible lines even inside the wider desktop editor, and keeps '
@@ -1694,40 +1693,56 @@ void main() {
           'n1',
           kind: NoteKind.checklist,
           items: const [
-            ChecklistItem(id: 'short', text: shortItem),
+            ChecklistItem(id: 'short', text: 'Single line'),
             ChecklistItem(id: 'long', text: longItem),
           ],
         );
         await store.load();
+        // Desktop resolves to a compact density, and InputDecorator spends half
+        // of that adjustment off its top padding: it used to lift the text ~4px
+        // clear of the controls while every row measurement still looked right,
+        // so the controls have to be checked against the text, not the row.
         await tester.pumpWidget(
-          harness(store, const EditorScreen(noteId: 'n1', modal: true)),
+          harness(
+            store,
+            Theme(
+              data: ThemeData(visualDensity: VisualDensity.compact),
+              child: const EditorScreen(noteId: 'n1', modal: true),
+            ),
+          ),
         );
         await tester.pump(const Duration(milliseconds: 100));
 
-        double checkboxOffsetFromRowTop(String id) {
-          final row = find.byKey(ValueKey('checklist-row-background-$id'));
-          final checkbox = find.descendant(
-            of: row,
-            matching: find.byType(Checkbox),
-          );
-          return tester.getCenter(checkbox).dy - tester.getTopLeft(row).dy;
-        }
+        Finder rowOf(String id) =>
+            find.byKey(ValueKey('checklist-row-background-$id'));
+        Rect textOf(String id) => tester.getRect(
+          find.descendant(of: rowOf(id), matching: find.byType(EditableText)),
+        );
+        double controlOf(String id, Finder control) => tester
+            .getCenter(find.descendant(of: rowOf(id), matching: control))
+            .dy;
 
-        final shortRow = find.byKey(
-          const ValueKey('checklist-row-background-short'),
-        );
-        final longRow = find.byKey(
-          const ValueKey('checklist-row-background-long'),
-        );
-        expect(tester.getSize(shortRow).height, closeTo(48, 1));
-        expect(tester.getSize(longRow).height, greaterThan(48));
-        final shortCheckboxOffset = checkboxOffsetFromRowTop('short');
-        final longCheckboxOffset = checkboxOffsetFromRowTop('long');
-        // Both controls remain centered in the first 48px line band. Extra
-        // wrapped lines only add height below it.
-        expect(shortCheckboxOffset, closeTo(24, 1));
-        expect(longCheckboxOffset, closeTo(24, 1));
-        expect(longCheckboxOffset, closeTo(shortCheckboxOffset, 0.01));
+        expect(tester.getSize(rowOf('short')).height, closeTo(48, 1));
+        expect(tester.getSize(rowOf('long')).height, greaterThan(48));
+        for (final control in {
+          'checkbox': find.byType(Checkbox),
+          'drag handle': find.byIcon(Icons.drag_indicator),
+          'remove button': find.byIcon(Icons.close),
+        }.entries) {
+          // One line, so the text box's own centre is that line's centre.
+          expect(
+            controlOf('short', control.value),
+            closeTo(textOf('short').center.dy, 1),
+            reason: control.key,
+          );
+          // The wrapped row holds that same offset into its first line; the
+          // extra lines only grow below it.
+          expect(
+            controlOf('long', control.value) - textOf('long').top,
+            closeTo(controlOf('short', control.value) - textOf('short').top, 1),
+            reason: '${control.key}, wrapped',
+          );
+        }
         await flushTimers(tester);
       },
     );

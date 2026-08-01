@@ -963,6 +963,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       isDense: true,
+                      // [metrics.textPadding] positions the first line itself,
+                      // so the decorator must not also shift it: on desktop the
+                      // ambient density is compact, and InputDecorator spends
+                      // half of that adjustment off the top padding, lifting the
+                      // text ~4px clear of the controls beside it.
+                      visualDensity: VisualDensity.standard,
                       contentPadding: EdgeInsets.symmetric(
                         vertical: metrics.textPadding,
                       ),
@@ -1161,6 +1167,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   hintText: 'List item',
                   border: InputBorder.none,
                   isDense: true,
+                  visualDensity: VisualDensity.standard,
                   contentPadding: EdgeInsets.symmetric(
                     vertical: metrics.textPadding,
                   ),
