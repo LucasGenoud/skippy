@@ -39,6 +39,18 @@
 
   <title>Skippy</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Flutter paints its own selection above an invisible DOM editing element.
+       Keep that element transparent in every supported browser, with Firefox's
+       prefixed pseudo-element in a separate rule. */
+    .flt-text-editing::selection {
+      background-color: transparent;
+    }
+
+    .flt-text-editing::-moz-selection {
+      background-color: transparent;
+    }
+  </style>
 </head>
 <body>
   <!--
