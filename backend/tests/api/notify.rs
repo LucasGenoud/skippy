@@ -128,6 +128,42 @@ async fn due_reminders_fire_once_per_configured_participant() {
 }
 
 #[tokio::test]
+async fn recurring_reminders_deliver_once_then_advance_to_a_future_occurrence() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
+
+    let note = create_note(
+        &app,
+        &ada,
+        json!({
+            "title": "Water plants",
+            "reminder_at": "2020-01-05T10:00:00Z",
+            "reminder_repeat": "weekly",
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap();
+
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+
+    let (status, updated) = send(&app, "GET", &format!("/api/notes/{id}"), Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["reminder_repeat"], "weekly");
+    assert_ne!(updated["reminder_at"], "2020-01-05T10:00:00Z");
+    let next =
+        chrono::DateTime::parse_from_rfc3339(updated["reminder_at"].as_str().unwrap()).unwrap();
+    assert!(next > chrono::Utc::now());
+
+    // The advance itself is the delivery claim, so a second sweep cannot
+    // re-send the occurrence that was just delivered.
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn rescheduling_a_reminder_fires_again_but_content_edits_do_not() {
     let (state, log) = state_with_notifiers().await;
     let app = build_app(state.clone());

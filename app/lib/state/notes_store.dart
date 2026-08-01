@@ -535,6 +535,7 @@ class NotesStore extends ChangeNotifier {
                 : stageMap[backupNote.stageId!],
             stagePosition: backupNote.stagePosition,
             reminderAt: backupNote.reminderAt?.toLocal(),
+            reminderRepeat: backupNote.reminderRepeat,
             createdAt: backupNote.createdAt,
             updatedAt: backupNote.updatedAt,
             labelIds: {
@@ -1339,12 +1340,17 @@ class NotesStore extends ChangeNotifier {
     });
   }
 
-  void setReminder(String id, DateTime? at) {
+  void setReminder(String id, DateTime? at, [ReminderRepeat? repeat]) {
     final note = noteById(id);
     if (note == null) return;
-    _patch(id, note.copyWith(reminderAt: at), {
-      'reminder_at': at?.toUtc().toIso8601String(),
-    });
+    _patch(
+      id,
+      note.copyWith(reminderAt: at, reminderRepeat: at == null ? null : repeat),
+      {
+        'reminder_at': at?.toUtc().toIso8601String(),
+        'reminder_repeat': at == null ? null : repeat?.wire,
+      },
+    );
     // A reminder makes even a wordless draft durable. Create it immediately
     // so an app suspension before the editor closes cannot leave a cached
     // note with no corresponding server row.

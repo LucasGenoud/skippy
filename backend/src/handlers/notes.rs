@@ -18,6 +18,8 @@ use super::{CHANGED_MSG, new_id, now, require_participant, resolve_workspace};
 
 const TRASH_RETENTION_DAYS: i64 = 7;
 
+const REMINDER_REPEATS: &[&str] = &["daily", "weekly", "monthly", "yearly"];
+
 pub(super) fn validate_kind(kind: &str) -> ApiResult<()> {
     if kind == KIND_TEXT || kind == KIND_CHECKLIST || kind == KIND_MARKDOWN || kind == KIND_AUDIO {
         Ok(())
@@ -30,6 +32,17 @@ fn validate_reminder(value: &Option<String>) -> ApiResult<()> {
     if let Some(v) = value {
         chrono::DateTime::parse_from_rfc3339(v)
             .map_err(|_| ApiError::BadRequest("reminder_at must be RFC3339".to_string()))?;
+    }
+    Ok(())
+}
+
+fn validate_reminder_repeat(value: Option<&str>) -> ApiResult<()> {
+    if let Some(value) = value
+        && !REMINDER_REPEATS.contains(&value)
+    {
+        return Err(ApiError::BadRequest(
+            "reminder_repeat must be daily, weekly, monthly, or yearly".to_string(),
+        ));
     }
     Ok(())
 }
@@ -58,6 +71,31 @@ fn validate_update(record: &NoteRecord, user_id: &str, body: &UpdateNote) -> Api
     if let Some(reminder) = &body.reminder_at {
         validate_reminder(reminder)?;
     }
+    if let Some(repeat) = &body.reminder_repeat {
+        validate_reminder_repeat(repeat.as_deref())?;
+    }
+    let clearing_reminder = body.reminder_at.as_ref().is_some_and(Option::is_none);
+    if clearing_reminder && body.reminder_repeat.as_ref().is_some_and(Option::is_some) {
+        return Err(ApiError::BadRequest(
+            "reminder_repeat requires reminder_at".to_string(),
+        ));
+    }
+    let reminder_at = body
+        .reminder_at
+        .as_ref()
+        .map_or(record.reminder_at.as_ref(), |value| value.as_ref());
+    let reminder_repeat = if clearing_reminder {
+        None
+    } else {
+        body.reminder_repeat
+            .as_ref()
+            .map_or(record.reminder_repeat.as_ref(), |value| value.as_ref())
+    };
+    if reminder_repeat.is_some() && reminder_at.is_none() {
+        return Err(ApiError::BadRequest(
+            "reminder_repeat requires reminder_at".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -75,6 +113,15 @@ fn reset_delivered_reminder_if_rescheduled(body: &UpdateNote, record: &mut NoteR
         .is_some_and(|reminder| *reminder != record.reminder_at)
     {
         // A rescheduled reminder is a new alarm and must be delivered again.
+        record.reminder_fired_at = None;
+    }
+    if body
+        .reminder_repeat
+        .as_ref()
+        .is_some_and(|repeat| *repeat != record.reminder_repeat)
+    {
+        // Changing recurrence makes the selected occurrence live again. This
+        // matters when turning a completed one-shot reminder into a series.
         record.reminder_fired_at = None;
     }
 }
@@ -141,6 +188,12 @@ pub async fn create_note_for_user(
     let kind = body.kind.unwrap_or_else(|| KIND_TEXT.to_string());
     validate_kind(&kind)?;
     validate_reminder(&body.reminder_at)?;
+    validate_reminder_repeat(body.reminder_repeat.as_deref())?;
+    if body.reminder_repeat.is_some() && body.reminder_at.is_none() {
+        return Err(ApiError::BadRequest(
+            "reminder_repeat requires reminder_at".to_string(),
+        ));
+    }
     let workspace_id = resolve_workspace(state, user_id, body.workspace_id.as_deref()).await?;
     let restored_created = validate_restore_timestamp(body.created_at.as_deref())?;
     let restored_updated = validate_restore_timestamp(body.updated_at.as_deref())?;
@@ -170,6 +223,7 @@ pub async fn create_note_for_user(
         trashed: body.trashed.unwrap_or(false),
         position,
         reminder_at: body.reminder_at,
+        reminder_repeat: body.reminder_repeat,
         reminder_fired_at: None,
         transcript_status: TRANSCRIPT_NONE.to_string(),
         created_at,

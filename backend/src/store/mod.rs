@@ -140,9 +140,24 @@ pub trait Repository: Send + Sync {
     /// and hasn't fired yet. Timestamps are compared as instants, so offsets
     /// other than UTC still come due at the right moment.
     async fn due_reminders(&self, now: &str) -> RepoResult<Vec<NoteRecord>>;
-    /// Record that a note's current reminder was delivered, so the sweep
-    /// doesn't pick it up again. Rescheduling clears the mark (handler-side).
-    async fn mark_reminder_fired(&self, note_id: &str, fired_at: &str) -> RepoResult<()>;
+    /// Atomically claim a one-shot reminder for delivery. The expected due
+    /// time makes overlapping sweeps harmless: exactly one can claim it.
+    async fn mark_reminder_fired(
+        &self,
+        note_id: &str,
+        reminder_at: &str,
+        fired_at: &str,
+    ) -> RepoResult<bool>;
+    /// Atomically advance a recurring reminder after claiming the due
+    /// occurrence. The next alarm remains live instead of carrying a fired
+    /// mark, and the changed timestamp lets connected clients re-arm it.
+    async fn advance_recurring_reminder(
+        &self,
+        note_id: &str,
+        reminder_at: &str,
+        next_reminder_at: &str,
+        advanced_at: &str,
+    ) -> RepoResult<bool>;
 
     // -- version history ----------------------------------------------------
     /// Append a content snapshot to a note's history. Snapshots are permanent

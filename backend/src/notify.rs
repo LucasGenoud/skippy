@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Datelike, Months, Utc};
 use serde_json::Value;
 
 use crate::AppState;
@@ -56,6 +57,59 @@ pub fn reminder_notification(record: &NoteRecord) -> Notification {
         body.push('…');
     }
     Notification { title, body }
+}
+
+/// Calculate the first future occurrence of a recurring reminder. Recurrence
+/// is based on the reminder's RFC3339 offset. Missed occurrences coalesce into
+/// one catch-up delivery; the next scheduled occurrence is always in the
+/// future.
+fn next_recurring_reminder(reminder_at: &str, repeat: &str, now: DateTime<Utc>) -> Option<String> {
+    let due = DateTime::parse_from_rfc3339(reminder_at).ok()?;
+    let now = now.with_timezone(due.offset());
+
+    let advance = |months: u32| due.checked_add_months(Months::new(months));
+    let mut next = match repeat {
+        "daily" => {
+            let days = now.signed_duration_since(due).num_days().max(0) + 1;
+            due.checked_add_signed(chrono::Duration::days(days))?
+        }
+        "weekly" => {
+            let weeks = now.signed_duration_since(due).num_weeks().max(0) + 1;
+            due.checked_add_signed(chrono::Duration::weeks(weeks))?
+        }
+        "monthly" => {
+            let months = (now.year() - due.year()) * 12 + now.month() as i32 - due.month() as i32;
+            let months = months.max(1) as u32;
+            let mut next = advance(months)?;
+            if next <= now {
+                next = advance(months + 1)?;
+            }
+            next
+        }
+        "yearly" => {
+            let years = now.year() - due.year();
+            let years = years.max(1) as u32;
+            let mut next = advance(years * 12)?;
+            if next <= now {
+                next = advance((years + 1) * 12)?;
+            }
+            next
+        }
+        _ => return None,
+    };
+    // Daily and weekly use exact-duration arithmetic, so this only matters
+    // for a future clock skew. It also protects callers if this helper gains
+    // additional cadence kinds later.
+    while next <= now {
+        next = match repeat {
+            "daily" => next.checked_add_signed(chrono::Duration::days(1))?,
+            "weekly" => next.checked_add_signed(chrono::Duration::weeks(1))?,
+            "monthly" => next.checked_add_months(Months::new(1))?,
+            "yearly" => next.checked_add_months(Months::new(12))?,
+            _ => return None,
+        };
+    }
+    Some(next.to_rfc3339())
 }
 
 /// One push channel. Implementations are stateless senders; the per-user
@@ -287,12 +341,14 @@ pub async fn send_configured(
 }
 
 /// One scheduler pass: find due, unfired reminders and push them to every
-/// participant with a configured channel. Each reminder is marked fired
-/// *before* delivery, at-most-once, so a broken channel can't wedge the
-/// sweep into resending the same reminder forever. Delivery failures are
+/// participant with a configured channel. Each one-shot reminder is marked
+/// fired, while a recurring one atomically advances to its next future
+/// occurrence, *before* delivery. That keeps delivery at-most-once: a broken
+/// channel can't wedge the sweep into resending forever. Delivery failures are
 /// logged and dropped.
 pub async fn sweep_due_reminders(state: &AppState) {
-    let now = chrono::Utc::now().to_rfc3339();
+    let now_utc = chrono::Utc::now();
+    let now = now_utc.to_rfc3339();
     let due = match state.repo.due_reminders(&now).await {
         Ok(due) => due,
         Err(e) => {
@@ -301,15 +357,36 @@ pub async fn sweep_due_reminders(state: &AppState) {
         }
     };
     for note in due {
-        if state
-            .repo
-            .mark_reminder_fired(&note.id, &now)
-            .await
-            .is_err()
-        {
-            // Couldn't claim it; leave it for the next sweep rather than risk
-            // sending without the fired mark (= resending every 30s).
+        let Some(reminder_at) = note.reminder_at.as_deref() else {
             continue;
+        };
+        let recurring = note.reminder_repeat.is_some();
+        let claimed = match note.reminder_repeat.as_deref() {
+            Some(repeat) => {
+                let Some(next) = next_recurring_reminder(reminder_at, repeat, now_utc) else {
+                    continue;
+                };
+                state
+                    .repo
+                    .advance_recurring_reminder(&note.id, reminder_at, &next, &now)
+                    .await
+            }
+            None => {
+                state
+                    .repo
+                    .mark_reminder_fired(&note.id, reminder_at, &now)
+                    .await
+            }
+        };
+        let Ok(true) = claimed else {
+            // Couldn't claim it; leave it for the next sweep rather than risk
+            // sending without an atomic claim (= resending every 30s).
+            continue;
+        };
+        // The recurrence advance changes the note's visible due time. Nudge
+        // every participant so their clients re-arm the new local alarm.
+        if recurring {
+            state.notify_note(&note.id).await;
         }
         let notification = reminder_notification(&note);
         let participants = state
@@ -419,6 +496,7 @@ mod tests {
             trashed: false,
             position: 0.0,
             reminder_at: Some("2026-07-17T10:00:00+00:00".into()),
+            reminder_repeat: None,
             reminder_fired_at: None,
             transcript_status: "none".into(),
             created_at: String::new(),
@@ -462,5 +540,18 @@ mod tests {
         let n = reminder_notification(&record("t", &long, vec![]));
         assert_eq!(n.body.chars().count(), 501);
         assert!(n.body.ends_with('…'));
+    }
+
+    #[test]
+    fn recurrence_advances_past_missed_occurrences() {
+        let now = "2026-08-01T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(
+            next_recurring_reminder("2026-07-29T09:00:00Z", "daily", now).as_deref(),
+            Some("2026-08-02T09:00:00+00:00"),
+        );
+        assert_eq!(
+            next_recurring_reminder("2026-01-31T09:00:00Z", "monthly", now).as_deref(),
+            Some("2026-08-31T09:00:00+00:00"),
+        );
     }
 }

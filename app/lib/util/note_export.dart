@@ -81,6 +81,7 @@ String _toJson(
           'pinned': n.pinned,
           'archived': n.archived,
           'reminder_at': n.reminderAt?.toUtc().toIso8601String(),
+          'reminder_repeat': n.reminderRepeat?.wire,
           'labels': _labelNames(n, names),
           'created_at': n.createdAt.toUtc().toIso8601String(),
           'updated_at': n.updatedAt.toUtc().toIso8601String(),

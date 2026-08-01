@@ -70,9 +70,12 @@ class _NoteTileState extends State<NoteTile> {
       final selection = await ReminderPicker.show(
         context,
         current: note.reminderAt,
+        currentRepeat: note.reminderRepeat,
         use24hTime: context.read<SettingsStore>().use24hTime,
       );
-      if (selection != null) store.setReminder(note.id, selection.at);
+      if (selection != null) {
+        store.setReminder(note.id, selection.at, selection.repeat);
+      }
     } finally {
       _reminderPickerOpen = false;
     }
@@ -639,7 +642,10 @@ class _NoteCardContent extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (note.reminderAt != null)
-                  _ReminderChip(reminderAt: note.reminderAt!),
+                  _ReminderChip(
+                    reminderAt: note.reminderAt!,
+                    repeat: note.reminderRepeat,
+                  ),
                 for (final file in files.take(visibleFileCount))
                   _FileChip(file: file),
                 if (files.length > visibleFileCount)
@@ -1522,7 +1528,8 @@ class _ImageStrip extends StatelessWidget {
 
 class _ReminderChip extends StatelessWidget {
   final DateTime reminderAt;
-  const _ReminderChip({required this.reminderAt});
+  final ReminderRepeat? repeat;
+  const _ReminderChip({required this.reminderAt, this.repeat});
 
   @override
   Widget build(BuildContext context) {
@@ -1530,9 +1537,10 @@ class _ReminderChip extends StatelessWidget {
     final past = reminderAt.isBefore(DateTime.now());
     // select: re-render only when the formatted label itself changes (date
     // or clock format edits), not on every settings notification.
-    final label = context.select<SettingsStore, String>(
+    final when = context.select<SettingsStore, String>(
       (s) => s.reminderLabel(reminderAt),
     );
+    final label = '$when${repeat == null ? '' : ' · ${repeat!.label}'}';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(

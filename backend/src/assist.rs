@@ -514,6 +514,7 @@ mod tests {
             trashed: false,
             position: 0.0,
             reminder_at: None,
+            reminder_repeat: None,
             reminder_fired_at: None,
             transcript_status: "none".into(),
             created_at: String::new(),

@@ -554,6 +554,8 @@ class ApiClient implements Api {
           'position': note.position,
           if (note.reminderAt != null)
             'reminder_at': note.reminderAt!.toUtc().toIso8601String(),
+          if (note.reminderRepeat != null)
+            'reminder_repeat': note.reminderRepeat!.wire,
           // A note composed inside a label view is already filed when it
           // reaches the server; the draft never had a chance to PATCH them.
           'label_ids': note.labelIds.toList(),

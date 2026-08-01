@@ -19,6 +19,7 @@ pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
         trashed: row.get::<i64, _>("trashed") != 0,
         position,
         reminder_at: row.get("reminder_at"),
+        reminder_repeat: row.get("reminder_repeat"),
         reminder_fired_at: row.get("reminder_fired_at"),
         transcript_status: row.get("transcript_status"),
         created_at: row.get("created_at"),

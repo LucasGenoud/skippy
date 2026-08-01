@@ -18,6 +18,7 @@ void main() {
       'trashed': false,
       'position': 2048.0,
       'reminder_at': '2030-05-01T07:00:00+00:00',
+      'reminder_repeat': 'weekly',
       'created_at': '2026-07-01T10:00:00+00:00',
       'updated_at': '2026-07-02T10:00:00+00:00',
       'label_ids': ['l1'],
@@ -38,6 +39,7 @@ void main() {
     expect(note.reminderAt, isNotNull);
     // RFC3339 UTC converts to local without losing the instant.
     expect(note.reminderAt!.toUtc(), DateTime.utc(2030, 5, 1, 7));
+    expect(note.reminderRepeat, ReminderRepeat.weekly);
     expect(note.labelIds, {'l1'});
     expect(note.owner!.name, 'ada');
     expect(note.collaborators.single.name, 'bob');
@@ -133,6 +135,11 @@ void main() {
       note.copyWith(reminderAt: DateTime(2031)).reminderAt,
       DateTime(2031),
     );
+    expect(
+      note.copyWith(reminderRepeat: ReminderRepeat.daily).reminderRepeat,
+      ReminderRepeat.daily,
+    );
+    expect(note.copyWith(reminderRepeat: null).reminderRepeat, isNull);
   });
 
   test('checklist items round-trip through json', () {

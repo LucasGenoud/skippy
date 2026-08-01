@@ -9,7 +9,7 @@ use super::CHANGED_MSG;
 
 impl AppState {
     /// Push a change event to everyone who can see the note.
-    pub(super) async fn notify_note(&self, note_id: &str) {
+    pub(crate) async fn notify_note(&self, note_id: &str) {
         if let Ok(ids) = self.repo.participant_ids(note_id).await {
             self.hub.notify(&ids, CHANGED_MSG);
         }

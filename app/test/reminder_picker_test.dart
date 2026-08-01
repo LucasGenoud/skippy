@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:skippy/models/note.dart';
 import 'package:skippy/widgets/reminder_picker.dart';
 
 void main() {
@@ -82,6 +83,28 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(result?.at, DateTime(2026, 7, 29, 9));
+    });
+
+    testWidgets('applies the selected recurrence to a quick preset', (
+      tester,
+    ) async {
+      tester.view.physicalSize = phoneSize;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      ReminderSelection? result;
+      await pumpPicker(tester, onResult: (value) => result = value);
+      await tester.tap(find.byKey(const ValueKey('reminder-repeat')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Every week').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('reminder-preset-tomorrow-morning')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(result?.repeat, ReminderRepeat.weekly);
     });
 
     testWidgets('keeps custom date and time inside the same sheet', (

@@ -290,6 +290,9 @@ class FakeApi implements Api {
                   ? null
                   : DateTime.parse(fields['reminder_at'] as String).toLocal())
             : existing.reminderAt,
+        reminderRepeat: fields.containsKey('reminder_repeat')
+            ? ReminderRepeat.fromWire(fields['reminder_repeat'] as String?)
+            : existing.reminderRepeat,
         labelIds: fields.containsKey('label_ids')
             ? (fields['label_ids'] as List).cast<String>().toSet()
             : null,

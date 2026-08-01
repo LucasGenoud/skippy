@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../models/note.dart';
 import '../util/motion.dart';
 import 'form_dialog.dart';
 
@@ -8,9 +9,10 @@ import 'form_dialog.dart';
 /// dismissed; [at] being null means the existing reminder should be removed.
 class ReminderSelection {
   final DateTime? at;
+  final ReminderRepeat? repeat;
 
-  const ReminderSelection.set(this.at) : assert(at != null);
-  const ReminderSelection.clear() : at = null;
+  const ReminderSelection.set(this.at, {this.repeat}) : assert(at != null);
+  const ReminderSelection.clear() : at = null, repeat = null;
 }
 
 class ReminderPreset {
@@ -79,6 +81,7 @@ class ReminderPicker {
   static Future<ReminderSelection?> show(
     BuildContext context, {
     required DateTime? current,
+    ReminderRepeat? currentRepeat,
     required bool use24hTime,
     DateTime Function()? clock,
   }) {
@@ -92,6 +95,7 @@ class ReminderPicker {
         useSafeArea: true,
         builder: (context) => _MobileReminderSheet(
           current: current,
+          currentRepeat: currentRepeat,
           now: now,
           use24hTime: use24hTime,
         ),
@@ -100,6 +104,7 @@ class ReminderPicker {
     return _showDesktop(
       context,
       current: current,
+      currentRepeat: currentRepeat,
       now: now,
       use24hTime: use24hTime,
     );
@@ -108,6 +113,7 @@ class ReminderPicker {
   static Future<ReminderSelection?> _showDesktop(
     BuildContext context, {
     required DateTime? current,
+    required ReminderRepeat? currentRepeat,
     required DateTime now,
     required bool use24hTime,
   }) async {
@@ -160,19 +166,57 @@ class ReminderPicker {
       ),
     );
     if (time == null) return null;
+    if (!context.mounted) return null;
+    final repeat = await _pickDesktopRepeat(context, currentRepeat);
+    if (repeat == null) return null;
     return ReminderSelection.set(
       DateTime(date.year, date.month, date.day, time.hour, time.minute),
+      repeat: repeat.repeat,
     );
   }
+
+  static Future<_RepeatChoice?> _pickDesktopRepeat(
+    BuildContext context,
+    ReminderRepeat? current,
+  ) => showAdaptiveSelectionSurface<_RepeatChoice>(
+    context,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.looks_one_outlined),
+            title: const Text('Does not repeat'),
+            trailing: current == null ? const Icon(Icons.check) : null,
+            onTap: () => Navigator.pop(context, const _RepeatChoice(null)),
+          ),
+          for (final repeat in ReminderRepeat.values)
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: Text(repeat.label),
+              trailing: current == repeat ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, _RepeatChoice(repeat)),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _RepeatChoice {
+  final ReminderRepeat? repeat;
+  const _RepeatChoice(this.repeat);
 }
 
 class _MobileReminderSheet extends StatefulWidget {
   final DateTime? current;
+  final ReminderRepeat? currentRepeat;
   final DateTime now;
   final bool use24hTime;
 
   const _MobileReminderSheet({
     required this.current,
+    required this.currentRepeat,
     required this.now,
     required this.use24hTime,
   });
@@ -183,6 +227,7 @@ class _MobileReminderSheet extends StatefulWidget {
 
 class _MobileReminderSheetState extends State<_MobileReminderSheet> {
   late DateTime _customValue;
+  late ReminderRepeat? _repeat;
   bool _showCustom = false;
 
   @override
@@ -192,6 +237,7 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
     _customValue = candidate != null && candidate.isAfter(widget.now)
         ? candidate
         : widget.now;
+    _repeat = widget.currentRepeat;
   }
 
   String _whenLabel(BuildContext context, DateTime value) {
@@ -205,8 +251,27 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
   }
 
   void _select(DateTime value) {
-    Navigator.of(context).pop(ReminderSelection.set(value));
+    Navigator.of(context).pop(ReminderSelection.set(value, repeat: _repeat));
   }
+
+  Widget _repeatControl() => DropdownButtonFormField<ReminderRepeat?>(
+    key: const ValueKey('reminder-repeat'),
+    initialValue: _repeat,
+    decoration: const InputDecoration(labelText: 'Repeat'),
+    hint: const Text('Does not repeat'),
+    items: [
+      const DropdownMenuItem<ReminderRepeat?>(
+        value: null,
+        child: Text('Does not repeat'),
+      ),
+      for (final repeat in ReminderRepeat.values)
+        DropdownMenuItem<ReminderRepeat?>(
+          value: repeat,
+          child: Text(repeat.label),
+        ),
+    ],
+    onChanged: (value) => setState(() => _repeat = value),
+  );
 
   Widget _customContent(ThemeData theme, ColorScheme scheme) {
     return Column(
@@ -351,6 +416,9 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
               const SizedBox(height: 16),
             ] else
               const SizedBox(height: 4),
+            const SizedBox(height: 12),
+            _repeatControl(),
+            const SizedBox(height: 16),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
               switchInCurve: Curves.easeOutCubic,

@@ -192,6 +192,9 @@ pub struct NoteRecord {
     pub trashed: bool,
     pub position: f64,
     pub reminder_at: Option<String>,
+    /// Optional cadence for a reminder (`daily`, `weekly`, `monthly`, or
+    /// `yearly`). A missing cadence keeps the existing one-shot behaviour.
+    pub reminder_repeat: Option<String>,
     /// When the reminder scheduler last delivered `reminder_at` (server-owned,
     /// not on the wire). `None` means "not fired yet"; cleared whenever the
     /// reminder is rescheduled so the new time fires again.
@@ -242,6 +245,7 @@ pub struct NoteFields {
     pub trashed: bool,
     pub position: f64,
     pub reminder_at: Option<String>,
+    pub reminder_repeat: Option<String>,
     pub transcript_status: String,
     pub created_at: String,
     pub updated_at: String,
@@ -264,6 +268,7 @@ impl NoteRecord {
             trashed: self.trashed,
             position: self.position,
             reminder_at: self.reminder_at.clone(),
+            reminder_repeat: self.reminder_repeat.clone(),
             transcript_status: self.transcript_status.clone(),
             created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
@@ -374,6 +379,8 @@ pub struct CreateNote {
     #[serde(default)]
     pub reminder_at: Option<String>,
     #[serde(default)]
+    pub reminder_repeat: Option<String>,
+    #[serde(default)]
     pub label_ids: Option<Vec<String>>,
     /// Board stage to file the note in. Absent or null means unassigned; a
     /// stage from another workspace is dropped, the same way a foreign label
@@ -409,6 +416,11 @@ pub struct UpdateNote {
     pub position: Option<f64>,
     #[serde(default, with = "double_option")]
     pub reminder_at: Option<Option<String>>,
+    /// Optional recurrence cadence. Nested so a JSON `null` turns a
+    /// recurring reminder back into a one-shot one without changing its due
+    /// time, while an absent key leaves it alone.
+    #[serde(default, with = "double_option")]
+    pub reminder_repeat: Option<Option<String>>,
     pub label_ids: Option<Vec<String>>,
     /// Moves the note between board columns. Nested like `reminder_at` so
     /// `"stage_id": null` sends the note back to unassigned while an absent
@@ -436,6 +448,7 @@ impl UpdateNote {
             trashed,
             position,
             reminder_at,
+            reminder_repeat,
             label_ids: _,
             stage_id,
             stage_position,
@@ -472,6 +485,15 @@ impl UpdateNote {
         }
         if let Some(v) = reminder_at {
             record.reminder_at = v;
+            // A reminder cannot recur after it has been removed. Keeping this
+            // invariant here also covers older clients that only send
+            // `reminder_at: null`.
+            if record.reminder_at.is_none() {
+                record.reminder_repeat = None;
+            }
+        }
+        if let Some(v) = reminder_repeat {
+            record.reminder_repeat = v;
         }
         if let Some(v) = stage_id {
             record.stage_id = v;

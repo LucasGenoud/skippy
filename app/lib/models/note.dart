@@ -17,6 +17,26 @@ enum NoteKind {
   };
 }
 
+/// Optional cadence for a note reminder. The wire values are shared with the
+/// backend; null on [Note.reminderRepeat] means a one-shot reminder.
+enum ReminderRepeat {
+  daily('daily', 'Every day'),
+  weekly('weekly', 'Every week'),
+  monthly('monthly', 'Every month'),
+  yearly('yearly', 'Every year');
+
+  final String wire;
+  final String label;
+  const ReminderRepeat(this.wire, this.label);
+
+  static ReminderRepeat? fromWire(String? value) {
+    for (final repeat in values) {
+      if (repeat.wire == value) return repeat;
+    }
+    return null;
+  }
+}
+
 /// The bounded set of AI edits a user can request for a note.
 enum NoteRewriteMode {
   concise('concise'),
@@ -140,6 +160,10 @@ class Note {
   final double stagePosition;
   final DateTime? reminderAt;
 
+  /// Null is a one-shot reminder; a cadence advances to the next occurrence
+  /// once the server delivers the current one.
+  final ReminderRepeat? reminderRepeat;
+
   /// Audio-note transcription state: `none` (not an audio note or no clip yet),
   /// `pending` (Whisper running), `done`, or `failed`. Server-owned.
   final String transcriptStatus;
@@ -165,6 +189,7 @@ class Note {
     this.stageId,
     this.stagePosition = 0,
     this.reminderAt,
+    this.reminderRepeat,
     this.transcriptStatus = 'none',
     required this.createdAt,
     required this.updatedAt,
@@ -227,6 +252,7 @@ class Note {
     Object? stageId = _unset,
     double? stagePosition,
     Object? reminderAt = _unset,
+    Object? reminderRepeat = _unset,
     String? transcriptStatus,
     DateTime? updatedAt,
     Set<String>? labelIds,
@@ -250,6 +276,9 @@ class Note {
       reminderAt: reminderAt == _unset
           ? this.reminderAt
           : reminderAt as DateTime?,
+      reminderRepeat: reminderRepeat == _unset
+          ? this.reminderRepeat
+          : reminderRepeat as ReminderRepeat?,
       transcriptStatus: transcriptStatus ?? this.transcriptStatus,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -285,6 +314,9 @@ class Note {
       reminderAt: json['reminder_at'] == null
           ? null
           : DateTime.tryParse(json['reminder_at'] as String)?.toLocal(),
+      reminderRepeat: ReminderRepeat.fromWire(
+        json['reminder_repeat'] as String?,
+      ),
       transcriptStatus: json['transcript_status'] as String? ?? 'none',
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ??
@@ -325,6 +357,7 @@ class Note {
     'stage_id': stageId,
     'stage_position': stagePosition,
     'reminder_at': reminderAt?.toUtc().toIso8601String(),
+    'reminder_repeat': reminderRepeat?.wire,
     'transcript_status': transcriptStatus,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
@@ -432,15 +465,19 @@ class Label {
     'position': position,
   };
 
-  Label copyWith({String? name, String? color, String? icon, double? position}) =>
-      Label(
-        id: id,
-        workspaceId: workspaceId,
-        name: name ?? this.name,
-        color: color ?? this.color,
-        icon: icon ?? this.icon,
-        position: position ?? this.position,
-      );
+  Label copyWith({
+    String? name,
+    String? color,
+    String? icon,
+    double? position,
+  }) => Label(
+    id: id,
+    workspaceId: workspaceId,
+    name: name ?? this.name,
+    color: color ?? this.color,
+    icon: icon ?? this.icon,
+    position: position ?? this.position,
+  );
 }
 
 /// A board column. Stages are workspace state like labels, every member sees

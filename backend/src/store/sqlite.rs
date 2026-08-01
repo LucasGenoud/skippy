@@ -745,9 +745,9 @@ impl Repository for SqliteRepository {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO notes
              (id, owner_id, workspace_id, kind, title, content, items, color, pinned, archived,
-              trashed, position, reminder_at, reminder_fired_at, created_at, updated_at, trashed_at,
+              trashed, position, reminder_at, reminder_repeat, reminder_fired_at, created_at, updated_at, trashed_at,
               stage_id, stage_position)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                      CASE WHEN ? THEN ? ELSE NULL END, ?, ?)",
         )
         .bind(&note.id)
@@ -763,6 +763,7 @@ impl Repository for SqliteRepository {
         .bind(note.trashed as i64)
         .bind(note.position)
         .bind(&note.reminder_at)
+        .bind(&note.reminder_repeat)
         .bind(&note.reminder_fired_at)
         .bind(&note.created_at)
         .bind(&note.updated_at)
@@ -783,7 +784,7 @@ impl Repository for SqliteRepository {
         sqlx::query(
             "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
              color = ?, pinned = ?, archived = ?, position = ?, reminder_at = ?,
-             reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
+             reminder_repeat = ?, reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
              stage_id = ?, stage_position = ?,
              trashed_at = CASE
                  WHEN ? AND trashed = 0 THEN ?
@@ -803,6 +804,7 @@ impl Repository for SqliteRepository {
         .bind(note.archived as i64)
         .bind(note.position)
         .bind(&note.reminder_at)
+        .bind(&note.reminder_repeat)
         .bind(&note.reminder_fired_at)
         .bind(&note.updated_at)
         .bind(&note.last_editor_id)
@@ -918,13 +920,44 @@ impl Repository for SqliteRepository {
         Ok(rows.iter().map(note_from_row).collect())
     }
 
-    async fn mark_reminder_fired(&self, note_id: &str, fired_at: &str) -> RepoResult<()> {
-        sqlx::query("UPDATE notes SET reminder_fired_at = ? WHERE id = ?")
-            .bind(fired_at)
-            .bind(note_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+    async fn mark_reminder_fired(
+        &self,
+        note_id: &str,
+        reminder_at: &str,
+        fired_at: &str,
+    ) -> RepoResult<bool> {
+        let result = sqlx::query(
+            "UPDATE notes SET reminder_fired_at = ?
+             WHERE id = ? AND reminder_at = ? AND reminder_fired_at IS NULL",
+        )
+        .bind(fired_at)
+        .bind(note_id)
+        .bind(reminder_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn advance_recurring_reminder(
+        &self,
+        note_id: &str,
+        reminder_at: &str,
+        next_reminder_at: &str,
+        advanced_at: &str,
+    ) -> RepoResult<bool> {
+        let result = sqlx::query(
+            "UPDATE notes
+             SET reminder_at = ?, reminder_fired_at = NULL, updated_at = ?
+             WHERE id = ? AND reminder_at = ? AND reminder_fired_at IS NULL
+               AND reminder_repeat IS NOT NULL",
+        )
+        .bind(next_reminder_at)
+        .bind(advanced_at)
+        .bind(note_id)
+        .bind(reminder_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
     }
 
     // -- version history ----------------------------------------------------

@@ -136,6 +136,7 @@ class BackupNote {
   final String? stageId;
   final double stagePosition;
   final DateTime? reminderAt;
+  final ReminderRepeat? reminderRepeat;
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<String> labelIds;
@@ -155,6 +156,7 @@ class BackupNote {
     this.stageId,
     this.stagePosition = 0,
     required this.reminderAt,
+    this.reminderRepeat,
     required this.createdAt,
     required this.updatedAt,
     required this.labelIds,
@@ -272,6 +274,7 @@ Future<Uint8List> createBackupArchive({
         'stage_id': note.stageId,
         'stage_position': note.stagePosition,
         'reminder_at': note.reminderAt?.toUtc().toIso8601String(),
+        'reminder_repeat': note.reminderRepeat?.wire,
         'created_at': note.createdAt.toUtc().toIso8601String(),
         'updated_at': note.updatedAt.toUtc().toIso8601String(),
         'label_ids': note.labelIds.toList(),
@@ -586,6 +589,9 @@ BackupWorkspace _parseWorkspaceContents(
         stageId: stageId != null && stageIds.contains(stageId) ? stageId : null,
         stagePosition: _number(note['stage_position'], 0),
         reminderAt: _optionalDate(note['reminder_at']),
+        reminderRepeat: ReminderRepeat.fromWire(
+          _optionalString(note['reminder_repeat'], max: 32),
+        ),
         createdAt: _requiredDate(note['created_at']),
         updatedAt: _requiredDate(note['updated_at']),
         labelIds: [

@@ -144,11 +144,7 @@ Future<void> openNoteEditor(
     transitionBuilder: (context, animation, secondaryAnimation, child) =>
         sourceRect == null || Motion.reduced(context)
         ? FadeScaleTransition(animation: animation, child: child)
-        : _EditorMorph(
-            animation: animation,
-            source: sourceRect,
-            child: child,
-          ),
+        : _EditorMorph(animation: animation, source: sourceRect, child: child),
     pageBuilder: (context, animation, secondaryAnimation) => Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -219,10 +215,7 @@ class _EditorMorph extends StatelessWidget {
           // centre too, so the surface swells around its own middle.
           child: Transform.scale(
             scale: scale,
-            child: Opacity(
-              opacity: (t * 4).clamp(0.0, 1.0),
-              child: child,
-            ),
+            child: Opacity(opacity: (t * 4).clamp(0.0, 1.0), child: child),
           ),
         );
       },
@@ -585,9 +578,8 @@ class _EditorScreenState extends State<EditorScreen> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (context) => _AddToHomeScreenHelp(
-        noteTitle: widgetDisplayTitle(note),
-      ),
+      builder: (context) =>
+          _AddToHomeScreenHelp(noteTitle: widgetDisplayTitle(note)),
     );
   }
 
@@ -753,12 +745,13 @@ class _EditorScreenState extends State<EditorScreen> {
       final selection = await ReminderPicker.show(
         context,
         current: _note?.reminderAt,
+        currentRepeat: _note?.reminderRepeat,
         use24hTime: context.read<SettingsStore>().use24hTime,
       );
       if (!mounted || selection == null) return;
       if (selection.at != null) _ensureNote();
       if (_noteId == null) return;
-      _store.setReminder(_noteId!, selection.at);
+      _store.setReminder(_noteId!, selection.at, selection.repeat);
       setState(() {});
     } finally {
       _reminderPickerOpen = false;
@@ -1135,8 +1128,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                       NoteHistoryScreen.open(context, note.id),
                             // A trashed note must not be pinnable: the widget
                             // would outlive the note itself.
-                            onAddToHomeScreen:
-                                HomeWidgets.supported && !trashed
+                            onAddToHomeScreen: HomeWidgets.supported && !trashed
                                 ? _addToHomeScreen
                                 : null,
                             onConvert: trashed ? null : _convertKind,
@@ -1227,10 +1219,7 @@ class _EditorScreenState extends State<EditorScreen> {
           onTapText: trashed ? null : _editMarkdownFromPreview,
           onTapLink: (text, href, title) {
             if (href != null) {
-              launchUrl(
-                Uri.parse(href),
-                mode: LaunchMode.externalApplication,
-              );
+              launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
             }
           },
         ),
@@ -1310,7 +1299,7 @@ class _EditorScreenState extends State<EditorScreen> {
           if (note.reminderAt != null)
             InputChip(
               avatar: const Icon(Icons.alarm, size: 16),
-              label: Text(settings.reminderLabel(note.reminderAt!)),
+              label: Text(_reminderLabel(note, settings)),
               visualDensity: VisualDensity.compact,
               onPressed: trashed ? null : _editReminder,
               onDeleted: trashed
@@ -1326,6 +1315,10 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
     );
   }
+
+  String _reminderLabel(Note note, SettingsStore settings) =>
+      '${settings.reminderLabel(note.reminderAt!)}'
+      '${note.reminderRepeat == null ? '' : ' · ${note.reminderRepeat!.label}'}';
 
   /// One label chip in the editor, tinted with the label's colour and prefixed
   /// with its icon (custom or default).
@@ -1435,7 +1428,8 @@ class _AddToHomeScreenHelp extends StatelessWidget {
             ),
           _Step(
             number: steps.length + 1,
-            text: 'Touch and hold the new widget, tap Edit Widget, '
+            text:
+                'Touch and hold the new widget, tap Edit Widget, '
                 'then choose "$noteTitle".',
           ),
           const SizedBox(height: 12),

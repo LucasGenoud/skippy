@@ -102,6 +102,7 @@ pub async fn rewrite_note(
         trashed: None,
         position: None,
         reminder_at: None,
+        reminder_repeat: None,
         label_ids: None,
         stage_id: None,
         stage_position: None,

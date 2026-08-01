@@ -69,6 +69,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   String _color = 'default';
   Set<String> _labelIds = {};
   DateTime? _reminderAt;
+  ReminderRepeat? _reminderRepeat;
   bool _pinned = false;
   final List<DroppedFile> _files = [];
 
@@ -145,7 +146,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
     // PATCHed, so everything set here rides along on the create request that
     // the content update below triggers.
     if (_color != 'default') store.setColor(note.id, _color);
-    if (_reminderAt != null) store.setReminder(note.id, _reminderAt);
+    if (_reminderAt != null) {
+      store.setReminder(note.id, _reminderAt, _reminderRepeat);
+    }
     if (_pinned) store.togglePin(note.id);
     if (_kind == NoteKind.checklist) {
       store.updateNoteContent(
@@ -206,6 +209,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       _color = 'default';
       _labelIds = {};
       _reminderAt = null;
+      _reminderRepeat = null;
       _pinned = false;
       _files.clear();
     });
@@ -279,10 +283,14 @@ class _QuickAddBarState extends State<QuickAddBar> {
     final selection = await ReminderPicker.show(
       context,
       current: _reminderAt,
+      currentRepeat: _reminderRepeat,
       use24hTime: context.read<SettingsStore>().use24hTime,
     );
     if (!mounted || selection == null) return;
-    setState(() => _reminderAt = selection.at);
+    setState(() {
+      _reminderAt = selection.at;
+      _reminderRepeat = selection.repeat;
+    });
   });
 
   /// Files picked while composing wait here until the note is created, so a
@@ -715,10 +723,16 @@ class _QuickAddBarState extends State<QuickAddBar> {
           if (_reminderAt case final at?)
             InputChip(
               avatar: const Icon(Icons.alarm, size: 16),
-              label: Text(settings.reminderLabel(at)),
+              label: Text(
+                '${settings.reminderLabel(at)}'
+                '${_reminderRepeat == null ? '' : ' · ${_reminderRepeat!.label}'}',
+              ),
               visualDensity: VisualDensity.compact,
               onPressed: _editReminder,
-              onDeleted: () => setState(() => _reminderAt = null),
+              onDeleted: () => setState(() {
+                _reminderAt = null;
+                _reminderRepeat = null;
+              }),
             ),
           for (final label in labels)
             InputChip(

@@ -182,6 +182,18 @@ async fn reminders_set_clear_validate() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["reminder_at"], "2026-08-01T09:00:00+00:00");
 
+    // A cadence is optional and can be changed independently of the due time.
+    let (status, updated) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"reminder_repeat": "weekly"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["reminder_repeat"], "weekly");
+
     // Explicit null clears; absent key leaves it alone.
     let (status, updated) = send(
         &app,
@@ -203,6 +215,7 @@ async fn reminders_set_clear_validate() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["reminder_at"], Value::Null);
+    assert_eq!(updated["reminder_repeat"], Value::Null);
 
     let (status, _) = send(
         &app,
@@ -210,6 +223,26 @@ async fn reminders_set_clear_validate() {
         &format!("/api/notes/{id}"),
         Some(&token),
         Some(json!({"reminder_at": "tomorrow-ish"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"reminder_repeat": "hourly"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"reminder_repeat": "daily"})),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

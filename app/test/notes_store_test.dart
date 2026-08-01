@@ -303,10 +303,12 @@ void main() {
       api.notes['n1'] = serverNote('n1', title: 'a');
       await store.load();
       final when = DateTime(2030, 1, 2, 9, 30);
-      store.setReminder('n1', when);
+      store.setReminder('n1', when, ReminderRepeat.weekly);
       expect(store.noteById('n1')!.reminderAt, when);
+      expect(store.noteById('n1')!.reminderRepeat, ReminderRepeat.weekly);
       await settle();
       expect(api.notes['n1']!.reminderAt, isNotNull);
+      expect(api.notes['n1']!.reminderRepeat, ReminderRepeat.weekly);
       store.setReminder('n1', null);
       await settle();
       expect(api.notes['n1']!.reminderAt, isNull);
