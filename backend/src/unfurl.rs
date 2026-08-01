@@ -89,11 +89,21 @@ pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkP
         Ok((final_url, html)) => {
             let base = validate_public_http_url(&final_url, true)
                 .await
-                .unwrap_or(parsed);
+                .unwrap_or_else(|_| parsed.clone());
             parse_preview(&html, &base)
         }
         Err(_) => LinkPreview::host_only(&parsed),
     };
+    // Some sites serve an anti-bot interstitial with a perfectly valid 200
+    // response. Treating its `<title>` as page metadata makes a link card less
+    // useful than a bare URL (Reddit currently returns "Please wait for
+    // verification"). A Reddit permalink still contains the subreddit and a
+    // human-readable post slug, so recover those when possible. Other
+    // verification pages fall back to the host-only preview.
+    if is_verification_preview(&preview) {
+        preview =
+            reddit_permalink_preview(&parsed).unwrap_or_else(|| LinkPreview::host_only(&parsed));
+    }
     // Inline the favicon as a `data:` URI. Flutter web (CanvasKit) can't render
     // a cross-origin favicon fetched by `Image.network`, favicon servers don't
     // send CORS headers, so the browser taints the fetch and the client falls
@@ -104,6 +114,85 @@ pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkP
         preview.favicon = Some(inline_favicon(&fav, allow_private).await.unwrap_or(fav));
     }
     Ok(preview)
+}
+
+/// Whether a fetched title belongs to a bot-check page instead of the link the
+/// user saved. Keep this deliberately narrow: a real article can legitimately
+/// discuss verification, but these exact phrases are challenge-page chrome.
+fn is_verification_preview(preview: &LinkPreview) -> bool {
+    let Some(title) = preview.title.as_deref() else {
+        return false;
+    };
+    let title = title.trim().to_ascii_lowercase();
+    title == "reddit - please wait for verification"
+        || title == "please wait for verification"
+        || title == "just a moment..."
+        || title == "just a moment"
+        || title == "checking your browser"
+}
+
+/// Build a useful, metadata-free preview for a standard Reddit post URL. It
+/// only runs after a verification page was detected, never replacing real Open
+/// Graph metadata. Reddit's slug loses punctuation and capitalization, but it
+/// is much more useful than the bot-check title.
+fn reddit_permalink_preview(parsed: &ParsedUrl) -> Option<LinkPreview> {
+    if parsed.host != "reddit.com" && !parsed.host.ends_with(".reddit.com") {
+        return None;
+    }
+    let path = parsed.path.split(['?', '#']).next().unwrap_or(&parsed.path);
+    let parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.len() < 5 || !parts[0].eq_ignore_ascii_case("r") || parts[2] != "comments" {
+        return None;
+    }
+    let subreddit = percent_decode(parts[1]);
+    let slug = percent_decode(parts[4]).replace(['_', '-'], " ");
+    let title = slug.split_whitespace().collect::<Vec<_>>().join(" ");
+    if subreddit.is_empty() || title.is_empty() {
+        return None;
+    }
+    let mut chars = title.chars();
+    let title = match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => return None,
+    };
+    Some(LinkPreview {
+        url: parsed.full.clone(),
+        title: Some(title),
+        description: None,
+        image: None,
+        site_name: Some(format!("r/{subreddit} · Reddit")),
+        favicon: Some(parsed.resolve("/favicon.ico")),
+    })
+}
+
+/// Decode percent escapes in a URL path segment. Invalid escapes stay literal;
+/// they should not make a safe, already-validated URL lose its host fallback.
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(high), Some(low)) = (hex_value(bytes[i + 1]), hex_value(bytes[i + 2]))
+        {
+            out.push(high * 16 + low);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 /// Favicons are tiny; anything larger than this isn't a favicon and isn't worth
@@ -714,6 +803,54 @@ mod tests {
         let p = parse_preview(html, &base());
         assert_eq!(p.title.as_deref(), Some("Tw"));
         assert_eq!(p.image.as_deref(), Some("https://cdn.x/y.png"));
+    }
+
+    #[test]
+    fn recovers_reddit_permalink_from_verification_page() {
+        let mut p = LinkPreview {
+            url: "https://www.reddit.com/r/running/comments/usc5o3/does_running_in_warm_weather_like_25_celsius_make/".to_string(),
+            title: Some("Reddit - Please wait for verification".to_string()),
+            description: None,
+            image: None,
+            site_name: Some("reddit.com".to_string()),
+            favicon: None,
+        };
+        assert!(is_verification_preview(&p));
+
+        p = reddit_permalink_preview(&ParsedUrl {
+            scheme: "https".to_string(),
+            host: "www.reddit.com".to_string(),
+            port: 443,
+            path: "/r/running/comments/usc5o3/does_running_in_warm_weather_like_25_celsius_make/".to_string(),
+            full: "https://www.reddit.com/r/running/comments/usc5o3/does_running_in_warm_weather_like_25_celsius_make/".to_string(),
+            addrs: Vec::new(),
+        })
+        .expect("Reddit permalink fallback");
+
+        assert_eq!(
+            p.title.as_deref(),
+            Some("Does running in warm weather like 25 celsius make")
+        );
+        assert_eq!(p.site_name.as_deref(), Some("r/running · Reddit"));
+    }
+
+    #[test]
+    fn does_not_treat_regular_verification_discussion_as_a_challenge() {
+        let p = LinkPreview {
+            url: "https://example.com/article".to_string(),
+            title: Some("A guide to verification".to_string()),
+            description: None,
+            image: None,
+            site_name: None,
+            favicon: None,
+        };
+        assert!(!is_verification_preview(&p));
+    }
+
+    #[test]
+    fn percent_decodes_reddit_slugs() {
+        assert_eq!(percent_decode("caf%C3%A9%20run"), "café run");
+        assert_eq!(percent_decode("literal%zz"), "literal%zz");
     }
 
     #[test]
