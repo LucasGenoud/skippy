@@ -62,7 +62,7 @@ class _SkippyAppState extends State<SkippyApp> {
   /// it, and taps on a widget arrive through it here.
   late final HomeWidgets _homeWidgets = HomeWidgets();
 
-  StreamSubscription<String?>? _widgetTaps;
+  StreamSubscription<WidgetTap?>? _widgetTaps;
 
   /// Lets a notification tap push the editor from outside the widget tree
   /// that built it (the tap callback has no BuildContext of its own).
@@ -94,11 +94,15 @@ class _SkippyAppState extends State<SkippyApp> {
     _localNotifications.tappedNoteId.addListener(_onNotificationTap);
     // Same reasoning for a home-screen widget: the stream only carries taps
     // that arrive while the app runs, so a cold launch is asked about directly.
-    _widgetTaps = _homeWidgets.tappedNoteIds.listen((noteId) {
-      if (noteId != null) _requestOpenNote(noteId);
+    _widgetTaps = _homeWidgets.tappedNotes.listen((tap) {
+      if (tap != null) {
+        _requestOpenNote(tap.noteId, addChecklistItem: tap.addItem);
+      }
     });
-    _homeWidgets.initialTappedNoteId().then((noteId) {
-      if (noteId != null && mounted) _requestOpenNote(noteId);
+    _homeWidgets.initialTap().then((tap) {
+      if (tap != null && mounted) {
+        _requestOpenNote(tap.noteId, addChecklistItem: tap.addItem);
+      }
     });
     // Android only: the launcher opened us to ask which note a newly added
     // widget should show, and is holding that widget until we answer.
@@ -142,12 +146,17 @@ class _SkippyAppState extends State<SkippyApp> {
   /// store actually has it.
   String? _pendingOpenNoteId;
 
+  /// Whether that note should open with a fresh checklist row focused: the
+  /// widget's "Add item" row, which cannot take the text itself.
+  bool _pendingOpenAddItem = false;
+
   /// The listener waiting for [_pendingOpenNoteId] to arrive in the store, kept
   /// so a second tap replaces it rather than stacking another one.
   VoidCallback? _openRetry;
 
-  void _requestOpenNote(String noteId) {
+  void _requestOpenNote(String noteId, {bool addChecklistItem = false}) {
     _pendingOpenNoteId = noteId;
+    _pendingOpenAddItem = addChecklistItem;
     _openPendingNote();
   }
 
@@ -178,13 +187,19 @@ class _SkippyAppState extends State<SkippyApp> {
     }
     _cancelOpenRetry(store);
     _pendingOpenNoteId = null;
+    final addItem = _pendingOpenAddItem;
+    _pendingOpenAddItem = false;
     // Consume the notification tap too, so it can't replay on the next pass.
     if (_localNotifications.tappedNoteId.value == noteId) {
       _localNotifications.tappedNoteId.value = null;
     }
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
-    _openNotes.showNote(navigator, noteId, (_) => EditorScreen(noteId: noteId));
+    _openNotes.showNote(
+      navigator,
+      noteId,
+      (_) => EditorScreen(noteId: noteId, addChecklistItem: addItem),
+    );
   }
 
   void _cancelOpenRetry(NotesStore store) {

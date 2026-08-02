@@ -70,6 +70,11 @@ class EditorScreen extends StatefulWidget {
   /// Board column a note composed from that column starts in.
   final String? stageId;
 
+  /// Opens a checklist with its empty "add item" row focused and the keyboard
+  /// up, ready to type. For the home-screen widget's Add item row: a widget
+  /// takes no text input on either platform, so the item is written here.
+  final bool addChecklistItem;
+
   const EditorScreen({
     super.key,
     this.noteId,
@@ -77,6 +82,7 @@ class EditorScreen extends StatefulWidget {
     this.modal = false,
     this.labelIds = const {},
     this.stageId,
+    this.addChecklistItem = false,
   });
 
   @override
@@ -259,9 +265,7 @@ class _EditorScreenState extends State<EditorScreen> {
     // draft still opens as source so typing can begin immediately.
     _previewMarkdown = note?.kind == NoteKind.markdown;
     _titleController = TextEditingController(text: note?.title ?? '');
-    _contentController = LinkifyingController(
-      text: note?.content ?? '',
-    );
+    _contentController = LinkifyingController(text: note?.content ?? '');
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
     _findController.addListener(() => setState(() {}));
@@ -1188,7 +1192,8 @@ class _EditorScreenState extends State<EditorScreen> {
         items: _items,
         readOnly: trashed,
         autofocusNew:
-            widget.noteId == null && widget.kind == NoteKind.checklist,
+            (widget.noteId == null && widget.kind == NoteKind.checklist) ||
+            (widget.addChecklistItem && !trashed),
         highlightQuery: query,
         // Suggestions come from THIS note's checked history only, never
         // from other notes.

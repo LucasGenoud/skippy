@@ -148,6 +148,11 @@ class _BoardColumnViewState extends State<BoardColumnView> {
     final movedId = movedCardId(before, orderedIds);
     if (movedId == null) return;
     final store = context.read<NotesStore>();
+    // A neighbouring phone page or stage-strip target can accept the drag
+    // while this masonry is finishing its animation. The target has already
+    // updated the store in that case, so the old source column must never
+    // write the carried card back into itself.
+    if (store.noteById(movedId)?.stageId != _stageId) return;
     final index = orderedIds.indexOf(movedId);
     Note? neighbour(int at) =>
         at < 0 || at >= orderedIds.length ? null : store.noteById(orderedIds[at]);
@@ -218,6 +223,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             // A long press selects rather than lifts while selecting, the
             // same rule the grid follows.
             dragEnabled: widget.dragEnabled && !widget.selectionMode,
+            keepReorderAfterAcceptedDrop: true,
             // Board cards must be visible on the first frame; see the flag's
             // doc on why the grid's cascade is the wrong default here.
             staggeredEntrance: false,

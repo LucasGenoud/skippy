@@ -18,6 +18,7 @@ import 'package:skippy/state/link_preview_cache.dart';
 import 'package:skippy/theme.dart';
 import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
+import 'package:skippy/widgets/all_done_burst.dart';
 import 'package:skippy/widgets/animated_checklist.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
@@ -1636,6 +1637,33 @@ void main() {
     );
 
     testWidgets(
+      'empty new checklist row can dismiss its keyboard with the close button',
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+        await store.load();
+        await tester.pumpWidget(
+          harness(store, const EditorScreen(noteId: 'n1')),
+        );
+        await tester.pump();
+
+        final addField = find.widgetWithText(TextField, 'List item');
+        await tester.tap(addField);
+        await tester.pump();
+
+        final addEditable = tester.widget<EditableText>(
+          find.descendant(of: addField, matching: find.byType(EditableText)),
+        );
+        expect(addEditable.focusNode.hasFocus, isTrue);
+
+        await tester.tap(find.byKey(const Key('checklist-new-row-close')));
+        await tester.pump();
+
+        expect(addEditable.focusNode.hasFocus, isFalse);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
       'checklist row preserves a contraction across the focus handoff',
       (tester) async {
         api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
@@ -2228,6 +2256,114 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('AM'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+
+    testWidgets(
+      'the widget Add item row opens the note ready to type a new item',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          items: [const ChecklistItem(id: 'a', text: 'Milk')],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            const EditorScreen(noteId: 'n1', addChecklistItem: true),
+          ),
+        );
+        await tester.pump();
+
+        final addField = tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(TextField, 'List item'),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(addField.focusNode.hasFocus, isTrue);
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets('ticking the last item celebrates the finished list', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [
+          const ChecklistItem(id: 'a', text: 'Milk', done: true),
+          const ChecklistItem(id: 'b', text: 'Eggs'),
+        ],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      // A finished list that merely arrives finished never celebrates: only
+      // the tick that finishes it does.
+      expect(find.byType(AllDoneBurst), findsNothing);
+
+      await tester.tap(find.byType(Checkbox).first); // the pending 'Eggs'
+      await tester.pump();
+      expect(find.byType(AllDoneBurst), findsOneWidget);
+
+      // And it clears itself up afterwards.
+      await tester.pump(Motion.celebration);
+      await tester.pumpAndSettle();
+      expect(find.byType(AllDoneBurst), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('ticking an item with others still pending does not', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [
+          const ChecklistItem(id: 'a', text: 'Milk'),
+          const ChecklistItem(id: 'b', text: 'Eggs'),
+        ],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      await tester.tap(find.byType(Checkbox).first);
+      await tester.pump();
+      expect(find.byType(AllDoneBurst), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('unticking never celebrates, ticking it back again does', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: [const ChecklistItem(id: 'a', text: 'Milk', done: true)],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      // Checked items are folded away behind their header on open.
+      await tester.tap(find.text('1 checked item'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      expect(find.byType(AllDoneBurst), findsNothing);
+
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(Checkbox));
+      await tester.pump();
+      expect(find.byType(AllDoneBurst), findsOneWidget);
+      await tester.pump(Motion.celebration);
       await tester.pumpAndSettle();
       await flushTimers(tester);
     });
@@ -3041,63 +3177,105 @@ void main() {
   });
 
   group('smart views', () {
-    testWidgets('a saved view filters the grid and narrows further as you type',
-        (tester) async {
-      tester.view.physicalSize = const Size(1200, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-      api.notes['n1'] = serverNote('n1', title: 'Pinned report', pinned: true);
-      api.notes['n2'] = serverNote('n2', title: 'Pinned recipe', pinned: true);
-      api.notes['n3'] = serverNote('n3', title: 'Loose thought');
-      await store.load();
+    testWidgets(
+      'a saved view filters the grid and narrows further as you type',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Pinned report',
+          pinned: true,
+        );
+        api.notes['n2'] = serverNote(
+          'n2',
+          title: 'Pinned recipe',
+          pinned: true,
+        );
+        api.notes['n3'] = serverNote('n3', title: 'Loose thought');
+        await store.load();
 
-      final settings = SettingsStore(api: api);
-      addTearDown(settings.dispose);
-      await settings.load();
-      settings.addSavedView(name: 'Pinned', query: 'is:pinned');
+        final settings = SettingsStore(api: api);
+        addTearDown(settings.dispose);
+        await settings.load();
+        settings.addSavedView(name: 'Pinned', query: 'is:pinned');
 
-      await tester.pumpWidget(homeApp(store, settings: settings));
-      await tester.pumpAndSettle();
-      expect(find.text('Loose thought'), findsOneWidget);
+        await tester.pumpWidget(homeApp(store, settings: settings));
+        await tester.pumpAndSettle();
+        expect(find.text('Loose thought'), findsOneWidget);
 
-      // The sidebar carries the view; opening it runs the saved query.
-      await tester.tap(find.text('Pinned'));
-      await tester.pumpAndSettle();
-      expect(find.text('Pinned report'), findsOneWidget);
-      expect(find.text('Pinned recipe'), findsOneWidget);
-      expect(find.text('Loose thought'), findsNothing);
+        // The sidebar carries the view; opening it runs the saved query.
+        await tester.tap(find.text('Pinned'));
+        await tester.pumpAndSettle();
+        expect(find.text('Pinned report'), findsOneWidget);
+        expect(find.text('Pinned recipe'), findsOneWidget);
+        expect(find.text('Loose thought'), findsNothing);
 
-      // Typing narrows the smart view instead of replacing it: 'recipe' is
-      // ANDed with the saved is:pinned rather than searching everything.
-      await tester.enterText(find.byType(TextField).first, 'recipe');
-      await tester.pumpAndSettle();
-      expect(find.text('Pinned recipe'), findsOneWidget);
-      expect(find.text('Pinned report'), findsNothing);
-      await flushTimers(tester);
-    });
+        // Typing narrows the smart view instead of replacing it: 'recipe' is
+        // ANDed with the saved is:pinned rather than searching everything.
+        await tester.enterText(find.byType(TextField).first, 'recipe');
+        await tester.pumpAndSettle();
+        expect(find.text('Pinned recipe'), findsOneWidget);
+        expect(find.text('Pinned report'), findsNothing);
+        await flushTimers(tester);
+      },
+    );
 
-    testWidgets('the filter sheet inserts an operator into the search box', (
+    testWidgets('the filter sheet stays open and toggles filters on and off', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       api.notes['n1'] = serverNote('n1', title: 'Pinned report', pinned: true);
-      api.notes['n2'] = serverNote('n2', title: 'Loose thought');
+      api.notes['n2'] = serverNote(
+        'n2',
+        title: 'Pinned list',
+        pinned: true,
+        kind: NoteKind.checklist,
+        items: const [ChecklistItem(id: 'i1', text: 'Milk')],
+      );
+      api.notes['n3'] = serverNote('n3', title: 'Loose thought');
       await store.load();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Search filters'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ActionChip, 'is:pinned'));
-      await tester.pumpAndSettle();
 
+      Finder chip(String token) => find.widgetWithText(FilterChip, token);
+      bool selected(String token) =>
+          tester.widget<FilterChip>(chip(token)).selected;
+
+      await tester.tap(chip('is:pinned'));
+      await tester.pumpAndSettle();
+      // The sheet is still up, so a second filter takes one tap, not a
+      // reopen, and the chip shows what is already applied.
+      expect(chip('is:open'), findsOneWidget);
+      expect(selected('is:pinned'), isTrue);
+
+      await tester.tap(chip('is:open'));
+      await tester.pumpAndSettle();
+      expect(selected('is:open'), isTrue);
+
+      final field = find.byType(TextField).first;
       expect(
-        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
-        'is:pinned ',
+        tester.widget<TextField>(field).controller!.text,
+        'is:pinned is:open',
       );
-      expect(find.text('Pinned report'), findsOneWidget);
+
+      // Tapping an applied filter takes it back out.
+      await tester.tap(chip('is:pinned'));
+      await tester.pumpAndSettle();
+      expect(selected('is:pinned'), isFalse);
+      expect(tester.widget<TextField>(field).controller!.text, 'is:open');
+
+      // Close the sheet and the grid reflects what was built.
+      await tester.tapAt(const Offset(600, 20));
+      await tester.pumpAndSettle();
+      expect(find.text('Pinned list'), findsOneWidget);
+      expect(find.text('Pinned report'), findsNothing);
       expect(find.text('Loose thought'), findsNothing);
       await flushTimers(tester);
     });

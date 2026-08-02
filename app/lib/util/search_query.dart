@@ -191,57 +191,134 @@ class SearchContext {
   static final empty = SearchContext(const []);
 }
 
-/// Split on whitespace, except inside double quotes. Quotes are consumed, so
-/// `label:"to do"` arrives as the single token `label:to do`.
-List<String> _tokenize(String input) {
-  final out = <String>[];
-  final buffer = StringBuffer();
+/// One whitespace-separated run of the raw query, with where it sits in the
+/// source string.
+///
+/// The offsets are what lets the search field paint a background behind the
+/// operators only, and what lets a filter be removed from a query without
+/// rewriting the words around it (re-serializing a parse would lowercase the
+/// user's own text, which is startling while they are still typing it).
+class QueryToken {
+  /// Indices into the source string; [end] is exclusive.
+  final int start;
+  final int end;
+
+  /// The source slice, quotes and all.
+  final String raw;
+
+  /// The filter this token expresses, or null when it is free text.
+  final SearchFilter? filter;
+
+  const QueryToken({
+    required this.start,
+    required this.end,
+    required this.raw,
+    required this.filter,
+  });
+
+  bool get isFilter => filter != null;
+}
+
+/// Split on whitespace, except inside double quotes, keeping source offsets.
+List<QueryToken> tokenizeSearchQuery(String input) {
+  final out = <QueryToken>[];
+  var start = -1;
   var quoted = false;
+
+  void flush(int end) {
+    if (start < 0) return;
+    final raw = input.substring(start, end);
+    out.add(
+      QueryToken(start: start, end: end, raw: raw, filter: _filterOf(raw)),
+    );
+    start = -1;
+  }
+
   for (var i = 0; i < input.length; i++) {
     final ch = input[i];
     if (ch == '"') {
       quoted = !quoted;
+      if (start < 0) start = i;
       continue;
     }
     if (!quoted && (ch == ' ' || ch == '\t' || ch == '\n')) {
-      if (buffer.isNotEmpty) {
-        out.add(buffer.toString());
-        buffer.clear();
-      }
+      flush(i);
       continue;
     }
-    buffer.write(ch);
+    if (start < 0) start = i;
   }
-  if (buffer.isNotEmpty) out.add(buffer.toString());
+  flush(input.length);
   return out;
+}
+
+/// Strip the quotes a token used to hold its value together.
+String _unquote(String raw) => raw.replaceAll('"', '');
+
+/// The `field:value` a raw token expresses, or null when it is free text.
+SearchFilter? _filterOf(String raw) {
+  var body = _unquote(raw);
+  var negated = false;
+  // A lone `-` is text, not a negation of nothing.
+  if (body.length > 1 && body.startsWith('-')) {
+    negated = true;
+    body = body.substring(1);
+  }
+  final colon = body.indexOf(':');
+  if (colon <= 0) return null;
+  final field = FilterField.fromKeyword(body.substring(0, colon).toLowerCase());
+  final value = body.substring(colon + 1).trim().toLowerCase();
+  if (field == null || value.isEmpty) return null;
+  return SearchFilter(field: field, value: value, negated: negated);
 }
 
 SearchQuery parseSearchQuery(String input) {
   final terms = <SearchTerm>[];
   final filters = <SearchFilter>[];
-  for (final token in _tokenize(input)) {
-    var body = token;
+  for (final token in tokenizeSearchQuery(input)) {
+    if (token.filter case final SearchFilter filter) {
+      filters.add(filter);
+      continue;
+    }
+    var body = _unquote(token.raw);
     var negated = false;
-    // A lone `-` is text, not a negation of nothing.
     if (body.length > 1 && body.startsWith('-')) {
       negated = true;
       body = body.substring(1);
-    }
-    final colon = body.indexOf(':');
-    if (colon > 0) {
-      final field = FilterField.fromKeyword(
-        body.substring(0, colon).toLowerCase(),
-      );
-      final value = body.substring(colon + 1).trim().toLowerCase();
-      if (field != null && value.isNotEmpty) {
-        filters.add(SearchFilter(field: field, value: value, negated: negated));
-        continue;
-      }
     }
     final text = body.trim().toLowerCase();
     if (text.isNotEmpty) terms.add(SearchTerm(text, negated: negated));
   }
   return SearchQuery(terms: terms, filters: filters);
+}
+
+/// Whether [query] already carries the filter [token] stands for.
+bool searchQueryHas(String query, String token) {
+  final target = _filterOf(token);
+  if (target == null) return false;
+  return tokenizeSearchQuery(query).any((t) => t.filter == target);
+}
+
+/// Add [token] to [query], or take it back out when it is already there.
+///
+/// This is what makes the filter sheet a set of toggles rather than a list of
+/// one-shot insertions: tapping the same chip twice leaves the query as it
+/// was. Everything the user typed keeps its original spelling, because only
+/// whole tokens are added and removed.
+String toggleSearchFilter(String query, String token) {
+  final target = _filterOf(token);
+  if (target == null) return query;
+  final tokens = tokenizeSearchQuery(query);
+  final kept = <String>[];
+  var removed = false;
+  for (final t in tokens) {
+    if (!removed && t.filter == target) {
+      removed = true;
+      continue;
+    }
+    kept.add(t.raw);
+  }
+  if (!removed) kept.add(token);
+  return kept.join(' ');
 }
 
 bool _containsText(Note note, String needle, SearchContext context) {

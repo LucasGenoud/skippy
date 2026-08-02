@@ -13,6 +13,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Rich link previews from Open Graph/HTML metadata, fetched through an SSRF-guarded backend endpoint and cached on both client and server
 - Checklists **remember what you've checked off** and **suggest items while you type**, in a popup anchored under the row with the matched prefix bolded, type "mi" and get "Milk" from your history; your most frequent items surface when the field is empty. Perfect for grocery lists.
 - Checking an item **animates it down into a collapsible "checked" section** where it stays visible; unchecking glides it back
+- Clearing the **last** pending item throws a short "All done" confetti burst over the list (skipped under reduce motion)
 - **Drag handles** (⠿) reorder checklist items with live animated reflow
 - **Undo/redo** in the editor (bottom-bar arrows, Cmd/Ctrl+Z / Shift+Z): typing groups into bursts; checks, adds, removes, reorders, and conversions are each one step
 - **Version history** groups content edits into sessions, attributes collaborator edits, and supports reversible restores
@@ -27,7 +28,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Grid / single-column list toggle; responsive density and width presets support up to 8 columns
 - **Sort by** custom order / recently edited / recently added / oldest
 - Library-wide instant search + **find-in-note** with match highlighting
-- **Search operators**: `label:work`, `is:pinned|archived|trashed|shared|open|done`, `has:reminder|attachment|image|audio|link|label`, `color:red`, `kind:checklist`, quoted values (`label:"to do"`), and a leading `-` to exclude. Terms are ANDed, so every word narrows. An explicit `is:archived` or `is:trashed` overrides the view's own state filter, which is what makes archived notes findable from the grid. A cheat sheet with one-tap insertion sits behind the filter button in the search bar.
+- **Search operators**: `label:work`, `is:pinned|archived|trashed|shared|open|done`, `has:reminder|attachment|image|audio|link|label`, `color:red`, `kind:checklist`, quoted values (`label:"to do"`), and a leading `-` to exclude. Terms are ANDed, so every word narrows. An explicit `is:archived` or `is:trashed` overrides the view's own state filter, which is what makes archived notes findable from the grid. A cheat sheet sits behind the filter button in the search bar: it stays open so several filters can be toggled on and off in one visit, and applied filters get a tinted background in the search box so operators read apart from the words around them.
 - **Smart views**: save any search (operators included) as a named, colored, icon-bearing entry in the sidebar. They re-evaluate every time they are opened, so "Overdue work" stays right as notes change, and typing in the box narrows a smart view further rather than replacing it. Stored in the per-user settings document, so they sync across devices.
 - **Semantic search** (meaning-ranking toggle in the search bar): notes are embedded by a self-hostable **OpenAI-compatible embeddings API** (Ollama, LM Studio, ...) and ranked by meaning, "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension, with one visibility-scoped row per note participant and no separate vector database. The server runs no model of its own, so its memory footprint doesn't depend on the model you choose.
 - **Audio notes** (mic button, when transcription is enabled): record a voice clip in a focused overlay with a live level meter, then it's transcribed locally by a self-hosted **Whisper** service, no external AI. The clip stays playable in the note and the transcript is editable, searchable, and exportable text.
@@ -65,7 +66,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Web drag-and-drop and file picking; native file/image pickers on mobile
 - Adaptive overlays: input-heavy editors use full-screen pages on phones and compact dialogs on web; quick choices use phone bottom sheets and centered web surfaces.
 - Android/iOS share-sheet intake turns shared text/links into text notes and shared files into attachment notes
-- **Home-screen widgets** pin a note to the phone home screen: tap to open it, or **tick checklist items straight from the widget** without opening the app. Ticks apply instantly (offline included), sync to the server in the background, and are queued and replayed by the app if that fails. See [Home-screen widgets](#home-screen-widgets).
+- **Home-screen widgets** pin a note to the phone home screen: tap to open it, or **tick checklist items straight from the widget** without opening the app. Ticks apply instantly (offline included), sync to the server in the background, and are queued and replayed by the app if that fails. An **Add item** row opens the note with an empty checklist row already focused. See [Home-screen widgets](#home-screen-widgets).
 - Offline startup from a per-user local cache, with pending writes persisted and replayed after connectivity returns
 
 **Out of scope:** drawings/handwriting, OCR, calendar synchronization, and CRDT-style conflict-free collaborative editing.
@@ -112,6 +113,18 @@ as the widget size fits and adds a `+N more` footer that opens the note, while
 Interactive ticking needs **iOS 17+** (`AppIntent`-backed buttons); below that
 the widget still renders and still opens the note. The app itself supports
 iOS 14+.
+
+**Adding an item**
+
+Neither platform lets a widget take text — WidgetKit has no text field, and
+Android's `RemoteViews` has no editable view — so a checklist widget carries an
+**Add item** row that opens the note with an empty checklist row already focused
+and the keyboard up (`skippy://note/<id>?homeWidget=1&add=1`). On iOS it appears
+on medium and large widgets only: the small family is a single tap target driven
+by `widgetURL`, where a per-row link is ignored.
+
+Rows are deliberately a size larger than the in-app list (bigger checkbox,
+bigger label): a home screen is read at arm's length and ticked with a thumb.
 
 **How a tick reaches the server**
 

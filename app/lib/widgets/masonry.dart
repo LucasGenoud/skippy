@@ -29,6 +29,17 @@ class AnimatedMasonry extends StatefulWidget {
   final bool dragEnabled;
   final ValueChanged<List<String>>? onReorder;
 
+  /// Keep an in-progress reorder when an ancestor drop target reports the
+  /// drag as accepted.
+  ///
+  /// The board's paged phone layout keeps neighbouring columns and its stage
+  /// strip mounted as drop targets. On iOS, their acceptance can be reported
+  /// for a card that was released back in its own column. BoardColumnView
+  /// verifies the card still belongs to that column before persisting, so it
+  /// can safely opt into committing the local reorder. Other masonry users
+  /// retain the usual behaviour: an accepted drop belongs to its target.
+  final bool keepReorderAfterAcceptedDrop;
+
   /// Touch long presses that end without movement select this note; moving
   /// after the hold keeps the existing reorder behavior.
   final ValueChanged<String>? onStationaryLongPress;
@@ -65,6 +76,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.spacing = 8,
     this.dragEnabled = true,
     this.onReorder,
+    this.keepReorderAfterAcceptedDrop = false,
     this.onStationaryLongPress,
     this.scrollController,
     this.staggeredEntrance = true,
@@ -382,7 +394,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     final stationary = !_dragMoved;
     setState(() => _draggingId = null);
     final original = [for (final n in widget.notes) n.id];
-    if (tookIt) {
+    if (tookIt && !widget.keepReorderAfterAcceptedDrop) {
       // Drop the drag's arrangement; the rebuild that removes the card is
       // what should redraw this grid, not a reorder it never really made.
       setState(() {

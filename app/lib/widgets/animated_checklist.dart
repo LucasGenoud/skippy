@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../models/note.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
+import 'all_done_burst.dart';
 import 'measure_size.dart';
 
 /// Checklist editor:
@@ -220,6 +221,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// has been in use for a while is mostly history, and neither the reader nor
   /// the layout should have to carry it on every open.
   bool _showChecked = false;
+
+  /// Whether the "all done" burst is currently playing, and which one: the
+  /// counter keys the burst widget, so finishing a list again while the last
+  /// flourish is still in the air restarts it instead of being swallowed.
+  bool _celebrating = false;
+  int _celebration = 0;
 
   @override
   void initState() {
@@ -944,7 +951,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   value: item.done,
                   onChanged: widget.readOnly
                       ? null
-                      : (_) => widget.onToggle(item.id),
+                      : (_) => _handleToggle(item),
                   sideColor: scheme.onSurfaceVariant,
                 ),
               ),
@@ -1213,6 +1220,30 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               ),
             ),
           ),
+          ValueListenableBuilder<String?>(
+            valueListenable: _focusedId,
+            builder: (context, focusedId, child) {
+              // The add row has no item to remove yet. When it is empty and
+              // actively being edited, give it the same clear exit as a real
+              // checklist row: relinquish focus so the soft keyboard closes.
+              final show =
+                  focusedId == _kNewRowId &&
+                  _newRow.controller.text.trim().isEmpty;
+              return Opacity(
+                opacity: show ? 1 : 0,
+                child: IgnorePointer(ignoring: !show, child: child),
+              );
+            },
+            child: IconButton(
+              key: const Key('checklist-new-row-close'),
+              icon: const Icon(Icons.close, size: 18),
+              color: scheme.onSurfaceVariant,
+              tooltip: 'Close keyboard',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              onPressed: () => _newRow.focusNode.unfocus(),
+            ),
+          ),
         ],
       ),
     );
@@ -1253,6 +1284,33 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     _newRow.controller.clear();
     _pendingFocusId = adopting.id;
     setState(() {});
+  }
+
+  /// Ticks a row, and celebrates the tick that empties the list.
+  ///
+  /// Fired from the tap rather than from a diff of [AnimatedChecklist.items]:
+  /// the edit is optimistic and comes back through the parent a frame or two
+  /// later, and a diff would also fire for a list that merely arrives complete
+  /// (a sync from another device, or opening a finished note).
+  void _handleToggle(ChecklistItem item) {
+    if (_completesList(item) && !Motion.reduced(context)) {
+      setState(() {
+        _celebration++;
+        _celebrating = true;
+      });
+      HapticFeedback.lightImpact();
+    }
+    widget.onToggle(item.id);
+  }
+
+  /// Whether ticking [item] would leave nothing on the list unchecked.
+  /// Unticking one never does, however few are left.
+  bool _completesList(ChecklistItem item) {
+    if (item.done) return false;
+    for (final other in widget.items) {
+      if (!other.done && other.id != item.id) return false;
+    }
+    return true;
   }
 
   Widget _checkedHeader(int count) {
@@ -1362,6 +1420,16 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             if (_checked.isNotEmpty && _showChecked)
               for (final item in _checked)
                 positioned(item.id, _rowFor(item, dragging: false)),
+            // Last, so the confetti fly over the rows rather than under them.
+            if (_celebrating)
+              Positioned.fill(
+                child: AllDoneBurst(
+                  key: ValueKey('checklist-all-done-$_celebration'),
+                  onDone: () {
+                    if (mounted) setState(() => _celebrating = false);
+                  },
+                ),
+              ),
           ],
         ),
       ),

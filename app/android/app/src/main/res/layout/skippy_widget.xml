@@ -27,7 +27,7 @@
             android:layout_height="wrap_content"
             android:maxLines="1"
             android:ellipsize="end"
-            android:textSize="18sp"
+            android:textSize="21sp"
             android:textStyle="bold"
             android:textColor="@color/widget_text" />
     </LinearLayout>
@@ -49,7 +49,24 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:gravity="top|start"
-        android:textSize="15sp"
+        android:textSize="17sp"
         android:textColor="@color/widget_text_secondary" />
+
+    <!-- Opens the note with an empty checklist row focused: a widget has no
+         editable view, so the typing itself happens in the app. Shown by the
+         provider for checklists only. -->
+    <TextView
+        android:id="@+id/widget_add"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:drawableStart="@drawable/ic_widget_add"
+        android:drawablePadding="10dp"
+        android:gravity="center_vertical"
+        android:maxLines="1"
+        android:text="@string/widget_add_item"
+        android:textSize="18sp"
+        android:textColor="@color/widget_text_secondary"
+        android:visibility="gone" />
 
 </LinearLayout>

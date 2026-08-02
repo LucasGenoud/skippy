@@ -31,6 +31,7 @@ import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/saved_view_dialog.dart';
 import '../widgets/search_filters_sheet.dart';
+import '../widgets/search_query_controller.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
@@ -51,7 +52,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSidebarOpen = true;
   final Set<String> _selectedNoteIds = {};
   bool _selectionMode = false;
-  final _searchController = TextEditingController();
+  // Paints a background behind the `label:`/`is:` operators, and is what
+  // the filter sheet edits while it stays open.
+  final _searchController = SearchQueryController();
   final _searchFocus = FocusNode();
   final _scrollController = ScrollController();
 
@@ -346,21 +349,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// The cheat sheet of search operators, and the way from a search you like
   /// to a smart view that keeps it.
+  ///
+  /// The sheet toggles filters on the controller directly and stays open, so
+  /// this only handles what it wants done after it closes.
   Future<void> _openSearchFilters() async {
-    final result = await SearchFiltersSheet.show(context, query: _query);
-    if (!mounted || result == null) return;
+    final result = await SearchFiltersSheet.show(
+      context,
+      controller: _searchController,
+      onChanged: _onQueryChanged,
+    );
+    if (!mounted) return;
     switch (result) {
-      case InsertFilter(:final token):
-        final current = _searchController.text.trimRight();
-        final next = current.isEmpty ? '$token ' : '$current $token ';
-        _searchController.value = TextEditingValue(
-          text: next,
-          selection: TextSelection.collapsed(offset: next.length),
-        );
-        _onQueryChanged(next);
-        _searchFocus.requestFocus();
       case SaveAsSmartView():
         await _saveSearchAsView(_query);
+      case null:
+        // Back to the box they were just building, caret at the end.
+        if (_query.trim().isNotEmpty) _searchFocus.requestFocus();
     }
   }
 

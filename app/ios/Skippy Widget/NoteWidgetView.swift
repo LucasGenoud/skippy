@@ -31,7 +31,8 @@ struct NoteWidgetView: View {
   @Environment(\.widgetFamily) private var family
 
   /// Rows that fit without clipping. Measured against the standard widget
-  /// heights; a row is a single line of body text plus its spacing.
+  /// heights, against the tallest thing in a row (the `.title3` checkbox, ~25pt)
+  /// plus its 5pt spacing, under a `.title3` title.
   private var rowLimit: Int {
     switch family {
     case .systemSmall: return 2
@@ -39,6 +40,13 @@ struct NoteWidgetView: View {
     default: return 8
     }
   }
+
+  /// Whether the checklist gets its own "Add item" row.
+  ///
+  /// Only above the small family: there the whole widget is a single tap
+  /// target driven by `widgetURL`, and a `Link` inside it is ignored, so an
+  /// add row would look tappable and open the note plain instead.
+  private var showsAddRow: Bool { family != .systemSmall }
 
   var body: some View {
     if let note = entry.note {
@@ -56,12 +64,17 @@ struct NoteWidgetView: View {
   private func content(for note: WidgetNote) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(note.title)
-        .font(.headline.weight(.semibold))
+        .font(.title3.weight(.semibold))
         .lineLimit(1)
         .foregroundStyle(.primary)
 
       if note.isChecklist {
-        ChecklistBody(note: note, limit: rowLimit)
+        // The add row costs one item's worth of height, so give it one back.
+        ChecklistBody(
+          note: note,
+          limit: showsAddRow ? rowLimit - 1 : rowLimit,
+          showsAddRow: showsAddRow
+        )
       } else {
         TextBody(note: note, limit: rowLimit)
       }
@@ -75,25 +88,62 @@ struct NoteWidgetView: View {
 private struct ChecklistBody: View {
   let note: WidgetNote
   let limit: Int
+  let showsAddRow: Bool
 
   var body: some View {
     let shown = Array(note.items.prefix(limit))
     let hidden = note.itemCount - shown.count
 
-    if note.items.isEmpty {
-      Text("No items")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-    } else {
-      VStack(alignment: .leading, spacing: 5) {
+    VStack(alignment: .leading, spacing: 5) {
+      if note.items.isEmpty {
+        Text("No items")
+          .font(.body)
+          .foregroundStyle(.secondary)
+      } else {
         ForEach(shown) { item in
           ChecklistRow(noteId: note.id, item: item)
         }
         if hidden > 0 {
           Text("+\(hidden) more")
-            .font(.caption2)
+            .font(.caption)
             .foregroundStyle(.secondary)
         }
+      }
+      if showsAddRow {
+        AddItemRow(noteId: note.id)
+      }
+    }
+  }
+}
+
+/// Opens the note with an empty checklist row focused.
+///
+/// A widget cannot take text: WidgetKit has no text field, and an `AppIntent`
+/// has no way to prompt for one. So this hands the typing to the app rather
+/// than pretending to accept it here, which still saves the user finding the
+/// note themselves. `Link` (not `Button(intent:)`) because the work happens in
+/// the app; the `homeWidget` query item is required for the same reason as on
+/// the widget as a whole, and `add=1` is what the app reads to focus the row.
+@available(iOS 17.0, *)
+private struct AddItemRow: View {
+  let noteId: String
+
+  var body: some View {
+    if let url = URL(string: "skippy://note/\(noteId)?homeWidget=1&add=1") {
+      Link(destination: url) {
+        HStack(spacing: 8) {
+          // Sized like a row's checkbox so the two line up in the same column.
+          Image(systemName: "plus")
+            .font(.body.weight(.semibold))
+            .frame(width: 20)
+          Text("Add item")
+            .font(.body)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .foregroundStyle(.secondary)
+        // The whole row responds, not just the glyph and its label.
+        .contentShape(Rectangle())
       }
     }
   }
@@ -108,16 +158,19 @@ private struct ChecklistRow: View {
 
   var body: some View {
     let intent = ToggleItemIntent(noteId: noteId, itemId: item.id, done: !item.done)
-    HStack(alignment: .firstTextBaseline, spacing: 6) {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
       Button(intent: intent) {
+        // A home screen is read at arm's length and ticked with a thumb, so
+        // both the box and its label run a size larger than a compact list
+        // would: .title3 for the target, .body for the text.
         Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
-          .font(.subheadline)
+          .font(.title3)
           .foregroundStyle(item.done ? .secondary : .primary)
       }
       .buttonStyle(.plain)
       Button(intent: intent) {
         Text(item.text)
-          .font(.subheadline)
+          .font(.body)
           .lineLimit(1)
           .strikethrough(item.done, color: .secondary)
           .foregroundStyle(item.done ? .secondary : .primary)
@@ -136,11 +189,11 @@ private struct TextBody: View {
   var body: some View {
     if note.content.isEmpty {
       Text("Empty note")
-        .font(.subheadline)
+        .font(.body)
         .foregroundStyle(.secondary)
     } else {
       Text(note.content)
-        .font(.subheadline)
+        .font(.body)
         // One extra line than a checklist fits: no checkboxes to make room for.
         .lineLimit(limit + 1)
         .foregroundStyle(.primary)

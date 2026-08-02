@@ -477,6 +477,41 @@ void main() {
     expect(api.log.where((l) => l.startsWith('patchNote')).length, 1);
   });
 
+  testWidgets('phones keep an in-column card reorder after the drop', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(390, 780));
+    for (final (index, id) in ['a', 'b', 'c'].indexed) {
+      api.notes[id] = serverNote(
+        id,
+        title: 'card $id',
+      ).copyWith(stageId: 'todo', stagePosition: (index + 1) * 1024);
+    }
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Todo'));
+    await tester.pumpAndSettle();
+    api.log.clear();
+
+    final target = tester.getCenter(find.text('card a'));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card c')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveTo(target);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      store.noteById('c')!.stagePosition,
+      lessThan(store.noteById('a')!.stagePosition),
+    );
+    await flushTimers(tester);
+    expect(api.log.where((l) => l.startsWith('patchNote')).length, 1);
+  });
+
   /// The board has to be reachable from the app's own navigation, not just
   /// mountable in a test. The narrow drawer and the wide sidebar are separate
   /// widgets, and an entry added to one is not added to the other.

@@ -1,7 +1,9 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/state/note_collection.dart';
 import 'package:skippy/util/search_query.dart';
+import 'package:skippy/widgets/search_query_controller.dart';
 
 void main() {
   final created = DateTime(2026, 1, 1);
@@ -88,13 +90,107 @@ void main() {
     test('reports operators it cannot satisfy', () {
       expect(parseSearchQuery('is:pinned').unknownFilters, isEmpty);
       expect(
-        parseSearchQuery('is:favourite has:sketch kind:drawing').unknownFilters
-            .map((f) => f.value),
+        parseSearchQuery(
+          'is:favourite has:sketch kind:drawing',
+        ).unknownFilters.map((f) => f.value),
         ['favourite', 'sketch', 'drawing'],
       );
       // A label that does not exist is a normal empty result, not a typo the
       // box should complain about: labels come and go.
       expect(parseSearchQuery('label:nope').unknownFilters, isEmpty);
+    });
+  });
+
+  group('tokens and toggling', () {
+    test('tokens carry their source offsets, quotes included', () {
+      const query = 'milk label:"to do" eggs';
+      final tokens = tokenizeSearchQuery(query);
+      expect(tokens.map((t) => t.raw), ['milk', 'label:"to do"', 'eggs']);
+      expect(tokens.map((t) => t.isFilter), [false, true, false]);
+      // The offsets are what the field paints its background from, so they
+      // have to index the raw string exactly.
+      for (final token in tokens) {
+        expect(query.substring(token.start, token.end), token.raw);
+      }
+    });
+
+    test('toggling adds a filter, then takes the same one back out', () {
+      var query = toggleSearchFilter('', 'is:pinned');
+      expect(query, 'is:pinned');
+      query = toggleSearchFilter(query, 'has:reminder');
+      expect(query, 'is:pinned has:reminder');
+      expect(searchQueryHas(query, 'is:pinned'), isTrue);
+      expect(searchQueryHas(query, 'is:open'), isFalse);
+
+      query = toggleSearchFilter(query, 'is:pinned');
+      expect(query, 'has:reminder');
+      expect(searchQueryHas(query, 'is:pinned'), isFalse);
+    });
+
+    test('toggling leaves the words the user typed exactly as typed', () {
+      // Re-serializing a parse would lowercase this while they are still
+      // typing it, which is why removal works on raw tokens.
+      const typed = 'Sourdough "Rye Bread" -Milk';
+      final added = toggleSearchFilter(typed, 'is:pinned');
+      expect(added, 'Sourdough "Rye Bread" -Milk is:pinned');
+      expect(toggleSearchFilter(added, 'is:pinned'), typed);
+    });
+
+    test('an alias toggles the filter it means, not the text it spells', () {
+      // `tag:` and `label:` are the same filter, so one removes the other.
+      expect(toggleSearchFilter('tag:work', 'label:work'), '');
+      expect(searchQueryHas('tag:work', 'label:work'), isTrue);
+    });
+  });
+
+  group('SearchQueryController', () {
+    /// The spans the field will paint for [query].
+    Future<List<InlineSpan>> spansFor(WidgetTester tester, String query) async {
+      final controller = SearchQueryController(text: query);
+      addTearDown(controller.dispose);
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              ctx = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      final span = controller.buildTextSpan(
+        context: ctx,
+        style: const TextStyle(fontSize: 14),
+        withComposing: false,
+      );
+      return span.children ?? [span];
+    }
+
+    testWidgets('tints the operators and leaves the words plain', (
+      tester,
+    ) async {
+      final spans = await spansFor(tester, 'milk label:work eggs');
+      final tinted = [
+        for (final span in spans.cast<TextSpan>())
+          if (span.style?.backgroundColor != null) span.text,
+      ];
+      expect(tinted, ['label:work']);
+      // The words around it keep the field's own style.
+      expect(
+        spans.cast<TextSpan>().map((s) => s.text).join(),
+        'milk label:work eggs',
+      );
+    });
+
+    testWidgets('a query with no operators is left entirely alone', (
+      tester,
+    ) async {
+      final spans = await spansFor(tester, 'just some words');
+      final tinted = spans.cast<TextSpan>().where(
+        (s) => s.style?.backgroundColor != null,
+      );
+      expect(tinted, isEmpty);
     });
   });
 
@@ -104,8 +200,10 @@ void main() {
       final bare = note('b');
       expect(parseSearchQuery('label:work').matches(labelled, context), isTrue);
       expect(parseSearchQuery('label:work').matches(bare, context), isFalse);
-      expect(parseSearchQuery('label:"to do"').matches(labelled, context),
-          isFalse);
+      expect(
+        parseSearchQuery('label:"to do"').matches(labelled, context),
+        isFalse,
+      );
       expect(parseSearchQuery('label:none').matches(bare, context), isTrue);
       expect(parseSearchQuery('label:any').matches(labelled, context), isTrue);
     });
@@ -159,13 +257,17 @@ void main() {
         parseSearchQuery('has:attachment').matches(withImage, context),
         isTrue,
       );
-      expect(parseSearchQuery('has:audio').matches(withImage, context), isFalse);
+      expect(
+        parseSearchQuery('has:audio').matches(withImage, context),
+        isFalse,
+      );
 
       final withLink = note('c', content: 'see https://example.com for more');
       expect(parseSearchQuery('has:link').matches(withLink, context), isTrue);
       expect(
-        parseSearchQuery('has:link').matches(note('d', content: 'no url here'),
-            context),
+        parseSearchQuery(
+          'has:link',
+        ).matches(note('d', content: 'no url here'), context),
         isFalse,
       );
     });
@@ -187,12 +289,15 @@ void main() {
         labelIds: {'l-work'},
       );
       expect(
-        parseSearchQuery('grocer label:work is:pinned').matches(target, context),
+        parseSearchQuery(
+          'grocer label:work is:pinned',
+        ).matches(target, context),
         isTrue,
       );
       expect(
-        parseSearchQuery('grocer label:work is:archived')
-            .matches(target, context),
+        parseSearchQuery(
+          'grocer label:work is:archived',
+        ).matches(target, context),
         isFalse,
       );
     });
@@ -213,7 +318,10 @@ void main() {
 
     test('is:archived reveals archived notes from the notes view', () {
       final result = selectNotes(
-        notes: [note('live', title: 'live'), archived('old')],
+        notes: [
+          note('live', title: 'live'),
+          archived('old'),
+        ],
         labels: labels,
         selection: ViewSelection.notes,
         query: 'is:archived',
@@ -266,17 +374,19 @@ void main() {
       expect(result.others.map((n) => n.id), ['tagged']);
     });
 
-    test('the archive view is unaffected by an is: filter it already implies',
-        () {
-      final result = selectNotes(
-        notes: [archived('a'), note('b')],
-        labels: labels,
-        selection: ViewSelection.archive,
-        query: 'is:archived',
-        sortMode: SortMode.custom,
-        currentUserId: 'me',
-      );
-      expect(result.others.map((n) => n.id), ['a']);
-    });
+    test(
+      'the archive view is unaffected by an is: filter it already implies',
+      () {
+        final result = selectNotes(
+          notes: [archived('a'), note('b')],
+          labels: labels,
+          selection: ViewSelection.archive,
+          query: 'is:archived',
+          sortMode: SortMode.custom,
+          currentUserId: 'me',
+        );
+        expect(result.others.map((n) => n.id), ['a']);
+      },
+    );
   });
 }

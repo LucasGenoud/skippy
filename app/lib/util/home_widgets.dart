@@ -35,6 +35,21 @@ const String kAndroidWidgetProvider =
 /// it foregrounds the app and is then silently dropped.
 const String kWidgetUrlScheme = 'skippy';
 
+/// Extra query flag on the link behind a widget's "Add item" row, as
+/// `skippy://note/<id>?homeWidget=1&add=1`.
+///
+/// Neither platform lets a home-screen widget take text input — WidgetKit has
+/// no text field at all, and Android's `RemoteViews` has no editable view — so
+/// adding an item cannot happen on the home screen. The row opens the note
+/// instead, with an empty checklist row already focused, which is the closest
+/// thing to typing straight into the widget. Native widget code appends this
+/// by hand, so it is a wire contract like the store keys.
+const String kWidgetAddItemParam = 'add';
+
+/// What a tap on a home-screen widget asked the app to do: show a note, and
+/// (from the "Add item" row) start a new checklist item in it.
+typedef WidgetTap = ({String noteId, bool addItem});
+
 /// Publishes notes to the device's home-screen widgets and reads back the ticks
 /// they made while the app was closed.
 class HomeWidgets {
@@ -107,10 +122,8 @@ class HomeWidgets {
   /// opened is not what was asked for. Both stores are private to this app and
   /// its extensions (an iOS App Group container, Android `MODE_PRIVATE`
   /// preferences), and [clearSession] wipes this on sign-out.
-  Future<void> setSession({
-    required String baseUrl,
-    required String token,
-  }) => _put(kWidgetSessionKey, {'baseUrl': baseUrl, 'token': token});
+  Future<void> setSession({required String baseUrl, required String token}) =>
+      _put(kWidgetSessionKey, {'baseUrl': baseUrl, 'token': token});
 
   Future<void> clearSession() => _put(kWidgetSessionKey, null);
 
@@ -135,7 +148,10 @@ class HomeWidgets {
   /// showing a signed-out user's content.
   Future<void> clearAll() async {
     if (!supported) return;
-    await _put(kWidgetNotesKey, {'version': kWidgetPayloadVersion, 'notes': {}});
+    await _put(kWidgetNotesKey, {
+      'version': kWidgetPayloadVersion,
+      'notes': {},
+    });
     await _put(kWidgetIndexKey, const []);
     await _put(kWidgetOpsKey, const []);
     await _put(kWidgetWantedKey, const []);
@@ -235,26 +251,29 @@ class HomeWidgets {
     await reload();
   }
 
-  /// The note id encoded in a widget-tap deep link, or null for anything else.
-  static String? noteIdFromUri(Uri? uri) {
+  /// What a widget-tap deep link asked for, or null for anything else.
+  static WidgetTap? tapFromUri(Uri? uri) {
     if (uri == null || uri.scheme != kWidgetUrlScheme) return null;
     // skippy://note/<id> parses as host 'note' with one path segment.
     if (uri.host != 'note') return null;
     final segments = uri.pathSegments;
     if (segments.isEmpty || segments.first.isEmpty) return null;
-    return segments.first;
+    return (
+      noteId: segments.first,
+      addItem: uri.queryParameters[kWidgetAddItemParam] == '1',
+    );
   }
 
   /// Taps on a widget while the app is already running.
-  Stream<String?> get tappedNoteIds =>
-      HomeWidget.widgetClicked.map(noteIdFromUri);
+  Stream<WidgetTap?> get tappedNotes =>
+      HomeWidget.widgetClicked.map(tapFromUri);
 
   /// The tap that launched the app from a terminated state, which never reaches
-  /// [tappedNoteIds] because nothing was listening yet.
-  Future<String?> initialTappedNoteId() async {
+  /// [tappedNotes] because nothing was listening yet.
+  Future<WidgetTap?> initialTap() async {
     if (!await _ensureAppGroup()) return null;
     try {
-      return noteIdFromUri(await HomeWidget.initiallyLaunchedFromHomeWidget());
+      return tapFromUri(await HomeWidget.initiallyLaunchedFromHomeWidget());
     } catch (e) {
       debugPrint('home widget: launch check failed: $e');
       return null;

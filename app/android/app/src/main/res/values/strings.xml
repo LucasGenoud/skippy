@@ -3,4 +3,5 @@
     <string name="widget_name">Note</string>
     <string name="widget_description">Keep a note on your Home Screen. Checklists can be ticked here.</string>
     <string name="widget_toggle_item">Toggle item</string>
+    <string name="widget_add_item">Add item</string>
 </resources>

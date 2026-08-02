@@ -10,15 +10,17 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:minHeight="42dp"
-    android:paddingTop="3dp"
-    android:paddingBottom="3dp">
+    android:minHeight="48dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
+    <!-- A home screen is read at arm's length and ticked with a thumb, so the
+         box and its label are a size up from a compact in-app list. -->
     <ImageView
         android:id="@+id/row_check"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:layout_marginEnd="8dp"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_marginEnd="10dp"
         android:contentDescription="@string/widget_toggle_item"
         android:src="@drawable/ic_widget_unchecked" />
 
@@ -28,7 +30,7 @@
         android:layout_height="wrap_content"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textSize="16sp"
+        android:textSize="18sp"
         android:textColor="@color/widget_text" />
 
 </LinearLayout>

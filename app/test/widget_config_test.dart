@@ -27,12 +27,21 @@ class RecordingHomeWidgets extends HomeWidgets {
 }
 
 void main() {
-  group('noteIdFromUri', () {
+  group('tapFromUri', () {
     test('reads the note id out of a widget tap', () {
-      expect(
-        HomeWidgets.noteIdFromUri(Uri.parse('skippy://note/abc-123?homeWidget=1')),
-        'abc-123',
+      final tap = HomeWidgets.tapFromUri(
+        Uri.parse('skippy://note/abc-123?homeWidget=1'),
       );
+      expect(tap?.noteId, 'abc-123');
+      expect(tap?.addItem, isFalse);
+    });
+
+    test('the Add item row asks for a new checklist row', () {
+      final tap = HomeWidgets.tapFromUri(
+        Uri.parse('skippy://note/abc-123?homeWidget=1&add=1'),
+      );
+      expect(tap?.noteId, 'abc-123');
+      expect(tap?.addItem, isTrue);
     });
 
     test('ignores anything that is not one of our note links', () {
@@ -42,13 +51,9 @@ void main() {
         'skippy://note/',
         'skippy://note',
       ]) {
-        expect(
-          HomeWidgets.noteIdFromUri(Uri.parse(uri)),
-          isNull,
-          reason: uri,
-        );
+        expect(HomeWidgets.tapFromUri(Uri.parse(uri)), isNull, reason: uri);
       }
-      expect(HomeWidgets.noteIdFromUri(null), isNull);
+      expect(HomeWidgets.tapFromUri(null), isNull);
     });
   });
 

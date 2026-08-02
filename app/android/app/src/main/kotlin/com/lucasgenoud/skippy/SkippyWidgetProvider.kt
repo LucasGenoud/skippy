@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
+import android.view.View
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 
@@ -126,6 +127,25 @@ class SkippyWidgetProvider : AppWidgetProvider() {
             R.id.widget_header,
             HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java, launchUri),
         )
+
+        // "Add item" opens the note with an empty row focused. A widget has no
+        // editable view, so the text itself is typed in the app; `add=1` is
+        // what tells it to put the caret on a new row. The differing query
+        // string is also what keeps this distinct from the header's intent:
+        // `PendingIntent`s are matched on their data URI, and two that compared
+        // equal would collapse into one.
+        val checklist = note?.isChecklist == true
+        views.setViewVisibility(R.id.widget_add, if (checklist) View.VISIBLE else View.GONE)
+        if (checklist && noteId != null) {
+            views.setOnClickPendingIntent(
+                R.id.widget_add,
+                HomeWidgetLaunchIntent.getActivity(
+                    context,
+                    MainActivity::class.java,
+                    Uri.parse("skippy://note/$noteId?homeWidget=1&add=1"),
+                ),
+            )
+        }
 
         // One template for the whole collection; each row fills in its own ids.
         // Mutable because that is exactly what a fill-in intent does to it.
