@@ -16,7 +16,7 @@ import '../util/label_style.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
-import 'animated_checklist.dart';
+import 'checklist/animated_checklist.dart';
 import 'app_logo.dart';
 import 'color_picker.dart';
 import 'file_drop.dart';

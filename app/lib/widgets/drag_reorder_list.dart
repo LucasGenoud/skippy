@@ -7,7 +7,7 @@ import '../util/motion.dart';
 /// A short, non-scrolling list of fixed-height rows reordered by dragging a
 /// handle, with the rest of the list parting live under the pointer.
 ///
-/// This mirrors the checklist editor's reorder (see `animated_checklist.dart`)
+/// This mirrors the checklist editor's reorder (see `checklist/animated_checklist.dart`)
 /// rather than using [ReorderableListView]: nesting that widget inside a
 /// non-fullscreen [FormDialog] (an [AlertDialog], whose content sizes to its
 /// own intrinsic height) throws a semantics assertion. A plain

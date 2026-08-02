@@ -19,7 +19,7 @@ import 'package:skippy/theme.dart';
 import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/all_done_burst.dart';
-import 'package:skippy/widgets/animated_checklist.dart';
+import 'package:skippy/widgets/checklist/animated_checklist.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
 import 'package:skippy/widgets/linked_text.dart';
@@ -1060,17 +1060,17 @@ void main() {
       expect(find.byType(AnimatedChecklist), findsOneWidget);
       expect(find.byType(EditorScreen), findsNothing);
 
-      // Typing in the add field materializes a real item on the first
-      // keystroke, then the field clears itself for the next one.
+      // Typing in the composer materializes a real item on the first
+      // keystroke; Enter hands it to the list and starts the next one, all
+      // without the caret ever leaving the composer.
       await tester.enterText(
         find.widgetWithText(TextField, 'List item'),
         'Milk',
       );
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.widgetWithText(TextField, 'List item'),
-        'Eggs',
-      );
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pumpAndSettle();
+      tester.testTextInput.enterText('Eggs');
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Close'));
@@ -1540,43 +1540,42 @@ void main() {
       await flushTimers(tester);
     });
 
-    testWidgets(
-      'the add-field handoff does not animate the field being typed into',
-      (tester) async {
-        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
-        await store.load();
-        await tester.pumpWidget(
-          harness(store, const EditorScreen(noteId: 'n1')),
-        );
-        await tester.pump();
+    testWidgets('materializing an item never moves the field being typed in', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
 
-        await tester.tap(find.widgetWithText(TextField, 'List item'));
-        tester.testTextInput.enterText('M');
-        await tester.pump();
+      final composer = find.byKey(const ValueKey('__new__'));
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pumpAndSettle();
+      final restingTop = tester.getRect(composer).top;
 
-        final itemId = store.noteById('n1')!.items.single.id;
-        expect(
-          find.byKey(ValueKey('checklist-entrance-$itemId')),
-          findsNothing,
-        );
-        expect(
-          tester
-              .widget<AnimatedPositioned>(find.byKey(const ValueKey('__new__')))
-              .duration,
-          Duration.zero,
-        );
+      tester.testTextInput.enterText('M');
+      await tester.pump();
 
-        // The delayed store notification must not start the skipped entrance
-        // after the focus handoff has already completed.
-        await tester.pump(const Duration(milliseconds: 250));
-        expect(
-          find.byKey(ValueKey('checklist-entrance-$itemId')),
-          findsNothing,
-        );
-        expect(store.noteById('n1')!.items.single.text, 'M');
-        await flushTimers(tester);
-      },
-    );
+      // The item exists, but it is drawn by the composer, not by a row of its
+      // own that would have to animate in and take the caret over.
+      final itemId = store.noteById('n1')!.items.single.id;
+      expect(find.byKey(ValueKey('checklist-entrance-$itemId')), findsNothing);
+      expect(tester.getRect(composer).top, restingTop);
+      expect(
+        find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(TextField),
+        ),
+        findsOneWidget,
+      );
+
+      // Nor does the delayed store notification start one afterwards.
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.byKey(ValueKey('checklist-entrance-$itemId')), findsNothing);
+      expect(tester.getRect(composer).top, restingTop);
+      expect(store.noteById('n1')!.items.single.text, 'M');
+      await flushTimers(tester);
+    });
 
     testWidgets('typing and hovering rebuild only what changed', (
       tester,
@@ -1680,35 +1679,41 @@ void main() {
       await flushTimers(tester);
     });
 
-    testWidgets(
-      'checklist row keeps its first character across the focus handoff',
-      (tester) async {
-        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
-        await store.load();
-        await tester.pumpWidget(
-          harness(store, const EditorScreen(noteId: 'n1')),
-        );
-        await tester.pump();
+    testWidgets('a word is written into one field from start to finish', (
+      tester,
+    ) async {
+      // Materializing an item used to hand the caret from the add field to
+      // the row it had just spawned, mid-word. That tore down the platform's
+      // text input connection between two keystrokes, and every client raced
+      // it differently: some reported the next character as a replacement,
+      // some attached the new field with an empty value, and characters (or
+      // whole words) went missing on iOS. Nothing is handed over any more.
+      api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
 
-        final addField = find.widgetWithText(TextField, 'List item');
-        await tester.tap(addField);
-        tester.testTextInput.enterText('M');
-        await tester.pump();
-        await tester.pump();
+      final field = find.descendant(
+        of: find.byType(AnimatedChecklist),
+        matching: find.byType(EditableText),
+      );
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+      final editor = tester.state<EditableTextState>(field);
 
-        // Reproduce the desktop race: the input client reports only the next
-        // character after focus moves, rather than the accumulated value.
-        final focused = tester
-            .widgetList<EditableText>(find.byType(EditableText))
-            .singleWhere((field) => field.focusNode.hasFocus);
-        expect(focused.controller.text, 'M');
-        tester.testTextInput.enterText('i');
+      for (final value in ['I', "I'", "I'd"]) {
+        tester.testTextInput.enterText(value);
         await tester.pump();
-
-        expect(store.noteById('n1')!.items.single.text, 'Mi');
-        await flushTimers(tester);
-      },
-    );
+        // Same field, same controller, same focus: there is no window for a
+        // client to race.
+        expect(field, findsOneWidget);
+        expect(tester.state<EditableTextState>(field), same(editor));
+        expect(editor.widget.controller.text, value);
+        expect(editor.widget.focusNode.hasFocus, isTrue);
+        expect(store.noteById('n1')!.items.single.text, value);
+      }
+      await flushTimers(tester);
+    });
 
     testWidgets(
       'empty new checklist row can dismiss its keyboard with the close button',
@@ -1733,39 +1738,6 @@ void main() {
         await tester.pump();
 
         expect(addEditable.focusNode.hasFocus, isFalse);
-        await flushTimers(tester);
-      },
-    );
-
-    testWidgets(
-      'checklist row preserves a contraction across the focus handoff',
-      (tester) async {
-        api.notes['n1'] = serverNote('n1', kind: NoteKind.checklist);
-        await store.load();
-        await tester.pumpWidget(
-          harness(store, const EditorScreen(noteId: 'n1')),
-        );
-        await tester.pump();
-
-        final addField = find.widgetWithText(TextField, 'List item');
-        await tester.tap(addField);
-        tester.testTextInput.enterText('I');
-        await tester.pump();
-        await tester.pump();
-
-        // Some input clients report both characters after the focus handoff as
-        // replacements before catching up with the accumulated contraction.
-        tester.testTextInput.enterText("'");
-        await tester.pump();
-        tester.testTextInput.enterText('d');
-        await tester.pump();
-
-        expect(store.noteById('n1')!.items.single.text, "I'd");
-
-        // Once an accumulated value arrives, ordinary editing continues.
-        tester.testTextInput.enterText("I'd change");
-        await tester.pump();
-        expect(store.noteById('n1')!.items.single.text, "I'd change");
         await flushTimers(tester);
       },
     );

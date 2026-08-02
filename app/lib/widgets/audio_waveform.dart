@@ -46,13 +46,18 @@ class AudioWaveform extends StatelessWidget {
                   onSeek!(duration * fraction);
                 }
               : null,
-          child: SizedBox(
-            height: 34,
-            child: CustomPaint(
-              painter: _AudioWaveformPainter(
-                progress: progress,
-                activeColor: activeColor,
-                inactiveColor: inactiveColor,
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.linear,
+            tween: Tween(end: progress),
+            builder: (context, animatedProgress, _) => SizedBox(
+              height: 34,
+              child: CustomPaint(
+                painter: _AudioWaveformPainter(
+                  progress: animatedProgress,
+                  activeColor: activeColor,
+                  inactiveColor: inactiveColor,
+                ),
               ),
             ),
           ),
@@ -75,6 +80,16 @@ class _AudioWaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _paintBars(canvas, size, inactiveColor);
+    // A moving clip reveals partial bars at the playhead, so it sweeps smoothly
+    // rather than flipping one whole bar at a time.
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width * progress, size.height));
+    _paintBars(canvas, size, activeColor);
+    canvas.restore();
+  }
+
+  void _paintBars(Canvas canvas, Size size, Color color) {
     const barWidth = 3.0;
     const gap = 2.5;
     final count = math.max(1, (size.width / (barWidth + gap)).floor());
@@ -99,10 +114,9 @@ class _AudioWaveformPainter extends CustomPainter {
         width: barWidth,
         height: height,
       );
-      final colour = x <= progress ? activeColor : inactiveColor;
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, radius),
-        Paint()..color = colour,
+        Paint()..color = color,
       );
     }
   }

@@ -125,6 +125,7 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
               ),
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
             child: AudioWaveform(
               position: value.toDouble(),

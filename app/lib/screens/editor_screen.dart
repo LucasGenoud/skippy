@@ -26,7 +26,7 @@ import '../util/note_routes.dart';
 import '../util/snack.dart';
 import '../util/widget_payload.dart';
 import 'history_screen.dart';
-import '../widgets/animated_checklist.dart';
+import '../widgets/checklist/animated_checklist.dart';
 import '../widgets/audio_player.dart';
 import '../widgets/board/move_to_stage_sheet.dart';
 import '../widgets/color_picker.dart';
