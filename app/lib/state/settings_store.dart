@@ -197,15 +197,12 @@ class SettingsStore extends ChangeNotifier {
   List<PaletteEntry> palette = List.of(kDefaultPalette);
   bool loaded = false;
 
-  // Optional features. Each has a server *capability* (is the backing service
-  // running?) fetched from /api/capabilities and NOT persisted, plus a synced
-  // user *toggle*. A feature is available only when both are true, so it
-  // hides automatically when the service is down, and can be turned off by the
-  // user even when it's up.
+  // Optional server-backed features. Semantic search has a user toggle;
+  // transcription is reported separately because recording and playing audio
+  // notes must remain available even while Whisper is offline.
   bool semanticSearchCapable = false;
   bool audioTranscriptionCapable = false;
   bool semanticSearchEnabled = true;
-  bool audioNotesEnabled = true;
 
   // Whether the in-search "rank by meaning" (✨) toggle is on. Unlike the
   // feature toggle above this is the user's live search-mode preference, and
@@ -215,8 +212,7 @@ class SettingsStore extends ChangeNotifier {
 
   bool get semanticSearchAvailable =>
       semanticSearchCapable && semanticSearchEnabled;
-  bool get audioNotesAvailable =>
-      audioTranscriptionCapable && audioNotesEnabled;
+  bool get audioNotesAvailable => true;
 
   // LLM integration (OpenAI-compatible endpoint; Ollama works via its /v1
   // API). Unlike the features above there is no server capability: each user
@@ -387,7 +383,6 @@ class SettingsStore extends ChangeNotifier {
     // server also advertises the capability).
     semanticSearchEnabled = json['semantic_search'] != false;
     semanticRanking = json['semantic_ranking'] == true;
-    audioNotesEnabled = json['audio_notes'] != false;
     llmBaseUrl = ((json['llm_base_url'] as String?) ?? '').trim();
     llmApiKey = ((json['llm_api_key'] as String?) ?? '').trim();
     llmModel = ((json['llm_model'] as String?) ?? '').trim();
@@ -433,7 +428,6 @@ class SettingsStore extends ChangeNotifier {
     'grid_width': gridWidth.name,
     'semantic_search': semanticSearchEnabled,
     'semantic_ranking': semanticRanking,
-    'audio_notes': audioNotesEnabled,
     'llm_base_url': llmBaseUrl,
     'llm_api_key': llmApiKey,
     'llm_model': llmModel,
@@ -487,8 +481,6 @@ class SettingsStore extends ChangeNotifier {
   void setSemanticSearchEnabled(bool value) =>
       _mutate(() => semanticSearchEnabled = value);
   void setSemanticRanking(bool value) => _mutate(() => semanticRanking = value);
-  void setAudioNotesEnabled(bool value) =>
-      _mutate(() => audioNotesEnabled = value);
 
   void setLlmConfig({
     required String baseUrl,

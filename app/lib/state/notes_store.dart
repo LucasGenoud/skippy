@@ -1859,18 +1859,22 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Audio notes
 
-  /// Recording finished → create an audio note holding the clip. The note is
-  /// shown as transcribing immediately (optimistic); uploading the clip makes
-  /// the server run Whisper and fill in the transcript. Returns the note id,
-  /// or null when the upload failed (the empty draft is discarded).
+  /// Recording finished → create an audio note holding the clip. When Whisper
+  /// is available, the note is shown as transcribing immediately; otherwise it
+  /// remains a fully playable audio note with an empty editable transcript.
+  /// Returns the note id, or null when the upload failed (the empty draft is
+  /// discarded).
   Future<String?> createAudioNote(
     Uint8List bytes,
     String mime, {
     Set<String> labelIds = const {},
+    bool transcriptionAvailable = false,
   }) async {
     final note = createDraft(kind: NoteKind.audio, labelIds: labelIds);
-    // Surface the transcribing animation before the round-trip completes.
-    _replace(note.copyWith(transcriptStatus: 'pending'));
+    if (transcriptionAvailable) {
+      // Surface the transcribing animation before the round-trip completes.
+      _replace(note.copyWith(transcriptStatus: 'pending'));
+    }
     final ext = switch (mime.split(';').first.trim()) {
       'audio/webm' => 'webm',
       'audio/ogg' => 'ogg',

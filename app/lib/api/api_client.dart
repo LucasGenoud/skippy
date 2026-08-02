@@ -205,7 +205,7 @@ abstract class Api {
   });
 
   /// Which optional, service-backed features this server has enabled. Drives
-  /// whether the audio recorder and semantic-search toggle appear at all.
+  /// semantic-search availability and whether audio recordings are transcribed.
   Future<({bool semanticSearch, bool audioTranscription})> fetchCapabilities();
 
   /// Semantic-search index diagnostics: embedding model, vector width, and how

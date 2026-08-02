@@ -73,14 +73,14 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: settings.setSemanticSearchEnabled,
               ),
               if (settings.semanticSearchCapable) const EmbeddingStatsTile(),
-              _FeatureToggle(
-                icon: Icons.mic_none,
-                title: 'Audio notes',
-                available:
-                    'Record voice notes and transcribe them with local Whisper',
-                capable: settings.audioTranscriptionCapable,
-                value: settings.audioNotesEnabled,
-                onChanged: settings.setAudioNotesEnabled,
+              ListTile(
+                leading: const Icon(Icons.mic_none),
+                title: const Text('Audio notes'),
+                subtitle: Text(
+                  settings.audioTranscriptionCapable
+                      ? 'Record and play voice notes; local Whisper transcribes them'
+                      : 'Record and play voice notes; transcription needs local Whisper',
+                ),
               ),
               const Divider(height: 32),
               const _SectionHeader('AI'),

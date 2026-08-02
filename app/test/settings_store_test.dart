@@ -132,7 +132,11 @@ void main() {
       );
       final other = settings.addSavedView(name: 'Pinned', query: 'is:pinned');
 
-      settings.updateSavedView(view.id, name: 'Work stuff', query: 'label:work');
+      settings.updateSavedView(
+        view.id,
+        name: 'Work stuff',
+        query: 'label:work',
+      );
       expect(settings.savedViewById(view.id)?.name, 'Work stuff');
       expect(settings.savedViewById(view.id)?.icon, isNull);
 
@@ -223,31 +227,35 @@ void main() {
     },
   );
 
-  test('feature availability = server capability AND user toggle', () async {
-    // Search service running, transcription not.
-    api.capabilities = (semanticSearch: true, audioTranscription: false);
-    await settings.load();
-    expect(settings.semanticSearchCapable, isTrue);
-    expect(settings.audioTranscriptionCapable, isFalse);
-    // Both toggles default on, but audio is hidden because its service is down.
-    expect(settings.semanticSearchAvailable, isTrue);
-    expect(settings.audioNotesAvailable, isFalse);
+  test(
+    'search is capability-gated while audio notes are always available',
+    () async {
+      // Search service running, transcription not.
+      api.capabilities = (semanticSearch: true, audioTranscription: false);
+      await settings.load();
+      expect(settings.semanticSearchCapable, isTrue);
+      expect(settings.audioTranscriptionCapable, isFalse);
+      // Audio recording remains available without Whisper; only transcription is
+      // disabled. Search still requires its backing service.
+      expect(settings.semanticSearchAvailable, isTrue);
+      expect(settings.audioNotesAvailable, isTrue);
 
-    // Turning a capable feature off hides it and persists the choice.
-    settings.setSemanticSearchEnabled(false);
-    expect(settings.semanticSearchAvailable, isFalse);
-    await settleSave();
-    expect(api.settings['semantic_search'], isFalse);
+      // Turning a capable feature off hides it and persists the choice.
+      settings.setSemanticSearchEnabled(false);
+      expect(settings.semanticSearchAvailable, isFalse);
+      await settleSave();
+      expect(api.settings['semantic_search'], isFalse);
 
-    // Another device with both services up: the enabled feature is available,
-    // the one the user turned off stays hidden.
-    api.capabilities = (semanticSearch: true, audioTranscription: true);
-    final other = SettingsStore(api: api);
-    await other.load();
-    expect(other.audioNotesAvailable, isTrue);
-    expect(other.semanticSearchAvailable, isFalse);
-    other.dispose();
-  });
+      // Another device with both services up keeps audio available, while the
+      // user-disabled search feature remains hidden.
+      api.capabilities = (semanticSearch: true, audioTranscription: true);
+      final other = SettingsStore(api: api);
+      await other.load();
+      expect(other.audioNotesAvailable, isTrue);
+      expect(other.semanticSearchAvailable, isFalse);
+      other.dispose();
+    },
+  );
 
   test('llm config persists, roundtrips, and gates availability', () async {
     api.capabilities = (semanticSearch: true, audioTranscription: false);

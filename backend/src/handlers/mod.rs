@@ -132,9 +132,10 @@ pub async fn health() -> Json<serde_json::Value> {
 }
 
 /// Which optional, service-backed features this server has enabled. The client
-/// uses it to show or hide the semantic-search toggle and the audio-note
-/// recorder, a feature whose backing service isn't running simply never
-/// appears. Unauthenticated, like [`health`]: it leaks nothing user-specific.
+/// uses it to show or hide semantic search and to decide whether audio notes
+/// are transcribed. Recording and playing audio notes does not require an
+/// optional service. Unauthenticated, like [`health`]: it leaks nothing
+/// user-specific.
 pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "semantic_search": state.search.is_some(),

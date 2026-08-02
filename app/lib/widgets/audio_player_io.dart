@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'audio_waveform.dart';
+
 /// Compact inline player for an audio attachment on native platforms, backed by
 /// the `just_audio` plugin. Visually identical to the web player: a play/pause
 /// button, a seekable progress bar, and elapsed / total time.
@@ -167,17 +169,12 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
             ),
           ),
           Expanded(
-            child: SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 3,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-              ),
-              child: Slider(
-                value: value.toDouble(),
-                max: max,
-                onChanged: _duration > 0 ? _seek : null,
-              ),
+            child: AudioWaveform(
+              position: value.toDouble(),
+              duration: _duration,
+              activeColor: scheme.primary,
+              inactiveColor: scheme.onSurface.withValues(alpha: 0.14),
+              onSeek: _duration > 0 ? _seek : null,
             ),
           ),
           Padding(

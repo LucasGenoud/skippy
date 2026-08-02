@@ -24,7 +24,9 @@ class NewNoteFabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final showAudio = context.watch<SettingsStore>().audioNotesAvailable;
+    final transcriptionAvailable = context
+        .watch<SettingsStore>()
+        .audioTranscriptionCapable;
 
     Widget fab({
       required double size,
@@ -76,10 +78,11 @@ class NewNoteFabs extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (showAudio) ...[
-          _AudioNoteFab(labelIds: labelIds),
-          const SizedBox(height: 12),
-        ],
+        _AudioNoteFab(
+          labelIds: labelIds,
+          transcriptionAvailable: transcriptionAvailable,
+        ),
+        const SizedBox(height: 12),
         fab(
           size: 44,
           icon: Icons.article_outlined,
@@ -112,11 +115,15 @@ class NewNoteFabs extends StatelessWidget {
 }
 
 /// Mic FAB: records a clip in a focused sheet, then drops it into a new audio
-/// note that transcribes itself. Only shown when the server offers
-/// transcription and the user has the feature enabled.
+/// note. Transcription is requested only when the optional Whisper service is
+/// connected; recording and playback never depend on that service.
 class _AudioNoteFab extends StatelessWidget {
   final Set<String> labelIds;
-  const _AudioNoteFab({this.labelIds = const {}});
+  final bool transcriptionAvailable;
+  const _AudioNoteFab({
+    this.labelIds = const {},
+    required this.transcriptionAvailable,
+  });
 
   Future<void> _record(BuildContext context) async {
     final store = context.read<NotesStore>();
@@ -126,6 +133,7 @@ class _AudioNoteFab extends StatelessWidget {
       clip.bytes,
       clip.mime,
       labelIds: labelIds,
+      transcriptionAvailable: transcriptionAvailable,
     );
     if (id == null) showAppSnack("Couldn't save the recording");
   }

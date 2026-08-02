@@ -914,11 +914,12 @@ void main() {
 
   group('audio notes', () {
     test(
-      'createAudioNote makes an audio note that starts transcribing',
+      'createAudioNote starts transcribing only when Whisper is available',
       () async {
         final id = await store.createAudioNote(
           Uint8List.fromList(List.filled(64, 1)),
           'audio/webm',
+          transcriptionAvailable: true,
         );
         expect(id, isNotNull);
 
@@ -932,6 +933,20 @@ void main() {
         expect(note.audioClip!.mime, 'audio/webm');
         // Persisted server-side as an audio note.
         expect(api.notes[id]!.kind, NoteKind.audio);
+      },
+    );
+
+    test(
+      'createAudioNote stays playable when transcription is unavailable',
+      () async {
+        final id = await store.createAudioNote(Uint8List(16), 'audio/webm');
+        expect(id, isNotNull);
+
+        final note = store.noteById(id!)!;
+        expect(note.kind, NoteKind.audio);
+        expect(note.transcriptStatus, 'none');
+        expect(note.transcribing, isFalse);
+        expect(note.audioClip, isNotNull);
       },
     );
 
@@ -1572,11 +1587,7 @@ void main() {
       await store.load();
 
       // Drop c between a and b.
-      store.setNoteStage(
-        'c',
-        'todo',
-        position: 1536,
-      );
+      store.setNoteStage('c', 'todo', position: 1536);
       expect(store.noteById('c')!.stagePosition, 1536.0);
 
       await settle();

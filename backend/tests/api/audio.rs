@@ -44,6 +44,22 @@ async fn audio_note_upload_triggers_transcription() {
 }
 
 #[tokio::test]
+async fn audio_note_upload_remains_usable_without_transcription() {
+    let app = app().await; // no transcription service wired
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"kind": "audio"})).await;
+    let id = note["id"].as_str().unwrap().to_string();
+
+    let (status, _) = upload(&app, &token, &id, "audio/webm", b"audio-only").await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let refreshed = &list_notes(&app, &token).await[0];
+    assert_eq!(refreshed["transcript_status"], json!("none"));
+    assert_eq!(refreshed["content"], json!(""));
+    assert_eq!(refreshed["attachments"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn retry_transcription_validates_and_reruns() {
     let app = build_app(state_with_transcription().await);
     let (token, _) = register(&app, "ada").await;
