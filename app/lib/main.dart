@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import 'api/api_client.dart';
 import 'screens/editor_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/public_share_screen.dart';
 import 'screens/widget_config_screen.dart';
 import 'state/auth_store.dart';
 import 'state/home_widget_bridge.dart';
@@ -22,6 +24,7 @@ import 'util/home_widgets.dart';
 import 'util/local_notifications.dart';
 import 'util/motion.dart';
 import 'util/note_routes.dart';
+import 'util/public_route.dart';
 import 'util/snack.dart';
 import 'widgets/background_guard.dart';
 
@@ -107,6 +110,28 @@ class _SkippyAppState extends State<SkippyApp> {
   /// The widget the launcher is waiting for us to configure, if any.
   int? _configuringWidgetId;
 
+  /// Set when the app was opened at a `/s/<token>` URL, which is a public
+  /// share page rather than the app proper.
+  ///
+  /// Read once, from the URL the page loaded at, and never again: the page is
+  /// a standalone reader, not a route the app navigates in and out of. It
+  /// wins over the auth gate on purpose, someone following a shared link wants
+  /// the shared thing whether or not they happen to be signed in here.
+  late final String? _publicShareToken = kIsWeb
+      ? publicShareToken(Uri.base.path)
+      : null;
+
+  /// The client the public page reads through: pinned to the origin that
+  /// served the page, not to [_api].
+  ///
+  /// [_api] resolves its base through the signed-in app's rules (a saved
+  /// server, a dart-define, an injected URL, then a same-origin guess that
+  /// only fires on the default port). None of those apply to a reader who
+  /// arrived from a link: the only backend that can answer for this token is
+  /// the one that handed out the page, so ask that one. Caught in the browser,
+  /// where a server on a non-default port left the page asking localhost:8787.
+  late final ApiClient _publicApi = ApiClient(baseUrl: Uri.base.origin);
+
   void _onNotificationTap() {
     final noteId = _localNotifications.tappedNoteId.value;
     if (noteId != null) _requestOpenNote(noteId);
@@ -191,21 +216,17 @@ class _SkippyAppState extends State<SkippyApp> {
             )
             ..load()
             ..startSync();
-      _reminders =
-          ReminderScheduler(
-              notes: _store!,
-              settings: settings,
-              platform: _localNotifications,
-            )
-            ..start();
-      _widgets =
-          HomeWidgetBridge(
-              notes: _store!,
-              settings: settings,
-              api: _api,
-              platform: _homeWidgets,
-            )
-            ..start();
+      _reminders = ReminderScheduler(
+        notes: _store!,
+        settings: settings,
+        platform: _localNotifications,
+      )..start();
+      _widgets = HomeWidgetBridge(
+        notes: _store!,
+        settings: settings,
+        api: _api,
+        platform: _homeWidgets,
+      )..start();
       _shareIntake.setStore(_store);
       setState(() {});
       // A cold start can finish auth restore after the launch-notification
@@ -313,40 +334,46 @@ class _SkippyAppState extends State<SkippyApp> {
           // through is the AuthStore notification driving this Consumer, and
           // `_onAuthChanged` (subscribed in initState, before this Consumer
           // exists) has already set `_store` by the time it arrives.
-          home: Consumer<AuthStore>(
-            builder: (context, auth, _) {
-              final store = _store;
-              final configuring = _configuringWidgetId;
-              return AnimatedSwitcher(
-                duration: Motion.slow,
-                switchInCurve: Motion.standard,
-                switchOutCurve: Motion.standard,
-                child: switch (auth.status) {
-                  AuthStatus.restoring => const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  ),
-                  AuthStatus.signedOut => const LoginScreen(),
-                  AuthStatus.signedIn =>
-                    store == null
-                        ? const Scaffold(
-                            body: Center(child: CircularProgressIndicator()),
-                          )
-                        // Answering the launcher takes precedence over the
-                        // grid: it is holding a half-created widget until we do.
-                        : configuring != null
-                        ? WidgetConfigScreen(
-                            widgetId: configuring,
-                            widgets: _homeWidgets,
-                          )
-                        : HomeScreen(
-                            key: ValueKey(
-                              '${_api.baseUrl}:${store.currentUserId}',
+          home: switch (_publicShareToken) {
+            final String token => PublicShareScreen(
+              token: token,
+              api: _publicApi,
+            ),
+            _ => Consumer<AuthStore>(
+              builder: (context, auth, _) {
+                final store = _store;
+                final configuring = _configuringWidgetId;
+                return AnimatedSwitcher(
+                  duration: Motion.slow,
+                  switchInCurve: Motion.standard,
+                  switchOutCurve: Motion.standard,
+                  child: switch (auth.status) {
+                    AuthStatus.restoring => const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    ),
+                    AuthStatus.signedOut => const LoginScreen(),
+                    AuthStatus.signedIn =>
+                      store == null
+                          ? const Scaffold(
+                              body: Center(child: CircularProgressIndicator()),
+                            )
+                          // Answering the launcher takes precedence over the
+                          // grid: it is holding a half-created widget until we do.
+                          : configuring != null
+                          ? WidgetConfigScreen(
+                              widgetId: configuring,
+                              widgets: _homeWidgets,
+                            )
+                          : HomeScreen(
+                              key: ValueKey(
+                                '${_api.baseUrl}:${store.currentUserId}',
+                              ),
                             ),
-                          ),
-                },
-              );
-            },
-          ),
+                  },
+                );
+              },
+            ),
+          },
         ),
       ),
     );

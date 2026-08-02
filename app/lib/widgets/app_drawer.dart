@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../models/note.dart';
 import '../state/notes_store.dart';
+import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'labels_sheet.dart';
+import 'saved_view_dialog.dart';
 import 'workspace_menu.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -21,6 +23,7 @@ class AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
+    final savedViews = context.watch<SettingsStore>().savedViews;
     final workspace = store.activeWorkspace;
 
     final primaryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
@@ -71,6 +74,23 @@ class AppDrawer extends StatelessWidget {
           ),
         ),
     ];
+    final smartDestinations = <(ViewSelection, NavigationDrawerDestination)>[
+      for (final view in savedViews)
+        (
+          ViewSelection.smart(view.id),
+          NavigationDrawerDestination(
+            icon: Icon(
+              labelIconFor(view.icon),
+              color: PaletteEntry.hexToColor(view.color),
+            ),
+            selectedIcon: Icon(
+              labelIconFor(view.icon),
+              color: PaletteEntry.hexToColor(view.color),
+            ),
+            label: Text(view.name, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+    ];
     final libraryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
       (
         ViewSelection.archive,
@@ -92,6 +112,7 @@ class AppDrawer extends StatelessWidget {
     final destinations = [
       ...primaryDestinations,
       ...labelDestinations,
+      ...smartDestinations,
       ...libraryDestinations,
     ];
 
@@ -144,29 +165,37 @@ class AppDrawer extends StatelessWidget {
         ),
         const _DrawerSectionHeader('Labels'),
         for (final destination in labelDestinations) destination.$2,
-        InkWell(
+        _DrawerAction(
+          icon: Icons.edit_outlined,
+          label: labels.isEmpty ? 'Create labels' : 'Edit labels',
           onTap: () {
             final navigator = Navigator.of(context);
             navigator.pop();
             EditLabelsDialog.show(navigator.context);
           },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.edit_outlined,
-                  size: 22,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  labels.isEmpty ? 'Create labels' : 'Edit labels',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-              ],
-            ),
-          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(28, 8, 28, 12),
+          child: Divider(height: 1),
+        ),
+        const _DrawerSectionHeader('Smart views'),
+        for (final destination in smartDestinations) destination.$2,
+        _DrawerAction(
+          icon: savedViews.isEmpty
+              ? Icons.bookmark_add_outlined
+              : Icons.edit_outlined,
+          label: savedViews.isEmpty
+              ? 'Create a smart view'
+              : 'Edit smart views',
+          onTap: () {
+            final navigator = Navigator.of(context);
+            navigator.pop();
+            if (savedViews.isEmpty) {
+              SavedViewDialog.show(navigator.context);
+            } else {
+              EditSmartViewsDialog.show(navigator.context);
+            }
+          },
         ),
         const Padding(
           padding: EdgeInsets.fromLTRB(28, 8, 28, 12),
@@ -196,6 +225,7 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
+    final savedViews = context.watch<SettingsStore>().savedViews;
     final workspace = store.activeWorkspace;
     final scheme = Theme.of(context).colorScheme;
 
@@ -292,6 +322,40 @@ class AppSidebar extends StatelessWidget {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Divider(height: 1, indent: 16, endIndent: 16),
               ),
+              _SidebarSectionHeader(label: 'SMART VIEWS', isOpen: isOpen),
+              for (final view in savedViews)
+                _SidebarItem(
+                  // A saved view has one glyph, not an outline/filled pair:
+                  // its identity is the query, and switching icons on
+                  // selection would read as a different view.
+                  icon: labelIconFor(view.icon),
+                  selectedIcon: labelIconFor(view.icon),
+                  iconColor: PaletteEntry.hexToColor(view.color),
+                  label: view.name,
+                  isSelected: selection == ViewSelection.smart(view.id),
+                  isOpen: isOpen,
+                  onTap: () => onSelect(ViewSelection.smart(view.id)),
+                ),
+              _SidebarItem(
+                icon: savedViews.isEmpty
+                    ? Icons.bookmark_add_outlined
+                    : Icons.edit_outlined,
+                selectedIcon: savedViews.isEmpty
+                    ? Icons.bookmark_add
+                    : Icons.edit,
+                label: savedViews.isEmpty
+                    ? 'Create a smart view'
+                    : 'Edit smart views',
+                isSelected: false,
+                isOpen: isOpen,
+                onTap: () => savedViews.isEmpty
+                    ? SavedViewDialog.show(context)
+                    : EditSmartViewsDialog.show(context),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(height: 1, indent: 16, endIndent: 16),
+              ),
               _SidebarSectionHeader(label: 'LIBRARY', isOpen: isOpen),
               _SidebarItem(
                 icon: Icons.archive_outlined,
@@ -350,6 +414,49 @@ class AppSidebar extends StatelessWidget {
       onAction: () => store.restoreFromTrash(noteId),
     );
   }
+}
+
+/// A tappable row in the drawer that isn't a destination: "Edit labels",
+/// "Edit smart views". Matches the destinations' inset so the list reads as
+/// one column.
+class _DrawerAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _DrawerAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 22,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 14),
+          // Expanded, not a bare Text: the drawer is only ~250px wide on a
+          // phone and these labels are long enough to overflow the row.
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _DrawerSectionHeader extends StatelessWidget {

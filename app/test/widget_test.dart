@@ -46,10 +46,13 @@ Widget harness(NotesStore store, Widget child) {
 /// The full home screen, as the app builds it. The top bar's avatar menu
 /// watches an [AuthStore], which only supports the concrete [ApiClient]; a
 /// signed-out store over a dummy client renders fine and never talks to it.
-Widget homeApp(NotesStore store) => MultiProvider(
+Widget homeApp(NotesStore store, {SettingsStore? settings}) => MultiProvider(
   providers: [
     ChangeNotifierProvider.value(value: store),
-    ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+    if (settings == null)
+      ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api))
+    else
+      ChangeNotifierProvider.value(value: settings),
     ChangeNotifierProvider(
       create: (_) => AuthStore(api: ApiClient(baseUrl: 'http://unused')),
     ),
@@ -2723,9 +2726,15 @@ void main() {
     ) async {
       var mode = ThemeMode.light;
       late StateSetter setMode;
+      // The rail reads saved smart views out of settings, so it needs one.
+      final settings = SettingsStore(api: store.api);
+      addTearDown(settings.dispose);
       await tester.pumpWidget(
-        ChangeNotifierProvider.value(
-          value: store,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider.value(value: settings),
+          ],
           child: StatefulBuilder(
             builder: (context, setState) {
               setMode = setState;
@@ -3028,6 +3037,69 @@ void main() {
       expect(find.text('Current'), findsOneWidget);
       expect(find.textContaining('No earlier versions yet'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Restore'), findsNothing);
+    });
+  });
+
+  group('smart views', () {
+    testWidgets('a saved view filters the grid and narrows further as you type',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'Pinned report', pinned: true);
+      api.notes['n2'] = serverNote('n2', title: 'Pinned recipe', pinned: true);
+      api.notes['n3'] = serverNote('n3', title: 'Loose thought');
+      await store.load();
+
+      final settings = SettingsStore(api: api);
+      addTearDown(settings.dispose);
+      await settings.load();
+      settings.addSavedView(name: 'Pinned', query: 'is:pinned');
+
+      await tester.pumpWidget(homeApp(store, settings: settings));
+      await tester.pumpAndSettle();
+      expect(find.text('Loose thought'), findsOneWidget);
+
+      // The sidebar carries the view; opening it runs the saved query.
+      await tester.tap(find.text('Pinned'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pinned report'), findsOneWidget);
+      expect(find.text('Pinned recipe'), findsOneWidget);
+      expect(find.text('Loose thought'), findsNothing);
+
+      // Typing narrows the smart view instead of replacing it: 'recipe' is
+      // ANDed with the saved is:pinned rather than searching everything.
+      await tester.enterText(find.byType(TextField).first, 'recipe');
+      await tester.pumpAndSettle();
+      expect(find.text('Pinned recipe'), findsOneWidget);
+      expect(find.text('Pinned report'), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('the filter sheet inserts an operator into the search box', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'Pinned report', pinned: true);
+      api.notes['n2'] = serverNote('n2', title: 'Loose thought');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Search filters'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ActionChip, 'is:pinned'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        'is:pinned ',
+      );
+      expect(find.text('Pinned report'), findsOneWidget);
+      expect(find.text('Loose thought'), findsNothing);
+      await flushTimers(tester);
     });
   });
 

@@ -189,6 +189,25 @@ pub trait Repository: Send + Sync {
     async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()>;
     async fn remove_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<bool>;
 
+    // -- public share links ----------------------------------------------------
+    async fn insert_share_link(&self, link: &ShareLink) -> RepoResult<()>;
+    /// Resolve a link by its token. Expiry is the caller's business: the
+    /// storage layer has no clock of its own.
+    async fn share_link(&self, token: &str) -> RepoResult<Option<ShareLink>>;
+    async fn share_links_for_user(&self, user_id: &str) -> RepoResult<Vec<ShareLink>>;
+    /// An existing link for the same thing, so publishing twice hands back one
+    /// URL instead of quietly minting a second one the user cannot see.
+    async fn share_link_for_target(
+        &self,
+        user_id: &str,
+        target: &str,
+        note_id: Option<&str>,
+        workspace_id: Option<&str>,
+        label_id: Option<&str>,
+    ) -> RepoResult<Option<ShareLink>>;
+    /// Revoke. Scoped to the owner, so a token alone cannot delete a link.
+    async fn delete_share_link(&self, user_id: &str, token: &str) -> RepoResult<bool>;
+
     // -- labels ---------------------------------------------------------------
     /// Every label in every workspace the user belongs to. Labels are a shared
     /// workspace taxonomy, so members all see the same set.

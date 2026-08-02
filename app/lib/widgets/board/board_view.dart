@@ -7,6 +7,7 @@ import '../../state/board_layout.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../theme.dart';
+import '../../util/search_query.dart';
 import '../empty_state.dart';
 import 'board_column_view.dart';
 import 'stage_editor.dart';
@@ -73,6 +74,10 @@ class _BoardViewState extends State<BoardView> {
     super.dispose();
   }
 
+  /// The free text of [BoardView.query], for match highlighting; the
+  /// operators in it filter the board rather than tint words in a card.
+  String get _highlight => parseSearchQuery(widget.query).text;
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
@@ -81,6 +86,7 @@ class _BoardViewState extends State<BoardView> {
       stages: store.stages,
       scope: store.workspaceScope,
       query: widget.query,
+      labels: store.labels,
       showAllUnassigned: _showAllUnassigned,
       rankedIds: widget.rankedIds,
     );
@@ -133,7 +139,7 @@ class _BoardViewState extends State<BoardView> {
                 clipBehavior: Clip.antiAlias,
                 child: BoardColumnView(
                   column: column,
-                  query: widget.query,
+                  query: _highlight,
                   onShowAll: column.isUnassigned ? _showAll : null,
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
@@ -209,7 +215,7 @@ class _BoardViewState extends State<BoardView> {
                 clipBehavior: Clip.antiAlias,
                 child: BoardColumnView(
                   column: column,
-                  query: widget.query,
+                  query: _highlight,
                   onShowAll: column.isUnassigned ? _showAll : null,
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,

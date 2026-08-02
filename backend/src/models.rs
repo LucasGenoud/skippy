@@ -333,6 +333,127 @@ pub struct Stage {
     pub position: f64,
 }
 
+// ---------------------------------------------------------------------------
+// Public share links
+
+/// What a public link exposes. A link points at exactly one of these.
+pub const SHARE_TARGET_NOTE: &str = "note";
+/// A workspace's grid: its live notes, the way the owner sees them.
+pub const SHARE_TARGET_NOTES: &str = "notes";
+/// A workspace's board, columns included.
+pub const SHARE_TARGET_BOARD: &str = "board";
+/// One label's notes, across the workspace holding that label.
+pub const SHARE_TARGET_LABEL: &str = "label";
+
+pub const SHARE_TARGETS: &[&str] = &[
+    SHARE_TARGET_NOTE,
+    SHARE_TARGET_NOTES,
+    SHARE_TARGET_BOARD,
+    SHARE_TARGET_LABEL,
+];
+
+/// A read-only link handed out to people without an account.
+///
+/// The token is the capability: whoever holds it can read what the link points
+/// at, which is the point. Unlike the HMAC used for attachment URLs
+/// ([`crate::files::signed_file_path`]) it is a stored row, because a share has
+/// to be revocable, listable, and outlive a signing key rotation.
+#[derive(Debug, Clone)]
+pub struct ShareLink {
+    pub token: String,
+    /// Who published it. Only they can revoke it, and the public payload is
+    /// assembled from what *they* can see.
+    pub owner_id: String,
+    /// One of [`SHARE_TARGETS`].
+    pub target: String,
+    pub note_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub label_id: Option<String>,
+    pub created_at: String,
+    /// RFC3339 instant after which the link stops resolving, or `None` for a
+    /// link that lasts until it is revoked.
+    pub expires_at: Option<String>,
+}
+
+/// A share link as listed for its owner, with the target named so the manage
+/// screen can label the row without resolving ids itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct ShareLinkView {
+    pub token: String,
+    pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_id: Option<String>,
+    /// What the link is called in the UI: the note's title, the workspace's
+    /// name, or the label's name.
+    pub title: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateShareLink {
+    /// One of [`SHARE_TARGETS`].
+    pub target: String,
+    #[serde(default)]
+    pub note_id: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub label_id: Option<String>,
+    /// RFC3339. Absent means the link lasts until it is revoked.
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+/// A note as served to an anonymous reader.
+///
+/// Deliberately its own struct rather than a trimmed [`NoteView`]: everything
+/// public is listed here, so adding a field to the private note model can
+/// never widen a public page by accident. Absent on purpose are the owner and
+/// collaborator identities, reminders (someone's schedule is not part of
+/// reading a note), archive/trash state, and the transcription status.
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicNote {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub content: String,
+    pub items: Vec<ChecklistItem>,
+    pub color: String,
+    pub pinned: bool,
+    pub position: f64,
+    pub label_ids: Vec<String>,
+    pub stage_id: Option<String>,
+    pub stage_position: f64,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Signed, time-limited URLs, the same ones a signed-in reader gets.
+    pub attachments: Vec<Attachment>,
+}
+
+/// The whole payload behind a public link.
+#[derive(Debug, Clone, Serialize)]
+pub struct PublicShare {
+    /// One of [`SHARE_TARGETS`], so the reader can render a note, a grid, or a
+    /// board.
+    pub target: String,
+    pub title: String,
+    /// Display name of whoever published the link. No id, no email.
+    pub shared_by: String,
+    pub notes: Vec<PublicNote>,
+    /// Labels the payload's notes reference, so chips can be drawn.
+    pub labels: Vec<Label>,
+    /// Board columns; empty unless the target is a board.
+    pub stages: Vec<Stage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+}
+
 /// A checklist item text previously checked off in a note; powers typing
 /// suggestions ("Mi…" -> "Milk") in that note's checklist rows. Scoped per
 /// note, suggestions never leak from one note to another.

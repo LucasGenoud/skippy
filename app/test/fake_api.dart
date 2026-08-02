@@ -6,12 +6,18 @@ import 'package:skippy/models/chat.dart';
 import 'package:skippy/models/link_preview.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/models/search_stats.dart';
+import 'package:skippy/models/share_link.dart';
 import 'package:skippy/models/workspace.dart';
 
 /// In-memory [Api] for tests: mirrors the server's semantics closely enough
 /// to exercise the store (patch merging, label sets, history), with failure
 /// injection for offline/retry paths.
 class FakeApi implements Api {
+  @override
+  final String baseUrl;
+
+  FakeApi({this.baseUrl = 'http://fake.test'});
+
   final Map<String, Note> notes = {};
   final Map<String, Label> labels = {};
   final Map<String, Stage> stages = {};
@@ -408,6 +414,64 @@ class FakeApi implements Api {
     if (gate != null) await gate.future;
     return result;
   }
+
+  // -- public share links -----------------------------------------------------
+
+  /// Links this fake has published, keyed by token.
+  final Map<String, ShareLink> shareLinks = {};
+
+  /// Public payloads keyed by token, for tests that read a link.
+  final Map<String, PublicShare> publicShares = {};
+
+  int _shareTokens = 0;
+
+  @override
+  Future<List<ShareLink>> fetchShareLinks() =>
+      _run('fetchShareLinks', () => shareLinks.values.toList());
+
+  @override
+  Future<ShareLink> createShareLink({
+    required ShareTarget target,
+    String? noteId,
+    String? workspaceId,
+    String? labelId,
+    DateTime? expiresAt,
+  }) => _run('createShareLink', () {
+    // Same idempotence as the server: publishing one thing twice hands back
+    // the link that already exists.
+    for (final link in shareLinks.values) {
+      if (link.target == target &&
+          link.noteId == noteId &&
+          link.workspaceId == workspaceId &&
+          link.labelId == labelId) {
+        return link;
+      }
+    }
+    final link = ShareLink(
+      token: 'tok-${_shareTokens++}',
+      target: target,
+      noteId: noteId,
+      workspaceId: workspaceId,
+      labelId: labelId,
+      title: noteId != null ? (notes[noteId]?.title ?? '') : 'Shared view',
+      createdAt: DateTime(2026, 1, 1),
+      expiresAt: expiresAt,
+    );
+    shareLinks[link.token] = link;
+    return link;
+  });
+
+  @override
+  Future<void> deleteShareLink(String token) =>
+      _run('deleteShareLink', () => shareLinks.remove(token));
+
+  @override
+  Future<PublicShare> fetchPublicShare(String token) => _run(
+    'fetchPublicShare',
+    () =>
+        publicShares[token] ??
+        (throw ApiException(404, '{"error":"not found"}')),
+  );
 
   @override
   Future<List<Label>> fetchLabels() async {

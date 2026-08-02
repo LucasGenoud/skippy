@@ -12,6 +12,7 @@ mod notes;
 mod probes;
 mod search;
 mod settings;
+mod share_links;
 mod sharing;
 mod stages;
 mod unfurl;
@@ -31,6 +32,7 @@ pub use notes::{
 pub use probes::{llm_test, notify_test};
 pub use search::{reindex_search, reindex_status, search_stats, semantic_search};
 pub use settings::{get_settings, put_settings};
+pub use share_links::{create_share_link, delete_share_link, list_share_links, public_share};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use stages::{create_stage, delete_stage, list_stages, update_stage};
 pub use unfurl::unfurl;

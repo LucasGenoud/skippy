@@ -8,10 +8,13 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../models/saved_view.dart';
+import '../models/share_link.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
+import '../util/search_query.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/board/board_view.dart';
@@ -24,7 +27,10 @@ import '../widgets/home_top_bar.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
+import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
+import '../widgets/saved_view_dialog.dart';
+import '../widgets/search_filters_sheet.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
@@ -104,6 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _scrollController.dispose();
     super.dispose();
   }
+
+  /// What match highlighting should tint: the free text of the box, without
+  /// its `label:`/`is:` operators. Those are structure rather than words, and
+  /// tinting them would light up unrelated runs of text inside the cards.
+  String get _highlightQuery => parseSearchQuery(_effectiveQuery).text;
 
   void _onQueryChanged(String q) {
     setState(() => _query = q);
@@ -333,6 +344,94 @@ class _HomeScreenState extends State<HomeScreen> {
     _pageFocus.requestFocus();
   }
 
+  /// The cheat sheet of search operators, and the way from a search you like
+  /// to a smart view that keeps it.
+  Future<void> _openSearchFilters() async {
+    final result = await SearchFiltersSheet.show(context, query: _query);
+    if (!mounted || result == null) return;
+    switch (result) {
+      case InsertFilter(:final token):
+        final current = _searchController.text.trimRight();
+        final next = current.isEmpty ? '$token ' : '$current $token ';
+        _searchController.value = TextEditingValue(
+          text: next,
+          selection: TextSelection.collapsed(offset: next.length),
+        );
+        _onQueryChanged(next);
+        _searchFocus.requestFocus();
+      case SaveAsSmartView():
+        await _saveSearchAsView(_query);
+    }
+  }
+
+  /// What publishing "this view" would put on the internet, or null when the
+  /// open view is not publishable.
+  ///
+  /// Archive, trash, reminders and smart views are all deliberately excluded.
+  /// The first three are private housekeeping, and a smart view is a query
+  /// this account holds, not a thing the server can resolve for a stranger.
+  /// Workspaces the user only belongs to are excluded too: publishing a whole
+  /// view exposes every member's notes, so it stays the owner's call, which
+  /// the server enforces independently.
+  PublicLinkTarget? _shareViewTarget(NotesStore store) {
+    final workspace = store.activeWorkspace;
+    if (workspace == null) return null;
+    if (!workspace.isOwnedBy(store.currentUserId)) return null;
+    switch (_selection.view) {
+      case NoteView.notes:
+        return PublicLinkTarget(
+          target: ShareTarget.notes,
+          workspaceId: workspace.id,
+          title: workspace.name,
+          scopeDescription:
+              'Anyone with the link can read every live note in '
+              '"${workspace.name}", including notes other members wrote. '
+              'Archived and trashed notes stay private.',
+        );
+      case NoteView.board:
+        return PublicLinkTarget(
+          target: ShareTarget.board,
+          workspaceId: workspace.id,
+          title: '${workspace.name} board',
+          scopeDescription:
+              'Anyone with the link can read the board of '
+              '"${workspace.name}": its columns and the cards in them, '
+              'including cards other members wrote.',
+        );
+      case NoteView.label:
+        final label = store.labelById(_selection.labelId!);
+        if (label == null) return null;
+        return PublicLinkTarget(
+          target: ShareTarget.label,
+          labelId: label.id,
+          title: label.name,
+          scopeDescription:
+              'Anyone with the link can read every live note labelled '
+              '"${label.name}", including notes other members wrote.',
+        );
+      case NoteView.reminders:
+      case NoteView.archive:
+      case NoteView.trash:
+      case NoteView.smart:
+        return null;
+    }
+  }
+
+  Future<void> _shareCurrentView(NotesStore store) async {
+    final target = _shareViewTarget(store);
+    if (target == null) return;
+    await PublicLinkDialog.show(context, target: target, api: store.api);
+  }
+
+  /// Saves [query] as a smart view and opens it, so the sidebar entry the user
+  /// just made is the thing they end up looking at.
+  Future<void> _saveSearchAsView(String query) async {
+    final saved = await SavedViewDialog.show(context, initialQuery: query);
+    if (!mounted || saved == null) return;
+    _selectView(ViewSelection.smart(saved.id));
+    showAppSnack('Smart view saved', icon: Icons.bookmark_added_outlined);
+  }
+
   String _viewTitle(NotesStore store) => switch (_selection.view) {
     NoteView.notes => '',
     NoteView.board => 'Board',
@@ -340,7 +439,27 @@ class _HomeScreenState extends State<HomeScreen> {
     NoteView.archive => 'Archive',
     NoteView.trash => 'Trash',
     NoteView.label => store.labelById(_selection.labelId!)?.name ?? '',
+    NoteView.smart => _savedView?.name ?? 'Smart view',
   };
+
+  /// The saved view the current selection points at, or null when the
+  /// selection is anything else (or points at a view that has since been
+  /// deleted, on this device or another one).
+  SavedView? get _savedView {
+    final id = _selection.savedViewId;
+    if (id == null) return null;
+    return context.read<SettingsStore>().savedViewById(id);
+  }
+
+  /// What actually filters the grid: the open smart view's saved query with
+  /// whatever is typed in the box appended. Terms are ANDed, so typing narrows
+  /// a smart view further rather than replacing it.
+  String get _effectiveQuery {
+    final saved = _savedView?.query;
+    if (saved == null || saved.isEmpty) return _query;
+    if (_query.trim().isEmpty) return saved;
+    return '$saved $_query';
+  }
 
   /// Files dropped anywhere on the grid become one new note (web only).
   Future<void> _createNoteFromDrop(List<DroppedFile> files) async {
@@ -401,16 +520,20 @@ class _HomeScreenState extends State<HomeScreen> {
       ? ViewSelection.notes
       : ViewSelection.board;
 
-  bool _viewIsAvailable(
-    ViewSelection selection,
-    NotesStore store,
-  ) => switch (selection.view) {
-    NoteView.notes => store.activeWorkspace?.notesEnabled ?? true,
-    NoteView.board => store.activeWorkspace?.boardEnabled ?? true,
-    NoteView.label =>
-      store.labels.any((label) => label.id == selection.labelId),
-    NoteView.reminders || NoteView.archive || NoteView.trash => true,
-  };
+  bool _viewIsAvailable(ViewSelection selection, NotesStore store) =>
+      switch (selection.view) {
+        NoteView.notes => store.activeWorkspace?.notesEnabled ?? true,
+        NoteView.board => store.activeWorkspace?.boardEnabled ?? true,
+        NoteView.label => store.labels.any(
+          (label) => label.id == selection.labelId,
+        ),
+        // A smart view deleted on another device leaves this one pointing at
+        // nothing; treat that like a deleted label and fall back to the grid.
+        NoteView.smart =>
+          context.read<SettingsStore>().savedViewById(selection.savedViewId!) !=
+              null,
+        NoteView.reminders || NoteView.archive || NoteView.trash => true,
+      };
 
   /// Each workspace reopens its own last navigation destination. Shared
   /// setting changes and deleted labels can invalidate that destination; in
@@ -471,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (store.noteById(id) case final Note note)
                 if (!note.trashed && !note.archived) note,
           ])
-        : store.notesFor(_selection, _query);
+        : store.notesFor(_selection, _effectiveQuery);
     final visibleNotes = [...sections.pinned, ...sections.others];
     // Loading indicator in the results area while the first semantic search
     // is in flight (no ranked results to show yet). On a refine the previous
@@ -571,6 +694,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             semanticBusy: _semanticBusy,
                             onQuery: _onQueryChanged,
                             onToggleSemantic: _toggleSemantic,
+                            onOpenFilters: _openSearchFilters,
+                            onShareView: _shareViewTarget(store) == null
+                                ? null
+                                : () => _shareCurrentView(store),
                             onToggleLayout: () =>
                                 setState(() => _listMode = !_listMode),
                             onToggleSidebar: _toggleSidebar,
@@ -604,8 +731,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _addLabelToSelected(store),
                             onMoveToStageSelected: () =>
                                 _moveSelectedToStage(store),
-                            canMoveToStage:
-                                _selection.view == NoteView.board,
+                            canMoveToStage: _selection.view == NoteView.board,
                             onSetColorSelected: () =>
                                 _setColorForSelected(store),
                             onPinSelected: () => _setPinnedForSelected(
@@ -658,251 +784,256 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     )
                                   else
-                                  Positioned.fill(
-                                    child: LayoutBuilder(
-                                      builder: (context, constraints) {
-                                        final width = constraints.maxWidth;
-                                        final horizontalPad = width >= 900
-                                            ? 32.0
-                                            : 16.0;
-                                        final contentWidth =
-                                            width - horizontalPad * 2;
-                                        final density = settings.gridDensity;
-                                        final gridMaxWidth = _listMode
-                                            ? 600.0
-                                            : settings.gridWidth.maxWidth;
-                                        final effectiveWidth =
-                                            contentWidth > gridMaxWidth
-                                            ? gridMaxWidth
-                                            : contentWidth;
-                                        final columns = _listMode
-                                            ? 1
-                                            : (effectiveWidth /
-                                                      density.targetWidth)
-                                                  .floor()
-                                                  .clamp(2, density.maxColumns);
+                                    Positioned.fill(
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final width = constraints.maxWidth;
+                                          final horizontalPad = width >= 900
+                                              ? 32.0
+                                              : 16.0;
+                                          final contentWidth =
+                                              width - horizontalPad * 2;
+                                          final density = settings.gridDensity;
+                                          final gridMaxWidth = _listMode
+                                              ? 600.0
+                                              : settings.gridWidth.maxWidth;
+                                          final effectiveWidth =
+                                              contentWidth > gridMaxWidth
+                                              ? gridMaxWidth
+                                              : contentWidth;
+                                          final columns = _listMode
+                                              ? 1
+                                              : (effectiveWidth /
+                                                        density.targetWidth)
+                                                    .floor()
+                                                    .clamp(
+                                                      2,
+                                                      density.maxColumns,
+                                                    );
 
-                                        final refreshScheme = Theme.of(
-                                          context,
-                                        ).colorScheme;
-                                        return RefreshIndicator(
-                                          // refresh, not load: the indicator
-                                          // draws its own spinner, so flipping
-                                          // `loading` would swap the grid for
-                                          // skeletons under the user's finger.
-                                          onRefresh: store.refresh,
-                                          edgeOffset: 16,
-                                          color: refreshScheme.primary,
-                                          backgroundColor:
-                                              refreshScheme.surfaceContainerHigh,
-                                          elevation: 2,
-                                          child: CustomScrollView(
-                                            controller: _scrollController,
-                                            // Phones keep pull-to-refresh
-                                            // available even when the list is
-                                            // short. On desktop, forcing that
-                                            // physics makes a fully visible
-                                            // grid move despite having
-                                            // nowhere to scroll.
-                                            physics: width < 600
-                                                ? const AlwaysScrollableScrollPhysics()
-                                                : null,
-                                            slivers: [
-                                              const SliverToBoxAdapter(
-                                                child: SizedBox(height: 16),
-                                              ),
-                                              // Always present so going on/off
-                                              // line grows/shrinks the banner
-                                              // smoothly instead of jolting
-                                              // the grid below it.
-                                              SliverToBoxAdapter(
-                                                child: AnimatedSize(
-                                                  duration: Motion.base,
-                                                  curve: Motion.emphasized,
-                                                  alignment:
-                                                      Alignment.topCenter,
-                                                  child: AnimatedSwitcher(
+                                          final refreshScheme = Theme.of(
+                                            context,
+                                          ).colorScheme;
+                                          return RefreshIndicator(
+                                            // refresh, not load: the indicator
+                                            // draws its own spinner, so flipping
+                                            // `loading` would swap the grid for
+                                            // skeletons under the user's finger.
+                                            onRefresh: store.refresh,
+                                            edgeOffset: 16,
+                                            color: refreshScheme.primary,
+                                            backgroundColor: refreshScheme
+                                                .surfaceContainerHigh,
+                                            elevation: 2,
+                                            child: CustomScrollView(
+                                              controller: _scrollController,
+                                              // Phones keep pull-to-refresh
+                                              // available even when the list is
+                                              // short. On desktop, forcing that
+                                              // physics makes a fully visible
+                                              // grid move despite having
+                                              // nowhere to scroll.
+                                              physics: width < 600
+                                                  ? const AlwaysScrollableScrollPhysics()
+                                                  : null,
+                                              slivers: [
+                                                const SliverToBoxAdapter(
+                                                  child: SizedBox(height: 16),
+                                                ),
+                                                // Always present so going on/off
+                                                // line grows/shrinks the banner
+                                                // smoothly instead of jolting
+                                                // the grid below it.
+                                                SliverToBoxAdapter(
+                                                  child: AnimatedSize(
                                                     duration: Motion.base,
-                                                    switchInCurve:
-                                                        Motion.standard,
-                                                    switchOutCurve:
-                                                        Motion.standard,
-                                                    child: store.offline
-                                                        ? _OfflineBanner(
-                                                            onRetry:
-                                                                store.retryNow,
-                                                          )
-                                                        : const SizedBox(
-                                                            width:
-                                                                double.infinity,
-                                                          ),
+                                                    curve: Motion.emphasized,
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: AnimatedSwitcher(
+                                                      duration: Motion.base,
+                                                      switchInCurve:
+                                                          Motion.standard,
+                                                      switchOutCurve:
+                                                          Motion.standard,
+                                                      child: store.offline
+                                                          ? _OfflineBanner(
+                                                              onRetry: store
+                                                                  .retryNow,
+                                                            )
+                                                          : const SizedBox(
+                                                              width: double
+                                                                  .infinity,
+                                                            ),
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                              // Inline quick add: wide screens,
-                                              // in the views you compose into
-                                              // (all notes, or a label, where
-                                              // it files the note for you).
-                                              if ((_selection.view ==
-                                                          NoteView.notes ||
-                                                      _selection.view ==
-                                                          NoteView.label) &&
-                                                  !searching &&
-                                                  width >= 600)
-                                                SliverToBoxAdapter(
-                                                  child: Center(
-                                                    child: ConstrainedBox(
-                                                      constraints:
-                                                          const BoxConstraints(
-                                                            maxWidth: 600,
-                                                          ),
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets.fromLTRB(
-                                                              16,
-                                                              16,
-                                                              16,
-                                                              24,
+                                                // Inline quick add: wide screens,
+                                                // in the views you compose into
+                                                // (all notes, or a label, where
+                                                // it files the note for you).
+                                                if ((_selection.view ==
+                                                            NoteView.notes ||
+                                                        _selection.view ==
+                                                            NoteView.label) &&
+                                                    !searching &&
+                                                    width >= 600)
+                                                  SliverToBoxAdapter(
+                                                    child: Center(
+                                                      child: ConstrainedBox(
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                              maxWidth: 600,
                                                             ),
-                                                        child: QuickAddBar(
-                                                          labelIds:
-                                                              _composeLabelIds,
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.fromLTRB(
+                                                                16,
+                                                                16,
+                                                                16,
+                                                                24,
+                                                              ),
+                                                          child: QuickAddBar(
+                                                            labelIds:
+                                                                _composeLabelIds,
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                              if (_viewTitle(store).isNotEmpty)
-                                                _alignedToGrid(
-                                                  _ViewHeader(
-                                                    title: _viewTitle(store),
-                                                    isTrash:
-                                                        _selection.view ==
-                                                        NoteView.trash,
-                                                    hasTrashedNotes: sections
-                                                        .others
-                                                        .isNotEmpty,
-                                                    onEmptyTrash: () =>
-                                                        _confirmEmptyTrash(
-                                                          store,
-                                                        ),
-                                                  ),
-                                                  horizontalPad,
-                                                  gridMaxWidth,
-                                                ),
-                                              if (store.loading ||
-                                                  semanticLoading)
-                                                SliverToBoxAdapter(
-                                                  child: Center(
-                                                    child: ConstrainedBox(
-                                                      constraints:
-                                                          BoxConstraints(
-                                                            maxWidth:
-                                                                gridMaxWidth,
+                                                if (_viewTitle(
+                                                  store,
+                                                ).isNotEmpty)
+                                                  _alignedToGrid(
+                                                    _ViewHeader(
+                                                      title: _viewTitle(store),
+                                                      isTrash:
+                                                          _selection.view ==
+                                                          NoteView.trash,
+                                                      hasTrashedNotes: sections
+                                                          .others
+                                                          .isNotEmpty,
+                                                      onEmptyTrash: () =>
+                                                          _confirmEmptyTrash(
+                                                            store,
                                                           ),
-                                                      child: Padding(
-                                                        padding:
-                                                            EdgeInsets.fromLTRB(
-                                                              horizontalPad,
-                                                              8,
-                                                              horizontalPad,
-                                                              0,
-                                                            ),
-                                                        child: NotesSkeleton(
-                                                          columns: columns,
-                                                        ),
-                                                      ),
                                                     ),
-                                                  ),
-                                                )
-                                              else if (sections.isEmpty)
-                                                SliverFillRemaining(
-                                                  hasScrollBody: false,
-                                                  child: EmptyState(
-                                                    icon: searching
-                                                        ? Icons.search_off
-                                                        : _emptyIcon,
-                                                    message: searching
-                                                        ? 'No matching notes'
-                                                        : _emptyMessage,
-                                                    actionLabel: searching
-                                                        ? null
-                                                        : _emptyActionLabel,
-                                                    onAction: searching
-                                                        ? null
-                                                        : _emptyAction,
-                                                    actionIcon: searching
-                                                        ? Icons.add
-                                                        : _emptyActionIcon,
-                                                    showBrandMark:
-                                                        !searching &&
-                                                        _selection.view ==
-                                                            NoteView.notes,
-                                                  ),
-                                                )
-                                              else ...[
-                                                if (sections
-                                                    .pinned
-                                                    .isNotEmpty) ...[
-                                                  _sectionLabel(
-                                                    context,
-                                                    'Pinned',
                                                     horizontalPad,
                                                     gridMaxWidth,
                                                   ),
+                                                if (store.loading ||
+                                                    semanticLoading)
+                                                  SliverToBoxAdapter(
+                                                    child: Center(
+                                                      child: ConstrainedBox(
+                                                        constraints:
+                                                            BoxConstraints(
+                                                              maxWidth:
+                                                                  gridMaxWidth,
+                                                            ),
+                                                        child: Padding(
+                                                          padding:
+                                                              EdgeInsets.fromLTRB(
+                                                                horizontalPad,
+                                                                8,
+                                                                horizontalPad,
+                                                                0,
+                                                              ),
+                                                          child: NotesSkeleton(
+                                                            columns: columns,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  )
+                                                else if (sections.isEmpty)
+                                                  SliverFillRemaining(
+                                                    hasScrollBody: false,
+                                                    child: EmptyState(
+                                                      icon: searching
+                                                          ? Icons.search_off
+                                                          : _emptyIcon,
+                                                      message: searching
+                                                          ? 'No matching notes'
+                                                          : _emptyMessage,
+                                                      actionLabel: searching
+                                                          ? null
+                                                          : _emptyActionLabel,
+                                                      onAction: searching
+                                                          ? null
+                                                          : _emptyAction,
+                                                      actionIcon: searching
+                                                          ? Icons.add
+                                                          : _emptyActionIcon,
+                                                      showBrandMark:
+                                                          !searching &&
+                                                          _selection.view ==
+                                                              NoteView.notes,
+                                                    ),
+                                                  )
+                                                else ...[
+                                                  if (sections
+                                                      .pinned
+                                                      .isNotEmpty) ...[
+                                                    _sectionLabel(
+                                                      context,
+                                                      'Pinned',
+                                                      horizontalPad,
+                                                      gridMaxWidth,
+                                                    ),
+                                                    _grid(
+                                                      store,
+                                                      sections.pinned,
+                                                      columns,
+                                                      horizontalPad,
+                                                      gridMaxWidth,
+                                                      dragEnabled,
+                                                      section: 'pinned',
+                                                    ),
+                                                    if (sections
+                                                        .others
+                                                        .isNotEmpty)
+                                                      _sectionLabel(
+                                                        context,
+                                                        'Others',
+                                                        horizontalPad,
+                                                        gridMaxWidth,
+                                                      ),
+                                                  ],
                                                   _grid(
                                                     store,
-                                                    sections.pinned,
+                                                    sections.others,
                                                     columns,
                                                     horizontalPad,
                                                     gridMaxWidth,
                                                     dragEnabled,
-                                                    section: 'pinned',
+                                                    section: 'others',
                                                   ),
-                                                  if (sections
-                                                      .others
-                                                      .isNotEmpty)
-                                                    _sectionLabel(
-                                                      context,
-                                                      'Others',
-                                                      horizontalPad,
-                                                      gridMaxWidth,
+                                                  // Phones need clearance for
+                                                  // their overlaid FAB stack.
+                                                  // Desktop keeps only the
+                                                  // ordinary bottom gutter; the
+                                                  // inline composer is primary
+                                                  // there, and a permanent
+                                                  // 200px tail made short grids
+                                                  // scroll for no visible
+                                                  // reason. Fill unused space
+                                                  // without extending it.
+                                                  SliverFillRemaining(
+                                                    hasScrollBody: false,
+                                                    child: SizedBox(
+                                                      height: width < 600
+                                                          ? 200
+                                                          : 16,
                                                     ),
-                                                ],
-                                                _grid(
-                                                  store,
-                                                  sections.others,
-                                                  columns,
-                                                  horizontalPad,
-                                                  gridMaxWidth,
-                                                  dragEnabled,
-                                                  section: 'others',
-                                                ),
-                                                // Phones need clearance for
-                                                // their overlaid FAB stack.
-                                                // Desktop keeps only the
-                                                // ordinary bottom gutter; the
-                                                // inline composer is primary
-                                                // there, and a permanent
-                                                // 200px tail made short grids
-                                                // scroll for no visible
-                                                // reason. Fill unused space
-                                                // without extending it.
-                                                SliverFillRemaining(
-                                                  hasScrollBody: false,
-                                                  child: SizedBox(
-                                                    height: width < 600
-                                                        ? 200
-                                                        : 16,
                                                   ),
-                                                ),
+                                                ],
                                               ],
-                                            ],
-                                          ),
-                                        );
-                                      },
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
                                   Positioned(
                                     right: 16,
                                     bottom: 16,
@@ -934,6 +1065,7 @@ class _HomeScreenState extends State<HomeScreen> {
     NoteView.archive => Icons.archive_outlined,
     NoteView.trash => Icons.delete_outline,
     NoteView.label => Icons.label_outline,
+    NoteView.smart => Icons.filter_alt_outlined,
   };
 
   String get _emptyMessage => switch (_selection.view) {
@@ -943,25 +1075,37 @@ class _HomeScreenState extends State<HomeScreen> {
     NoteView.archive => 'Your archived notes appear here',
     NoteView.trash => 'No notes in Trash',
     NoteView.label => 'No notes with this label yet',
+    NoteView.smart => 'No notes match this smart view',
   };
 
   String get _emptyActionLabel => switch (_selection.view) {
-    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
-      'Create note',
-    NoteView.archive || NoteView.trash => 'Browse notes',
+    NoteView.notes ||
+    NoteView.board ||
+    NoteView.reminders ||
+    NoteView.label => 'Create note',
+    // A smart view is a query, so the way out of an empty one is to go and
+    // look at the notes, not to write a note that probably won't match it.
+    NoteView.smart || NoteView.archive || NoteView.trash => 'Browse notes',
   };
 
   VoidCallback get _emptyAction => switch (_selection.view) {
-    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
-      () => _newNote(NoteKind.text),
-    NoteView.archive || NoteView.trash =>
-      () => _selectView(_primaryView(context.read<NotesStore>())),
+    NoteView.notes ||
+    NoteView.board ||
+    NoteView.reminders ||
+    NoteView.label => () => _newNote(NoteKind.text),
+    NoteView.smart || NoteView.archive || NoteView.trash => () => _selectView(
+      _primaryView(context.read<NotesStore>()),
+    ),
   };
 
   IconData get _emptyActionIcon => switch (_selection.view) {
-    NoteView.notes || NoteView.board || NoteView.reminders || NoteView.label =>
-      Icons.add,
-    NoteView.archive || NoteView.trash => Icons.sticky_note_2_outlined,
+    NoteView.notes ||
+    NoteView.board ||
+    NoteView.reminders ||
+    NoteView.label => Icons.add,
+    NoteView.smart ||
+    NoteView.archive ||
+    NoteView.trash => Icons.sticky_note_2_outlined,
   };
 
   /// Wrap a header-like widget (section label, view header) so its edges line
@@ -1017,7 +1161,7 @@ class _HomeScreenState extends State<HomeScreen> {
     bool dragEnabled, {
     required String section,
   }) {
-    final query = _query.trim();
+    final query = _highlightQuery;
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: pad),
       sliver: SliverToBoxAdapter(

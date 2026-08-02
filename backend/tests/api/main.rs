@@ -17,6 +17,7 @@ mod notes;
 mod notify;
 mod search;
 mod settings;
+mod share_links;
 mod sharing;
 mod stages;
 mod unfurl;

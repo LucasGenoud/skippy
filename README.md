@@ -27,6 +27,8 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - Grid / single-column list toggle; responsive density and width presets support up to 8 columns
 - **Sort by** custom order / recently edited / recently added / oldest
 - Library-wide instant search + **find-in-note** with match highlighting
+- **Search operators**: `label:work`, `is:pinned|archived|trashed|shared|open|done`, `has:reminder|attachment|image|audio|link|label`, `color:red`, `kind:checklist`, quoted values (`label:"to do"`), and a leading `-` to exclude. Terms are ANDed, so every word narrows. An explicit `is:archived` or `is:trashed` overrides the view's own state filter, which is what makes archived notes findable from the grid. A cheat sheet with one-tap insertion sits behind the filter button in the search bar.
+- **Smart views**: save any search (operators included) as a named, colored, icon-bearing entry in the sidebar. They re-evaluate every time they are opened, so "Overdue work" stays right as notes change, and typing in the box narrows a smart view further rather than replacing it. Stored in the per-user settings document, so they sync across devices.
 - **Semantic search** (meaning-ranking toggle in the search bar): notes are embedded by a self-hostable **OpenAI-compatible embeddings API** (Ollama, LM Studio, ...) and ranked by meaning, "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension, with one visibility-scoped row per note participant and no separate vector database. The server runs no model of its own, so its memory footprint doesn't depend on the model you choose.
 - **Audio notes** (mic button, when transcription is enabled): record a voice clip in a focused overlay with a live level meter, then it's transcribed locally by a self-hosted **Whisper** service, no external AI. The clip stays playable in the note and the transcript is editable, searchable, and exportable text.
 - **Feature detection**: semantic search and audio notes each have a Settings toggle, and disappear entirely when their backing service isn't running (`GET /api/capabilities`).
@@ -55,6 +57,7 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings. Password-confirmed account deletion removes every workspace the account owns and all notes inside those workspaces, including notes authored by other users.
 - Share a single note with other users by email; everyone can edit, only the owner can trash/delete/share
 - **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, or changes the roster; members can leave. Deleting a workspace permanently deletes every note and attachment inside it, regardless of author. Leaving or being removed preserves that member's own notes by moving them to their default workspace.
+- **Public read-only links** for people without an account: share one note, or a whole view (a workspace's grid, its board, or one label's notes). The link is an unguessable stored token, so it is revocable and listable, and it can carry an expiry (1/7/30 days or none). Publishing the same thing twice hands back the same URL. Anyone holding it reads the notes and their images through the existing signed attachment URLs; nothing on the page can be edited, and no owner, collaborator, reminder, or archive/trash state ever goes out with it. Only the note's owner (or the workspace's, for a view) may publish, and Settings → Sharing lists everything currently public with a one-tap revoke.
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
 - Labels are a workspace's shared taxonomy: everyone in it sees and applies the same set. Someone who only has a per-note share is not in that workspace and sees none of them.
 
@@ -408,6 +411,8 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 | `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per workspace, shared by its members) |
 | `GET/POST /stages`, `PATCH/DELETE /stages/{id}` | Board columns (per workspace, shared by its members; deleting one returns its notes to Unassigned) |
 | `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
+| `GET/POST /share-links`, `DELETE /share-links/{token}` | Public read-only links: list, publish (idempotent per target), revoke |
+| `GET /public/{token}` | **Unauthenticated.** The payload behind a public link; 404 for missing, revoked, or expired |
 | `GET /search?q=…&workspace_id=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
 | `GET /search/stats`, `POST /search/reindex`, `GET /search/reindex/status` | Embedding diagnostics and background reindexing |
 | `POST /notes/{id}/transcribe` | Re-run Whisper on an audio note's clip (retry; 503 when disabled) |

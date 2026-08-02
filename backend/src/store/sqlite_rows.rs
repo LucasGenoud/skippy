@@ -1,6 +1,6 @@
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::models::{NoteRecord, NoteVersion, User, Workspace};
+use crate::models::{NoteRecord, NoteVersion, ShareLink, User, Workspace};
 
 pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let items_json: String = row.get("items");
@@ -73,4 +73,17 @@ pub(super) fn user_from_row(row: &SqliteRow) -> User {
 
 pub(super) fn now() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+pub(super) fn share_link_from_row(row: &SqliteRow) -> ShareLink {
+    ShareLink {
+        token: row.get("token"),
+        owner_id: row.get("owner_id"),
+        target: row.get("target"),
+        note_id: row.get("note_id"),
+        workspace_id: row.get("workspace_id"),
+        label_id: row.get("label_id"),
+        created_at: row.get("created_at"),
+        expires_at: row.get("expires_at"),
+    }
 }

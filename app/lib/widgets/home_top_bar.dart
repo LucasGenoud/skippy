@@ -35,6 +35,15 @@ class HomeTopBar extends StatelessWidget {
   final bool semanticBusy;
   final ValueChanged<String> onQuery;
   final VoidCallback onToggleSemantic;
+
+  /// Opens the filter cheat sheet. It is the only place the `label:`/`is:`
+  /// vocabulary is advertised, so the button sits in the pill itself.
+  final VoidCallback onOpenFilters;
+
+  /// Publishes the open view as a public link, or null when the current view
+  /// is not something that can be published (trash, archive, reminders, a
+  /// smart view, or a workspace this user does not own).
+  final VoidCallback? onShareView;
   final VoidCallback onToggleLayout;
   final VoidCallback onToggleSidebar;
   final bool selectionMode;
@@ -70,6 +79,8 @@ class HomeTopBar extends StatelessWidget {
     required this.semanticBusy,
     required this.onQuery,
     required this.onToggleSemantic,
+    required this.onOpenFilters,
+    required this.onShareView,
     required this.onToggleLayout,
     required this.onToggleSidebar,
     required this.selectionMode,
@@ -179,6 +190,7 @@ class HomeTopBar extends StatelessWidget {
                             ),
                     ),
                   ),
+                  _filtersControl(),
                   if (semanticAvailable) _semanticControl(scheme),
                 ],
               ),
@@ -198,6 +210,12 @@ class HomeTopBar extends StatelessWidget {
                     icon: const Icon(Icons.forum_outlined),
                     tooltip: 'Chat with your notes',
                     onPressed: () => ChatScreen.open(context),
+                  ),
+                if (onShareView != null)
+                  IconButton(
+                    icon: const Icon(Icons.ios_share),
+                    tooltip: 'Share this view',
+                    onPressed: onShareView,
                   ),
                 const _SortButton(),
                 IconButton(
@@ -237,7 +255,7 @@ class HomeTopBar extends StatelessWidget {
                       Navigator.of(context).push(SettingsScreen.route()),
                 ),
                 const SizedBox(width: 6),
-                const _UserAvatarMenu(),
+                _UserAvatarMenu(onShareView: onShareView),
                 const SizedBox(width: 4),
               ],
             ),
@@ -246,6 +264,13 @@ class HomeTopBar extends StatelessWidget {
       ),
     );
   }
+
+  /// The in-pill filter control: opens the cheat sheet of search operators.
+  Widget _filtersControl() => IconButton(
+    icon: const Icon(Icons.tune, size: 20),
+    tooltip: 'Search filters',
+    onPressed: onOpenFilters,
+  );
 
   /// The in-pill semantic-search control: a spinner while a search is in
   /// flight, otherwise the ✨ toggle. The two cross-fade instead of popping.
@@ -337,6 +362,7 @@ class HomeTopBar extends StatelessWidget {
                             onQuery('');
                           },
                         ),
+                      _filtersControl(),
                       if (semanticAvailable) _semanticControl(scheme),
                       const SizedBox(width: 4),
                     ],
@@ -361,7 +387,7 @@ class HomeTopBar extends StatelessWidget {
                         tooltip: listMode ? 'Grid view' : 'List view',
                         onPressed: onToggleLayout,
                       ),
-                      const _UserAvatarMenu(),
+                      _UserAvatarMenu(onShareView: onShareView),
                       const SizedBox(width: 6),
                     ],
                   );
@@ -741,7 +767,11 @@ class _SearchPill extends StatelessWidget {
 }
 
 class _UserAvatarMenu extends StatelessWidget {
-  const _UserAvatarMenu();
+  /// Below the wide breakpoint the bar has no room for a share button, so it
+  /// joins sort and theme in here. Null when the open view cannot be shared.
+  final VoidCallback? onShareView;
+
+  const _UserAvatarMenu({this.onShareView});
 
   @override
   Widget build(BuildContext context) {
@@ -815,6 +845,17 @@ class _UserAvatarMenu extends StatelessWidget {
           ),
         ),
         if (MediaQuery.sizeOf(context).width < 650) ...[
+          if (onShareView != null)
+            PopupMenuItem<String>(
+              value: 'share-view',
+              child: Row(
+                children: [
+                  Icon(Icons.ios_share, size: 20, color: scheme.onSurface),
+                  const SizedBox(width: 12),
+                  const Text('Share this view'),
+                ],
+              ),
+            ),
           PopupMenuItem<String>(
             value: 'sort',
             child: Row(
@@ -849,11 +890,16 @@ class _UserAvatarMenu extends StatelessWidget {
         ),
       ],
       onSelected: (value) async {
-        if (value == 'settings' || value == 'sort' || value == 'logout') {
+        if (value == 'settings' ||
+            value == 'sort' ||
+            value == 'logout' ||
+            value == 'share-view') {
           await Motion.waitForMenuDismissal(context);
           if (!context.mounted) return;
         }
-        if (value == 'settings') {
+        if (value == 'share-view') {
+          onShareView?.call();
+        } else if (value == 'settings') {
           Navigator.of(context).push(SettingsScreen.route());
         } else if (value == 'sort') {
           _showSortSheet(context);

@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 
-use super::sqlite_rows::{note_from_row, now, user_from_row, version_from_row, workspace_from_row};
+use super::sqlite_rows::{
+    note_from_row, now, share_link_from_row as row_to_share_link, user_from_row, version_from_row,
+    workspace_from_row,
+};
 use super::sqlite_schema;
 use super::{DeletedAccount, DeletedWorkspace, PurgedNote, RepoError, RepoResult, Repository};
 use crate::models::*;
@@ -24,6 +27,11 @@ fn visible_notes(alias: &str) -> String {
           OR {alias}.workspace_id IN ({MY_WORKSPACES}))"
     )
 }
+
+/// Every column of a share link, so the three lookups select the same shape.
+const SHARE_LINK_COLUMNS: &str =
+    "SELECT token, owner_id, target, note_id, workspace_id, label_id, created_at, expires_at
+     FROM share_links";
 
 /// Drops every note/label pairing whose label no longer lives in the note's
 /// workspace. Set-based and idempotent, so a bulk move cleans up in one go.
@@ -1069,6 +1077,79 @@ impl Repository for SqliteRepository {
     async fn remove_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
         let result = sqlx::query("DELETE FROM note_shares WHERE note_id = ? AND user_id = ?")
             .bind(note_id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    // -- public share links ----------------------------------------------------
+
+    async fn insert_share_link(&self, link: &ShareLink) -> RepoResult<()> {
+        sqlx::query(
+            "INSERT INTO share_links
+                (token, owner_id, target, note_id, workspace_id, label_id, created_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&link.token)
+        .bind(&link.owner_id)
+        .bind(&link.target)
+        .bind(&link.note_id)
+        .bind(&link.workspace_id)
+        .bind(&link.label_id)
+        .bind(&link.created_at)
+        .bind(&link.expires_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn share_link(&self, token: &str) -> RepoResult<Option<ShareLink>> {
+        let row = sqlx::query(&format!("{SHARE_LINK_COLUMNS} WHERE token = ?"))
+            .bind(token)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.as_ref().map(row_to_share_link))
+    }
+
+    async fn share_links_for_user(&self, user_id: &str) -> RepoResult<Vec<ShareLink>> {
+        let rows = sqlx::query(&format!(
+            "{SHARE_LINK_COLUMNS} WHERE owner_id = ? ORDER BY created_at DESC"
+        ))
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(row_to_share_link).collect())
+    }
+
+    async fn share_link_for_target(
+        &self,
+        user_id: &str,
+        target: &str,
+        note_id: Option<&str>,
+        workspace_id: Option<&str>,
+        label_id: Option<&str>,
+    ) -> RepoResult<Option<ShareLink>> {
+        // `IS` rather than `=` so the NULL columns of the other target kinds
+        // compare equal instead of making every row miss.
+        let row = sqlx::query(&format!(
+            "{SHARE_LINK_COLUMNS}
+             WHERE owner_id = ? AND target = ?
+               AND note_id IS ? AND workspace_id IS ? AND label_id IS ?"
+        ))
+        .bind(user_id)
+        .bind(target)
+        .bind(note_id)
+        .bind(workspace_id)
+        .bind(label_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.as_ref().map(row_to_share_link))
+    }
+
+    async fn delete_share_link(&self, user_id: &str, token: &str) -> RepoResult<bool> {
+        let result = sqlx::query("DELETE FROM share_links WHERE token = ? AND owner_id = ?")
+            .bind(token)
             .bind(user_id)
             .execute(&self.pool)
             .await?;

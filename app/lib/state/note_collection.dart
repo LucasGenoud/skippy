@@ -1,9 +1,14 @@
 import '../models/note.dart';
+import '../util/search_query.dart';
 
 /// [board] is a view like the others rather than a third state of the
 /// grid/list toggle: it is incompatible with trash, archive, reminders and
 /// label views, and has its own empty state and compose target.
-enum NoteView { notes, board, reminders, archive, trash, label }
+///
+/// [smart] is a saved search (see `models/saved_view.dart`). It shows the same
+/// notes the grid does, narrowed by the view's stored query, which the home
+/// screen supplies alongside whatever is typed in the search box.
+enum NoteView { notes, board, reminders, archive, trash, label, smart }
 
 enum SortMode { custom, edited, newest, oldest }
 
@@ -11,7 +16,17 @@ class ViewSelection {
   final NoteView view;
   final String? labelId;
 
-  const ViewSelection(this.view, [this.labelId]);
+  /// Which saved view is open, for [NoteView.smart]. The query itself lives in
+  /// the settings document, not here: a selection stays a pointer, so renaming
+  /// or editing a smart view takes effect without re-selecting it.
+  final String? savedViewId;
+
+  const ViewSelection(this.view, [this.labelId]) : savedViewId = null;
+
+  const ViewSelection.smart(String id)
+    : view = NoteView.smart,
+      labelId = null,
+      savedViewId = id;
 
   static const notes = ViewSelection(NoteView.notes);
   static const board = ViewSelection(NoteView.board);
@@ -21,10 +36,13 @@ class ViewSelection {
 
   @override
   bool operator ==(Object other) =>
-      other is ViewSelection && other.view == view && other.labelId == labelId;
+      other is ViewSelection &&
+      other.view == view &&
+      other.labelId == labelId &&
+      other.savedViewId == savedViewId;
 
   @override
-  int get hashCode => Object.hash(view, labelId);
+  int get hashCode => Object.hash(view, labelId, savedViewId);
 }
 
 /// Which workspace's notes a view shows.
@@ -92,14 +110,18 @@ NoteSections selectNotes({
   required String? currentUserId,
   WorkspaceScope scope = const WorkspaceScope.all(),
 }) {
-  final normalizedQuery = query.trim().toLowerCase();
-  final labelsById = {for (final label in labels) label.id: label};
+  final parsed = parseSearchQuery(query);
+  final context = SearchContext(labels);
+  // An explicit `is:archived` / `is:trashed` is more specific than the view's
+  // own state filter, so it replaces it: searching for archived notes from the
+  // notes view finds them instead of matching nothing.
+  final override = parsed.stateOverride;
   final visible = notes
       .where(
         (note) =>
             scope.contains(note) &&
-            _isInView(note, selection, currentUserId) &&
-            _matchesQuery(note, normalizedQuery, labelsById),
+            _isInView(note, selection, currentUserId, override) &&
+            parsed.matches(note, context),
       )
       .toList();
 
@@ -110,7 +132,9 @@ NoteSections selectNotes({
 
   _sortNotes(visible, sortMode);
   final splitPins =
-      selection.view == NoteView.notes || selection.view == NoteView.label;
+      selection.view == NoteView.notes ||
+      selection.view == NoteView.label ||
+      selection.view == NoteView.smart;
   if (!splitPins) return NoteSections(const [], visible);
 
   return NoteSections(
@@ -119,34 +143,49 @@ NoteSections selectNotes({
   );
 }
 
-bool _matchesQuery(Note note, String query, Map<String, Label> labelsById) {
-  if (query.isEmpty) return true;
-  if (note.title.toLowerCase().contains(query)) return true;
-  if (note.content.toLowerCase().contains(query)) return true;
-  if (note.items.any((item) => item.text.toLowerCase().contains(query))) {
-    return true;
-  }
-  return note.labelIds.any(
-    (id) => labelsById[id]?.name.toLowerCase().contains(query) ?? false,
-  );
-}
-
-bool _isInView(Note note, ViewSelection selection, String? currentUserId) =>
-    switch (selection.view) {
-      NoteView.notes => !note.archived && !note.trashed,
-      // The board groups notes by stage rather than filtering a flat list, so
-      // it builds its own columns (see state/board_layout.dart) and never
-      // reaches selectNotes. Matching `notes` keeps the switch total and any
-      // caller that does pass it here sensible.
-      NoteView.board => !note.archived && !note.trashed,
-      NoteView.reminders => note.reminderAt != null && !note.trashed,
-      NoteView.archive => note.archived && !note.trashed,
-      // Collaborators cannot trash notes. If an owner trashes a shared note,
-      // it disappears for collaborators instead of entering their trash.
-      NoteView.trash => note.trashed && note.isOwnedBy(currentUserId),
-      NoteView.label =>
-        !note.trashed && note.labelIds.contains(selection.labelId),
+bool _isInView(
+  Note note,
+  ViewSelection selection,
+  String? currentUserId,
+  StateOverride? override,
+) {
+  // Views that show live notes hand their state filter over to an explicit
+  // `is:` operator. Archive and trash already are that state, and reminders
+  // spans both, so none of them defer.
+  final defers =
+      selection.view == NoteView.notes ||
+      selection.view == NoteView.board ||
+      selection.view == NoteView.label ||
+      selection.view == NoteView.smart;
+  if (defers && override != null) {
+    final passesState = switch (override) {
+      // Collaborators never see a trashed note (see the trash view below), so
+      // an override cannot reveal one either.
+      StateOverride.trashed => note.trashed && note.isOwnedBy(currentUserId),
+      StateOverride.archived => note.archived && !note.trashed,
     };
+    if (!passesState) return false;
+    return selection.view != NoteView.label ||
+        note.labelIds.contains(selection.labelId);
+  }
+  return switch (selection.view) {
+    // A smart view starts from the live notes and lets its saved query narrow
+    // them, so one that says nothing about state behaves like the grid.
+    NoteView.notes || NoteView.smart => !note.archived && !note.trashed,
+    // The board groups notes by stage rather than filtering a flat list, so
+    // it builds its own columns (see state/board_layout.dart) and never
+    // reaches selectNotes. Matching `notes` keeps the switch total and any
+    // caller that does pass it here sensible.
+    NoteView.board => !note.archived && !note.trashed,
+    NoteView.reminders => note.reminderAt != null && !note.trashed,
+    NoteView.archive => note.archived && !note.trashed,
+    // Collaborators cannot trash notes. If an owner trashes a shared note,
+    // it disappears for collaborators instead of entering their trash.
+    NoteView.trash => note.trashed && note.isOwnedBy(currentUserId),
+    NoteView.label =>
+      !note.trashed && note.labelIds.contains(selection.labelId),
+  };
+}
 
 void _sortNotes(List<Note> notes, SortMode mode) {
   switch (mode) {

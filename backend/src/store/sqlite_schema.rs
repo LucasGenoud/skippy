@@ -112,6 +112,18 @@ CREATE TABLE IF NOT EXISTS attachments (
     size INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS share_links (
+    token TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target TEXT NOT NULL,
+    -- Exactly one of these is set, decided by `target`. Each cascades, so a
+    -- link dies with the thing it points at rather than resolving to nothing.
+    note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
+    workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+    label_id TEXT REFERENCES labels(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT
+);
 CREATE TABLE IF NOT EXISTS user_settings (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     data TEXT NOT NULL
@@ -123,6 +135,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_id);
 CREATE INDEX IF NOT EXISTS idx_notes_workspace ON notes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);
+CREATE INDEX IF NOT EXISTS idx_share_links_owner ON share_links(owner_id);
 CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE);

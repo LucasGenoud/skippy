@@ -1,4 +1,5 @@
 import '../models/note.dart';
+import '../util/search_query.dart';
 import 'note_collection.dart';
 
 /// One column of the board: a stage and the cards filed in it.
@@ -68,6 +69,9 @@ Board buildBoard({
   required Iterable<Stage> stages,
   WorkspaceScope scope = const WorkspaceScope.all(),
   String query = '',
+  /// Only needed to resolve `label:` terms in [query]; the board itself never
+  /// groups by label.
+  Iterable<Label> labels = const [],
   bool showAllUnassigned = false,
   Set<String>? rankedIds,
 }) {
@@ -76,7 +80,8 @@ Board buildBoard({
   // while a card's place is its column, so ranked cards keep stage order
   // rather than being re-sorted into a flat relevance list, which would stop
   // the result being a board.
-  final normalizedQuery = rankedIds == null ? query.trim().toLowerCase() : '';
+  final parsed = rankedIds == null ? parseSearchQuery(query) : SearchQuery.empty;
+  final searchContext = SearchContext(labels);
   final ordered = stages.toList()
     ..sort((a, b) => a.position.compareTo(b.position));
   final known = {for (final stage in ordered) stage.id};
@@ -88,7 +93,7 @@ Board buildBoard({
   for (final note in notes) {
     if (!_isOnBoard(note) || !scope.contains(note)) continue;
     if (rankedIds != null && !rankedIds.contains(note.id)) continue;
-    if (!_matchesQuery(note, normalizedQuery)) continue;
+    if (!parsed.matches(note, searchContext)) continue;
     // A stage the client hasn't caught up on yet, deleted elsewhere, or from
     // a workspace this note was just moved out of, reads as unassigned rather
     // than vanishing the card.
@@ -156,11 +161,4 @@ bool _isOnBoard(Note note) => !note.archived && !note.trashed;
 int _byPinnedThenPosition(Note a, Note b) {
   if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
   return a.stagePosition.compareTo(b.stagePosition);
-}
-
-bool _matchesQuery(Note note, String query) {
-  if (query.isEmpty) return true;
-  if (note.title.toLowerCase().contains(query)) return true;
-  if (note.content.toLowerCase().contains(query)) return true;
-  return note.items.any((item) => item.text.toLowerCase().contains(query));
 }

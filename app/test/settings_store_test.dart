@@ -86,6 +86,66 @@ void main() {
     other.dispose();
   });
 
+  group('saved smart views', () {
+    test('persist, roundtrip, and survive a malformed entry', () async {
+      await settings.load();
+      final work = settings.addSavedView(
+        name: 'Open work',
+        query: 'label:work is:open',
+        icon: 'work',
+        color: '#1A73E8',
+      );
+      settings.addSavedView(name: 'Pinned', query: 'is:pinned');
+      await settleSave();
+
+      expect((api.settings['saved_views'] as List).length, 2);
+
+      final other = SettingsStore(api: api);
+      await other.load();
+      expect(other.savedViews.map((v) => v.name), ['Open work', 'Pinned']);
+      expect(other.savedViewById(work.id)?.query, 'label:work is:open');
+      expect(other.savedViewById(work.id)?.icon, 'work');
+      expect(other.savedViewById(work.id)?.color, '#1A73E8');
+      other.dispose();
+
+      // An entry missing a query (or a name, or an id) can't be run or shown,
+      // so it is dropped rather than surfacing a broken sidebar row.
+      api.settings = {
+        'saved_views': [
+          {'id': 'a', 'name': 'Fine', 'query': 'is:pinned'},
+          {'id': 'b', 'name': 'No query'},
+          'garbage',
+        ],
+      };
+      final third = SettingsStore(api: api);
+      await third.load();
+      expect(third.savedViews.map((v) => v.id), ['a']);
+      third.dispose();
+    });
+
+    test('edit clears an icon, delete removes it, reorder moves it', () async {
+      await settings.load();
+      final view = settings.addSavedView(
+        name: 'Work',
+        query: 'label:work',
+        icon: 'work',
+      );
+      final other = settings.addSavedView(name: 'Pinned', query: 'is:pinned');
+
+      settings.updateSavedView(view.id, name: 'Work stuff', query: 'label:work');
+      expect(settings.savedViewById(view.id)?.name, 'Work stuff');
+      expect(settings.savedViewById(view.id)?.icon, isNull);
+
+      settings.reorderSavedViews(0, 1);
+      expect(settings.savedViews.map((v) => v.id), [other.id, view.id]);
+
+      settings.removeSavedView(view.id);
+      expect(settings.savedViews.map((v) => v.id), [other.id]);
+      await settleSave();
+      expect((api.settings['saved_views'] as List).length, 1);
+    });
+  });
+
   test('top-bar theme cycle includes the system default', () {
     expect(settings.themeMode, ThemeMode.system);
     settings.cycleThemeMode();

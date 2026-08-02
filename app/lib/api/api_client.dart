@@ -10,6 +10,7 @@ import '../models/chat.dart';
 import '../models/link_preview.dart';
 import '../models/note.dart';
 import '../models/search_stats.dart';
+import '../models/share_link.dart';
 import '../models/workspace.dart';
 import '../util/runtime_config.dart';
 
@@ -109,6 +110,27 @@ abstract class Api {
   /// another's rows.
   Future<Map<String, List<String>>> fetchChecklistHistory();
 
+  // public share links
+  /// Every public link this account has published, newest first.
+  Future<List<ShareLink>> fetchShareLinks();
+
+  /// Publish (or hand back the existing link for) one target. Only the owner
+  /// of the note, or of the workspace behind a view, may do this.
+  Future<ShareLink> createShareLink({
+    required ShareTarget target,
+    String? noteId,
+    String? workspaceId,
+    String? labelId,
+    DateTime? expiresAt,
+  });
+
+  /// Revoke a link. The page it served stops resolving immediately.
+  Future<void> deleteShareLink(String token);
+
+  /// Read a public link's payload. Deliberately unauthenticated: the token is
+  /// the credential, and the reader usually has no account at all.
+  Future<PublicShare> fetchPublicShare(String token);
+
   // labels
   Future<List<Label>> fetchLabels();
   Future<void> createLabel(
@@ -164,6 +186,10 @@ abstract class Api {
   /// signed, time-limited URL (so plain `<img>`/`<audio>` loads stay
   /// authorized); falls back to the bare path for older servers.
   String attachmentUrl(Attachment attachment);
+
+  /// Origin of the server this client talks to, for building links a person
+  /// can paste elsewhere (see [publicShareUrl]).
+  String get baseUrl;
 
   // per-user settings (opaque JSON document, synced across devices)
   Future<Map<String, dynamic>> fetchSettings();
@@ -277,6 +303,7 @@ class ApiClient implements Api {
     return 'http://localhost:8787';
   }
 
+  @override
   String baseUrl;
 
   /// Uploads stream real bytes and can legitimately outlast [requestTimeout]
@@ -656,6 +683,61 @@ class ApiClient implements Api {
           .add(map['text'] as String);
     }
     return byNote;
+  }
+
+  // -- public share links ----------------------------------------------------
+
+  @override
+  Future<List<ShareLink>> fetchShareLinks() async {
+    final data =
+        _decode(await _client.get(_uri('/share-links'), headers: _headers()))
+            as List;
+    return data
+        .map((j) => ShareLink.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<ShareLink> createShareLink({
+    required ShareTarget target,
+    String? noteId,
+    String? workspaceId,
+    String? labelId,
+    DateTime? expiresAt,
+  }) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/share-links'),
+        headers: _headers(),
+        body: jsonEncode({
+          'target': target.wire,
+          'note_id': ?noteId,
+          'workspace_id': ?workspaceId,
+          'label_id': ?labelId,
+          'expires_at': ?expiresAt?.toUtc().toIso8601String(),
+        }),
+      ),
+    );
+    return ShareLink.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> deleteShareLink(String token) async {
+    _decode(
+      await _client.delete(_uri('/share-links/$token'), headers: _headers()),
+    );
+  }
+
+  @override
+  Future<PublicShare> fetchPublicShare(String token) async {
+    // No Authorization header: a reader following the link is usually signed
+    // out, and sending a stale session token would only risk a 401 handler
+    // firing on a page that has nothing to do with the session.
+    final data = _decode(
+      await _client.get(_uri('/public/$token')),
+      authed: false,
+    );
+    return PublicShare.fromJson(data as Map<String, dynamic>);
   }
 
   // -- labels ---------------------------------------------------------------

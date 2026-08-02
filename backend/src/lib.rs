@@ -212,6 +212,17 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         .route("/files/{id}", get(handlers::serve_file))
         .route("/checklist-history", get(handlers::checklist_history))
         .route(
+            "/share-links",
+            get(handlers::list_share_links).post(handlers::create_share_link),
+        )
+        .route(
+            "/share-links/{token}",
+            axum::routing::delete(handlers::delete_share_link),
+        )
+        // Deliberately unauthenticated: the token in the path is the
+        // credential. See `handlers::public_share`.
+        .route("/public/{token}", get(handlers::public_share))
+        .route(
             "/settings",
             get(handlers::get_settings).put(handlers::put_settings),
         )

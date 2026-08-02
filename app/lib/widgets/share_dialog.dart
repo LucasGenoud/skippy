@@ -6,6 +6,7 @@ import '../state/notes_store.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
+import 'public_link_dialog.dart';
 
 /// Collaborator management for a note. Owners add/remove people by email;
 /// collaborators can see the roster and leave.
@@ -180,6 +181,22 @@ class _ShareDialogState extends State<ShareDialog> {
                   style: TextStyle(color: scheme.error, fontSize: 13),
                 ),
               ),
+            const SizedBox(height: 8),
+            const Divider(height: 24),
+            // Sharing with an account and sharing with the world are different
+            // enough to keep apart: one grants editing, the other grants
+            // reading to anyone holding a URL.
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              leading: const Icon(Icons.link),
+              title: const Text('Public link'),
+              subtitle: const Text('Read-only, for people without an account'),
+              onTap: () => PublicLinkDialog.show(
+                context,
+                target: PublicLinkTarget.note(widget.noteId, note.title),
+                api: store.api,
+              ),
+            ),
           ] else
             Padding(
               padding: const EdgeInsets.all(16),
