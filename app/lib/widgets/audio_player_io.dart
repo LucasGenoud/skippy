@@ -47,9 +47,7 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
     );
     _subs.add(
       _player.durationStream.listen((d) {
-        if (mounted && d != null) {
-          setState(() => _duration = d.inMilliseconds / 1000);
-        }
+        _updateDuration(d);
       }),
     );
     _subs.add(
@@ -67,7 +65,8 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
     // failing silently, a silent inert bar is exactly the mobile bug we hit.
     _player
         .setUrl(widget.url)
-        .then((_) {
+        .then((duration) {
+          _updateDuration(duration);
           if (mounted) setState(() => _error = null);
         })
         .catchError((Object e) {
@@ -75,6 +74,11 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
           if (mounted) setState(() => _error = '$e');
           return null;
         });
+  }
+
+  void _updateDuration(Duration? duration) {
+    if (!mounted || duration == null || duration <= Duration.zero) return;
+    setState(() => _duration = duration.inMilliseconds / 1000);
   }
 
   @override

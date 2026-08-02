@@ -24,13 +24,22 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
   @override
   void initState() {
     super.initState();
-    _audio = web.HTMLAudioElement()
-      ..src = widget.url
-      ..preload = 'metadata';
+    _audio = web.HTMLAudioElement()..preload = 'auto';
+    // Install all listeners before assigning src. A cached clip can load its
+    // metadata quickly enough to otherwise miss `loadedmetadata` entirely.
     _audio.onloadedmetadata = ((web.Event _) {
-      final d = _audio.duration;
-      if (mounted) setState(() => _duration = d.isFinite ? d : 0);
+      _updateDuration();
     }).toJS;
+    // A normal media file can resolve its duration after `loadedmetadata`.
+    _audio.ondurationchange = ((web.Event _) {
+      _updateDuration();
+    }).toJS;
+    // Firefox reports `duration` as Infinity for MediaRecorder WebM clips,
+    // but exposes the real end time in `seekable` once enough data is loaded.
+    // A full preload makes that information available before playback.
+    _audio.onprogress = ((web.Event _) => _updateDuration()).toJS;
+    _audio.oncanplay = ((web.Event _) => _updateDuration()).toJS;
+    _audio.oncanplaythrough = ((web.Event _) => _updateDuration()).toJS;
     _audio.ontimeupdate = ((web.Event _) {
       if (mounted) setState(() => _position = _audio.currentTime);
     }).toJS;
@@ -42,6 +51,18 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
         });
       }
     }).toJS;
+    _audio.src = widget.url;
+    _audio.load();
+  }
+
+  void _updateDuration() {
+    var duration = _audio.duration;
+    if (!duration.isFinite || duration <= 0) {
+      final ranges = _audio.seekable;
+      if (ranges.length > 0) duration = ranges.end(ranges.length - 1);
+    }
+    if (!mounted || !duration.isFinite || duration <= 0) return;
+    setState(() => _duration = duration);
   }
 
   @override
