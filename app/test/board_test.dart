@@ -166,23 +166,79 @@ void main() {
       expect(board.columns.length, 1);
     });
 
-    /// A drag reports the whole reordered column, but only one card moved, and
-    /// moving one card is one write.
-    group('movedCardId', () {
-      test('finds the card that moved, wherever it went', () {
-        expect(movedCardId(['a', 'b', 'c'], ['c', 'a', 'b']), 'c');
-        expect(movedCardId(['a', 'b', 'c'], ['b', 'c', 'a']), 'a');
-        expect(movedCardId(['a', 'b', 'c'], ['a', 'c', 'b']), anyOf('b', 'c'));
+    group('board reorder positions', () {
+      test('places a card at the head, tail, and between', () {
+        final a = note('a', stagePosition: 1024);
+        final b = note('b', stagePosition: 2048);
+        final moved = note('moved', stagePosition: 4096);
+        expect(
+          boardPositionForInsertion(moved: moved, ordered: [moved]),
+          1024.0,
+        );
+        expect(
+          boardPositionForInsertion(moved: moved, ordered: [moved, a, b]),
+          lessThan(a.stagePosition),
+        );
+        expect(
+          boardPositionForInsertion(moved: moved, ordered: [a, b, moved]),
+          greaterThan(b.stagePosition),
+        );
+        expect(
+          boardPositionForInsertion(moved: moved, ordered: [a, moved, b]),
+          1536.0,
+        );
       });
 
-      test('an unchanged column moved nothing worth writing', () {
-        // Every candidate satisfies the test, so the first is returned; the
-        // caller then computes the position it already has and no-ops.
-        expect(movedCardId(['a', 'b', 'c'], ['a', 'b', 'c']), 'a');
+      test('uses only the dragged card pinning group as neighbours', () {
+        final pinned = note('p', stagePosition: 4096, pinned: true);
+        final a = note('a', stagePosition: 1024);
+        final b = note('b', stagePosition: 2048);
+
+        expect(
+          boardPositionForReorder(
+            moved: b,
+            before: [pinned, a, b],
+            after: [pinned, b, a],
+          ),
+          lessThan(a.stagePosition),
+        );
       });
 
-      test('mismatched lengths are not a reorder', () {
-        expect(movedCardId(['a', 'b'], ['a', 'b', 'c']), isNull);
+      test('an incoming card uses the same pin-aware ordering policy', () {
+        final incoming = note('incoming', stagePosition: 8192);
+        final pinned = note('p', stagePosition: 4096, pinned: true);
+        final plain = note('a', stagePosition: 1024);
+
+        expect(
+          boardPositionForInsertion(
+            moved: incoming,
+            ordered: [incoming, pinned, plain],
+          ),
+          lessThan(plain.stagePosition),
+        );
+      });
+
+      test('crossing the pin boundary without moving a peer is a no-op', () {
+        final pinned = note('p', stagePosition: 4096, pinned: true);
+        final plain = note('a', stagePosition: 1024);
+
+        expect(
+          boardPositionForReorder(
+            moved: plain,
+            before: [pinned, plain],
+            after: [plain, pinned],
+          ),
+          isNull,
+        );
+      });
+
+      test('rejects an incomplete reordered group', () {
+        final a = note('a', stagePosition: 1024);
+        final b = note('b', stagePosition: 2048);
+        expect(
+          boardPositionForReorder(moved: b, before: [a, b], after: [b]),
+          isNull,
+        );
       });
     });
 

@@ -1552,16 +1552,6 @@ void main() {
       expect(api.stages[todo.id]!.name, 'Todo');
     });
 
-    test('positionBetween places head, tail, and between', () {
-      Note card(double p) => serverNote('x').copyWith(stagePosition: p);
-      // Empty column.
-      expect(NotesStore.positionBetween(null, null), 1024.0);
-      // Above the first card, below the last, and between two.
-      expect(NotesStore.positionBetween(null, card(1024)), lessThan(1024));
-      expect(NotesStore.positionBetween(card(1024), null), greaterThan(1024));
-      expect(NotesStore.positionBetween(card(1024), card(2048)), 1536.0);
-    });
-
     /// Reordering inside a column is a move to the stage the card is already
     /// in, so it takes the same single-patch path as a cross-column move.
     test('a reposition within a column is one patch', () async {
@@ -1585,10 +1575,7 @@ void main() {
       store.setNoteStage(
         'c',
         'todo',
-        position: NotesStore.positionBetween(
-          store.noteById('a'),
-          store.noteById('b'),
-        ),
+        position: 1536,
       );
       expect(store.noteById('c')!.stagePosition, 1536.0);
 

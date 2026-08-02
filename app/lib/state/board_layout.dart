@@ -124,21 +124,63 @@ Board buildBoard({
   ]);
 }
 
-/// The card that changed place between two orderings of one column, or null if
-/// nothing moved.
+/// Resolves the sparse position for a card reordered within one board column.
 ///
-/// A drag reports the whole reordered column, but only one card actually moved,
-/// and moving one card is one write. This finds it by removing each candidate
-/// from both lists and asking whether what remains is identical, true for
-/// exactly the card that was picked up.
-String? movedCardId(List<String> before, List<String> after) {
-  if (before.length != after.length) return null;
-  for (final id in after) {
-    final withoutBefore = [...before]..remove(id);
-    final withoutAfter = [...after]..remove(id);
-    if (_sameOrder(withoutBefore, withoutAfter)) return id;
+/// Pinned and unpinned cards are separate ordering groups: [stagePosition]
+/// orders cards only within a group, while pinning decides which group comes
+/// first. Keeping that composite-order rule here ensures gesture widgets and
+/// stores do not each implement a partial version of it.
+///
+/// Returns null when the dragged card did not change order relative to its own
+/// group, or when either ordering is incomplete.
+double? boardPositionForReorder({
+  required Note moved,
+  required Iterable<Note> before,
+  required Iterable<Note> after,
+}) {
+  final beforePeers = _orderingPeers(moved, before);
+  final afterPeers = _orderingPeers(moved, after);
+  final beforeIds = [for (final note in beforePeers) note.id];
+  final afterIds = [for (final note in afterPeers) note.id];
+  if (beforeIds.length != afterIds.length ||
+      !beforeIds.toSet().containsAll(afterIds) ||
+      _sameOrder(beforeIds, afterIds)) {
+    return null;
   }
-  return null;
+  return _positionOf(moved.id, afterPeers);
+}
+
+/// Resolves the sparse position for [moved] inserted into an ordered column.
+///
+/// [ordered] must contain the incoming card at its intended visual slot. Cards
+/// from the other pinning group are deliberately ignored when choosing the
+/// numeric neighbours.
+double? boardPositionForInsertion({
+  required Note moved,
+  required Iterable<Note> ordered,
+}) => _positionOf(moved.id, _orderingPeers(moved, ordered));
+
+List<Note> _orderingPeers(Note moved, Iterable<Note> notes) => [
+  for (final note in notes)
+    if (note.pinned == moved.pinned) note,
+];
+
+double? _positionOf(String movedId, List<Note> orderedPeers) {
+  final index = orderedPeers.indexWhere((note) => note.id == movedId);
+  if (index == -1) return null;
+  final above = index > 0 ? orderedPeers[index - 1] : null;
+  final below = index + 1 < orderedPeers.length
+      ? orderedPeers[index + 1]
+      : null;
+  return _positionBetween(above, below);
+}
+
+/// A sparse position between two cards in the same board ordering group.
+double _positionBetween(Note? above, Note? below) {
+  if (above == null && below == null) return 1024.0;
+  if (above == null) return below!.stagePosition - 1024.0;
+  if (below == null) return above.stagePosition + 1024.0;
+  return (above.stagePosition + below.stagePosition) / 2;
 }
 
 bool _sameOrder(List<String> a, List<String> b) {

@@ -11,6 +11,41 @@ import '../util/motion.dart';
 import '../util/platform.dart';
 import 'measure_size.dart';
 
+/// The result of one drag reorder.
+///
+/// The layout owns these gesture facts; consumers should not have to infer the
+/// dragged item from two lists, which is ambiguous for adjacent moves. Whether
+/// an ancestor [DragTarget] accepted the drop is included so each consumer can
+/// decide whether the reorder or the target action owns the gesture.
+@immutable
+class MasonryReorder {
+  final String draggedId;
+  final int fromIndex;
+  final int toIndex;
+  final List<String> orderedIds;
+  final bool acceptedByTarget;
+
+  MasonryReorder({
+    required this.draggedId,
+    required this.fromIndex,
+    required this.toIndex,
+    required Iterable<String> orderedIds,
+    required this.acceptedByTarget,
+  }) : orderedIds = List<String>.unmodifiable(orderedIds);
+}
+
+/// What the masonry should do with its temporary order after the callback.
+enum MasonryReorderDecision { keep, restore }
+
+/// Persists or otherwise accepts a reorder.
+///
+/// Return [MasonryReorderDecision.keep] after accepting the reorder. Return
+/// [MasonryReorderDecision.restore] when another target owns the gesture or the
+/// reorder is stale/invalid; the masonry then restores the order supplied
+/// through [AnimatedMasonry.notes].
+typedef MasonryReorderCallback =
+    MasonryReorderDecision Function(MasonryReorder reorder);
+
 /// A masonry grid where every layout change animates.
 ///
 /// Tiles are absolutely positioned in a Stack; their heights are measured
@@ -27,18 +62,7 @@ class AnimatedMasonry extends StatefulWidget {
   final double spacing;
   final Widget Function(BuildContext context, Note note) itemBuilder;
   final bool dragEnabled;
-  final ValueChanged<List<String>>? onReorder;
-
-  /// Keep an in-progress reorder when an ancestor drop target reports the
-  /// drag as accepted.
-  ///
-  /// The board's paged phone layout keeps neighbouring columns and its stage
-  /// strip mounted as drop targets. On iOS, their acceptance can be reported
-  /// for a card that was released back in its own column. BoardColumnView
-  /// verifies the card still belongs to that column before persisting, so it
-  /// can safely opt into committing the local reorder. Other masonry users
-  /// retain the usual behaviour: an accepted drop belongs to its target.
-  final bool keepReorderAfterAcceptedDrop;
+  final MasonryReorderCallback? onReorder;
 
   /// Touch long presses that end without movement select this note; moving
   /// after the hold keeps the existing reorder behavior.
@@ -76,7 +100,6 @@ class AnimatedMasonry extends StatefulWidget {
     this.spacing = 8,
     this.dragEnabled = true,
     this.onReorder,
-    this.keepReorderAfterAcceptedDrop = false,
     this.onStationaryLongPress,
     this.scrollController,
     this.staggeredEntrance = true,
@@ -122,6 +145,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   final Map<String, double> _heights = {};
   List<String> _orderIds = [];
   String? _draggingId;
+  List<String>? _dragStartOrder;
 
   // Tile widgets, kept between our own rebuilds. A note card is expensive to
   // build (markdown, linkified spans, image resolution, an OpenContainer
@@ -327,6 +351,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     HapticFeedback.mediumImpact();
     _dragChangedOrder = false;
     _dragMoved = false;
+    _dragStartOrder = List<String>.unmodifiable(_orderIds);
     setState(() => _draggingId = id);
   }
 
@@ -381,11 +406,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     HapticFeedback.selectionClick();
   }
 
-  /// [tookIt] means a [DragTarget] accepted the card, it belongs somewhere
-  /// else now. On the way out, the pointer crosses this grid's own tiles and
-  /// reflows them, but that rearrangement is of a card that is leaving: only
-  /// the target gets to say where it ended up. Reporting it too would land a
-  /// second write that files the card back here, undoing the drop.
+  /// [tookIt] records that a [DragTarget] accepted the card. The consumer owns
+  /// what that means: a grid ignores the incidental reorder on the way to a
+  /// sidebar action, while a board verifies whether the card actually changed
+  /// columns. Keeping that policy outside this layout avoids target-specific
+  /// behavior in a generic masonry widget.
   void _onDragEnd({bool selectWhenStationary = false, bool tookIt = false}) {
     _stopAutoScroll();
     _lastGlobalDragPoint = null;
@@ -393,18 +418,38 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     if (draggingId == null) return;
     final stationary = !_dragMoved;
     setState(() => _draggingId = null);
-    final original = [for (final n in widget.notes) n.id];
-    if (tookIt && !widget.keepReorderAfterAcceptedDrop) {
-      // Drop the drag's arrangement; the rebuild that removes the card is
-      // what should redraw this grid, not a reorder it never really made.
+    final original = _dragStartOrder ?? [for (final n in widget.notes) n.id];
+    final fromIndex = original.indexOf(draggingId);
+    final toIndex = _orderIds.indexOf(draggingId);
+    final sameItems =
+        original.length == _orderIds.length &&
+        setEquals(original.toSet(), _orderIds.toSet());
+    var decision = MasonryReorderDecision.restore;
+    if (_dragChangedOrder &&
+        sameItems &&
+        fromIndex >= 0 &&
+        toIndex >= 0 &&
+        !listEquals(original, _orderIds)) {
+      decision =
+          widget.onReorder?.call(
+            MasonryReorder(
+              draggedId: draggingId,
+              fromIndex: fromIndex,
+              toIndex: toIndex,
+              orderedIds: _orderIds,
+              acceptedByTarget: tookIt,
+            ),
+          ) ??
+          MasonryReorderDecision.restore;
+    }
+    if (decision == MasonryReorderDecision.restore) {
       setState(() {
-        _orderIds = original;
+        _orderIds = [for (final note in widget.notes) note.id];
         _invalidateLayout();
       });
-    } else if (_dragChangedOrder && !listEquals(original, _orderIds)) {
-      widget.onReorder?.call(List<String>.from(_orderIds));
     }
     _dragChangedOrder = false;
+    _dragStartOrder = null;
     if (selectWhenStationary && stationary) {
       widget.onStationaryLongPress?.call(draggingId);
     }

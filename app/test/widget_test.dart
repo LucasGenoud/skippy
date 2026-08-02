@@ -720,7 +720,7 @@ void main() {
           serverNote('c', title: 'CCC', position: 3),
           serverNote('d', title: 'DDD', position: 4),
         ];
-        List<String>? reported;
+        MasonryReorder? reported;
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
@@ -728,7 +728,10 @@ void main() {
                 child: AnimatedMasonry(
                   notes: notes,
                   columns: 2,
-                  onReorder: (ids) => reported = ids,
+                  onReorder: (reorder) {
+                    reported = reorder;
+                    return MasonryReorderDecision.keep;
+                  },
                   itemBuilder: (context, note) => SizedBox(
                     height: 80,
                     child: Card(child: Center(child: Text(note.title))),
@@ -752,8 +755,12 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(reported, isNotNull);
-        expect(reported, isNot(['a', 'b', 'c', 'd']));
-        expect(reported!.toSet(), {'a', 'b', 'c', 'd'});
+        expect(reported!.draggedId, 'a');
+        expect(reported!.fromIndex, 0);
+        expect(reported!.toIndex, isNot(0));
+        expect(reported!.orderedIds, isNot(['a', 'b', 'c', 'd']));
+        expect(reported!.orderedIds.toSet(), {'a', 'b', 'c', 'd'});
+        expect(reported!.acceptedByTarget, isFalse);
       },
     );
 
@@ -776,7 +783,7 @@ void main() {
                 child: AnimatedMasonry(
                   notes: notes,
                   columns: 2,
-                  onReorder: (_) {},
+                  onReorder: (_) => MasonryReorderDecision.keep,
                   itemBuilder: (context, note) {
                     builds[note.id] = (builds[note.id] ?? 0) + 1;
                     return SizedBox(
@@ -815,6 +822,67 @@ void main() {
       },
     );
 
+    testWidgets(
+      'a consumer can reject a reorder owned by an accepting target',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        final notes = [
+          serverNote('a', title: 'AAA', position: 1),
+          serverNote('b', title: 'BBB', position: 2),
+          serverNote('c', title: 'CCC', position: 3),
+        ];
+        MasonryReorder? reported;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DragTarget<String>(
+                onWillAcceptWithDetails: (_) => true,
+                builder: (context, candidate, rejected) =>
+                    SingleChildScrollView(
+                      child: AnimatedMasonry(
+                        notes: notes,
+                        columns: 1,
+                        onReorder: (reorder) {
+                          reported = reorder;
+                          return MasonryReorderDecision.restore;
+                        },
+                        itemBuilder: (context, note) => SizedBox(
+                          height: 80,
+                          child: Card(child: Center(child: Text(note.title))),
+                        ),
+                      ),
+                    ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('AAA')),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await gesture.moveTo(
+          tester.getCenter(find.text('CCC')),
+          timeStamp: const Duration(milliseconds: 400),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(reported, isNotNull);
+        expect(reported!.acceptedByTarget, isTrue);
+        expect(
+          tester.getTopLeft(find.text('AAA')).dy,
+          lessThan(tester.getTopLeft(find.text('BBB')).dy),
+        );
+        expect(
+          tester.getTopLeft(find.text('BBB')).dy,
+          lessThan(tester.getTopLeft(find.text('CCC')).dy),
+        );
+      },
+    );
+
     testWidgets('touch long-press selects in place but movement reorders', (
       tester,
     ) async {
@@ -824,7 +892,7 @@ void main() {
         serverNote('c', title: 'CCC', position: 3),
         serverNote('d', title: 'DDD', position: 4),
       ];
-      List<String>? reported;
+      MasonryReorder? reported;
       String? selected;
       await tester.pumpWidget(
         MaterialApp(
@@ -833,7 +901,10 @@ void main() {
               child: AnimatedMasonry(
                 notes: notes,
                 columns: 2,
-                onReorder: (ids) => reported = ids,
+                onReorder: (reorder) {
+                  reported = reorder;
+                  return MasonryReorderDecision.keep;
+                },
                 onStationaryLongPress: (id) => selected = id,
                 itemBuilder: (context, note) => SizedBox(
                   height: 80,
@@ -867,7 +938,10 @@ void main() {
       await drag.up();
       await tester.pumpAndSettle();
       expect(reported, isNotNull);
-      expect(reported!.toSet(), {'a', 'b', 'c', 'd'});
+      // The resulting list alone is ambiguous about which adjacent card was
+      // moved. Masonry must preserve the actual gesture identity.
+      expect(reported!.draggedId, 'b');
+      expect(reported!.orderedIds.toSet(), {'a', 'b', 'c', 'd'});
     });
   });
 

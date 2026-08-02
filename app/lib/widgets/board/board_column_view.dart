@@ -23,7 +23,8 @@ import 'stage_editor.dart';
 ///
 /// - **Within the column**, [AnimatedMasonry] does the work it already does for
 ///   the grid, lift, reflow around the pointer, edge auto-scroll, and reports
-///   the reordered column, which becomes one midpoint write.
+///   an explicit [MasonryReorder]. The board's pure ordering policy turns that
+///   into one sparse-position write.
 /// - **Between columns**, this widget is a [DragTarget] for cards it does not
 ///   already hold. It holds a slot open under the carried card and drops it
 ///   there, so arriving in a column and placing it are one gesture rather than
@@ -123,47 +124,57 @@ class _BoardColumnViewState extends State<BoardColumnView> {
 
   void _acceptForeign(String noteId) {
     final store = context.read<NotesStore>();
+    final moved = store.noteById(noteId);
+    if (moved == null) return;
     final index = _incomingIndex;
     _clearIncoming();
     // No confirmation snack here: the card visibly glides into its new slot,
     // which is the confirmation. A toast on top of a drag you just watched
     // happen is noise, not information.
-    store.setNoteStage(noteId, _stageId, position: _positionAt(index));
+    store.setNoteStage(
+      noteId,
+      _stageId,
+      position: index == null ? null : _positionForIncoming(moved, index),
+    );
   }
 
-  /// The slot [index] names, as a position between the cards it falls between.
-  /// Null when the column never got a hover to place it, an empty column has
-  /// no masonry to aim at, which leaves the card at the end.
-  double? _positionAt(int? index) {
-    if (index == null) return null;
-    final notes = widget.column.notes;
-    Note? at(int i) => i < 0 || i >= notes.length ? null : notes[i];
-    return NotesStore.positionBetween(at(index - 1), at(index));
+  /// Inserts [moved] into the visual slot and lets the board's ordering policy
+  /// resolve the numeric position inside its pinning group.
+  double? _positionForIncoming(Note moved, int index) {
+    final ordered = List<Note>.from(widget.column.notes);
+    var safeIndex = index;
+    if (safeIndex < 0) safeIndex = 0;
+    if (safeIndex > ordered.length) safeIndex = ordered.length;
+    ordered.insert(safeIndex, moved);
+    return boardPositionForInsertion(moved: moved, ordered: ordered);
   }
 
   /// A drag inside the column: exactly one card moved, so write exactly one
   /// position, the midpoint between where it now sits.
-  void _reorderWithin(List<String> orderedIds) {
-    final before = [for (final note in widget.column.notes) note.id];
-    final movedId = movedCardId(before, orderedIds);
-    if (movedId == null) return;
+  MasonryReorderDecision _reorderWithin(MasonryReorder reorder) {
     final store = context.read<NotesStore>();
+    final moved = store.noteById(reorder.draggedId);
     // A neighbouring phone page or stage-strip target can accept the drag
     // while this masonry is finishing its animation. The target has already
     // updated the store in that case, so the old source column must never
     // write the carried card back into itself.
-    if (store.noteById(movedId)?.stageId != _stageId) return;
-    final index = orderedIds.indexOf(movedId);
-    Note? neighbour(int at) =>
-        at < 0 || at >= orderedIds.length ? null : store.noteById(orderedIds[at]);
-    store.setNoteStage(
-      movedId,
-      _stageId,
-      position: NotesStore.positionBetween(
-        neighbour(index - 1),
-        neighbour(index + 1),
-      ),
+    if (moved == null || moved.stageId != _stageId) {
+      return MasonryReorderDecision.restore;
+    }
+    final after = [
+      for (final id in reorder.orderedIds)
+        if (store.noteById(id) case final Note note) note,
+    ];
+    final position = boardPositionForReorder(
+      moved: moved,
+      before: widget.column.notes,
+      after: after,
     );
+    if (position == null || position == moved.stagePosition) {
+      return MasonryReorderDecision.restore;
+    }
+    store.setNoteStage(moved.id, _stageId, position: position);
+    return MasonryReorderDecision.keep;
   }
 
   @override
@@ -223,7 +234,6 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             // A long press selects rather than lifts while selecting, the
             // same rule the grid follows.
             dragEnabled: widget.dragEnabled && !widget.selectionMode,
-            keepReorderAfterAcceptedDrop: true,
             // Board cards must be visible on the first frame; see the flag's
             // doc on why the grid's cascade is the wrong default here.
             staggeredEntrance: false,

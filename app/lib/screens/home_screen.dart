@@ -1201,7 +1201,15 @@ class _HomeScreenState extends State<HomeScreen> {
               spacing: 8,
               dragEnabled: dragEnabled,
               scrollController: _scrollController,
-              onReorder: store.reorder,
+              // A sidebar drop owns the gesture; crossing grid tiles on the
+              // way there must not also persist an incidental reorder.
+              onReorder: (reorder) {
+                if (reorder.acceptedByTarget) {
+                  return MasonryReorderDecision.restore;
+                }
+                store.reorder(reorder.orderedIds);
+                return MasonryReorderDecision.keep;
+              },
               onStationaryLongPress: (id) =>
                   _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
               itemBuilder: (context, note) => NoteTile(

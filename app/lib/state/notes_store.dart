@@ -2175,19 +2175,6 @@ class NotesStore extends ChangeNotifier {
     });
   }
 
-  /// The slot between two cards in a column, for a drop that landed there.
-  ///
-  /// Positions are sparse rather than densely renumbered, so placing a card
-  /// writes one row instead of the whole column, the same trick
-  /// [_frontPosition] uses for new notes. A null neighbour means the head or
-  /// the tail of the column.
-  static double positionBetween(Note? above, Note? below) {
-    if (above == null && below == null) return 1024.0;
-    if (above == null) return below!.stagePosition - 1024.0;
-    if (below == null) return above.stagePosition + 1024.0;
-    return (above.stagePosition + below.stagePosition) / 2;
-  }
-
   /// One slot past the last card of [stageId] in [workspaceId].
   double _endOfStage(String? stageId, String workspaceId) {
     var max = 0.0;

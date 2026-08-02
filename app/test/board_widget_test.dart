@@ -477,6 +477,46 @@ void main() {
     expect(api.log.where((l) => l.startsWith('patchNote')).length, 1);
   });
 
+  /// Pinned cards are sorted as a separate group at the top of a column. Their
+  /// numeric stage positions must not be used as neighbours when an unpinned
+  /// card is moved to the head of the unpinned group, or a high position on
+  /// the pinned card can make the dragged card sort straight back to the end.
+  testWidgets('the last card reorders below a pinned card', (tester) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['pinned'] = serverNote(
+      'pinned',
+      title: 'pinned card',
+    ).copyWith(stageId: 'todo', stagePosition: 4096, pinned: true);
+    api.notes['a'] = serverNote(
+      'a',
+      title: 'card a',
+    ).copyWith(stageId: 'todo', stagePosition: 1024);
+    api.notes['b'] = serverNote(
+      'b',
+      title: 'card b',
+    ).copyWith(stageId: 'todo', stagePosition: 2048);
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+    api.log.clear();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('card b')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveTo(tester.getCenter(find.text('card a')));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      store.noteById('b')!.stagePosition,
+      lessThan(store.noteById('a')!.stagePosition),
+    );
+    await flushTimers(tester);
+    expect(api.log.where((l) => l.startsWith('patchNote')).length, 1);
+  });
+
   testWidgets('phones keep an in-column card reorder after the drop', (
     tester,
   ) async {
