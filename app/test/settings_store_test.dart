@@ -231,7 +231,11 @@ void main() {
     'search is capability-gated while audio notes are always available',
     () async {
       // Search service running, transcription not.
-      api.capabilities = (semanticSearch: true, audioTranscription: false);
+      api.capabilities = (
+        semanticSearch: true,
+        audioTranscription: false,
+        serverVersion: 'test-server',
+      );
       await settings.load();
       expect(settings.semanticSearchCapable, isTrue);
       expect(settings.audioTranscriptionCapable, isFalse);
@@ -248,7 +252,11 @@ void main() {
 
       // Another device with both services up keeps audio available, while the
       // user-disabled search feature remains hidden.
-      api.capabilities = (semanticSearch: true, audioTranscription: true);
+      api.capabilities = (
+        semanticSearch: true,
+        audioTranscription: true,
+        serverVersion: 'test-server',
+      );
       final other = SettingsStore(api: api);
       await other.load();
       expect(other.audioNotesAvailable, isTrue);
@@ -258,7 +266,11 @@ void main() {
   );
 
   test('llm config persists, roundtrips, and gates availability', () async {
-    api.capabilities = (semanticSearch: true, audioTranscription: false);
+    api.capabilities = (
+      semanticSearch: true,
+      audioTranscription: false,
+      serverVersion: 'test-server',
+    );
     await settings.load();
 
     // Unconfigured: nothing available, whatever the toggles say.
@@ -302,7 +314,11 @@ void main() {
     other.dispose();
 
     // No semantic search on the server: chat unavailable even when configured.
-    api.capabilities = (semanticSearch: false, audioTranscription: false);
+    api.capabilities = (
+      semanticSearch: false,
+      audioTranscription: false,
+      serverVersion: 'test-server',
+    );
     final third = SettingsStore(api: api);
     await third.load();
     expect(third.llmConfigured, isTrue);

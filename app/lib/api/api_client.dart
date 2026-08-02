@@ -206,7 +206,8 @@ abstract class Api {
 
   /// Which optional, service-backed features this server has enabled. Drives
   /// semantic-search availability and whether audio recordings are transcribed.
-  Future<({bool semanticSearch, bool audioTranscription})> fetchCapabilities();
+  Future<({bool semanticSearch, bool audioTranscription, String? serverVersion})>
+  fetchCapabilities();
 
   /// Semantic-search index diagnostics: embedding model, vector width, and how
   /// many of the user's notes are indexed. Powers the Settings stats panel.
@@ -989,7 +990,7 @@ class ApiClient implements Api {
   // -- capabilities & transcription --------------------------------------------
 
   @override
-  Future<({bool semanticSearch, bool audioTranscription})>
+  Future<({bool semanticSearch, bool audioTranscription, String? serverVersion})>
   fetchCapabilities() async {
     // Unauthenticated endpoint; no bearer needed.
     final data = _decode(
@@ -1000,6 +1001,9 @@ class ApiClient implements Api {
     return (
       semanticSearch: map['semantic_search'] == true,
       audioTranscription: map['audio_transcription'] == true,
+      // Older servers do not advertise their version; leave it unavailable
+      // rather than treating a missing field as a malformed response.
+      serverVersion: map['server_version']?.toString(),
     );
   }
 

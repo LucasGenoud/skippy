@@ -10,6 +10,10 @@ async fn capabilities_reflect_wired_services() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(caps["semantic_search"], json!(false));
     assert_eq!(caps["audio_transcription"], json!(false));
+    assert_eq!(
+        caps["server_version"],
+        json!(sticky_notes_server::SERVER_VERSION)
+    );
 
     let app = build_app(state_with_search().await);
     let (_, caps) = send(&app, "GET", "/api/capabilities", None, None).await;

@@ -140,6 +140,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Val
     Json(serde_json::json!({
         "semantic_search": state.search.is_some(),
         "audio_transcription": state.transcribe.is_some(),
+        "server_version": crate::SERVER_VERSION,
     }))
 }
 

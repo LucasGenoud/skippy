@@ -260,7 +260,7 @@ Each one overrides the per-user value and locks that field in the app's Settings
 
 **Other services in the compose stack** (read by those images, not by this server): `ASR_MODEL` (`base`; `tiny`/`small`/`medium`/`large-v3`) and `ASR_ENGINE` (`faster_whisper`) on Whisper; `GARAGE_RPC_SECRET`, `GARAGE_DEFAULT_ACCESS_KEY`, `GARAGE_DEFAULT_SECRET_KEY`, `GARAGE_DEFAULT_BUCKET` on Garage, the access/secret pair must match the `STICKY_NOTES_S3_*` keys given to the server, which is why the compose file feeds both from the same variables.
 
-The Flutter app has one build-time knob rather than an environment variable: `--dart-define=API_BASE=<url>` sets the backend it targets by default (see [Local development](#local-development)).
+The Flutter app has build-time knobs rather than environment variables: `--dart-define=API_BASE=<url>` sets the backend it targets by default (see [Local development](#local-development)); `--dart-define=SKIPPY_CLIENT_VERSION=<version>` sets the client identifier shown in Settings. The production image build supplies the latter automatically. It stamps both the client and server with the commit count (a monotonically increasing build number on `main`) and the short commit hash, so Settings can identify the exact deployed pair.
 
 ### Local development
 

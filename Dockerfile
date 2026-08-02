@@ -4,17 +4,21 @@
 # --- 1. Flutter web bundle ---------------------------------------------------
 FROM ghcr.io/cirruslabs/flutter:stable AS web
 WORKDIR /src
+ARG BUILD_VERSION=dev
 COPY app/pubspec.yaml app/pubspec.lock ./
 RUN flutter pub get
 COPY app/ ./
 # --wasm ships a WebAssembly (skwasm) build alongside a plain JS fallback;
 # the loader picks at runtime, so browsers without WasmGC still work. The
 # wasm renderer noticeably smooths animation-heavy screens like the grid.
-RUN flutter build web --wasm --release
+RUN flutter build web --wasm --release \
+    --dart-define=SKIPPY_CLIENT_VERSION=1.0.0+${BUILD_VERSION}
 
 # --- 2. Rust server ----------------------------------------------------------
 FROM rust:trixie AS server
 WORKDIR /src
+ARG BUILD_VERSION=dev
+ENV STICKY_NOTES_SERVER_VERSION=0.2.0+${BUILD_VERSION}
 COPY backend/ ./
 RUN cargo build --release
 

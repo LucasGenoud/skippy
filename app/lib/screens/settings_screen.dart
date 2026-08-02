@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/settings_store.dart';
+import '../util/app_version.dart';
 import '../widgets/settings/account_section.dart';
 import '../widgets/settings/accent_color.dart';
 import '../widgets/settings/device_notifications_tile.dart';
@@ -240,6 +241,18 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('Keyboard shortcuts'),
                 subtitle: const Text('Also opens with ? on the notes screen'),
                 onTap: () => showShortcutHelp(context),
+              ),
+              const Divider(height: 32),
+              const _SectionHeader('About'),
+              const ListTile(
+                leading: Icon(Icons.phone_android_outlined),
+                title: Text('Client version'),
+                subtitle: Text(clientVersion),
+              ),
+              ListTile(
+                leading: const Icon(Icons.dns_outlined),
+                title: const Text('Server version'),
+                subtitle: Text(settings.serverVersion ?? 'Unavailable'),
               ),
               const Divider(height: 32),
               const _SectionHeader('Danger zone'),

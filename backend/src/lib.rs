@@ -29,6 +29,14 @@ use crate::files::FileStore;
 use crate::store::Repository;
 use crate::ws::Hub;
 
+/// Server build identifier shown by the client's Settings page. Docker builds
+/// stamp this with `STICKY_NOTES_SERVER_VERSION`; local and test builds retain
+/// Cargo's package version without needing any extra environment setup.
+pub const SERVER_VERSION: &str = match option_env!("STICKY_NOTES_SERVER_VERSION") {
+    Some(version) if !version.is_empty() => version,
+    _ => env!("CARGO_PKG_VERSION"),
+};
+
 /// Progress of a per-user "re-run embeddings" job. `done` counts notes
 /// embedded so far out of `total`; the job is finished once they are equal.
 #[derive(Clone, Copy, Default)]

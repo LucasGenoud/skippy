@@ -48,9 +48,11 @@ class FakeApi implements Api {
 
   /// Server feature flags returned by [fetchCapabilities]; tests flip these to
   /// exercise the availability logic.
-  ({bool semanticSearch, bool audioTranscription}) capabilities = (
+  ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+  capabilities = (
     semanticSearch: true,
     audioTranscription: false,
+    serverVersion: 'test-server',
   );
 
   /// Server-managed settings returned by [fetchManagedSettings]; empty means
@@ -709,7 +711,7 @@ class FakeApi implements Api {
       _run('unfurl:$url', () => previews[url]);
 
   @override
-  Future<({bool semanticSearch, bool audioTranscription})>
+  Future<({bool semanticSearch, bool audioTranscription, String? serverVersion})>
   fetchCapabilities() async {
     final gate = fetchCapabilitiesGate;
     if (gate != null) {

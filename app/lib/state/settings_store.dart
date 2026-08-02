@@ -202,6 +202,7 @@ class SettingsStore extends ChangeNotifier {
   // notes must remain available even while Whisper is offline.
   bool semanticSearchCapable = false;
   bool audioTranscriptionCapable = false;
+  String? serverVersion;
   bool semanticSearchEnabled = true;
 
   // Whether the in-search "rank by meaning" (✨) toggle is on. Unlike the
@@ -290,7 +291,7 @@ class SettingsStore extends ChangeNotifier {
   /// every note card each time.
   String _fingerprint() => jsonEncode({
     'doc': toJson(),
-    'caps': [semanticSearchCapable, audioTranscriptionCapable],
+    'caps': [semanticSearchCapable, audioTranscriptionCapable, serverVersion],
     'managed': {
       for (final e in managed.entries) e.key: [e.value.secret, e.value.value],
     },
@@ -306,6 +307,7 @@ class SettingsStore extends ChangeNotifier {
       if (_disposed) return;
       semanticSearchCapable = caps.semanticSearch;
       audioTranscriptionCapable = caps.audioTranscription;
+      serverVersion = caps.serverVersion;
     } catch (_) {
       if (_disposed) return;
       // Unreachable: leave capabilities as they were (default off).

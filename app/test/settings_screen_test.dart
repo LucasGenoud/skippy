@@ -12,6 +12,7 @@ import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/util/backup.dart';
+import 'package:skippy/util/app_version.dart';
 import 'package:skippy/widgets/settings/export_section.dart';
 
 import 'fake_api.dart';
@@ -48,6 +49,17 @@ Future<SettingsStore> pumpSettings(
 }
 
 void main() {
+  testWidgets('settings shows client and server build versions', (
+    tester,
+  ) async {
+    await pumpSettings(tester, FakeApi());
+
+    expect(find.text('Client version'), findsOneWidget);
+    expect(find.text(clientVersion), findsOneWidget);
+    expect(find.text('Server version'), findsOneWidget);
+    expect(find.text('test-server'), findsOneWidget);
+  });
+
   testWidgets('backup and restore actions are available in settings', (
     tester,
   ) async {
@@ -265,7 +277,11 @@ void main() {
     tester,
   ) async {
     final api = FakeApi();
-    api.capabilities = (semanticSearch: false, audioTranscription: false);
+    api.capabilities = (
+      semanticSearch: false,
+      audioTranscription: false,
+      serverVersion: 'test-server',
+    );
     await pumpSettings(tester, api);
     expect(find.text('Embedding index'), findsNothing);
   });
