@@ -69,18 +69,20 @@ Board buildBoard({
   required Iterable<Stage> stages,
   WorkspaceScope scope = const WorkspaceScope.all(),
   String query = '',
+
   /// Only needed to resolve `label:` terms in [query]; the board itself never
   /// groups by label.
   Iterable<Label> labels = const [],
   bool showAllUnassigned = false,
   Set<String>? rankedIds,
 }) {
-  // Semantic search replaces the keyword filter with the server's ranking, so
-  // only what it returned stays on the board. The ranking itself is global,
-  // while a card's place is its column, so ranked cards keep stage order
-  // rather than being re-sorted into a flat relevance list, which would stop
-  // the result being a board.
-  final parsed = rankedIds == null ? parseSearchQuery(query) : SearchQuery.empty;
+  // Semantic search narrows the board to what it ranked, but it does not
+  // replace the query's filters: `label:work` still has to mean labelled work.
+  // The ranking is global while a card's place is its column, so ranked cards
+  // keep stage order rather than being re-sorted into a flat relevance list,
+  // which would stop the result being a board.
+  final all = parseSearchQuery(query);
+  final parsed = rankedIds == null ? all : all.filtersOnly;
   final searchContext = SearchContext(labels);
   final ordered = stages.toList()
     ..sort((a, b) => a.position.compareTo(b.position));
@@ -106,16 +108,13 @@ Board buildBoard({
   }
 
   final unassigned = buckets[null]!;
-  final capped = showAllUnassigned || unassigned.length <= kUnassignedPreviewLimit
+  final capped =
+      showAllUnassigned || unassigned.length <= kUnassignedPreviewLimit
       ? unassigned
       : unassigned.sublist(0, kUnassignedPreviewLimit);
 
   return Board([
-    BoardColumn(
-      stage: null,
-      notes: capped,
-      totalCount: unassigned.length,
-    ),
+    BoardColumn(stage: null, notes: capped, totalCount: unassigned.length),
     for (final stage in ordered)
       BoardColumn(
         stage: stage,

@@ -142,6 +142,17 @@ class SearchQuery {
     return archived ? StateOverride.archived : null;
   }
 
+  /// The same query with its words dropped, keeping only the structural
+  /// filters.
+  ///
+  /// For the semantic path: a relevance ranking has already decided which
+  /// notes the words match, and re-applying them as substring tests would
+  /// throw away exactly the notes semantic search exists to find ("internet
+  /// access code" is meant to reach a note that says "Wifi password", and that
+  /// note contains none of those words). The filters still apply, because
+  /// `label:work` is a fact about the note, not a guess about its meaning.
+  SearchQuery get filtersOnly => SearchQuery(filters: filters);
+
   /// Terms the parser recognized as operators but cannot satisfy, so the box
   /// can say why nothing matched instead of just showing an empty grid.
   List<SearchFilter> get unknownFilters => filters

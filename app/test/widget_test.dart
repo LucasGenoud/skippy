@@ -3281,6 +3281,71 @@ void main() {
     });
   });
 
+  group('semantic ranking with filters', () {
+    /// A home harness whose settings report semantic search available and
+    /// meaning-ranking on, the configuration that used to drop the filters.
+    Widget semanticHomeApp(NotesStore store, SettingsStore settings) =>
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider.value(value: settings),
+            ChangeNotifierProvider(
+              create: (_) =>
+                  AuthStore(api: ApiClient(baseUrl: 'http://unused')),
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildTheme(Brightness.light),
+            scaffoldMessengerKey: scaffoldMessengerKey,
+            home: const HomeScreen(),
+          ),
+        );
+
+    testWidgets('a ranked result set is still narrowed by the filters', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'Wifi password', pinned: true);
+      api.notes['n2'] = serverNote('n2', title: 'Router manual');
+      // The server ranks both as relevant to the words; only one is pinned.
+      api.semanticIds = ['n1', 'n2'];
+      await store.load();
+
+      final settings = SettingsStore(api: api)..semanticSearchCapable = true;
+      addTearDown(settings.dispose);
+      await settings.load();
+      settings.setSemanticRanking(true);
+
+      await tester.pumpWidget(semanticHomeApp(store, settings));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'internet access');
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      // Ranking alone: both come back, including the one whose title shares no
+      // word with the query. That is the point of meaning-ranking.
+      expect(find.text('Wifi password'), findsOneWidget);
+      expect(find.text('Router manual'), findsOneWidget);
+
+      await tester.enterText(
+        find.byType(TextField).first,
+        'internet access is:pinned',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      // The filter applies on top of the ranking rather than being dropped,
+      // and the words are NOT re-applied as a substring test (which would have
+      // thrown out 'Wifi password' too).
+      expect(find.text('Wifi password'), findsOneWidget);
+      expect(find.text('Router manual'), findsNothing);
+      // Only the words reach the embedder; the operator is not a search phrase.
+      expect(api.semanticQueries.last, 'internet access');
+      await flushTimers(tester);
+    });
+  });
+
   group('sidebar drag-and-drop', () {
     // A plain Draggable<String> stands in for a grid tile mid-drag; the
     // masonry carries the note id exactly this way.

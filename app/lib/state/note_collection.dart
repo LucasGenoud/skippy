@@ -110,20 +110,14 @@ NoteSections selectNotes({
   required String? currentUserId,
   WorkspaceScope scope = const WorkspaceScope.all(),
 }) {
-  final parsed = parseSearchQuery(query);
-  final context = SearchContext(labels);
-  // An explicit `is:archived` / `is:trashed` is more specific than the view's
-  // own state filter, so it replaces it: searching for archived notes from the
-  // notes view finds them instead of matching nothing.
-  final override = parsed.stateOverride;
-  final visible = notes
-      .where(
-        (note) =>
-            scope.contains(note) &&
-            _isInView(note, selection, currentUserId, override) &&
-            parsed.matches(note, context),
-      )
-      .toList();
+  final visible = filterNotes(
+    notes: notes,
+    labels: labels,
+    selection: selection,
+    query: parseSearchQuery(query),
+    currentUserId: currentUserId,
+    scope: scope,
+  );
 
   if (selection.view == NoteView.reminders) {
     visible.sort((a, b) => a.reminderAt!.compareTo(b.reminderAt!));
@@ -141,6 +135,41 @@ NoteSections selectNotes({
     visible.where((note) => note.pinned).toList(),
     visible.where((note) => !note.pinned).toList(),
   );
+}
+
+/// Which notes belong in [selection] under [query], in whatever order they
+/// arrived.
+///
+/// Split out of [selectNotes] because the semantic path needs exactly this and
+/// nothing else: the server's relevance ranking IS the order there, so it
+/// sorts nothing, but the view's rules and the query's filters still have to
+/// apply. Sharing this function is what keeps `label:work is:pinned` meaning
+/// the same thing with meaning-ranking on as with it off.
+List<Note> filterNotes({
+  required Iterable<Note> notes,
+  required Iterable<Label> labels,
+  required ViewSelection selection,
+
+  /// Already parsed, so the semantic path can hand over
+  /// [SearchQuery.filtersOnly] rather than a string it would have to
+  /// re-serialize.
+  required SearchQuery query,
+  required String? currentUserId,
+  WorkspaceScope scope = const WorkspaceScope.all(),
+}) {
+  final context = SearchContext(labels);
+  // An explicit `is:archived` / `is:trashed` is more specific than the view's
+  // own state filter, so it replaces it: searching for archived notes from the
+  // notes view finds them instead of matching nothing.
+  final override = query.stateOverride;
+  return notes
+      .where(
+        (note) =>
+            scope.contains(note) &&
+            _isInView(note, selection, currentUserId, override) &&
+            query.matches(note, context),
+      )
+      .toList();
 }
 
 bool _isInView(

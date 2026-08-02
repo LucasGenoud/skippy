@@ -672,6 +672,15 @@ class FakeApi implements Api {
       ? 'http://fake.test${attachment.url}'
       : fileUrl(attachment.id);
 
+  /// When set, semantic search returns exactly these ids. Lets a test model a
+  /// real ranking, one that reaches notes sharing no word with the query,
+  /// which the keyword fallback below could never produce.
+  List<String>? semanticIds;
+
+  /// Every query the embedder was actually asked to rank, so a test can assert
+  /// that operators were stripped before it was called.
+  final List<String> semanticQueries = [];
+
   /// Poor-man's semantic search: keyword containment ranked by match count.
   @override
   Future<List<String>> semanticSearch(
@@ -679,6 +688,8 @@ class FakeApi implements Api {
     int limit = 20,
     String? workspaceId,
   }) => _run('semanticSearch:$query', () {
+    semanticQueries.add(query);
+    if (semanticIds case final List<String> ids) return ids;
     final terms = query.toLowerCase().split(RegExp(r'\s+'));
     final scored = <(String, int)>[];
     for (final note in notes.values) {

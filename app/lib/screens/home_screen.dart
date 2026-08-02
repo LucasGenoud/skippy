@@ -10,6 +10,7 @@ import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../models/saved_view.dart';
 import '../models/share_link.dart';
+import '../state/note_collection.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
@@ -130,9 +131,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _scheduleSemantic();
   }
 
+  /// What the embedder should actually be asked to rank: the words, without
+  /// the operators. Sending `is:pinned` to a semantic endpoint asks it to find
+  /// notes that read like the string "is:pinned", which is meaningless.
+  String get _semanticText => parseSearchQuery(_effectiveQuery).text.trim();
+
   void _scheduleSemantic() {
     _semanticDebounce?.cancel();
-    if (!_semantic || _query.trim().isEmpty) {
+    if (!_semantic || _semanticText.isEmpty) {
       setState(() {
         _semanticIds = null;
         _semanticBusy = false;
@@ -144,10 +150,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // user toggled/typed, so results are on their way.
     setState(() => _semanticBusy = true);
     _semanticDebounce = Timer(const Duration(milliseconds: 350), () async {
-      final query = _query.trim();
+      final query = _semanticText;
       try {
         final notes = await context.read<NotesStore>().semanticSearch(query);
-        if (!mounted || _query.trim() != query) return;
+        if (!mounted || _semanticText != query) return;
         setState(() => _semanticIds = [for (final n in notes) n.id]);
       } on ApiException catch (e) {
         if (!mounted) return;
@@ -164,7 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // Only the fetch for the query still in the box clears the loading
         // state, a superseded fetch finishing must not switch off the
         // spinner/skeleton while the newer search is still on its way.
-        if (mounted && _query.trim() == query) {
+        if (mounted && _semanticText == query) {
           setState(() => _semanticBusy = false);
         }
       }
@@ -583,21 +589,33 @@ class _HomeScreenState extends State<HomeScreen> {
     final semanticAvailable =
         _semanticAvailable && settings.semanticSearchAvailable;
     final searching = _query.trim().isNotEmpty;
-    // Semantic mode replaces keyword filtering with the server's ranking.
-    // The board ranks the same way the grid does; it just keeps the ranked
-    // cards in their columns instead of flattening them into a result list.
+    // Semantic mode replaces keyword *ranking* with the server's, not the
+    // query's filters: `label:work sourdough` still has to mean notes labelled
+    // work, so the ranked ids run through the same rules as the typed path and
+    // only supply the order. It also needs words to rank, so a query that is
+    // nothing but operators stays on the keyword path.
     final semanticActive =
         _semantic &&
         semanticAvailable &&
-        searching &&
+        _semanticText.isNotEmpty &&
         (_selection.view == NoteView.notes ||
             _selection.view == NoteView.board);
     final sections = semanticActive && _semanticIds != null
-        ? NoteSections(const [], [
-            for (final id in _semanticIds!)
-              if (store.noteById(id) case final Note note)
-                if (!note.trashed && !note.archived) note,
-          ])
+        ? NoteSections(
+            const [],
+            filterNotes(
+              notes: [
+                for (final id in _semanticIds!)
+                  if (store.noteById(id) case final Note note) note,
+              ],
+              labels: store.labels,
+              selection: _selection,
+              // Filters only: the ranking already answered the words.
+              query: parseSearchQuery(_effectiveQuery).filtersOnly,
+              currentUserId: store.currentUserId,
+              scope: store.workspaceScope,
+            ),
+          )
         : store.notesFor(_selection, _effectiveQuery);
     final visibleNotes = [...sections.pinned, ...sections.others];
     // Loading indicator in the results area while the first semantic search
