@@ -35,12 +35,12 @@ jobs:
       - name: Build and push
         run: |
           IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
-          # Monotonic on main, with the short commit hash making the exact
-          # source revision unambiguous in Settings.
-          BUILD_VERSION="$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+          # SemVer build metadata: the release number is intentional, while
+          # the commit count and hash identify the exact deployed build.
+          VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
           # --no-cache: never reuse layers from a previous run.
           # --pull: re-resolve the base images instead of trusting the local copy.
-          docker build --no-cache --pull --build-arg BUILD_VERSION="$BUILD_VERSION" -t "$IMAGE:latest" .
+          docker build --no-cache --pull --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" -t "$IMAGE:latest" .
           docker push "$IMAGE:latest"
 
       - name: Drop dangling layers left by this build

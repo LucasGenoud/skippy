@@ -30,11 +30,11 @@ use crate::store::Repository;
 use crate::ws::Hub;
 
 /// Server build identifier shown by the client's Settings page. Docker builds
-/// stamp this with `STICKY_NOTES_SERVER_VERSION`; local and test builds retain
-/// Cargo's package version without needing any extra environment setup.
+/// stamp this with `STICKY_NOTES_SERVER_VERSION`; local and test builds use an
+/// explicit SemVer development version without extra environment setup.
 pub const SERVER_VERSION: &str = match option_env!("STICKY_NOTES_SERVER_VERSION") {
     Some(version) if !version.is_empty() => version,
-    _ => env!("CARGO_PKG_VERSION"),
+    _ => concat!(env!("CARGO_PKG_VERSION"), "-dev+local"),
 };
 
 /// Progress of a per-user "re-run embeddings" job. `done` counts notes

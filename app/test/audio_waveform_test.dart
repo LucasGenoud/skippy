@@ -18,6 +18,7 @@ void main() {
                 duration: 10,
                 activeColor: Colors.blue,
                 inactiveColor: Colors.grey,
+                cursorColor: Colors.white,
                 onSeek: (seconds) => sought = seconds,
               ),
             ),
@@ -36,5 +37,8 @@ void main() {
     final waveform = tester.getCenter(find.byType(AudioWaveform));
     await tester.tapAt(waveform + const Offset(50, 0));
     expect(sought, closeTo(7.5, 0.1));
+
+    await tester.dragFrom(waveform - const Offset(80, 0), const Offset(160, 0));
+    expect(sought, closeTo(9, 0.1));
   });
 }

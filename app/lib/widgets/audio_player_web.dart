@@ -130,8 +130,10 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
             child: AudioWaveform(
               position: value.toDouble(),
               duration: _duration,
+              playing: _playing,
               activeColor: scheme.primary,
               inactiveColor: scheme.onSurface.withValues(alpha: 0.14),
+              cursorColor: scheme.surface,
               onSeek: _duration > 0 ? _seek : null,
             ),
           ),
