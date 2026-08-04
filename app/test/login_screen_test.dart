@@ -45,9 +45,6 @@ void main() {
     // login half of a saved credential only when it is marked `username`.
     expect(emailHint(tester), AutofillHints.username);
     expect(passwordHint(tester), AutofillHints.password);
-    // The web maps these onto `name`/`id`, which managers weigh too.
-    expect(loginField(tester, 'Email').fieldName, 'email');
-    expect(loginField(tester, 'Password').fieldName, 'password');
   });
 
   testWidgets('create-account mode reveals confirm and new-password hint', (
@@ -66,6 +63,33 @@ void main() {
     expect(emailHint(tester), AutofillHints.email);
     // A new-password hint is what makes managers offer to generate/save.
     expect(passwordHint(tester), AutofillHints.newPassword);
+  });
+
+  testWidgets('create-account name supports spaces and text selection', (
+    tester,
+  ) async {
+    await tester.pumpWidget(loginApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create account').first);
+    await tester.pumpAndSettle();
+
+    final nameFinder = find.ancestor(
+      of: find.text('Full name'),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(nameFinder, 'Alice Example');
+
+    final field = tester.widget<TextField>(nameFinder);
+    field.controller!.selection = const TextSelection(
+      baseOffset: 0,
+      extentOffset: 5,
+    );
+
+    expect(field.controller!.text, 'Alice Example');
+    expect(
+      field.controller!.selection.textInside(field.controller!.text),
+      'Alice',
+    );
   });
 
   testWidgets('mismatched passwords block submit with an inline error', (

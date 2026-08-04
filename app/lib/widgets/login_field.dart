@@ -1,14 +1,76 @@
-/// One input of the login form.
-///
-/// Everywhere but the web this is an ordinary [TextField] with `autofillHints`,
-/// which is exactly what the OS password managers want. The web needs its own
-/// implementation: Flutter's web engine does supply an autofill `<form>`, but
-/// it only materializes once a field is focused and every input in it is sized
-/// `0x0` and painted transparent. Browsers' built-in managers fill it anyway
-/// (they go by the `autocomplete` attribute), while extensions such as
-/// Bitwarden and 1Password skip fields they consider not viewable, so on the
-/// web the fields are real, visible DOM inputs instead.
-library;
+import 'package:flutter/material.dart';
 
-export 'login_field_stub.dart'
-    if (dart.library.js_interop) 'login_field_web.dart';
+import 'login_field_decoration.dart';
+
+/// One input of the login form, backed by Flutter's supported [TextField].
+///
+/// Do not replace this with a DOM input in an [HtmlElementView] on the web.
+/// Flutter currently lets its keyboard and pointer handling interfere with
+/// those inputs (flutter/flutter#163534), breaking Space and text selection.
+class LoginField extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String label;
+  final IconData icon;
+
+  /// The autofill hint, e.g. [AutofillHints.username]. Doubles as the
+  /// `autocomplete` attribute on the web.
+  final String autofillHint;
+
+  final bool autofocus;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  final TextInputAction textInputAction;
+  final TextCapitalization textCapitalization;
+  final String? errorText;
+
+  /// Paints the outline in the error colour without an error message.
+  final bool rejected;
+
+  final Widget? suffixIcon;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+
+  const LoginField({
+    super.key,
+    required this.controller,
+    required this.focusNode,
+    required this.label,
+    required this.icon,
+    required this.autofillHint,
+    this.autofocus = false,
+    this.obscureText = false,
+    this.keyboardType,
+    this.textInputAction = TextInputAction.next,
+    this.textCapitalization = TextCapitalization.none,
+    this.errorText,
+    this.rejected = false,
+    this.suffixIcon,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      autofocus: autofocus,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
+      autofillHints: [autofillHint],
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+      decoration: loginFieldDecoration(
+        context,
+        label: label,
+        icon: icon,
+        errorText: errorText,
+        rejected: rejected,
+        suffixIcon: suffixIcon,
+      ),
+    );
+  }
+}

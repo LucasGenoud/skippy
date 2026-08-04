@@ -215,16 +215,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             alignment: Alignment.topCenter,
                             child: creating
                                 ? Padding(
-                                    padding: const EdgeInsets.only(
-                                      bottom: 16,
-                                    ),
+                                    padding: const EdgeInsets.only(bottom: 16),
                                     child: LoginField(
                                       controller: _name,
                                       focusNode: _nameFocus,
                                       label: 'Full name',
                                       icon: Icons.badge_outlined,
                                       autofillHint: AutofillHints.name,
-                                      fieldName: 'name',
                                       autofocus: true,
                                       textCapitalization:
                                           TextCapitalization.words,
@@ -257,7 +254,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             autofillHint: creating
                                 ? AutofillHints.email
                                 : AutofillHints.username,
-                            fieldName: 'email',
                             autofocus: !creating,
                             keyboardType: TextInputType.emailAddress,
                             errorText: _emailError,
@@ -279,7 +275,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             autofillHint: creating
                                 ? AutofillHints.newPassword
                                 : AutofillHints.password,
-                            fieldName: 'password',
                             obscureText: _obscure,
                             textInputAction: creating
                                 ? TextInputAction.next
@@ -320,7 +315,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       label: 'Confirm password',
                                       icon: Icons.lock_outline,
                                       autofillHint: AutofillHints.newPassword,
-                                      fieldName: 'confirm-password',
                                       obscureText: _obscure,
                                       textInputAction: TextInputAction.done,
                                       errorText: _confirmError,
@@ -337,9 +331,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           FilledButton.icon(
                             onPressed: auth.busy ? null : _submit,
                             style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             icon: auth.busy
                                 ? const SizedBox(
