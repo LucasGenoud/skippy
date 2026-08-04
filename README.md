@@ -55,10 +55,10 @@ A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **
 - **Push notifications via [ntfy](https://ntfy.sh) and/or Telegram** (Settings → Notifications): each user brings their own ntfy topic URL and/or Telegram bot token + chat id, no server-side setup. A background sweep (every 30 s) delivers due reminders to every participant of the note with a configured channel, exactly once per scheduled time (rescheduling re-arms it); checklist reminders list only the still-pending items. A "Send test" button delivers a real probe notification before you save. Channels are pluggable, a new one is a single `Connector` impl on the backend plus a spec entry in the app.
 
 **Collaboration**
-- User accounts with a display name and email + password sign-in (argon2-hashed, token sessions); name, email, and password are editable in Settings. Password-confirmed account deletion removes every workspace the account owns and all notes inside those workspaces, including notes created by other users. Notes the account created inside somebody else's workspace stay with that workspace and lose only their creator attribution.
-- Share a single note with other users by email; everyone can edit, only the owner can trash/delete/share
+- User accounts with a display name and email + password sign-in (Argon2-hashed passwords, SHA-256 session verifiers at rest); name, email, and password are editable in Settings. Password-confirmed account deletion removes every workspace the account owns and all notes inside those workspaces, including notes created by other users. Notes the account created inside somebody else's workspace stay with that workspace and lose only their creator attribution.
+- Share a single note with other users by email; every participant can edit, while the owning workspace's owner controls trash/delete/share
 - **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, changes the roster, or controls note lifecycle/sharing; members can edit and leave. Notes belong to the workspace, so deleting it permanently deletes every note and attachment inside it regardless of creator, while leaving or being removed never moves or deletes its notes.
-- **Public read-only links** for people without an account: share one note, or a whole view (a workspace's grid, its board, or one label's notes). The link is an unguessable stored token, so it is revocable and listable, and it can carry an expiry (1/7/30 days or none). Publishing the same thing twice hands back the same URL. Anyone holding it reads the notes and their images through the existing signed attachment URLs; nothing on the page can be edited, and no owner, collaborator, reminder, or archive/trash state ever goes out with it. Only the note's owner (or the workspace's, for a view) may publish, and Settings → Sharing lists everything currently public with a one-tap revoke.
+- **Public read-only links** for people without an account: share one note, or a whole view (a workspace's grid, its board, or one label's notes). Each URL combines a random stored identifier with an HMAC capability, so copying a `share_links` row does not itself reveal a working link; links remain revocable, listable, and can carry an expiry (1/7/30 days or none). Publishing the same thing twice hands back the same URL. Anyone holding it reads the notes and their images through the existing signed attachment URLs; nothing on the page can be edited, and no owner, collaborator, reminder, or archive/trash state ever goes out with it. Only the owning workspace's owner may publish a note or view, and Settings → Sharing lists everything currently public with a one-tap revoke.
 - **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
 - Labels are a workspace's shared taxonomy: everyone in it sees and applies the same set. Someone who only has a per-note share is not in that workspace and sees none of them.
 
@@ -150,9 +150,12 @@ sticky_notes/
 │   │   ├── main.rs       process wiring, optional services, static web serving
 │   │   ├── lib.rs        AppState + /api router (build_app), reused by tests
 │   │   ├── handlers/     HTTP/WS handlers by feature area + background work
-│   │   ├── store/        Repository trait, SQLite implementation/schema/rows
+│   │   ├── store/        domain repository traits + SQLite modules/schema/rows
 │   │   ├── models.rs     domain, request, and response types
 │   │   ├── files.rs      FileStore trait, disk/S3 backends, signed file URLs
+│   │   ├── cleanup.rs    durable external-state cleanup worker
+│   │   ├── telemetry.rs  request IDs, JSON request/job events, health counters
+│   │   ├── rate_limit.rs bounded auth-attempt limiter
 │   │   ├── system_backup.rs whole-instance archive, validation, and restore
 │   │   ├── search.rs     embeddings API client + sqlite-vec index
 │   │   ├── assist.rs     LLM settings, prompts, routing, and reply parsing
@@ -172,7 +175,7 @@ sticky_notes/
     └── test/           unit, store, integration-style widget tests + FakeApi
 ```
 
-**Swappable storage.** All persistence goes through the `Repository` trait ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; to move to Postgres, implement the trait and change one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` trait ([backend/src/files.rs](backend/src/files.rs)) with two backends: local disk (default) and any S3-compatible object store. S3 uses one installation-wide attachment bucket and globally unique attachment keys; relational ownership remains in SQLite. Requests are signed with a minimal built-in SigV4 (no AWS SDK). `STICKY_NOTES_STORAGE=disk|s3` picks the backend; the compose stack bundles [Garage](https://garagehq.deuxfleurs.fr/) for the S3 side.
+**Swappable storage.** Persistence is split into focused account, workspace, note, sharing, taxonomy, history, attachment, and infrastructure repository traits, composed as `Repository` ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; another backend implements those domain seams and changes one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` trait ([backend/src/files.rs](backend/src/files.rs)) with two backends: local disk (default) and any S3-compatible object store. Relational deletes transactionally enqueue cleanup for attachment blobs and workspace-owned vector collections, then an idempotent worker retries external failures across restarts. S3 uses one installation-wide attachment bucket and globally unique attachment keys; relational ownership remains in SQLite. Requests are signed with a minimal built-in SigV4 (no AWS SDK). `STICKY_NOTES_STORAGE=disk|s3` picks the backend; the compose stack bundles [Garage](https://garagehq.deuxfleurs.fr/) for the S3 side.
 
 **Optimistic-first client.** Every action updates the UI immediately; writes flow through a serial queue that retries on network failure (a banner shows offline state). The network is never in the tap path, that's where the smoothness comes from.
 
@@ -352,7 +355,7 @@ cd ../backend && cargo run            # → open http://localhost:8787
 
 The Settings backup is portable and user-scoped. Server operators also have a
 whole-system backup containing the complete SQLite database (accounts, password
-hashes, active sessions, settings, all workspaces and notes, history, server
+hashes, active session verifiers, settings, all workspaces and notes, history, server
 metadata, and search tables) plus every referenced attachment byte. Environment
 variables, the container image, and external Whisper/LLM service state are not
 included.
@@ -388,7 +391,9 @@ docker compose run --rm --no-deps server \
 docker compose up -d server
 ```
 
-The archive and its database are fully validated before current data changes.
+The archive and its database are fully validated before current data changes,
+including its schema version, SQLite integrity, foreign keys, required tables,
+checksums, and exact attachment inventory.
 The command then creates `/data/system-backups/pre-restore-*.skb`, restores
 attachments through the configured disk/S3 backend, atomically replaces the
 database, and removes now-unreferenced blobs. If the current database is too
@@ -412,7 +417,7 @@ All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` o
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health`, `/capabilities` | Health and optional-service detection |
+| `GET /health`, `/capabilities` | Cleanup/background-job health and optional-service detection |
 | `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
 | `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH/DELETE /auth/me` | Accounts, profile changes, deletion & sessions |
 | `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces, including Notes/Board visibility (the default cannot be deleted; deleting another permanently deletes all notes and attachments inside it) |

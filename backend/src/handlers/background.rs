@@ -10,8 +10,11 @@ use super::CHANGED_MSG;
 impl AppState {
     /// Push a change event to everyone who can see the note.
     pub(crate) async fn notify_note(&self, note_id: &str) {
-        if let Ok(ids) = self.repo.participant_ids(note_id).await {
-            self.hub.notify(&ids, CHANGED_MSG);
+        match self.repo.participant_ids(note_id).await {
+            Ok(ids) => self.hub.notify(&ids, CHANGED_MSG),
+            Err(error) => {
+                self.report_background_failure("participant_notification", &format!("{error:?}"));
+            }
         }
     }
 
@@ -50,35 +53,20 @@ impl AppState {
         let Some(search) = self.search.clone() else {
             return;
         };
-        let repo = self.repo.clone();
+        let state = self.clone();
         let note_id = note_id.to_string();
         tokio::spawn(async move {
-            let Ok(Some(record)) = repo.note_record(&note_id).await else {
-                return;
+            let record = match state.repo.note_record(&note_id).await {
+                Ok(Some(record)) => record,
+                Ok(None) => return,
+                Err(error) => {
+                    state.report_background_failure("semantic_index_load", &format!("{error:?}"));
+                    return;
+                }
             };
             if let Err(e) = search.index_note(&record).await {
-                eprintln!("semantic index failed for {note_id}: {e:#}");
+                state.report_background_failure("semantic_index", &e);
             }
-        });
-    }
-
-    pub fn unindex_note_later(&self, note_id: &str) {
-        let Some(search) = self.search.clone() else {
-            return;
-        };
-        let note_id = note_id.to_string();
-        tokio::spawn(async move {
-            let _ = search.remove_note(&note_id).await;
-        });
-    }
-
-    pub fn unindex_workspace_later(&self, workspace_id: &str) {
-        let Some(search) = self.search.clone() else {
-            return;
-        };
-        let workspace_id = workspace_id.to_string();
-        tokio::spawn(async move {
-            let _ = search.remove_workspace(&workspace_id).await;
         });
     }
 
@@ -107,17 +95,27 @@ impl AppState {
                 Some(bytes) => match transcriber.transcribe(bytes, &filename).await {
                     Ok(text) => (TRANSCRIPT_DONE, Some(text)),
                     Err(e) => {
-                        eprintln!("transcription failed for {note_id}: {e:#}");
+                        state.report_background_failure("transcription", &e);
                         (TRANSCRIPT_FAILED, None)
                     }
                 },
-                None => (TRANSCRIPT_FAILED, None),
+                None => {
+                    state.report_background_failure(
+                        "transcription_blob_read",
+                        &"attachment blob unavailable",
+                    );
+                    (TRANSCRIPT_FAILED, None)
+                }
             };
             let (status, content) = status_and_content;
-            let _ = state
+            if let Err(error) = state
                 .repo
                 .set_transcript(&note_id, status, content.as_deref())
-                .await;
+                .await
+            {
+                state.report_background_failure("transcription_persist", &format!("{error:?}"));
+                return;
+            }
             if status == TRANSCRIPT_DONE {
                 state.index_note_later(&note_id);
                 state.label_note_later(&note_id, &user_id);
@@ -165,7 +163,10 @@ impl AppState {
     async fn run_auto_labeling(&self, note_id: &str, user_id: &str) {
         let settings = match self.repo.settings_for_user(user_id).await {
             Ok(s) => s,
-            Err(_) => return,
+            Err(error) => {
+                self.report_background_failure("auto_label_settings", &format!("{error:?}"));
+                return;
+            }
         };
         let effective = self.managed.overlay(settings.as_deref());
         let llm_settings = crate::assist::parse_llm_settings_value(&effective);
@@ -175,8 +176,13 @@ impl AppState {
         if !llm_settings.labeling {
             return;
         }
-        let Ok(Some(record)) = self.repo.note_record(note_id).await else {
-            return;
+        let record = match self.repo.note_record(note_id).await {
+            Ok(Some(record)) => record,
+            Ok(None) => return,
+            Err(error) => {
+                self.report_background_failure("auto_label_note", &format!("{error:?}"));
+                return;
+            }
         };
         if record.trashed {
             return;
@@ -185,8 +191,12 @@ impl AppState {
         if text.is_empty() {
             return;
         }
-        let Ok(labels) = self.repo.labels_for_user(user_id).await else {
-            return;
+        let labels = match self.repo.labels_for_user(user_id).await {
+            Ok(labels) => labels,
+            Err(error) => {
+                self.report_background_failure("auto_label_taxonomy", &format!("{error:?}"));
+                return;
+            }
         };
         // Only the taxonomy of the note's own workspace is on offer, a label
         // from another workspace could not be attached anyway.
@@ -199,14 +209,18 @@ impl AppState {
         }
         let current = match self.repo.note_view(note_id, user_id).await {
             Ok(Some(view)) => view.label_ids,
-            _ => return,
+            Ok(None) => return,
+            Err(error) => {
+                self.report_background_failure("auto_label_view", &format!("{error:?}"));
+                return;
+            }
         };
         let names: Vec<String> = labels.iter().map(|l| l.name.clone()).collect();
         let messages = crate::assist::labeling_messages(&names, &text);
         let reply = match self.llm.complete(&cfg, messages).await {
             Ok(reply) => reply,
             Err(e) => {
-                eprintln!("auto-labeling failed for {note_id}: {e:#}");
+                self.report_background_failure("auto_label_completion", &e);
                 return;
             }
         };
@@ -222,8 +236,11 @@ impl AppState {
         if union.len() == current.len() {
             return;
         }
-        if self.repo.set_note_labels(note_id, &union).await.is_ok() {
-            self.notify_note(note_id).await;
+        match self.repo.set_note_labels(note_id, &union).await {
+            Ok(()) => self.notify_note(note_id).await,
+            Err(error) => {
+                self.report_background_failure("auto_label_persist", &format!("{error:?}"));
+            }
         }
     }
 }

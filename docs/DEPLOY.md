@@ -81,8 +81,8 @@ Example host crontab (cron treats `%` specially, hence the escaping):
 ```
 
 The archive includes the complete SQLite database and all attachment objects
-referenced by its consistent snapshot. It contains credentials, active session
-tokens, user settings, and private note/file data; protect it like the live
+referenced by its consistent snapshot. It contains password hashes, active
+session verifiers, user settings, and private note/file data; protect it like the live
 database. Environment configuration and external service state are not part of
 the archive.
 
@@ -98,6 +98,20 @@ docker compose up -d server
 
 Use `--skip-safety-backup` only when the current database is unreadable and no
 safety archive can be created.
+
+Before replacing current data, restore validates the archive checksum, exact
+database schema version, SQLite integrity and foreign keys, required tables,
+and the complete attachment inventory.
+
+## Health and logs
+
+`GET /api/health` reports durable cleanup queue counts and the process-local
+total of failed background jobs. A non-zero cleanup `failed` count means an
+attachment or vector deletion is waiting for retry; it remains in SQLite across
+container restarts. Request and background-job logs are newline-delimited JSON.
+Every response has an `x-request-id`; a valid caller-supplied value is preserved
+for correlation. Public-link credentials and signed-file credentials are logged
+as route templates, never as raw paths.
 
 ## Notes
 

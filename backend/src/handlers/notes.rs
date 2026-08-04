@@ -161,12 +161,8 @@ pub async fn purge_old_trash(state: &AppState) -> ApiResult<()> {
 /// Public with an explicit cutoff so tests can purge without waiting out the
 /// retention window.
 pub async fn purge_trash(state: &AppState, cutoff: &str) -> ApiResult<()> {
-    for note in state.repo.purge_trash_before(cutoff).await? {
-        for attachment_id in &note.attachment_ids {
-            state.files.delete(attachment_id).await;
-        }
-        state.unindex_note_later(&note.note_id);
-    }
+    state.repo.purge_trash_before(cutoff).await?;
+    state.drain_cleanup_jobs().await;
     Ok(())
 }
 
@@ -259,7 +255,9 @@ pub async fn create_note_for_user(
     if let Some(label_ids) = body.label_ids
         && let Err(error) = state.repo.set_note_labels(&record.id, &label_ids).await
     {
-        let _ = state.repo.delete_note(&record.id).await;
+        if let Err(rollback_error) = state.repo.delete_note(&record.id).await {
+            state.report_background_failure("note_create_rollback", &format!("{rollback_error:?}"));
+        }
         return Err(error.into());
     }
     let pre_checked: Vec<String> = record
@@ -456,19 +454,11 @@ pub async fn delete_note(
     if !is_note_workspace_owner(&state, &record, &user_id).await? {
         return Err(ApiError::Forbidden("only the owner can delete a note"));
     }
-    // Snapshot the roster and blobs before rows cascade away.
+    // Snapshot the roster before rows cascade away. External cleanup intent is
+    // recorded transactionally by the repository.
     let participants = state.repo.participant_ids(&id).await?;
-    let attachments = state
-        .repo
-        .note_view(&id, &user_id)
-        .await?
-        .map(|v| v.attachments)
-        .unwrap_or_default();
     state.repo.delete_note(&id).await?;
-    for attachment in attachments {
-        state.files.delete(&attachment.id).await;
-    }
-    state.unindex_note_later(&id);
+    state.drain_cleanup_jobs().await;
     state.hub.notify(&participants, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }

@@ -242,7 +242,7 @@ async fn chat_loop(
         {
             Ok(hits) => hits,
             Err(e) => {
-                eprintln!("chat retrieval failed for {user_id}: {e:#}");
+                state.report_background_failure("chat_retrieval", &e);
                 send_error(&mut sink, "search failed").await;
                 return;
             }

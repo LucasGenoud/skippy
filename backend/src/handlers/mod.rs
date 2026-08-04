@@ -46,6 +46,7 @@ pub use writing::rewrite_note;
 use axum::Json;
 use axum::extract::State;
 use chrono::Utc;
+use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -140,8 +141,26 @@ async fn resolve_workspace(
     }
 }
 
-pub async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "ok": true }))
+pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
+    match state.repo.cleanup_stats().await {
+        Ok(stats) => Json(serde_json::json!({
+            "ok": true,
+            "cleanup": {
+                "pending": stats.pending,
+                "failed": stats.failed,
+            },
+            "background": {
+                "failed_total": state.background_failures.load(Ordering::Relaxed),
+            },
+        })),
+        Err(_) => Json(serde_json::json!({
+            "ok": false,
+            "cleanup": { "error": "queue unavailable" },
+            "background": {
+                "failed_total": state.background_failures.load(Ordering::Relaxed),
+            },
+        })),
+    }
 }
 
 /// Which optional, service-backed features this server has enabled. The client

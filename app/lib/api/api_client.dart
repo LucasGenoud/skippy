@@ -14,6 +14,8 @@ import '../models/share_link.dart';
 import '../models/workspace.dart';
 import '../util/runtime_config.dart';
 
+part 'api_transport.dart';
+
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -206,7 +208,9 @@ abstract class Api {
 
   /// Which optional, service-backed features this server has enabled. Drives
   /// semantic-search availability and whether audio recordings are transcribed.
-  Future<({bool semanticSearch, bool audioTranscription, String? serverVersion})>
+  Future<
+    ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+  >
   fetchCapabilities();
 
   /// Semantic-search index diagnostics: embedding model, vector width, and how
@@ -264,26 +268,7 @@ abstract class Api {
   });
 }
 
-/// Wraps a client so no request can hang forever. A phone that is "connected"
-/// to a network with no route to the server (captive portal, VPN gone, server
-/// down) never gets a TCP reset, the socket just sits there until the OS gives
-/// up, which can take a minute or more. Without a ceiling the app would wait
-/// that long before it could say anything about being offline.
-class _TimeoutClient extends http.BaseClient {
-  final http.Client _inner;
-  final Duration timeout;
-
-  _TimeoutClient(this._inner, this.timeout);
-
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) =>
-      _inner.send(request).timeout(timeout);
-
-  @override
-  void close() => _inner.close();
-}
-
-class ApiClient implements Api {
+class ApiClient extends _ApiTransport implements Api {
   static const connectionProbeTimeout = Duration(seconds: 3);
 
   /// Ceiling on any ordinary request. Generous enough for a slow mobile link,
@@ -304,82 +289,14 @@ class ApiClient implements Api {
     return 'http://localhost:8787';
   }
 
-  @override
-  String baseUrl;
-
-  /// Uploads stream real bytes and can legitimately outlast [requestTimeout]
-  /// on a slow link, so they go out unbounded.
-  final http.Client _uploadClient;
-  late final http.Client _client = _TimeoutClient(
-    _uploadClient,
-    requestTimeout,
-  );
-
-  /// Session token; set by the auth store after sign-in.
-  String? token;
-
-  /// Invoked when the server rejects our session (expired/revoked token).
-  VoidCallback? onUnauthorized;
-
   /// [httpClient] is a test seam (a stubbed or never-answering client stands in
   /// for the network); production leaves it null.
-  ApiClient({String? baseUrl, http.Client? httpClient})
-    : baseUrl = baseUrl ?? defaultBaseUrl(),
-      _uploadClient = httpClient ?? http.Client();
-
-  Uri _uri(String path) => Uri.parse('$baseUrl/api$path');
-
-  Map<String, String> _headers({bool json = true}) => {
-    if (json) 'content-type': 'application/json',
-    if (token != null) 'authorization': 'Bearer $token',
-  };
-
-  Uri _webSocketUri(String path) {
-    final httpUri = _uri(path);
-    final scheme = switch (httpUri.scheme) {
-      'https' => 'wss',
-      'http' => 'ws',
-      _ => throw FormatException('backend URL must use http or https'),
-    };
-    return httpUri.replace(scheme: scheme);
-  }
-
-  @override
-  Future<void> checkConnection() async {
-    final response = await _client
-        .get(_uri('/health'))
-        .timeout(connectionProbeTimeout);
-    _decode(response, authed: false);
-  }
-
-  dynamic _decode(
-    http.Response res, {
-    bool authed = true,
-    String? requestToken,
-  }) {
-    final authorization = res.request?.headers['authorization'];
-    final sentToken =
-        requestToken ??
-        (authorization != null && authorization.startsWith('Bearer ')
-            ? authorization.substring('Bearer '.length)
-            : null);
-    final requestUrl = res.request?.url.toString();
-    final currentApiBase = _uri('/').toString();
-    final currentServer =
-        requestUrl == null || requestUrl.startsWith(currentApiBase);
-    if (res.statusCode == 401 &&
-        authed &&
-        currentServer &&
-        sentToken != null &&
-        sentToken == token) {
-      onUnauthorized?.call();
-    }
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw ApiException(res.statusCode, res.body);
-    }
-    if (res.body.isEmpty) return null;
-    return jsonDecode(utf8.decode(res.bodyBytes));
-  }
+  ApiClient({String? baseUrl, super.httpClient})
+    : super(
+        baseUrl: baseUrl ?? defaultBaseUrl(),
+        requestTimeout: requestTimeout,
+        probeTimeout: connectionProbeTimeout,
+      );
 
   // -- auth ----------------------------------------------------------------
 
@@ -990,7 +907,9 @@ class ApiClient implements Api {
   // -- capabilities & transcription --------------------------------------------
 
   @override
-  Future<({bool semanticSearch, bool audioTranscription, String? serverVersion})>
+  Future<
+    ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+  >
   fetchCapabilities() async {
     // Unauthenticated endpoint; no bearer needed.
     final data = _decode(

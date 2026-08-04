@@ -284,24 +284,39 @@ async fn main() -> anyhow::Result<()> {
             let Some(search) = state_for_reindex.search.clone() else {
                 return;
             };
-            let already = search.indexed_note_ids().await.unwrap_or_default();
-            if let Ok(ids) = state_for_reindex.repo.all_note_ids().await {
-                let mut queued = 0usize;
-                for id in ids {
-                    if !already.contains(&id) {
-                        state_for_reindex.index_note_later(&id);
-                        queued += 1;
-                    }
+            let already = match search.indexed_note_ids().await {
+                Ok(already) => already,
+                Err(error) => {
+                    state_for_reindex.report_background_failure("startup_index_inventory", &error);
+                    Default::default()
                 }
-                println!(
-                    "semantic reindex: {queued} note(s) queued for embedding \
-                     ({} already indexed)",
-                    already.len()
-                );
+            };
+            let ids = match state_for_reindex.repo.all_note_ids().await {
+                Ok(ids) => ids,
+                Err(error) => {
+                    state_for_reindex
+                        .report_background_failure("startup_note_inventory", &format!("{error:?}"));
+                    return;
+                }
+            };
+            let mut queued = 0usize;
+            for id in ids {
+                if !already.contains(&id) {
+                    state_for_reindex.index_note_later(&id);
+                    queued += 1;
+                }
             }
+            sticky_notes_server::telemetry::event(
+                "info",
+                "semantic_reindex_queued",
+                serde_json::json!({ "queued": queued, "already_indexed": already.len() }),
+            );
         });
     }
-    handlers::purge_old_trash(&state).await.ok();
+    if let Err(error) = handlers::purge_old_trash(&state).await {
+        state.report_background_failure("startup_trash_purge", &format!("status: {error:?}"));
+    }
+    sticky_notes_server::cleanup::spawn_cleanup_worker(state.clone());
     // Due reminders push to each user's configured channels (ntfy, Telegram).
     sticky_notes_server::notify::spawn_reminder_scheduler(state.clone());
 

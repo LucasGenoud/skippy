@@ -109,10 +109,14 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/unfurl.rs`: authenticated link-preview endpoint and cache integration.
 - `backend/src/handlers/probes.rs`: tests for unsaved LLM and notification configurations.
 - `backend/src/handlers/background.rs`: shared post-write jobs for versions, search, auto-labeling, and notifications.
-- `backend/src/store/mod.rs`: `Repository` contract. This is the persistence seam and permission-aware query boundary.
-- `backend/src/store/sqlite.rs`: SQLite repository implementation and high-level query methods.
+- `backend/src/store/mod.rs`: focused account/workspace/note/sharing/taxonomy/history/attachment/infrastructure repository traits, composed as `Repository`. This is the persistence seam and permission-aware query boundary.
+- `backend/src/store/sqlite.rs`: SQLite account, workspace, note, and taxonomy implementation plus shared helpers.
+- `backend/src/store/sqlite_attachments.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`: focused SQLite repository implementations.
 - `backend/src/store/sqlite_schema.rs`: current clean-break schema creation.
 - `backend/src/store/sqlite_rows.rs`: SQL row structs and conversion into domain models.
+- `backend/src/cleanup.rs`: durable retry worker for attachment and vector cleanup enqueued by relational deletes.
+- `backend/src/telemetry.rs`: structured request/background events, request IDs, and background failure accounting.
+- `backend/src/rate_limit.rs`: bounded in-process limiter for unauthenticated authentication attempts.
 - `backend/src/files.rs`: independent `FileStore` seam, disk and S3 implementations, signing helpers.
 - `backend/src/search.rs`: embeddings API client, sqlite-vec tables, indexing and search implementation.
 - `backend/src/transcribe.rs`: Whisper service interface and HTTP implementation.
@@ -130,7 +134,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 ### Flutter client
 
 - `app/lib/main.dart`: dependency wiring, authentication gate, user-scoped stores, theme binding.
-- `app/lib/api/api_client.dart`: `Api` abstraction, HTTP implementation, uploads, downloads, and WebSockets. UI/state code should depend on `Api`, not directly on HTTP.
+- `app/lib/api/api_client.dart`: `Api` abstraction and feature-level HTTP implementation. `api_transport.dart` owns shared URL, auth, timeout, decode, and WebSocket transport. UI/state code should depend on `Api`, not directly on HTTP.
 - `app/lib/models/note.dart`: notes, checklist items, labels, collaborators, versions, attachments, settings-related value types.
 - `app/lib/models/workspace.dart`: workspace and its roster.
 - `app/lib/models/chat.dart`: chat frames, citations, tool/write states.
@@ -139,6 +143,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/models/search_stats.dart`: semantic index diagnostics.
 - `app/lib/state/auth_store.dart`: session restoration, login/register/logout, offline authentication fallback.
 - `app/lib/state/notes_store.dart`: optimistic note domain, sync queue, retry, WebSocket refresh, attachments.
+- `app/lib/state/sync_retry_policy.dart`, `workspace_reconciliation.dart`, `note_attachment_coordinator.dart`: focused retry, workspace-state, and attachment orchestration extracted from `NotesStore`.
 - `app/lib/state/settings_store.dart`: defaults, JSON persistence, managed settings, capabilities, and setting mutations.
 - `app/lib/state/local_cache.dart`: per-user cached notes and persisted pending operations.
 - `app/lib/state/link_preview_cache.dart`: in-memory/client preview cache and fetch coalescing.
@@ -196,6 +201,8 @@ Recheck the entire permission matrix when adding a note-related endpoint. Do not
 Note content edits drive version capture, semantic reindexing, automatic labeling, collaborator notification, and WebSocket fan-out. Organization-only edits should retain their deliberately smaller side-effect set.
 
 Each note has one embedding in the collection owned by its workspace. Sharing and roster changes do not rewrite embeddings; authorization is rechecked against the relational repository over vector candidates. A note move relocates its vector between workspace collections and must notify the workspace it left, not only the one it joined. Workspace deletion drops its collection and deletes attachment blobs. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
+
+Relational deletion and external cleanup are one logical operation but cannot be one storage transaction. The SQLite transaction must enqueue idempotent `cleanup_jobs` for attachment blobs and note/workspace vectors before it commits; request-triggered and periodic drains may then retry safely across crashes. Do not return to fire-and-forget deletion that can permanently orphan external state.
 
 Checklist history is recorded on a transition to checked, shared with participants in that note, and capped at 500 records per note.
 

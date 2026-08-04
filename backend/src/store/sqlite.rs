@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 
-use super::sqlite_rows::{
-    note_from_row, now, share_link_from_row as row_to_share_link, user_from_row, version_from_row,
-    workspace_from_row,
-};
+pub(super) use super::sqlite_rows::now;
+use super::sqlite_rows::{note_from_row, user_from_row, version_from_row, workspace_from_row};
 use super::sqlite_schema;
-use super::{DeletedAccount, DeletedWorkspace, PurgedNote, RepoError, RepoResult, Repository};
+use super::{
+    AccountRepository, CleanupKind, DeletedAccount, DeletedWorkspace, NoteRepository, PurgedNote,
+    RepoError, RepoResult, TaxonomyRepository, WorkspaceRepository,
+};
 use crate::models::*;
 
 /// The workspaces a user belongs to: the ones they own plus the ones they were
@@ -20,20 +22,41 @@ pub(super) const MY_WORKSPACES: &str = "SELECT id FROM workspaces WHERE owner_id
 /// Predicate over the notes table (named by `alias`) for everything a user may
 /// see: notes shared with them directly and notes owned by a workspace they
 /// belong to. Binds the user id three times.
-fn visible_notes(alias: &str) -> String {
+pub(super) fn visible_notes(alias: &str) -> String {
     format!(
         "({alias}.id IN (SELECT note_id FROM note_shares WHERE user_id = ?)
           OR {alias}.workspace_id IN ({MY_WORKSPACES}))"
     )
 }
 
+pub(super) async fn enqueue_cleanup_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    kind: CleanupKind,
+    target_id: &str,
+) -> RepoResult<()> {
+    sqlx::query(
+        "INSERT OR IGNORE INTO cleanup_jobs
+         (kind, target_id, next_attempt_at, created_at) VALUES (?, ?, 0, ?)",
+    )
+    .bind(kind.as_str())
+    .bind(target_id)
+    .bind(now())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Every column of a share link, so the three lookups select the same shape.
-const SHARE_LINK_COLUMNS: &str =
+pub(super) const SHARE_LINK_COLUMNS: &str =
     "SELECT token, created_by, target, note_id, workspace_id, label_id, created_at, expires_at
      FROM share_links";
 
+fn session_token_digest(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
+}
+
 pub struct SqliteRepository {
-    pool: SqlitePool,
+    pub(super) pool: SqlitePool,
 }
 
 impl SqliteRepository {
@@ -74,7 +97,7 @@ impl SqliteRepository {
 }
 
 #[async_trait]
-impl Repository for SqliteRepository {
+impl AccountRepository for SqliteRepository {
     // -- users & sessions ---------------------------------------------------
 
     async fn create_user(&self, user: &User) -> RepoResult<()> {
@@ -223,27 +246,33 @@ impl Repository for SqliteRepository {
         .bind(user_id)
         .fetch_all(&mut *tx)
         .await?;
-        let mut purged_notes: Vec<PurgedNote> = owned_rows
+        let purged_notes: Vec<PurgedNote> = owned_rows
             .iter()
             .map(|row| PurgedNote {
                 note_id: row.get("id"),
-                attachment_ids: Vec::new(),
             })
             .collect();
-        for note in &mut purged_notes {
+        for note in &purged_notes {
             let rows = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
                 .bind(&note.note_id)
                 .fetch_all(&mut *tx)
                 .await?;
-            note.attachment_ids = rows.iter().map(|row| row.get("id")).collect();
+            for row in rows {
+                let attachment_id: String = row.get("id");
+                enqueue_cleanup_tx(&mut tx, CleanupKind::AttachmentBlob, &attachment_id).await?;
+            }
         }
-        let deleted_workspace_ids = sqlx::query("SELECT id FROM workspaces WHERE owner_id = ?")
-            .bind(user_id)
-            .fetch_all(&mut *tx)
-            .await?
-            .into_iter()
-            .map(|row| row.get("id"))
-            .collect();
+        let deleted_workspace_ids: Vec<String> =
+            sqlx::query("SELECT id FROM workspaces WHERE owner_id = ?")
+                .bind(user_id)
+                .fetch_all(&mut *tx)
+                .await?
+                .into_iter()
+                .map(|row| row.get("id"))
+                .collect();
+        for workspace_id in &deleted_workspace_ids {
+            enqueue_cleanup_tx(&mut tx, CleanupKind::WorkspaceVectors, workspace_id).await?;
+        }
         // Cascades owned workspaces (and their notes) while SET NULL preserves
         // notes and history attributed to this user in other workspaces.
         sqlx::query("DELETE FROM users WHERE id = ?")
@@ -252,16 +281,12 @@ impl Repository for SqliteRepository {
             .await?;
         tx.commit().await?;
 
-        Ok(Some(DeletedAccount {
-            purged_notes,
-            deleted_workspace_ids,
-            audience,
-        }))
+        Ok(Some(DeletedAccount { audience }))
     }
 
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()> {
         sqlx::query("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)")
-            .bind(token)
+            .bind(session_token_digest(token))
             .bind(user_id)
             .bind(now())
             .execute(&self.pool)
@@ -270,23 +295,40 @@ impl Repository for SqliteRepository {
     }
 
     async fn user_id_for_token(&self, token: &str) -> RepoResult<Option<String>> {
-        let row = sqlx::query("SELECT user_id FROM sessions WHERE token = ?")
+        let digest = session_token_digest(token);
+        let row = sqlx::query("SELECT token, user_id FROM sessions WHERE token = ? OR token = ?")
+            .bind(&digest)
+            // Legacy clean-break development databases may still contain the
+            // bearer value. Accept it once and replace it with the digest.
             .bind(token)
             .fetch_optional(&self.pool)
             .await?;
-        Ok(row.map(|r| r.get("user_id")))
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let stored: String = row.get("token");
+        if stored == token {
+            sqlx::query("UPDATE OR IGNORE sessions SET token = ? WHERE token = ?")
+                .bind(&digest)
+                .bind(token)
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(Some(row.get("user_id")))
     }
 
     async fn delete_session(&self, token: &str) -> RepoResult<()> {
-        sqlx::query("DELETE FROM sessions WHERE token = ?")
+        sqlx::query("DELETE FROM sessions WHERE token = ? OR token = ?")
+            .bind(session_token_digest(token))
             .bind(token)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
+}
 
-    // -- workspaces -----------------------------------------------------------
-
+#[async_trait]
+impl WorkspaceRepository for SqliteRepository {
     async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>> {
         let rows = sqlx::query(&format!(
             "SELECT * FROM workspaces WHERE id IN ({MY_WORKSPACES})
@@ -416,19 +458,21 @@ impl Repository for SqliteRepository {
             .bind(workspace_id)
             .fetch_all(&mut *tx)
             .await?;
-        let mut purged_notes: Vec<PurgedNote> = rows
+        let purged_notes: Vec<PurgedNote> = rows
             .iter()
             .map(|row| PurgedNote {
                 note_id: row.get("id"),
-                attachment_ids: Vec::new(),
             })
             .collect();
-        for note in &mut purged_notes {
+        for note in &purged_notes {
             let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
                 .bind(&note.note_id)
                 .fetch_all(&mut *tx)
                 .await?;
-            note.attachment_ids = attachments.iter().map(|row| row.get("id")).collect();
+            for row in attachments {
+                let attachment_id: String = row.get("id");
+                enqueue_cleanup_tx(&mut tx, CleanupKind::AttachmentBlob, &attachment_id).await?;
+            }
         }
 
         // Capture everyone whose visible state changes before note shares and
@@ -447,6 +491,8 @@ impl Repository for SqliteRepository {
         .await?;
         let audience = audience_rows.iter().map(|row| row.get("user_id")).collect();
 
+        enqueue_cleanup_tx(&mut tx, CleanupKind::WorkspaceVectors, workspace_id).await?;
+
         // Delete notes explicitly so their dependent rows cascade before the
         // workspace row. Attachment bytes and search rows live outside this
         // database and are cleaned up by the handler from the snapshot above.
@@ -459,11 +505,7 @@ impl Repository for SqliteRepository {
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(Some(DeletedWorkspace {
-            workspace_id: workspace_id.to_string(),
-            purged_notes,
-            audience,
-        }))
+        Ok(Some(DeletedWorkspace { audience }))
     }
 
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>> {
@@ -515,9 +557,10 @@ impl Repository for SqliteRepository {
                 .await?;
         Ok(removed.rows_affected() > 0)
     }
+}
 
-    // -- notes ---------------------------------------------------------------
-
+#[async_trait]
+impl NoteRepository for SqliteRepository {
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>> {
         let rows = sqlx::query(&format!(
             "SELECT * FROM notes WHERE {} ORDER BY position ASC",
@@ -663,11 +706,29 @@ impl Repository for SqliteRepository {
     }
 
     async fn delete_note(&self, note_id: &str) -> RepoResult<bool> {
-        let result = sqlx::query("DELETE FROM notes WHERE id = ?")
+        let mut tx = self.pool.begin().await?;
+        let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notes WHERE id = ?")
             .bind(note_id)
-            .execute(&self.pool)
+            .fetch_one(&mut *tx)
             .await?;
-        Ok(result.rows_affected() > 0)
+        if exists == 0 {
+            return Ok(false);
+        }
+        let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
+            .bind(note_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        for row in attachments {
+            let attachment_id: String = row.get("id");
+            enqueue_cleanup_tx(&mut tx, CleanupKind::AttachmentBlob, &attachment_id).await?;
+        }
+        enqueue_cleanup_tx(&mut tx, CleanupKind::NoteVector, note_id).await?;
+        sqlx::query("DELETE FROM notes WHERE id = ?")
+            .bind(note_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(true)
     }
 
     async fn min_position_for_user(&self, user_id: &str) -> RepoResult<f64> {
@@ -714,19 +775,22 @@ impl Repository for SqliteRepository {
         .bind(cutoff)
         .fetch_all(&mut *tx)
         .await?;
-        let mut purged: Vec<PurgedNote> = rows
+        let purged: Vec<PurgedNote> = rows
             .iter()
             .map(|r| PurgedNote {
                 note_id: r.get("id"),
-                attachment_ids: Vec::new(),
             })
             .collect();
-        for note in &mut purged {
+        for note in &purged {
             let attachments = sqlx::query("SELECT id FROM attachments WHERE note_id = ?")
                 .bind(&note.note_id)
                 .fetch_all(&mut *tx)
                 .await?;
-            note.attachment_ids = attachments.iter().map(|r| r.get("id")).collect();
+            for row in attachments {
+                let attachment_id: String = row.get("id");
+                enqueue_cleanup_tx(&mut tx, CleanupKind::AttachmentBlob, &attachment_id).await?;
+            }
+            enqueue_cleanup_tx(&mut tx, CleanupKind::NoteVector, &note.note_id).await?;
             sqlx::query("DELETE FROM notes WHERE id = ?")
                 .bind(&note.note_id)
                 .execute(&mut *tx)
@@ -868,145 +932,10 @@ impl Repository for SqliteRepository {
         .await?;
         Ok(())
     }
+}
 
-    // -- sharing ---------------------------------------------------------------
-
-    async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>> {
-        let rows = sqlx::query(
-            "SELECT user_id AS uid FROM note_shares WHERE note_id = ?
-             UNION SELECT w.owner_id AS uid FROM workspaces w
-                 JOIN notes n ON n.workspace_id = w.id WHERE n.id = ?
-             UNION SELECT m.user_id AS uid FROM workspace_members m
-                 JOIN notes n ON n.workspace_id = m.workspace_id WHERE n.id = ?",
-        )
-        .bind(note_id)
-        .bind(note_id)
-        .bind(note_id)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.iter().map(|r| r.get("uid")).collect())
-    }
-
-    async fn is_participant(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
-        let allowed: i64 = sqlx::query_scalar(
-            "SELECT EXISTS (
-                 SELECT 1 FROM notes n
-                 JOIN workspaces w ON w.id = n.workspace_id
-                 WHERE n.id = ? AND (
-                     w.owner_id = ?
-                     OR EXISTS (
-                         SELECT 1 FROM workspace_members m
-                         WHERE m.workspace_id = n.workspace_id AND m.user_id = ?
-                     )
-                     OR EXISTS (
-                         SELECT 1 FROM note_shares s
-                         WHERE s.note_id = n.id AND s.user_id = ?
-                     )
-                 )
-             )",
-        )
-        .bind(note_id)
-        .bind(user_id)
-        .bind(user_id)
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(allowed != 0)
-    }
-
-    async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()> {
-        sqlx::query("INSERT OR IGNORE INTO note_shares (note_id, user_id) VALUES (?, ?)")
-            .bind(note_id)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn remove_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
-        let result = sqlx::query("DELETE FROM note_shares WHERE note_id = ? AND user_id = ?")
-            .bind(note_id)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
-    // -- public share links ----------------------------------------------------
-
-    async fn insert_share_link(&self, link: &ShareLink) -> RepoResult<()> {
-        sqlx::query(
-            "INSERT INTO share_links
-                (token, created_by, target, note_id, workspace_id, label_id, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&link.token)
-        .bind(&link.created_by)
-        .bind(&link.target)
-        .bind(&link.note_id)
-        .bind(&link.workspace_id)
-        .bind(&link.label_id)
-        .bind(&link.created_at)
-        .bind(&link.expires_at)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn share_link(&self, token: &str) -> RepoResult<Option<ShareLink>> {
-        let row = sqlx::query(&format!("{SHARE_LINK_COLUMNS} WHERE token = ?"))
-            .bind(token)
-            .fetch_optional(&self.pool)
-            .await?;
-        Ok(row.as_ref().map(row_to_share_link))
-    }
-
-    async fn share_links_for_user(&self, user_id: &str) -> RepoResult<Vec<ShareLink>> {
-        let rows = sqlx::query(&format!(
-            "{SHARE_LINK_COLUMNS} WHERE created_by = ? ORDER BY created_at DESC"
-        ))
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.iter().map(row_to_share_link).collect())
-    }
-
-    async fn share_link_for_target(
-        &self,
-        user_id: &str,
-        target: &str,
-        note_id: Option<&str>,
-        workspace_id: Option<&str>,
-        label_id: Option<&str>,
-    ) -> RepoResult<Option<ShareLink>> {
-        // `IS` rather than `=` so the NULL columns of the other target kinds
-        // compare equal instead of making every row miss.
-        let row = sqlx::query(&format!(
-            "{SHARE_LINK_COLUMNS}
-             WHERE created_by = ? AND target = ?
-               AND note_id IS ? AND workspace_id IS ? AND label_id IS ?"
-        ))
-        .bind(user_id)
-        .bind(target)
-        .bind(note_id)
-        .bind(workspace_id)
-        .bind(label_id)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row.as_ref().map(row_to_share_link))
-    }
-
-    async fn delete_share_link(&self, user_id: &str, token: &str) -> RepoResult<bool> {
-        let result = sqlx::query("DELETE FROM share_links WHERE token = ? AND created_by = ?")
-            .bind(token)
-            .bind(user_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
-    // -- labels ---------------------------------------------------------------
-
+#[async_trait]
+impl TaxonomyRepository for SqliteRepository {
     async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>> {
         let rows = sqlx::query(&format!(
             "SELECT id, workspace_id, name, color, icon, position FROM labels
@@ -1253,160 +1182,6 @@ impl Repository for SqliteRepository {
         )
         .bind(note_id)
         .bind(note_id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    // -- checklist history -------------------------------------------------------
-
-    async fn record_checked_items(&self, note_id: &str, texts: &[String]) -> RepoResult<()> {
-        let mut tx = self.pool.begin().await?;
-        for text in texts {
-            let text = text.trim();
-            if text.is_empty() || text.len() > 200 {
-                continue;
-            }
-            sqlx::query(
-                "INSERT INTO checklist_history (note_id, text, uses, last_used_at)
-                 VALUES (?, ?, 1, ?)
-                 ON CONFLICT (note_id, text)
-                 DO UPDATE SET uses = uses + 1, last_used_at = excluded.last_used_at",
-            )
-            .bind(note_id)
-            .bind(text)
-            .bind(now())
-            .execute(&mut *tx)
-            .await?;
-        }
-        // Keep each note's dictionary bounded.
-        sqlx::query(
-            "DELETE FROM checklist_history WHERE note_id = ? AND text NOT IN (
-                 SELECT text FROM checklist_history WHERE note_id = ?
-                 ORDER BY last_used_at DESC LIMIT 500)",
-        )
-        .bind(note_id)
-        .bind(note_id)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    /// History for every note the user can see (own or shared with them):
-    /// suggestions are scoped per note, and collaborators on e.g. a shared
-    /// grocery list share its history.
-    async fn checklist_history(&self, user_id: &str) -> RepoResult<Vec<HistoryEntry>> {
-        let rows = sqlx::query(&format!(
-            "SELECT h.note_id, h.text, h.uses FROM checklist_history h
-             JOIN notes n ON n.id = h.note_id
-             WHERE {}
-             ORDER BY h.uses DESC, h.last_used_at DESC",
-            visible_notes("n")
-        ))
-        .bind(user_id)
-        .bind(user_id)
-        .bind(user_id)
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .iter()
-            .map(|r| HistoryEntry {
-                note_id: r.get("note_id"),
-                text: r.get("text"),
-                uses: r.get("uses"),
-            })
-            .collect())
-    }
-
-    // -- attachments ------------------------------------------------------------
-
-    async fn insert_attachment(&self, attachment: &Attachment, note_id: &str) -> RepoResult<()> {
-        sqlx::query(
-            "INSERT INTO attachments (id, note_id, mime, filename, size, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(&attachment.id)
-        .bind(note_id)
-        .bind(&attachment.mime)
-        .bind(&attachment.filename)
-        .bind(attachment.size)
-        .bind(now())
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn attachment_info(
-        &self,
-        attachment_id: &str,
-    ) -> RepoResult<Option<(String, Attachment)>> {
-        let row = sqlx::query("SELECT note_id, mime, filename, size FROM attachments WHERE id = ?")
-            .bind(attachment_id)
-            .fetch_optional(&self.pool)
-            .await?;
-        Ok(row.map(|r| {
-            (
-                r.get("note_id"),
-                Attachment {
-                    id: attachment_id.to_string(),
-                    mime: r.get("mime"),
-                    filename: r.get("filename"),
-                    size: r.get("size"),
-                    url: None,
-                },
-            )
-        }))
-    }
-
-    async fn delete_attachment(&self, attachment_id: &str) -> RepoResult<bool> {
-        let result = sqlx::query("DELETE FROM attachments WHERE id = ?")
-            .bind(attachment_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
-    // -- per-user settings --------------------------------------------------------
-
-    async fn settings_for_user(&self, user_id: &str) -> RepoResult<Option<String>> {
-        let row = sqlx::query("SELECT data FROM user_settings WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_optional(&self.pool)
-            .await?;
-        Ok(row.map(|r| r.get("data")))
-    }
-
-    async fn put_settings(&self, user_id: &str, data: &str) -> RepoResult<()> {
-        sqlx::query(
-            "INSERT INTO user_settings (user_id, data) VALUES (?, ?)
-             ON CONFLICT (user_id) DO UPDATE SET data = excluded.data",
-        )
-        .bind(user_id)
-        .bind(data)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
-    // -- server metadata ----------------------------------------------------------
-
-    async fn meta_get(&self, key: &str) -> RepoResult<Option<String>> {
-        let row = sqlx::query("SELECT value FROM app_meta WHERE key = ?")
-            .bind(key)
-            .fetch_optional(&self.pool)
-            .await?;
-        Ok(row.map(|r| r.get("value")))
-    }
-
-    async fn meta_set(&self, key: &str, value: &str) -> RepoResult<()> {
-        sqlx::query(
-            "INSERT INTO app_meta (key, value) VALUES (?, ?)
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(key)
-        .bind(value)
         .execute(&self.pool)
         .await?;
         Ok(())

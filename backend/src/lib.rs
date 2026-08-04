@@ -1,5 +1,6 @@
 pub mod assist;
 pub mod auth;
+pub mod cleanup;
 pub mod config;
 pub mod error;
 pub mod files;
@@ -8,20 +9,24 @@ pub mod llm;
 pub mod models;
 pub mod notify;
 mod outbound;
+pub mod rate_limit;
 pub mod search;
 pub mod store;
 pub mod system_backup;
+pub mod telemetry;
 pub mod transcribe;
 pub mod unfurl;
 pub mod ws;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::http::HeaderValue;
+use axum::middleware;
 use axum::routing::{get, post};
 use tower_http::cors::{Any, CorsLayer};
 
@@ -86,6 +91,13 @@ pub struct AppState {
     /// stale metadata eventually refreshes; not persisted (re-fetched after a
     /// restart). See [`handlers::unfurl`].
     pub unfurl_cache: Arc<Mutex<HashMap<String, (unfurl::LinkPreview, std::time::Instant)>>>,
+    /// Prevent overlapping cleanup drains while keeping the durable queue in
+    /// SQLite as the source of truth across process restarts.
+    pub cleanup_running: Arc<AtomicBool>,
+    /// Bounded unauthenticated login/registration attempts.
+    pub auth_attempts: Arc<rate_limit::AttemptLimiter>,
+    /// Total failures observed in detached jobs since this process started.
+    pub background_failures: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -108,6 +120,9 @@ impl AppState {
             file_secret: Arc::new(secret),
             managed: Arc::new(config::ManagedSettings::default()),
             unfurl_cache: Arc::default(),
+            cleanup_running: Arc::default(),
+            auth_attempts: Arc::default(),
+            background_failures: Arc::default(),
         }
     }
 
@@ -265,7 +280,7 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         .nest("/api", api)
         .layer(DefaultBodyLimit::max(30 * 1024 * 1024));
 
-    match allowed_origin {
+    let app = match allowed_origin {
         Some(origin) => app.layer(
             CorsLayer::new()
                 // A one-item list mirrors the origin only when it matches.
@@ -273,10 +288,14 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
                 // request, which browsers reject but is needlessly confusing.
                 .allow_origin([origin])
                 .allow_methods(Any)
-                .allow_headers(Any),
+                .allow_headers(Any)
+                .expose_headers([telemetry::REQUEST_ID_HEADER.clone()]),
         ),
-        None => app.layer(CorsLayer::very_permissive()),
-    }
+        None => app.layer(
+            CorsLayer::very_permissive().expose_headers([telemetry::REQUEST_ID_HEADER.clone()]),
+        ),
+    };
+    app.layer(middleware::from_fn(telemetry::request_context))
 }
 
 /// Turn a configured public URL into the exact value browsers send in their

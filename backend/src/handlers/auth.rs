@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use std::time::Duration;
 
 use crate::AppState;
 use crate::auth::{AuthUser, SessionToken, hash_password, verify_password};
@@ -10,6 +11,11 @@ use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
 use super::{CHANGED_MSG, new_id};
+
+const LOGIN_ATTEMPTS: usize = 8;
+const LOGIN_WINDOW: Duration = Duration::from_secs(5 * 60);
+const REGISTRATION_ATTEMPTS: usize = 20;
+const REGISTRATION_WINDOW: Duration = Duration::from_secs(60);
 
 fn validate_name(name: &str) -> ApiResult<String> {
     let name = name.trim();
@@ -53,6 +59,10 @@ pub async fn register(
     State(state): State<AppState>,
     Json(request): Json<RegisterRequest>,
 ) -> ApiResult<(StatusCode, Json<AuthResponse>)> {
+    state
+        .auth_attempts
+        .check("registration", REGISTRATION_ATTEMPTS, REGISTRATION_WINDOW)
+        .map_err(ApiError::RateLimited)?;
     let name = validate_name(&request.name)?;
     let email = validate_email(&request.email)?;
     validate_password(&request.password)?;
@@ -81,12 +91,19 @@ pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
+    let email = request.email.trim().to_lowercase();
+    let limit_key = format!("login:{email}");
+    state
+        .auth_attempts
+        .check(&limit_key, LOGIN_ATTEMPTS, LOGIN_WINDOW)
+        .map_err(ApiError::RateLimited)?;
     let user = state
         .repo
-        .user_by_email(request.email.trim())
+        .user_by_email(&email)
         .await?
         .filter(|u| verify_password(&request.password, &u.password_hash))
         .ok_or(ApiError::Unauthorized)?;
+    state.auth_attempts.reset(&limit_key);
     let token = new_id();
     state.repo.create_session(&token, &user.id).await?;
     Ok(Json(AuthResponse {
@@ -188,14 +205,7 @@ pub async fn delete_account(
         .delete_account(&user_id)
         .await?
         .ok_or(ApiError::Unauthorized)?;
-    for note in &deleted.purged_notes {
-        for attachment_id in &note.attachment_ids {
-            state.files.delete(attachment_id).await;
-        }
-    }
-    for workspace_id in &deleted.deleted_workspace_ids {
-        state.unindex_workspace_later(workspace_id);
-    }
+    state.drain_cleanup_jobs().await;
     state.hub.notify(&deleted.audience, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }

@@ -357,10 +357,10 @@ pub const SHARE_TARGETS: &[&str] = &[
 
 /// A read-only link handed out to people without an account.
 ///
-/// The token is the capability: whoever holds it can read what the link points
-/// at, which is the point. Unlike the HMAC used for attachment URLs
-/// ([`crate::files::signed_file_path`]) it is a stored row, because a share has
-/// to be revocable, listable, and outlive a signing key rotation.
+/// The stored token is a random public identifier. HTTP responses append an
+/// HMAC before exposing it as a bearer capability, so the stored row value is
+/// not itself a working public URL. The identifier remains stored because a
+/// share must be revocable and listable.
 #[derive(Debug, Clone)]
 pub struct ShareLink {
     pub token: String,

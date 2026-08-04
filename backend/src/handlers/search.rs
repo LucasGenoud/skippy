@@ -170,10 +170,16 @@ pub async fn reindex_search(
     let worker = state.clone();
     tokio::spawn(async move {
         for id in ids {
-            if let Ok(Some(record)) = worker.repo.note_record(&id).await
-                && let Err(e) = search.index_note(&record).await
-            {
-                eprintln!("reindex failed for {id}: {e:#}");
+            match worker.repo.note_record(&id).await {
+                Ok(Some(record)) => {
+                    if let Err(e) = search.index_note(&record).await {
+                        worker.report_background_failure("semantic_reindex", &e);
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    worker.report_background_failure("semantic_reindex_load", &format!("{error:?}"))
+                }
             }
             // Count the note as processed even if it errored, so a single bad
             // note can't stall the bar; the next reindex retries it.

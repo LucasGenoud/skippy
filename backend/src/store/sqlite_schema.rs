@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-const SCHEMA_VERSION: i64 = 2;
+pub(super) const SCHEMA_VERSION: i64 = 2;
 
 /// The database is intentionally initialized as one current schema. Skippy's
 /// workspace-owned storage redesign is a clean-break release: existing files
@@ -165,6 +165,22 @@ CREATE TABLE IF NOT EXISTS user_settings (
     data TEXT NOT NULL CHECK (json_valid(data))
 ) STRICT;
 
+-- Relational deletes enqueue their external side effects here in the same
+-- transaction. A worker retries object-store and vector-index cleanup until
+-- it succeeds, making process crashes and transient provider failures safe.
+CREATE TABLE IF NOT EXISTS cleanup_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK (
+        kind IN ('attachment_blob', 'note_vector', 'workspace_vectors')
+    ),
+    target_id TEXT NOT NULL CHECK (trim(target_id) <> ''),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (kind, target_id)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -199,6 +215,8 @@ CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_a
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
     ON workspaces(owner_id) WHERE is_default = 1;
+CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due
+    ON cleanup_jobs(next_attempt_at, id);
 PRAGMA user_version = 2;
 "#;
 
@@ -227,6 +245,8 @@ mod tests {
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use uuid::Uuid;
 
+    use crate::models::User;
+    use crate::store::AccountRepository;
     use crate::store::sqlite::SqliteRepository;
 
     #[tokio::test]
@@ -324,5 +344,40 @@ mod tests {
             .unwrap();
         let error = super::initialize(&pool).await.unwrap_err().to_string();
         assert!(error.contains("start with an empty database"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn session_bearer_tokens_are_hashed_at_rest() {
+        let path = std::env::temp_dir().join(format!("skippy-session-{}.db", Uuid::new_v4()));
+        let path_text = path.to_str().unwrap();
+        let repo = SqliteRepository::connect(path_text).await.unwrap();
+        repo.create_user(&User {
+            id: "u1".to_string(),
+            name: "One".to_string(),
+            email: "one@example.test".to_string(),
+            password_hash: "hash".to_string(),
+        })
+        .await
+        .unwrap();
+        repo.create_session("bearer-secret", "u1").await.unwrap();
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(&path))
+            .await
+            .unwrap();
+        let stored: String = sqlx::query_scalar("SELECT token FROM sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_ne!(stored, "bearer-secret");
+        assert_eq!(stored.len(), 64);
+        assert_eq!(
+            repo.user_id_for_token("bearer-secret").await.unwrap(),
+            Some("u1".to_string())
+        );
+        pool.close().await;
+        drop(repo);
+        let _ = std::fs::remove_file(path);
     }
 }

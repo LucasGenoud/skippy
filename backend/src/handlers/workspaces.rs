@@ -195,12 +195,7 @@ pub async fn delete_workspace(
     let Some(deleted) = state.repo.delete_workspace(&id).await? else {
         return Err(ApiError::NotFound);
     };
-    for note in &deleted.purged_notes {
-        for attachment_id in &note.attachment_ids {
-            state.files.delete(attachment_id).await;
-        }
-    }
-    state.unindex_workspace_later(&deleted.workspace_id);
+    state.drain_cleanup_jobs().await;
     state.hub.notify(&deleted.audience, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }

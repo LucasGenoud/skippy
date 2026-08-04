@@ -71,8 +71,9 @@ pub trait FileStore: Send + Sync {
     /// `None` for missing blobs; backends log unexpected failures themselves,
     /// since callers can only translate `None` into a 404.
     async fn read(&self, id: &str) -> Option<Vec<u8>>;
-    /// Best-effort: blob deletion must never fail the surrounding operation.
-    async fn delete(&self, id: &str);
+    /// Idempotent deletion. Missing blobs count as success; transient storage
+    /// failures are returned so the durable cleanup worker can retry them.
+    async fn delete(&self, id: &str) -> anyhow::Result<()>;
 }
 
 /// Ids are server-generated UUIDs, but never trust a path component.
@@ -111,8 +112,12 @@ impl FileStore for DiskStore {
         tokio::fs::read(self.path(id)).await.ok()
     }
 
-    async fn delete(&self, id: &str) {
-        let _ = tokio::fs::remove_file(self.path(id)).await;
+    async fn delete(&self, id: &str) -> anyhow::Result<()> {
+        match tokio::fs::remove_file(self.path(id)).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 }
 
@@ -294,20 +299,19 @@ impl FileStore for S3Store {
         None
     }
 
-    async fn delete(&self, id: &str) {
+    async fn delete(&self, id: &str) -> anyhow::Result<()> {
         let path = self.object_path(id);
-        match self
+        let resp = self
             .request(reqwest::Method::DELETE, &path, Vec::new())
-            .await
-        {
-            Ok(resp) => {
-                let status = resp.status();
-                if !status.is_success() && status != reqwest::StatusCode::NOT_FOUND {
-                    eprintln!("s3 delete of {id} failed: {status}");
-                }
-            }
-            Err(e) => eprintln!("s3 delete of {id} failed: {e:#}"),
+            .await?;
+        let status = resp.status();
+        if status.is_success() || status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
         }
+        anyhow::bail!(
+            "s3 delete of {id} failed: {status} {}",
+            resp.text().await.unwrap_or_default()
+        )
     }
 }
 

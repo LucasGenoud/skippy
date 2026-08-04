@@ -12,8 +12,11 @@ import '../util/connectivity.dart';
 import 'local_cache.dart';
 import 'note_collection.dart';
 import 'note_conversion.dart';
+import 'note_attachment_coordinator.dart';
 import 'pending_operation.dart';
 import 'pending_operation_executor.dart';
+import 'sync_retry_policy.dart';
+import 'workspace_reconciliation.dart';
 
 export 'note_collection.dart'
     show NoteSections, NoteView, SortMode, ViewSelection, WorkspaceScope;
@@ -95,6 +98,7 @@ class NotesStore extends ChangeNotifier {
 
   final List<PendingOp> _queue = [];
   late final PendingOperationExecutor _pendingOperations;
+  late final NoteAttachmentCoordinator _attachments;
   bool _flushing = false;
   Timer? _retryTimer;
   final Map<String, Timer> _saveDebounce = {};
@@ -152,6 +156,13 @@ class NotesStore extends ChangeNotifier {
     this.offlineGrace = _defaultOfflineGrace,
   }) : cache = cache ?? MemoryLocalCache() {
     _pendingOperations = PendingOperationExecutor(api: api, noteById: noteById);
+    _attachments = NoteAttachmentCoordinator(
+      api: api,
+      noteById: noteById,
+      replace: _replace,
+      ensureMaterialized: _materializeForAttachment,
+      drainQueue: _drainQueue,
+    );
   }
 
   /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
@@ -1608,16 +1619,13 @@ class NotesStore extends ChangeNotifier {
     final me = currentUserId;
     final workspace = workspaceById(id);
     if (me == null || workspace == null || workspace.isOwnedBy(me)) return;
-    final directlyShared = {
-      for (final note in _notes)
-        if (note.workspaceId == id &&
-            note.collaborators.any((collaborator) => collaborator.id == me))
-          note.id,
-    };
-    _retainDirectSharesLocally(id, directlyShared);
-    _notes.removeWhere(
-      (note) => note.workspaceId == id && !directlyShared.contains(note.id),
+    final departure = reconcileWorkspaceDeparture(
+      notes: _notes,
+      labels: _labels,
+      workspaceId: id,
+      userId: me,
     );
+    _notes = departure.notes;
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((w) => w.id == id);
@@ -1627,30 +1635,6 @@ class NotesStore extends ChangeNotifier {
     _enqueue(
       PendingOp(PendingOpKind.leaveWorkspace, id: id, data: {'userId': me}),
     );
-  }
-
-  /// Reconcile explicit per-note shares while membership is going away. They
-  /// keep the now-foreign workspace id; [WorkspaceScope] surfaces such notes
-  /// in the default view. Workspace labels and board placement never follow.
-  void _retainDirectSharesLocally(
-    String workspaceId,
-    Set<String> directlyShared,
-  ) {
-    final leavingLabels = {
-      for (final label in _labels)
-        if (label.workspaceId == workspaceId) label.id,
-    };
-    for (var i = 0; i < _notes.length; i++) {
-      final note = _notes[i];
-      if (note.workspaceId != workspaceId ||
-          !directlyShared.contains(note.id)) {
-        continue;
-      }
-      _notes[i] = note.copyWith(
-        labelIds: note.labelIds.difference(leavingLabels),
-        stageId: null,
-      );
-    }
   }
 
   /// Await-based (not queued): the dialog wants immediate success/failure.
@@ -1798,22 +1782,15 @@ class NotesStore extends ChangeNotifier {
     String mime,
     String filename,
   ) async {
+    await _attachments.upload(noteId, bytes, mime, filename);
+  }
+
+  Future<void> _materializeForAttachment(String noteId) async {
     if (_drafts.contains(noteId)) {
       // Force-create even while textually empty; the file is the content.
       _drafts.remove(noteId);
       final note = noteById(noteId);
       if (note != null) await api.createNote(note);
-    }
-    await _drainQueue();
-    final attachment = await api.uploadAttachment(
-      noteId,
-      bytes,
-      mime,
-      filename,
-    );
-    final note = noteById(noteId);
-    if (note != null) {
-      _replace(note.copyWith(attachments: [...note.attachments, attachment]));
     }
   }
 
@@ -1855,15 +1832,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   void removeAttachment(String noteId, String attachmentId) {
-    final note = noteById(noteId);
-    if (note == null) return;
-    _replace(
-      note.copyWith(
-        attachments: note.attachments
-            .where((a) => a.id != attachmentId)
-            .toList(),
-      ),
-    );
+    if (!_attachments.removeLocal(noteId, attachmentId)) return;
     _enqueue(PendingOp(PendingOpKind.deleteAttachment, id: attachmentId));
   }
 
@@ -2249,24 +2218,16 @@ class NotesStore extends ChangeNotifier {
           // Keep the operation durable so signing in again or waiting for the
           // server cannot silently discard an offline edit. Other 4xx
           // responses are permanent contract/permission failures.
-          final retryable =
-              e.statusCode == 401 ||
-              e.statusCode == 408 ||
-              e.statusCode == 425 ||
-              e.statusCode == 429;
-          if (e.statusCode >= 400 && e.statusCode < 500 && !retryable) {
+          final decision = syncFailureDecision(e);
+          if (decision.shouldDrop) {
             debugPrint('dropping rejected op: $e');
             _queue.removeAt(0);
             _persistNow();
             continue;
           }
-          final serverAskedToWait =
-              e.statusCode == 401 || e.statusCode == 425 || e.statusCode == 429;
           _scheduleRetry(
-            markConnectionDown: !serverAskedToWait,
-            delay: serverAskedToWait
-                ? const Duration(seconds: 10)
-                : const Duration(seconds: 5),
+            markConnectionDown: decision.markConnectionDown,
+            delay: decision.retryDelay,
           );
           break;
         } catch (_) {

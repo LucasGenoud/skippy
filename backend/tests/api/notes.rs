@@ -1,6 +1,34 @@
 //! Note CRUD, reminders, reorder, trash/purge, and kind validation.
 
 use crate::helpers::*;
+use async_trait::async_trait;
+use std::sync::atomic::{AtomicBool, Ordering};
+use sticky_notes_server::files::{DiskStore, FileStore};
+use sticky_notes_server::store::InfrastructureRepository;
+use sticky_notes_server::store::sqlite::SqliteRepository;
+
+struct FlakyDeleteStore {
+    inner: DiskStore,
+    fail_deletes: AtomicBool,
+}
+
+#[async_trait]
+impl FileStore for FlakyDeleteStore {
+    async fn save(&self, id: &str, bytes: &[u8]) -> anyhow::Result<()> {
+        self.inner.save(id, bytes).await
+    }
+
+    async fn read(&self, id: &str) -> Option<Vec<u8>> {
+        self.inner.read(id).await
+    }
+
+    async fn delete(&self, id: &str) -> anyhow::Result<()> {
+        if self.fail_deletes.load(Ordering::Acquire) {
+            anyhow::bail!("injected blob deletion failure");
+        }
+        self.inner.delete(id).await
+    }
+}
 
 #[tokio::test]
 async fn create_defaults_and_patch() {
@@ -383,6 +411,67 @@ async fn purging_trash_deletes_attachment_blobs() {
         app_state.files.read(attachment_id).await.is_none(),
         "purging a trashed note must delete its blobs"
     );
+}
+
+#[tokio::test]
+async fn failed_blob_cleanup_is_persisted_and_retried() {
+    let repo = Arc::new(SqliteRepository::connect(":memory:").await.unwrap());
+    let dir = std::env::temp_dir().join(format!("sticky-notes-cleanup-{}", uuid::Uuid::new_v4()));
+    let files = Arc::new(FlakyDeleteStore {
+        inner: DiskStore::new(dir),
+        fail_deletes: AtomicBool::new(false),
+    });
+    let index = Arc::new(
+        SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64")
+            .await
+            .unwrap(),
+    );
+    let app_state = AppState::new(repo.clone(), files.clone())
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)));
+    let app = build_app(app_state.clone());
+    let (token, _) = register(&app, "cleanup").await;
+    let note = create_note(&app, &token, json!({"title": "retry cleanup"})).await;
+    let note_id = note["id"].as_str().unwrap();
+    let (_, attachment) = upload(&app, &token, note_id, "image/png", b"pixels").await;
+    let attachment_id = attachment["id"].as_str().unwrap();
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{note_id}"),
+        Some(&token),
+        Some(json!({"trashed": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    files.fail_deletes.store(true, Ordering::Release);
+    let future = (chrono::Utc::now() + chrono::Duration::days(8)).to_rfc3339();
+    assert!(
+        sticky_notes_server::handlers::purge_trash(&app_state, &future)
+            .await
+            .is_ok()
+    );
+
+    assert!(files.read(attachment_id).await.is_some());
+    let stats = repo.cleanup_stats().await.unwrap();
+    assert_eq!(stats.pending, 1);
+    assert_eq!(stats.failed, 1);
+
+    files.fail_deletes.store(false, Ordering::Release);
+    let job = repo
+        .due_cleanup_jobs(i64::MAX, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|job| job.target_id == attachment_id)
+        .unwrap();
+    repo.retry_cleanup_job(job.id, "retry now", 0)
+        .await
+        .unwrap();
+    app_state.drain_cleanup_jobs().await;
+
+    assert!(files.read(attachment_id).await.is_none());
+    assert_eq!(repo.cleanup_stats().await.unwrap().pending, 0);
 }
 
 #[tokio::test]

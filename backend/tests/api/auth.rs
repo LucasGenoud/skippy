@@ -8,6 +8,25 @@ async fn health_works() {
     let (status, body) = send(&app, "GET", "/api/health", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["ok"], json!(true));
+    assert_eq!(body["cleanup"]["pending"], json!(0));
+    assert_eq!(body["cleanup"]["failed"], json!(0));
+    assert_eq!(body["background"]["failed_total"], json!(0));
+}
+
+#[tokio::test]
+async fn responses_have_a_request_id() {
+    let app = app().await;
+    let request = Request::builder()
+        .uri("/api/health")
+        .header("x-request-id", "client-correlation-42")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("x-request-id").unwrap(),
+        "client-correlation-42"
+    );
 }
 
 #[tokio::test]
@@ -91,6 +110,33 @@ async fn login_rejects_bad_credentials() {
         let (status, _) = send(&app, "POST", "/api/auth/login", None, Some(payload)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
+}
+
+#[tokio::test]
+async fn repeated_login_failures_are_rate_limited() {
+    let app = app().await;
+    for _ in 0..8 {
+        let (status, _) = send(
+            &app,
+            "POST",
+            "/api/auth/login",
+            None,
+            Some(json!({"email": "missing@example.test", "password": "wrong"})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({"email": "missing@example.test", "password": "wrong"}).to_string(),
+        ))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(response.headers().contains_key(header::RETRY_AFTER));
 }
 
 #[tokio::test]

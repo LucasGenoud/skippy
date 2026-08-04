@@ -1,11 +1,14 @@
 //! Public, read-only share links.
 //!
-//! A link is a stored token that anyone can exchange for a read-only payload,
-//! with no account and no session. Three properties shape everything here:
+//! A link combines a random stored identifier with an HMAC capability that
+//! anyone can exchange for a read-only payload, with no account and no
+//! session. Copying a `share_links` row therefore does not itself expose a
+//! working public URL. Three properties shape everything here:
 //!
-//! * **Only the owner publishes.** A note link needs the note's owner, and a
-//!   view link needs the workspace's owner, matching the rest of the app,
-//!   where trashing, deleting, and rewriting the roster are the owner's calls.
+//! * **Only the workspace owner publishes.** Both a note link and a whole-view
+//!   link follow the owning workspace's lifecycle authority, matching the rest
+//!   of the app where trashing, deleting, and rewriting the roster are the
+//!   owner's calls.
 //! * **The payload is what the owner can see, narrowed to the target.** It is
 //!   assembled from `notes_for_user(owner)`, so a public page can never show
 //!   more than the person who published it, and nothing extra has to be
@@ -19,6 +22,8 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -36,6 +41,26 @@ fn new_token() -> String {
     let mut bytes = [0u8; TOKEN_BYTES];
     rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
     hex::encode(bytes)
+}
+
+fn public_token(secret: &[u8], stored_id: &str) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
+    mac.update(b"share-link\n");
+    mac.update(stored_id.as_bytes());
+    format!("{stored_id}.{}", hex::encode(mac.finalize().into_bytes()))
+}
+
+fn stored_id_from_public_token<'a>(secret: &[u8], token: &'a str) -> Option<&'a str> {
+    let (stored_id, signature) = token.split_once('.')?;
+    if stored_id.is_empty() || signature.is_empty() || signature.contains('.') {
+        return None;
+    }
+    let provided = hex::decode(signature).ok()?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).ok()?;
+    mac.update(b"share-link\n");
+    mac.update(stored_id.as_bytes());
+    mac.verify_slice(&provided).ok()?;
+    Some(stored_id)
 }
 
 fn expired(link: &ShareLink) -> bool {
@@ -181,7 +206,9 @@ pub async fn delete_share_link(
     AuthUser(user_id): AuthUser,
     Path(token): Path<String>,
 ) -> ApiResult<StatusCode> {
-    if state.repo.delete_share_link(&user_id, &token).await? {
+    let stored_id =
+        stored_id_from_public_token(&state.file_secret, &token).ok_or(ApiError::NotFound)?;
+    if state.repo.delete_share_link(&user_id, stored_id).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::NotFound)
@@ -195,9 +222,11 @@ pub async fn public_share(
     State(state): State<AppState>,
     Path(token): Path<String>,
 ) -> ApiResult<Response> {
+    let stored_id =
+        stored_id_from_public_token(&state.file_secret, &token).ok_or(ApiError::NotFound)?;
     let link = state
         .repo
-        .share_link(&token)
+        .share_link(stored_id)
         .await?
         .filter(|link| !expired(link))
         .ok_or(ApiError::NotFound)?;
@@ -422,7 +451,7 @@ async fn view_of(state: &AppState, link: &ShareLink) -> ApiResult<ShareLinkView>
         },
     };
     Ok(ShareLinkView {
-        token: link.token.clone(),
+        token: public_token(&state.file_secret, &link.token),
         target: link.target.clone(),
         note_id: link.note_id.clone(),
         workspace_id: link.workspace_id.clone(),

@@ -11,6 +11,7 @@ use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
+use crate::store::CleanupKind;
 
 use super::{new_id, require_participant};
 
@@ -48,7 +49,28 @@ pub async fn upload_attachment(
             url: None,
         };
         state.files.save(&attachment.id, &bytes).await?;
-        state.repo.insert_attachment(&attachment, &id).await?;
+        if let Err(error) = state.repo.insert_attachment(&attachment, &id).await {
+            // The blob exists but no relational row points at it. Persist the
+            // cleanup intent before surfacing the database error.
+            if let Err(queue_error) = state
+                .repo
+                .enqueue_cleanup(CleanupKind::AttachmentBlob, &attachment.id)
+                .await
+            {
+                state.report_background_failure(
+                    "attachment_cleanup_enqueue",
+                    &format!("{queue_error:?}"),
+                );
+                // If SQLite itself is unavailable, still make the best
+                // idempotent attempt to avoid stranding the just-written blob.
+                if let Err(delete_error) = state.files.delete(&attachment.id).await {
+                    state.report_background_failure("attachment_cleanup_fallback", &delete_error);
+                }
+                return Err(error.into());
+            }
+            state.drain_cleanup_jobs().await;
+            return Err(error.into());
+        }
         // An audio clip dropped onto an audio note kicks off transcription:
         // mark pending now (synchronously, so any refetch sees it) and run
         // Whisper in the background. No-op when transcription is disabled.
@@ -127,7 +149,7 @@ pub async fn delete_attachment(
         .ok_or(ApiError::NotFound)?;
     require_participant(&state, &note_id, &user_id).await?;
     state.repo.delete_attachment(&id).await?;
-    state.files.delete(&id).await;
+    state.drain_cleanup_jobs().await;
     state.notify_note(&note_id).await;
     Ok(StatusCode::NO_CONTENT)
 }

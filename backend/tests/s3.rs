@@ -134,7 +134,7 @@ async fn save_read_delete_roundtrip_with_lazy_bucket() {
     assert_eq!(store.read("att-1").await, Some(b"hello".to_vec()));
     assert_eq!(store.read("missing").await, None);
 
-    store.delete("att-1").await;
+    store.delete("att-1").await.unwrap();
     assert_eq!(store.read("att-1").await, None);
     assert_eq!(store.read("att-2").await, Some(b"world".to_vec()));
 

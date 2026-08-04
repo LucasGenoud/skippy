@@ -352,7 +352,7 @@ pub async fn sweep_due_reminders(state: &AppState) {
     let due = match state.repo.due_reminders(&now).await {
         Ok(due) => due,
         Err(e) => {
-            eprintln!("reminder sweep failed: {e:?}");
+            state.report_background_failure("reminder_sweep", &format!("{e:?}"));
             return;
         }
     };
@@ -378,10 +378,15 @@ pub async fn sweep_due_reminders(state: &AppState) {
                     .await
             }
         };
-        let Ok(true) = claimed else {
-            // Couldn't claim it; leave it for the next sweep rather than risk
-            // sending without an atomic claim (= resending every 30s).
-            continue;
+        match claimed {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                // Leave it for the next sweep rather than risk sending
+                // without an atomic claim (= resending every 30s).
+                state.report_background_failure("reminder_claim", &format!("{error:?}"));
+                continue;
+            }
         };
         // The recurrence advance changes the note's visible due time. Nudge
         // every participant so their clients re-arm the new local alarm.
@@ -389,22 +394,27 @@ pub async fn sweep_due_reminders(state: &AppState) {
             state.notify_note(&note.id).await;
         }
         let notification = reminder_notification(&note);
-        let participants = state
-            .repo
-            .participant_ids(&note.id)
-            .await
-            .unwrap_or_default();
+        let participants = match state.repo.participant_ids(&note.id).await {
+            Ok(participants) => participants,
+            Err(error) => {
+                state.report_background_failure("reminder_participants", &format!("{error:?}"));
+                continue;
+            }
+        };
         for user_id in participants {
-            let settings = state.repo.settings_for_user(&user_id).await.ok().flatten();
+            let settings = match state.repo.settings_for_user(&user_id).await {
+                Ok(settings) => settings,
+                Err(error) => {
+                    state.report_background_failure("reminder_settings", &format!("{error:?}"));
+                    continue;
+                }
+            };
             let settings = settings_value(settings.as_deref());
             if !notifications_enabled(&settings) {
                 continue;
             }
             for error in send_configured(&state.notifiers, &settings, &notification).await {
-                eprintln!(
-                    "reminder delivery failed for note {} to {user_id}: {error}",
-                    note.id
-                );
+                state.report_background_failure("reminder_delivery", &error);
             }
         }
     }

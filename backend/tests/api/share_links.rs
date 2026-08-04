@@ -60,6 +60,25 @@ async fn a_note_link_serves_the_note_to_anyone_and_nobody_else() {
 }
 
 #[tokio::test]
+async fn database_link_identifier_is_not_itself_a_public_capability() {
+    let state = state().await;
+    let app = build_app(state.clone());
+    let (ada, ada_id) = register(&app, "ada").await;
+    let note = create_note(&app, &ada, json!({"title": "Signed capability"})).await;
+    let published = publish(&app, &ada, json!({"target": "note", "note_id": note["id"]})).await;
+    let capability = published["token"].as_str().unwrap();
+    let stored = state.repo.share_links_for_user(&ada_id).await.unwrap();
+
+    assert_eq!(stored.len(), 1);
+    assert_ne!(stored[0].token, capability);
+    assert_eq!(
+        public(&app, &stored[0].token).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(public(&app, capability).await.0, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn a_public_note_carries_no_identities_and_no_private_state() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
