@@ -47,10 +47,7 @@ pub async fn upload_attachment(
             size: bytes.len() as i64,
             url: None,
         };
-        state
-            .files
-            .save(&record.owner_id, &attachment.id, &bytes)
-            .await?;
+        state.files.save(&attachment.id, &bytes).await?;
         state.repo.insert_attachment(&attachment, &id).await?;
         // An audio clip dropped onto an audio note kicks off transcription:
         // mark pending now (synchronously, so any refetch sees it) and run
@@ -63,13 +60,7 @@ pub async fn upload_attachment(
                 .repo
                 .set_transcript(&id, TRANSCRIPT_PENDING, None)
                 .await?;
-            state.transcribe_later(
-                &id,
-                &record.owner_id,
-                &attachment.id,
-                &attachment.filename,
-                &user_id,
-            );
+            state.transcribe_later(&id, &attachment.id, &attachment.filename, &user_id);
         }
         state.notify_note(&id).await;
         state.sign_attachment(&mut attachment);
@@ -85,7 +76,7 @@ pub async fn transcribe_note(
     AuthUser(user_id): AuthUser,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    let record = require_participant(&state, &id, &user_id).await?;
+    require_participant(&state, &id, &user_id).await?;
     if state.transcribe.is_none() {
         return Err(ApiError::Unavailable(
             "audio transcription is not enabled on this server",
@@ -106,7 +97,7 @@ pub async fn transcribe_note(
         .repo
         .set_transcript(&id, TRANSCRIPT_PENDING, None)
         .await?;
-    state.transcribe_later(&id, &record.owner_id, &clip.id, &clip.filename, &user_id);
+    state.transcribe_later(&id, &clip.id, &clip.filename, &user_id);
     state.notify_note(&id).await;
     Ok(StatusCode::ACCEPTED)
 }
@@ -134,9 +125,9 @@ pub async fn delete_attachment(
         .attachment_info(&id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let record = require_participant(&state, &note_id, &user_id).await?;
+    require_participant(&state, &note_id, &user_id).await?;
     state.repo.delete_attachment(&id).await?;
-    state.files.delete(&record.owner_id, &id).await;
+    state.files.delete(&id).await;
     state.notify_note(&note_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -213,19 +204,10 @@ pub async fn serve_file(
         .attachment_info(&id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    // The blob lives under the note owner's identity (its S3 bucket); the
-    // signature already proved access, this lookup just locates the bytes.
-    let owner_id = state
-        .repo
-        .note_record(&note_id)
-        .await?
-        .map(|record| record.owner_id)
-        .ok_or(ApiError::NotFound)?;
-    let bytes = state
-        .files
-        .read(&owner_id, &id)
-        .await
-        .ok_or(ApiError::NotFound)?;
+    // The signature proved access; the relational lookup above proved the
+    // attachment still belongs to a live note and supplied its metadata.
+    let _ = note_id;
+    let bytes = state.files.read(&id).await.ok_or(ApiError::NotFound)?;
     // Only passive media types render inline. In particular, SVG is an active
     // document format despite its `image/*` MIME type and must be downloaded.
     let inline = is_safe_inline_mime(&attachment.mime);

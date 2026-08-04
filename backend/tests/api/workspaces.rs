@@ -258,6 +258,52 @@ async fn members_see_the_workspace_notes_and_share_its_labels() {
 }
 
 #[tokio::test]
+async fn workspace_owner_controls_member_created_note_lifecycle() {
+    let app = app().await;
+    let (ada, ada_id) = register(&app, "ada_workspace_note_owner").await;
+    let (bob, _) = register(&app, "bob_workspace_note_creator").await;
+    let work = make_workspace(&app, &ada, "Team").await;
+    let (status, _) = invite(&app, &ada, &work, &test_email("bob_workspace_note_creator")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let note = create_note(
+        &app,
+        &bob,
+        json!({"title": "created by member", "workspace_id": work}),
+    )
+    .await;
+    let note_id = note["id"].as_str().unwrap();
+    assert_eq!(note["owner"]["id"], ada_id);
+
+    for (method, path, body) in [
+        (
+            "PATCH",
+            format!("/api/notes/{note_id}"),
+            Some(json!({"trashed": true})),
+        ),
+        ("DELETE", format!("/api/notes/{note_id}"), None),
+        (
+            "POST",
+            format!("/api/notes/{note_id}/collaborators"),
+            Some(json!({"email": test_email("ada_workspace_note_owner")})),
+        ),
+    ] {
+        let (status, _) = send(&app, method, &path, Some(&bob), body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
+    }
+
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/notes/{note_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
 async fn only_the_owner_manages_the_roster_and_members_can_leave() {
     let app = app().await;
     let (ada, ada_id) = register(&app, "ada").await;
@@ -301,7 +347,8 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // Bob's own note in the shared workspace follows him home when he leaves.
+    // Notes are owned by the workspace, so Bob's note stays there when he
+    // leaves; creator identity is not a second ownership relation.
     let bobs_note = create_note(
         &app,
         &bob,
@@ -343,34 +390,26 @@ async fn only_the_owner_manages_the_roster_and_members_can_leave() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let bobs = list_notes(&app, &bob).await;
-    assert_eq!(bobs.len(), 1);
-    assert_eq!(bobs[0]["id"], json!(bobs_note_id));
-    assert_eq!(
-        bobs[0]["workspace_id"],
-        json!(default_workspace_id(&app, &bob).await)
-    );
-    assert!(
-        bobs[0]["stage_id"].is_null(),
-        "a stage cannot follow a note into another workspace"
-    );
-    // Ada keeps her own note in the workspace and loses sight of nothing else.
+    assert!(list_notes(&app, &bob).await.is_empty());
+    // Ada retains both workspace-owned notes, including Bob's staged note.
     let adas: Vec<Value> = list_notes(&app, &ada)
         .await
         .into_iter()
         .filter(|n| n["workspace_id"] == json!(work))
         .collect();
-    assert_eq!(adas.len(), 1);
-    assert_eq!(adas[0]["id"], adas_note["id"]);
+    assert_eq!(adas.len(), 2);
+    let retained = adas.iter().find(|note| note["id"] == bobs_note_id).unwrap();
+    assert_eq!(retained["stage_id"], stage["id"]);
+    assert!(adas.iter().any(|note| note["id"] == adas_note["id"]));
 }
 
 #[tokio::test]
 async fn deleting_a_workspace_permanently_removes_every_note_and_attachment() {
     let app_state = state_with_search().await;
     let app = build_app(app_state.clone());
-    let (ada, ada_id) = register(&app, "ada").await;
-    let (bob, bob_id) = register(&app, "bob").await;
-    let (eve, eve_id) = register(&app, "eve").await;
+    let (ada, _ada_id) = register(&app, "ada").await;
+    let (bob, _bob_id) = register(&app, "bob").await;
+    let (eve, _eve_id) = register(&app, "eve").await;
     let work = make_workspace(&app, &ada, "Work").await;
     invite(&app, &ada, &work, &test_email("bob")).await;
 
@@ -427,7 +466,7 @@ async fn deleting_a_workspace_permanently_removes_every_note_and_attachment() {
     let (status, attachment) = upload(&app, &ada, adas_id, "image/png", b"pixels").await;
     assert_eq!(status, StatusCode::CREATED);
     let attachment_id = attachment["id"].as_str().unwrap();
-    assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
+    assert!(app_state.files.read(attachment_id).await.is_some());
     let (_, versions_before) = send(
         &app,
         "GET",
@@ -438,16 +477,14 @@ async fn deleting_a_workspace_permanently_removes_every_note_and_attachment() {
     .await;
     assert!(!versions_before.as_array().unwrap().is_empty());
     settle_index().await;
-    for user_id in [&ada_id, &bob_id, &eve_id] {
-        let hits = app_state
-            .search
-            .as_ref()
-            .unwrap()
-            .search(user_id, "keep", 20)
-            .await
-            .unwrap();
-        assert!(hits.iter().any(|(id, _)| id == adas_id));
-    }
+    let hits = app_state
+        .search
+        .as_ref()
+        .unwrap()
+        .search(std::slice::from_ref(&work), "keep", 20)
+        .await
+        .unwrap();
+    assert!(hits.iter().any(|(id, _)| id == adas_id));
 
     let (status, _) = send(
         &app,
@@ -476,20 +513,18 @@ async fn deleting_a_workspace_permanently_removes_every_note_and_attachment() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (_, labels) = send(&app, "GET", "/api/labels", Some(&ada), None).await;
     assert_eq!(labels, json!([]));
-    assert!(app_state.files.read(&ada_id, attachment_id).await.is_none());
+    assert!(app_state.files.read(attachment_id).await.is_none());
 
     settle_index().await;
-    for user_id in [&ada_id, &bob_id, &eve_id] {
-        let hits = app_state
-            .search
-            .as_ref()
-            .unwrap()
-            .search(user_id, "keep", 20)
-            .await
-            .unwrap();
-        assert!(hits.iter().all(|(id, _)| id != adas_id));
-        assert!(hits.iter().all(|(id, _)| id != bobs_id));
-    }
+    let hits = app_state
+        .search
+        .as_ref()
+        .unwrap()
+        .search(std::slice::from_ref(&work), "keep", 20)
+        .await
+        .unwrap();
+    assert!(hits.iter().all(|(id, _)| id != adas_id));
+    assert!(hits.iter().all(|(id, _)| id != bobs_id));
 }
 
 #[tokio::test]
@@ -602,6 +637,37 @@ async fn semantic_search_can_be_scoped_to_one_workspace() {
         hits(body),
         vec![personal["id"].as_str().unwrap().to_string()]
     );
+
+    // Moving the note relocates its one vector between workspace collections.
+    let personal_id = personal["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{personal_id}"),
+        Some(&ada),
+        Some(json!({"workspace_id": work})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    settle_index().await;
+    let (_, body) = send(
+        &app,
+        "GET",
+        &format!("/api/search?q=buy%20milk&workspace_id={home}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert!(hits(body).is_empty());
+    let (_, body) = send(
+        &app,
+        "GET",
+        &format!("/api/search?q=buy%20milk&workspace_id={work}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(hits(body).len(), 2);
 }
 
 async fn make_label_in(app: &Router, token: &str, name: &str, workspace_id: &str) -> String {

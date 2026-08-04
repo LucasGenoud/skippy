@@ -3,17 +3,17 @@
 //! store. Nothing about the model runs in this process, the server holds no
 //! weights, so its memory footprint stays flat regardless of model size.
 //!
-//! The only index backend is [`SqliteVectorIndex`], a zero-infrastructure
-//! index built on the sqlite-vec extension (vec0 virtual table): KNN happens
-//! inside SQLite, one row per (note, participant) so visibility filtering is
-//! part of the query. [`VectorIndex`] stays a trait so another store can be
-//! swapped in later.
+//! The SQLite backend keeps one sqlite-vec collection per workspace and one
+//! vector per note. Workspace ownership is therefore the physical index
+//! boundary as well as the relational boundary. Authorization is still
+//! rechecked against the repository before any result is returned.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Once};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
@@ -64,7 +64,10 @@ impl EmbedConfig {
 }
 
 fn non_empty_env(key: &str) -> Option<String> {
-    std::env::var(key).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    std::env::var(key)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 /// Embeddings over `POST {base}/embeddings`, the OpenAI-compatible shape that
@@ -89,7 +92,11 @@ impl ApiEmbedder {
             .build()
             .expect("reqwest client");
         // dims is unknown until the probe answers; it is only read after.
-        let mut embedder = Self { client, config, dims: 0 };
+        let mut embedder = Self {
+            client,
+            config,
+            dims: 0,
+        };
         let probe = embedder.embed(vec!["probe".to_string()]).await?;
         embedder.dims = probe
             .first()
@@ -142,7 +149,11 @@ fn parse_embeddings(body: &serde_json::Value) -> anyhow::Result<Vec<Vec<f32>>> {
         .map(|entry| {
             entry["embedding"]
                 .as_array()
-                .map(|v| v.iter().filter_map(|n| n.as_f64().map(|f| f as f32)).collect::<Vec<_>>())
+                .map(|v| {
+                    v.iter()
+                        .filter_map(|n| n.as_f64().map(|f| f as f32))
+                        .collect::<Vec<_>>()
+                })
                 .filter(|v: &Vec<f32>| !v.is_empty())
                 .ok_or_else(|| anyhow::anyhow!("embeddings response entry has no 'embedding'"))
         })
@@ -157,20 +168,19 @@ pub trait VectorIndex: Send + Sync {
     async fn upsert(
         &self,
         note_id: &str,
-        participant_ids: &[String],
+        workspace_id: &str,
         vector: Vec<f32>,
     ) -> anyhow::Result<()>;
     async fn remove(&self, note_id: &str) -> anyhow::Result<()>;
+    async fn remove_workspace(&self, workspace_id: &str) -> anyhow::Result<()>;
     /// Every note id that currently has at least one vector in the index.
     /// Lets the startup reindex skip notes already embedded.
     async fn indexed_note_ids(&self) -> anyhow::Result<HashSet<String>>;
-    /// How many distinct notes visible to `user_id` have a vector. Powers the
-    /// per-user coverage stat in the settings diagnostics.
-    async fn indexed_count(&self, user_id: &str) -> anyhow::Result<usize>;
-    /// Top-`limit` note ids visible to `user_id`, best match first.
+    /// Top-`limit` note ids from the named workspace collections, best match
+    /// first. Callers remain responsible for relational access checks.
     async fn search(
         &self,
-        user_id: &str,
+        workspace_ids: &[String],
         vector: Vec<f32>,
         limit: usize,
     ) -> anyhow::Result<Vec<(String, f32)>>;
@@ -190,12 +200,16 @@ pub fn register_sqlite_vec() {
                 *mut *mut std::os::raw::c_char,
                 *const libsqlite3_sys::sqlite3_api_routines,
             ) -> std::os::raw::c_int,
-        >(sqlite_vec::sqlite3_vec_init as *const ())));
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
+        )));
     });
 }
 
 pub struct SqliteVectorIndex {
     pool: sqlx::SqlitePool,
+    dims: usize,
+    write_lock: tokio::sync::Mutex<()>,
 }
 
 impl SqliteVectorIndex {
@@ -204,31 +218,28 @@ impl SqliteVectorIndex {
     /// `model_signature` identifies the embedding model+dimension that produced
     /// the vectors (e.g. `"bge-m3:1024"`); when it changes, the stored vectors
     /// are stale and the index is rebuilt.
-    pub async fn connect(
-        path: &str,
-        dims: usize,
-        model_signature: &str,
-    ) -> anyhow::Result<Self> {
+    pub async fn connect(path: &str, dims: usize, model_signature: &str) -> anyhow::Result<Self> {
         register_sqlite_vec();
-        let options = SqliteConnectOptions::new().filename(path).create_if_missing(true);
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(if path == ":memory:" { 1 } else { 3 })
             .connect_with(options)
             .await?;
-        // Legacy table from the pre-sqlite-vec brute-force index; the startup
-        // reindex repopulates the vec0 table, so this is safe to drop.
-        sqlx::raw_sql("DROP TABLE IF EXISTS note_vectors").execute(&pool).await?;
-        // Remember which embedding model built note_vec. A different model or
-        // dimension makes the existing vectors meaningless, and a same-
-        // dimension model swap (e.g. quantized -> full precision) is invisible
-        // to a dimension check, so drop the table whenever the signature
-        // changes. The startup reindex then repopulates it with the new
-        // model's embeddings.
         sqlx::raw_sql(
             "CREATE TABLE IF NOT EXISTS vec_meta (
                  id INTEGER PRIMARY KEY CHECK (id = 0),
                  signature TEXT NOT NULL
-             )",
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS workspace_vec_collections (
+                 workspace_id TEXT PRIMARY KEY,
+                 table_name TEXT NOT NULL UNIQUE
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS note_vec_locations (
+                 note_id TEXT PRIMARY KEY,
+                 workspace_id TEXT NOT NULL
+             ) STRICT",
         )
         .execute(&pool)
         .await?;
@@ -237,7 +248,26 @@ impl SqliteVectorIndex {
                 .fetch_optional(&pool)
                 .await?;
         if stored.as_deref() != Some(model_signature) {
-            sqlx::raw_sql("DROP TABLE IF EXISTS note_vec").execute(&pool).await?;
+            let collections =
+                sqlx::query("SELECT workspace_id, table_name FROM workspace_vec_collections")
+                    .fetch_all(&pool)
+                    .await?;
+            for row in collections {
+                let workspace_id: String = row.get("workspace_id");
+                let table_name: String = row.get("table_name");
+                if table_name != Self::table_name(&workspace_id) {
+                    anyhow::bail!("invalid vector collection metadata for workspace");
+                }
+                sqlx::raw_sql(&format!("DROP TABLE IF EXISTS {table_name}"))
+                    .execute(&pool)
+                    .await?;
+            }
+            sqlx::raw_sql(
+                "DELETE FROM note_vec_locations;
+                 DELETE FROM workspace_vec_collections",
+            )
+            .execute(&pool)
+            .await?;
             sqlx::query(
                 "INSERT INTO vec_meta (id, signature) VALUES (0, ?1)
                  ON CONFLICT(id) DO UPDATE SET signature = ?1",
@@ -246,19 +276,55 @@ impl SqliteVectorIndex {
             .execute(&pool)
             .await?;
         }
-        // One row per (note, participant): the partition key makes per-user
-        // KNN search prune to that user's rows, and a note appears at most
-        // once per partition so results need no dedup.
+        Ok(Self {
+            pool,
+            dims,
+            write_lock: tokio::sync::Mutex::new(()),
+        })
+    }
+
+    fn table_name(workspace_id: &str) -> String {
+        format!(
+            "note_vec_{}",
+            hex::encode(Sha256::digest(workspace_id.as_bytes()))
+        )
+    }
+
+    async fn ensure_collection(&self, workspace_id: &str, dims: usize) -> anyhow::Result<String> {
+        let table_name = Self::table_name(workspace_id);
         sqlx::raw_sql(&format!(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS note_vec USING vec0(
-                 user_id TEXT PARTITION KEY,
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(
                  note_id TEXT,
                  embedding FLOAT[{dims}] distance_metric=cosine
              )"
         ))
-        .execute(&pool)
+        .execute(&self.pool)
         .await?;
-        Ok(Self { pool })
+        sqlx::query(
+            "INSERT OR IGNORE INTO workspace_vec_collections (workspace_id, table_name)
+             VALUES (?, ?)",
+        )
+        .bind(workspace_id)
+        .bind(&table_name)
+        .execute(&self.pool)
+        .await?;
+        Ok(table_name)
+    }
+
+    async fn collection(&self, workspace_id: &str) -> anyhow::Result<Option<String>> {
+        let stored: Option<String> = sqlx::query_scalar(
+            "SELECT table_name FROM workspace_vec_collections WHERE workspace_id = ?",
+        )
+        .bind(workspace_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        match stored {
+            Some(table_name) if table_name == Self::table_name(workspace_id) => {
+                Ok(Some(table_name))
+            }
+            Some(_) => anyhow::bail!("invalid vector collection metadata for workspace"),
+            None => Ok(None),
+        }
     }
 }
 
@@ -272,80 +338,131 @@ impl VectorIndex for SqliteVectorIndex {
     async fn upsert(
         &self,
         note_id: &str,
-        participant_ids: &[String],
+        workspace_id: &str,
         vector: Vec<f32>,
     ) -> anyhow::Result<()> {
-        // vec0 has no upsert and participants may have changed; replace the
-        // note's rows wholesale.
+        let _write = self.write_lock.lock().await;
+        let table_name = self.ensure_collection(workspace_id, self.dims).await?;
+        let previous_workspace: Option<String> =
+            sqlx::query_scalar("SELECT workspace_id FROM note_vec_locations WHERE note_id = ?")
+                .bind(note_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let previous_table = match previous_workspace.as_deref() {
+            Some(previous) if previous != workspace_id => self.collection(previous).await?,
+            _ => None,
+        };
         let mut tx = self.pool.begin().await?;
-        sqlx::query("DELETE FROM note_vec WHERE note_id = ?")
+        if let Some(previous_table) = previous_table {
+            sqlx::query(&format!("DELETE FROM {previous_table} WHERE note_id = ?"))
+                .bind(note_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        sqlx::query(&format!("DELETE FROM {table_name} WHERE note_id = ?"))
             .bind(note_id)
             .execute(&mut *tx)
             .await?;
         let blob = vector_to_blob(&vector);
-        for user_id in participant_ids {
-            sqlx::query("INSERT INTO note_vec (user_id, note_id, embedding) VALUES (?, ?, ?)")
-                .bind(user_id)
-                .bind(note_id)
-                .bind(&blob)
-                .execute(&mut *tx)
-                .await?;
-        }
+        sqlx::query(&format!(
+            "INSERT INTO {table_name} (note_id, embedding) VALUES (?, ?)"
+        ))
+        .bind(note_id)
+        .bind(&blob)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO note_vec_locations (note_id, workspace_id) VALUES (?, ?)
+             ON CONFLICT(note_id) DO UPDATE SET workspace_id = excluded.workspace_id",
+        )
+        .bind(note_id)
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
 
     async fn remove(&self, note_id: &str) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM note_vec WHERE note_id = ?")
+        let _write = self.write_lock.lock().await;
+        let workspace_id: Option<String> =
+            sqlx::query_scalar("SELECT workspace_id FROM note_vec_locations WHERE note_id = ?")
+                .bind(note_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        if let Some(workspace_id) = workspace_id
+            && let Some(table_name) = self.collection(&workspace_id).await?
+        {
+            sqlx::query(&format!("DELETE FROM {table_name} WHERE note_id = ?"))
+                .bind(note_id)
+                .execute(&self.pool)
+                .await?;
+        }
+        sqlx::query("DELETE FROM note_vec_locations WHERE note_id = ?")
             .bind(note_id)
             .execute(&self.pool)
             .await?;
         Ok(())
     }
 
-    async fn indexed_note_ids(&self) -> anyhow::Result<HashSet<String>> {
-        // A vec0 full scan of the metadata column; one row per (note,
-        // participant), so DISTINCT collapses a note's rows to one id.
-        let rows = sqlx::query("SELECT DISTINCT note_id FROM note_vec")
-            .fetch_all(&self.pool)
+    async fn remove_workspace(&self, workspace_id: &str) -> anyhow::Result<()> {
+        let _write = self.write_lock.lock().await;
+        if let Some(table_name) = self.collection(workspace_id).await? {
+            sqlx::raw_sql(&format!("DROP TABLE IF EXISTS {table_name}"))
+                .execute(&self.pool)
+                .await?;
+        }
+        sqlx::query("DELETE FROM note_vec_locations WHERE workspace_id = ?")
+            .bind(workspace_id)
+            .execute(&self.pool)
             .await?;
-        Ok(rows.iter().map(|row| row.get::<String, _>("note_id")).collect())
+        sqlx::query("DELETE FROM workspace_vec_collections WHERE workspace_id = ?")
+            .bind(workspace_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
-    async fn indexed_count(&self, user_id: &str) -> anyhow::Result<usize> {
-        let row = sqlx::query(
-            "SELECT COUNT(DISTINCT note_id) AS n FROM note_vec WHERE user_id = ?",
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(row.get::<i64, _>("n") as usize)
+    async fn indexed_note_ids(&self) -> anyhow::Result<HashSet<String>> {
+        let rows = sqlx::query("SELECT note_id FROM note_vec_locations")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|row| row.get::<String, _>("note_id"))
+            .collect())
     }
 
     async fn search(
         &self,
-        user_id: &str,
+        workspace_ids: &[String],
         vector: Vec<f32>,
         limit: usize,
     ) -> anyhow::Result<Vec<(String, f32)>> {
-        let rows = sqlx::query(
-            "SELECT note_id, distance FROM note_vec
-             WHERE user_id = ? AND embedding MATCH ? AND k = ?
-             ORDER BY distance",
-        )
-        .bind(user_id)
-        .bind(vector_to_blob(&vector))
-        .bind(limit as i64)
-        .fetch_all(&self.pool)
-        .await?;
-        // Cosine *distance* (0 = identical) -> similarity score, matching the
-        // trait's best-match-first, higher-is-better contract.
-        Ok(rows
-            .iter()
-            .map(|row| {
-                (row.get::<String, _>("note_id"), 1.0 - row.get::<f64, _>("distance") as f32)
-            })
-            .collect())
+        let blob = vector_to_blob(&vector);
+        let mut hits = Vec::new();
+        for workspace_id in workspace_ids {
+            let Some(table_name) = self.collection(workspace_id).await? else {
+                continue;
+            };
+            let rows = sqlx::query(&format!(
+                "SELECT note_id, distance FROM {table_name}
+                 WHERE embedding MATCH ? AND k = ? ORDER BY distance"
+            ))
+            .bind(&blob)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+            hits.extend(rows.iter().map(|row| {
+                (
+                    row.get::<String, _>("note_id"),
+                    1.0 - row.get::<f64, _>("distance") as f32,
+                )
+            }));
+        }
+        hits.sort_by(|a, b| b.1.total_cmp(&a.1));
+        hits.truncate(limit);
+        Ok(hits)
     }
 }
 
@@ -390,20 +507,20 @@ impl SearchService {
     async fn embed_one(&self, text: String) -> anyhow::Result<Vec<f32>> {
         let _slot = self.embed_slots.acquire().await?;
         let mut vectors = self.embedder.embed(vec![text]).await?;
-        vectors.pop().ok_or_else(|| anyhow::anyhow!("embedder returned nothing"))
+        vectors
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("embedder returned nothing"))
     }
 
-    pub async fn index_note(
-        &self,
-        record: &NoteRecord,
-        participant_ids: Vec<String>,
-    ) -> anyhow::Result<()> {
+    pub async fn index_note(&self, record: &NoteRecord) -> anyhow::Result<()> {
         let text = Self::note_text(record);
         if text.is_empty() {
             return self.index.remove(&record.id).await;
         }
         let vector = self.embed_one(text).await?;
-        self.index.upsert(&record.id, &participant_ids, vector).await
+        self.index
+            .upsert(&record.id, &record.workspace_id, vector)
+            .await
     }
 
     pub async fn remove_note(&self, note_id: &str) -> anyhow::Result<()> {
@@ -416,10 +533,8 @@ impl SearchService {
         self.index.indexed_note_ids().await
     }
 
-    /// How many of `user_id`'s notes are embedded (see
-    /// [`VectorIndex::indexed_count`]).
-    pub async fn indexed_count(&self, user_id: &str) -> anyhow::Result<usize> {
-        self.index.indexed_count(user_id).await
+    pub async fn remove_workspace(&self, workspace_id: &str) -> anyhow::Result<()> {
+        self.index.remove_workspace(workspace_id).await
     }
 
     /// The embedding model's identifier, for diagnostics.
@@ -434,12 +549,12 @@ impl SearchService {
 
     pub async fn search(
         &self,
-        user_id: &str,
+        workspace_ids: &[String],
         query: &str,
         limit: usize,
     ) -> anyhow::Result<Vec<(String, f32)>> {
         let vector = self.embed_one(query.to_string()).await?;
-        self.index.search(user_id, vector, limit).await
+        self.index.search(workspace_ids, vector, limit).await
     }
 }
 
@@ -506,14 +621,18 @@ mod tests {
             in_flight: std::sync::Mutex::new(0),
             peak: std::sync::Mutex::new(0),
         });
-        let index = SqliteVectorIndex::connect(":memory:", 3, "probe:3").await.unwrap();
+        let index = SqliteVectorIndex::connect(":memory:", 3, "probe:3")
+            .await
+            .unwrap();
         let service = Arc::new(SearchService::new(probe.clone(), Arc::new(index)));
 
         let mut tasks = Vec::new();
         for i in 0..20 {
             let service = service.clone();
             tasks.push(tokio::spawn(async move {
-                service.search("u1", &format!("query {i}"), 5).await
+                service
+                    .search(&["w1".to_string()], &format!("query {i}"), 5)
+                    .await
             }));
         }
         for task in tasks {
@@ -529,12 +648,13 @@ mod tests {
 
     #[tokio::test]
     async fn indexed_note_ids_lists_notes_once_and_tracks_removal() {
-        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3").await.unwrap();
+        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3")
+            .await
+            .unwrap();
         assert!(index.indexed_note_ids().await.unwrap().is_empty());
 
-        // "a" is shared by two participants -> two rows, but one distinct id.
-        index.upsert("a", &["u1".into(), "u2".into()], vec![1.0, 0.0, 0.0]).await.unwrap();
-        index.upsert("b", &["u1".into()], vec![0.0, 1.0, 0.0]).await.unwrap();
+        index.upsert("a", "w1", vec![1.0, 0.0, 0.0]).await.unwrap();
+        index.upsert("b", "w2", vec![0.0, 1.0, 0.0]).await.unwrap();
         assert_eq!(
             index.indexed_note_ids().await.unwrap(),
             HashSet::from(["a".to_string(), "b".to_string()])
@@ -545,6 +665,37 @@ mod tests {
         assert_eq!(
             index.indexed_note_ids().await.unwrap(),
             HashSet::from(["b".to_string()])
+        );
+    }
+
+    #[tokio::test]
+    async fn workspace_collections_are_isolated_and_drop_as_a_unit() {
+        let index = SqliteVectorIndex::connect(":memory:", 3, "test:3")
+            .await
+            .unwrap();
+        index.upsert("n1", "w1", vec![1.0, 0.0, 0.0]).await.unwrap();
+        index.upsert("n2", "w2", vec![1.0, 0.0, 0.0]).await.unwrap();
+
+        let w1 = index
+            .search(&["w1".into()], vec![1.0, 0.0, 0.0], 10)
+            .await
+            .unwrap();
+        assert_eq!(
+            w1.iter().map(|hit| hit.0.as_str()).collect::<Vec<_>>(),
+            vec!["n1"]
+        );
+
+        index.remove_workspace("w1").await.unwrap();
+        assert_eq!(
+            index.indexed_note_ids().await.unwrap(),
+            HashSet::from(["n2".to_string()])
+        );
+        assert!(
+            index
+                .search(&["w1".into()], vec![1.0, 0.0, 0.0], 10)
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -561,20 +712,26 @@ mod tests {
 
         // First model builds the index and stores a vector.
         {
-            let index = SqliteVectorIndex::connect(path, 3, "model-a:3").await.unwrap();
-            index.upsert("n1", &["u1".into()], vec![1.0, 0.0, 0.0]).await.unwrap();
-            assert_eq!(index.indexed_count("u1").await.unwrap(), 1);
+            let index = SqliteVectorIndex::connect(path, 3, "model-a:3")
+                .await
+                .unwrap();
+            index.upsert("n1", "w1", vec![1.0, 0.0, 0.0]).await.unwrap();
+            assert_eq!(index.indexed_note_ids().await.unwrap().len(), 1);
         }
         // Reopening with the SAME signature keeps the vectors.
         {
-            let index = SqliteVectorIndex::connect(path, 3, "model-a:3").await.unwrap();
-            assert_eq!(index.indexed_count("u1").await.unwrap(), 1);
+            let index = SqliteVectorIndex::connect(path, 3, "model-a:3")
+                .await
+                .unwrap();
+            assert_eq!(index.indexed_note_ids().await.unwrap().len(), 1);
         }
         // A different signature (e.g. quantized -> full precision at the same
         // dimension) drops the stale vectors; the reindex would repopulate.
         {
-            let index = SqliteVectorIndex::connect(path, 3, "model-b:3").await.unwrap();
-            assert_eq!(index.indexed_count("u1").await.unwrap(), 0);
+            let index = SqliteVectorIndex::connect(path, 3, "model-b:3")
+                .await
+                .unwrap();
+            assert!(index.indexed_note_ids().await.unwrap().is_empty());
         }
         let _ = std::fs::remove_file(path);
     }

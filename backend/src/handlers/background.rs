@@ -16,7 +16,8 @@ impl AppState {
     }
 
     pub(super) fn notify_user(&self, user_id: &str) {
-        self.hub.notify(std::slice::from_ref(&user_id.to_string()), CHANGED_MSG);
+        self.hub
+            .notify(std::slice::from_ref(&user_id.to_string()), CHANGED_MSG);
     }
 
     /// Stamp each attachment with a signed, time-limited fetch URL. Applied to
@@ -25,7 +26,10 @@ impl AppState {
     ///
     /// [`serve_file`]: super::serve_file
     pub(super) fn sign_attachment(&self, attachment: &mut Attachment) {
-        attachment.url = Some(crate::files::signed_file_path(&self.file_secret, &attachment.id));
+        attachment.url = Some(crate::files::signed_file_path(
+            &self.file_secret,
+            &attachment.id,
+        ));
     }
 
     pub(super) fn sign_view(&self, view: &mut NoteView) {
@@ -43,23 +47,38 @@ impl AppState {
     /// Re-embed and index a note in the background (fire and forget); request
     /// latency never waits on the embedder.
     pub fn index_note_later(&self, note_id: &str) {
-        let Some(search) = self.search.clone() else { return };
+        let Some(search) = self.search.clone() else {
+            return;
+        };
         let repo = self.repo.clone();
         let note_id = note_id.to_string();
         tokio::spawn(async move {
-            let Ok(Some(record)) = repo.note_record(&note_id).await else { return };
-            let participants = repo.participant_ids(&note_id).await.unwrap_or_default();
-            if let Err(e) = search.index_note(&record, participants).await {
+            let Ok(Some(record)) = repo.note_record(&note_id).await else {
+                return;
+            };
+            if let Err(e) = search.index_note(&record).await {
                 eprintln!("semantic index failed for {note_id}: {e:#}");
             }
         });
     }
 
     pub fn unindex_note_later(&self, note_id: &str) {
-        let Some(search) = self.search.clone() else { return };
+        let Some(search) = self.search.clone() else {
+            return;
+        };
         let note_id = note_id.to_string();
         tokio::spawn(async move {
             let _ = search.remove_note(&note_id).await;
+        });
+    }
+
+    pub fn unindex_workspace_later(&self, workspace_id: &str) {
+        let Some(search) = self.search.clone() else {
+            return;
+        };
+        let workspace_id = workspace_id.to_string();
+        tokio::spawn(async move {
+            let _ = search.remove_workspace(&workspace_id).await;
         });
     }
 
@@ -71,20 +90,20 @@ impl AppState {
     pub fn transcribe_later(
         &self,
         note_id: &str,
-        owner_id: &str,
         attachment_id: &str,
         filename: &str,
         user_id: &str,
     ) {
-        let Some(transcriber) = self.transcribe.clone() else { return };
+        let Some(transcriber) = self.transcribe.clone() else {
+            return;
+        };
         let state = self.clone();
         let note_id = note_id.to_string();
-        let owner_id = owner_id.to_string();
         let attachment_id = attachment_id.to_string();
         let filename = filename.to_string();
         let user_id = user_id.to_string();
         tokio::spawn(async move {
-            let status_and_content = match state.files.read(&owner_id, &attachment_id).await {
+            let status_and_content = match state.files.read(&attachment_id).await {
                 Some(bytes) => match transcriber.transcribe(bytes, &filename).await {
                     Ok(text) => (TRANSCRIPT_DONE, Some(text)),
                     Err(e) => {
@@ -95,7 +114,10 @@ impl AppState {
                 None => (TRANSCRIPT_FAILED, None),
             };
             let (status, content) = status_and_content;
-            let _ = state.repo.set_transcript(&note_id, status, content.as_deref()).await;
+            let _ = state
+                .repo
+                .set_transcript(&note_id, status, content.as_deref())
+                .await;
             if status == TRANSCRIPT_DONE {
                 state.index_note_later(&note_id);
                 state.label_note_later(&note_id, &user_id);
@@ -147,11 +169,15 @@ impl AppState {
         };
         let effective = self.managed.overlay(settings.as_deref());
         let llm_settings = crate::assist::parse_llm_settings_value(&effective);
-        let Some(cfg) = llm_settings.config else { return };
+        let Some(cfg) = llm_settings.config else {
+            return;
+        };
         if !llm_settings.labeling {
             return;
         }
-        let Ok(Some(record)) = self.repo.note_record(note_id).await else { return };
+        let Ok(Some(record)) = self.repo.note_record(note_id).await else {
+            return;
+        };
         if record.trashed {
             return;
         }
@@ -159,11 +185,15 @@ impl AppState {
         if text.is_empty() {
             return;
         }
-        let Ok(labels) = self.repo.labels_for_user(user_id).await else { return };
+        let Ok(labels) = self.repo.labels_for_user(user_id).await else {
+            return;
+        };
         // Only the taxonomy of the note's own workspace is on offer, a label
         // from another workspace could not be attached anyway.
-        let labels: Vec<Label> =
-            labels.into_iter().filter(|l| l.workspace_id == record.workspace_id).collect();
+        let labels: Vec<Label> = labels
+            .into_iter()
+            .filter(|l| l.workspace_id == record.workspace_id)
+            .collect();
         if labels.is_empty() {
             return;
         }

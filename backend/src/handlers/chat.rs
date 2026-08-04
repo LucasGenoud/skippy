@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
+use std::collections::HashSet;
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::AppState;
@@ -163,8 +164,9 @@ async fn chat_loop(
         .map(|h| (h.role, h.content))
         .collect();
 
-    // Scope the turn to the open workspace. The vector index partitions by
-    // participant, not by workspace, so the narrowing happens over its hits.
+    // Scope the turn to the open workspace and therefore its vector
+    // collection. An unscoped turn searches each workspace represented in the
+    // caller's visible notes.
     let workspace_id = request
         .workspace_id
         .as_deref()
@@ -180,6 +182,21 @@ async fn chat_loop(
             }
         },
         None => None,
+    };
+    let search_workspaces: Vec<String> = match &workspace_id {
+        Some(id) => vec![id.clone()],
+        None => match state.repo.notes_for_user(&user_id).await {
+            Ok(notes) => notes
+                .into_iter()
+                .map(|view| view.note.workspace_id)
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect(),
+            Err(_) => {
+                send_error(&mut sink, "could not load workspaces").await;
+                return;
+            }
+        },
     };
 
     // Phase 1, route: the model decides whether this turn needs notes at
@@ -217,7 +234,7 @@ async fn chat_loop(
         let overfetch = if allowed_notes.is_some() { 8 } else { 2 };
         let hits = match search
             .search(
-                &user_id,
+                &search_workspaces,
                 query,
                 crate::assist::CHAT_CONTEXT_NOTES * overfetch,
             )

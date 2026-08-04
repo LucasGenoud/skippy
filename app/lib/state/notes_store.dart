@@ -13,6 +13,7 @@ import 'local_cache.dart';
 import 'note_collection.dart';
 import 'note_conversion.dart';
 import 'pending_operation.dart';
+import 'pending_operation_executor.dart';
 
 export 'note_collection.dart'
     show NoteSections, NoteView, SortMode, ViewSelection, WorkspaceScope;
@@ -93,6 +94,7 @@ class NotesStore extends ChangeNotifier {
   SortMode sortMode = SortMode.custom;
 
   final List<PendingOp> _queue = [];
+  late final PendingOperationExecutor _pendingOperations;
   bool _flushing = false;
   Timer? _retryTimer;
   final Map<String, Timer> _saveDebounce = {};
@@ -148,7 +150,9 @@ class NotesStore extends ChangeNotifier {
     this.migrateLegacyCache = false,
     this.onRemoteChange,
     this.offlineGrace = _defaultOfflineGrace,
-  }) : cache = cache ?? MemoryLocalCache();
+  }) : cache = cache ?? MemoryLocalCache() {
+    _pendingOperations = PendingOperationExecutor(api: api, noteById: noteById);
+  }
 
   /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
   /// so switching workspaces switches the whole sidebar.
@@ -1597,14 +1601,23 @@ class NotesStore extends ChangeNotifier {
     _enqueue(PendingOp(PendingOpKind.workspaceDelete, id: id));
   }
 
-  /// Leave a workspace someone else owns. Notes you own there follow you to
-  /// your default workspace; the rest disappear from your shelf.
+  /// Leave a workspace someone else owns. Workspace-owned notes disappear
+  /// from this user's shelf unless the note also carries an explicit direct
+  /// share for them; the server leaves every note in the workspace.
   void leaveWorkspace(String id) {
     final me = currentUserId;
     final workspace = workspaceById(id);
     if (me == null || workspace == null || workspace.isOwnedBy(me)) return;
-    _rehomeNotesLocally(id, (note) => note.isOwnedBy(me));
-    _notes.removeWhere((note) => note.workspaceId == id);
+    final directlyShared = {
+      for (final note in _notes)
+        if (note.workspaceId == id &&
+            note.collaborators.any((collaborator) => collaborator.id == me))
+          note.id,
+    };
+    _retainDirectSharesLocally(id, directlyShared);
+    _notes.removeWhere(
+      (note) => note.workspaceId == id && !directlyShared.contains(note.id),
+    );
     _labels.removeWhere((label) => label.workspaceId == id);
     _stages.removeWhere((stage) => stage.workspaceId == id);
     _workspaces.removeWhere((w) => w.id == id);
@@ -1616,22 +1629,24 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
-  /// Reconcile notes while a workspace is going away. Our own notes move into
-  /// our default workspace. A note owned elsewhere but retained through a
-  /// direct share keeps an unknown foreign workspace id until the refetch
-  /// supplies its owner's new default id; [WorkspaceScope] still surfaces it
-  /// in our default view. Workspace labels and board placement never follow.
-  void _rehomeNotesLocally(String workspaceId, bool Function(Note) keep) {
-    final home = defaultWorkspace?.id ?? '';
+  /// Reconcile explicit per-note shares while membership is going away. They
+  /// keep the now-foreign workspace id; [WorkspaceScope] surfaces such notes
+  /// in the default view. Workspace labels and board placement never follow.
+  void _retainDirectSharesLocally(
+    String workspaceId,
+    Set<String> directlyShared,
+  ) {
     final leavingLabels = {
       for (final label in _labels)
         if (label.workspaceId == workspaceId) label.id,
     };
     for (var i = 0; i < _notes.length; i++) {
       final note = _notes[i];
-      if (note.workspaceId != workspaceId || !keep(note)) continue;
+      if (note.workspaceId != workspaceId ||
+          !directlyShared.contains(note.id)) {
+        continue;
+      }
       _notes[i] = note.copyWith(
-        workspaceId: note.isOwnedBy(currentUserId) ? home : note.workspaceId,
         labelIds: note.labelIds.difference(leavingLabels),
         stageId: null,
       );
@@ -2223,7 +2238,7 @@ class NotesStore extends ChangeNotifier {
           // cancel its underlying HTTP request; retrying after such a timeout
           // could let the original finish last and overwrite a newer queued
           // operation. ApiClient owns the real transport timeout instead.
-          await _run(op);
+          await _pendingOperations.run(op);
           if (_disposed) break;
           _queue.removeAt(0);
           _persistNow();
@@ -2268,81 +2283,6 @@ class NotesStore extends ChangeNotifier {
         !_hasLocalChangesInFlight) {
       _reloadPending = false;
       load();
-    }
-  }
-
-  /// Execute one queued write. Creates re-read the freshest note so edits made
-  /// after enqueuing still go up; a create for a note deleted in the meantime
-  /// is a no-op (a trailing delete/404 tidies the server side).
-  Future<void> _run(PendingOp op) {
-    switch (op.kind) {
-      case PendingOpKind.create:
-        final note = noteById(op.id!);
-        return note == null ? Future.value() : api.createNote(note);
-      case PendingOpKind.patch:
-        return api.patchNote(op.id!, op.data);
-      case PendingOpKind.delete:
-        return api.deleteNote(op.id!);
-      case PendingOpKind.reorder:
-        return api.reorderNotes((op.data['ids'] as List).cast<String>());
-      case PendingOpKind.labelCreate:
-        return api.createLabel(
-          op.id!,
-          op.data['name'] as String,
-          workspaceId: op.data['workspaceId'] as String? ?? '',
-          color: op.data['color'] as String?,
-          icon: op.data['icon'] as String?,
-          position: (op.data['position'] as num?)?.toDouble(),
-        );
-      case PendingOpKind.labelUpdate:
-        return api.updateLabel(
-          op.id!,
-          op.data['name'] as String,
-          color: op.data['color'] as String?,
-          icon: op.data['icon'] as String?,
-          position: (op.data['position'] as num?)?.toDouble(),
-        );
-      case PendingOpKind.labelDelete:
-        return api.deleteLabel(op.id!);
-      case PendingOpKind.stageCreate:
-        return api.createStage(
-          op.id!,
-          op.data['name'] as String,
-          workspaceId: op.data['workspaceId'] as String? ?? '',
-          color: op.data['color'] as String?,
-          position: (op.data['position'] as num?)?.toDouble(),
-        );
-      case PendingOpKind.stageUpdate:
-        return api.updateStage(
-          op.id!,
-          op.data['name'] as String,
-          color: op.data['color'] as String?,
-          position: (op.data['position'] as num?)?.toDouble(),
-        );
-      case PendingOpKind.stageDelete:
-        return api.deleteStage(op.id!);
-      case PendingOpKind.workspaceCreate:
-        return api.createWorkspace(op.id!, op.data['name'] as String);
-      case PendingOpKind.workspaceRename:
-        return api.renameWorkspace(op.id!, op.data['name'] as String);
-      case PendingOpKind.workspaceViews:
-        return api.updateWorkspaceViews(
-          op.id!,
-          notesEnabled: op.data['notesEnabled'] as bool? ?? true,
-          boardEnabled: op.data['boardEnabled'] as bool? ?? true,
-        );
-      case PendingOpKind.workspaceDelete:
-        return api.deleteWorkspace(op.id!);
-      case PendingOpKind.leaveWorkspace:
-        return api.removeWorkspaceMember(op.id!, op.data['userId'] as String);
-      case PendingOpKind.removeCollaborator:
-        return api.removeCollaborator(op.id!, op.data['userId'] as String);
-      case PendingOpKind.deleteAttachment:
-        return api.deleteAttachment(op.id!);
-      case PendingOpKind.transcribe:
-        return api.transcribeNote(op.id!);
-      case PendingOpKind.unknown:
-        return Future<void>.value();
     }
   }
 

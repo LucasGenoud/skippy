@@ -1,265 +1,328 @@
 use sqlx::SqlitePool;
 
+const SCHEMA_VERSION: i64 = 2;
+
+/// The database is intentionally initialized as one current schema. Skippy's
+/// workspace-owned storage redesign is a clean-break release: existing files
+/// are not upgraded in place and should be recreated or restored from a
+/// compatible backup.
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL CHECK (trim(name) <> ''),
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
-);
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL
-);
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    notes_enabled INTEGER NOT NULL DEFAULT 1,
-    board_enabled INTEGER NOT NULL DEFAULT 1,
-    is_default INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
+    name TEXT NOT NULL CHECK (trim(name) <> ''),
+    notes_enabled INTEGER NOT NULL DEFAULT 1 CHECK (notes_enabled IN (0, 1)),
+    board_enabled INTEGER NOT NULL DEFAULT 1 CHECK (board_enabled IN (0, 1)),
+    is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+    created_at TEXT NOT NULL,
+    CHECK (notes_enabled = 1 OR board_enabled = 1)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS workspace_members (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (workspace_id, user_id)
-);
+) WITHOUT ROWID, STRICT;
+
+CREATE TABLE IF NOT EXISTS stages (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (trim(name) <> ''),
+    color TEXT,
+    position REAL NOT NULL DEFAULT 0,
+    UNIQUE (workspace_id, name COLLATE NOCASE),
+    UNIQUE (id, workspace_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS labels (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (trim(name) <> ''),
+    color TEXT,
+    icon TEXT,
+    position REAL NOT NULL DEFAULT 0,
+    UNIQUE (workspace_id, name COLLATE NOCASE),
+    UNIQUE (id, workspace_id)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- Deliberately no ON DELETE action: workspace deletion snapshots and
-    -- explicitly deletes its notes before the workspace row goes. A cascade
-    -- here would remove rows without the app-level cleanup needed for
-    -- attachment blobs and semantic-index entries.
-    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
-    kind TEXT NOT NULL DEFAULT 'text',
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'text'
+        CHECK (kind IN ('text', 'markdown', 'checklist', 'audio')),
     title TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
-    items TEXT NOT NULL DEFAULT '[]',
+    items TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(items)),
     color TEXT NOT NULL DEFAULT 'default',
-    pinned INTEGER NOT NULL DEFAULT 0,
-    archived INTEGER NOT NULL DEFAULT 0,
-    trashed INTEGER NOT NULL DEFAULT 0,
+    pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    trashed INTEGER NOT NULL DEFAULT 0 CHECK (trashed IN (0, 1)),
     position REAL NOT NULL DEFAULT 0,
     reminder_at TEXT,
-    reminder_repeat TEXT,
+    reminder_repeat TEXT CHECK (
+        reminder_repeat IS NULL OR
+        reminder_repeat IN ('daily', 'weekly', 'monthly', 'yearly')
+    ),
     reminder_fired_at TEXT,
-    transcript_status TEXT NOT NULL DEFAULT 'none',
+    transcript_status TEXT NOT NULL DEFAULT 'none'
+        CHECK (transcript_status IN ('none', 'pending', 'done', 'failed')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     trashed_at TEXT,
-    last_editor_id TEXT,
-    -- Deliberately no foreign key: the column reaches existing databases
-    -- through ALTER TABLE, which SQLite cannot use to add a constraint, so a
-    -- fresh schema must not have one either or the two would drift.
-    -- `delete_stage` clears it explicitly instead.
+    last_editor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
     stage_id TEXT,
-    stage_position REAL
-);
+    stage_position REAL NOT NULL DEFAULT 0,
+    UNIQUE (id, workspace_id),
+    FOREIGN KEY (stage_id, workspace_id)
+        REFERENCES stages(id, workspace_id),
+    CHECK (reminder_repeat IS NULL OR reminder_at IS NOT NULL),
+    CHECK (
+        (trashed = 0 AND trashed_at IS NULL) OR
+        (trashed = 1 AND trashed_at IS NOT NULL)
+    )
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS note_versions (
     id TEXT PRIMARY KEY,
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL DEFAULT 'text',
+    kind TEXT NOT NULL CHECK (kind IN ('text', 'markdown', 'checklist', 'audio')),
     title TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
-    items TEXT NOT NULL DEFAULT '[]',
-    edited_by TEXT,
+    items TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(items)),
+    edited_by TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL
-);
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS note_shares (
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (note_id, user_id)
-);
-CREATE TABLE IF NOT EXISTS labels (
-    id TEXT PRIMARY KEY,
-    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    color TEXT,
-    icon TEXT,
-    position REAL NOT NULL DEFAULT 0,
-    UNIQUE (workspace_id, name COLLATE NOCASE)
-);
-CREATE TABLE IF NOT EXISTS stages (
-    id TEXT PRIMARY KEY,
-    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    color TEXT,
-    position REAL NOT NULL DEFAULT 0,
-    UNIQUE (workspace_id, name COLLATE NOCASE)
-);
+) WITHOUT ROWID, STRICT;
+
+-- workspace_id is repeated deliberately: the composite foreign keys make it
+-- impossible for a note to carry a label from another workspace.
 CREATE TABLE IF NOT EXISTS note_labels (
-    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
-    PRIMARY KEY (note_id, label_id)
-);
+    workspace_id TEXT NOT NULL,
+    note_id TEXT NOT NULL,
+    label_id TEXT NOT NULL,
+    PRIMARY KEY (note_id, label_id),
+    FOREIGN KEY (note_id, workspace_id)
+        REFERENCES notes(id, workspace_id) ON DELETE CASCADE,
+    FOREIGN KEY (label_id, workspace_id)
+        REFERENCES labels(id, workspace_id) ON DELETE CASCADE
+) WITHOUT ROWID, STRICT;
+
 CREATE TABLE IF NOT EXISTS checklist_history (
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    text TEXT NOT NULL COLLATE NOCASE,
-    uses INTEGER NOT NULL DEFAULT 1,
+    text TEXT NOT NULL COLLATE NOCASE CHECK (trim(text) <> ''),
+    uses INTEGER NOT NULL DEFAULT 1 CHECK (uses > 0),
     last_used_at TEXT NOT NULL,
     PRIMARY KEY (note_id, text)
-);
+) WITHOUT ROWID, STRICT;
+
 CREATE TABLE IF NOT EXISTS attachments (
     id TEXT PRIMARY KEY,
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
     mime TEXT NOT NULL,
     filename TEXT NOT NULL DEFAULT '',
-    size INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0 CHECK (size >= 0),
     created_at TEXT NOT NULL
-);
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS share_links (
     token TEXT PRIMARY KEY,
-    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    target TEXT NOT NULL,
-    -- Exactly one of these is set, decided by `target`. Each cascades, so a
-    -- link dies with the thing it points at rather than resolving to nothing.
+    created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target TEXT NOT NULL CHECK (target IN ('note', 'notes', 'board', 'label')),
     note_id TEXT REFERENCES notes(id) ON DELETE CASCADE,
     workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
     label_id TEXT REFERENCES labels(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL,
-    expires_at TEXT
-);
+    expires_at TEXT,
+    CHECK (
+        (target = 'note' AND note_id IS NOT NULL AND workspace_id IS NULL AND label_id IS NULL) OR
+        (target IN ('notes', 'board') AND note_id IS NULL AND workspace_id IS NOT NULL AND label_id IS NULL) OR
+        (target = 'label' AND note_id IS NULL AND workspace_id IS NULL AND label_id IS NOT NULL)
+    )
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS user_settings (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    data TEXT NOT NULL
-);
+    data TEXT NOT NULL CHECK (json_valid(data))
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_id);
-CREATE INDEX IF NOT EXISTS idx_notes_workspace ON notes(workspace_id);
+) WITHOUT ROWID, STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_notes_workspace_position
+    ON notes(workspace_id, position);
+CREATE INDEX IF NOT EXISTS idx_notes_trash_purge
+    ON notes(trashed_at) WHERE trashed = 1;
+CREATE INDEX IF NOT EXISTS idx_notes_reminders
+    ON notes(reminder_at) WHERE trashed = 0 AND reminder_fired_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notes_stage
+    ON notes(stage_id) WHERE stage_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);
-CREATE INDEX IF NOT EXISTS idx_share_links_owner ON share_links(owner_id);
-CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_note_labels_label ON note_labels(label_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_note ON attachments(note_id);
+CREATE INDEX IF NOT EXISTS idx_share_links_creator ON share_links(created_by);
+CREATE INDEX IF NOT EXISTS idx_share_links_note
+    ON share_links(note_id) WHERE note_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_share_links_workspace
+    ON share_links(workspace_id) WHERE workspace_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_share_links_label
+    ON share_links(label_id) WHERE label_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_share_links_note_target
+    ON share_links(created_by, note_id) WHERE target = 'note';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_share_links_workspace_target
+    ON share_links(created_by, target, workspace_id)
+    WHERE target IN ('notes', 'board');
+CREATE UNIQUE INDEX IF NOT EXISTS uq_share_links_label_target
+    ON share_links(created_by, label_id) WHERE target = 'label';
+CREATE INDEX IF NOT EXISTS idx_versions_note ON note_versions(note_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE);
--- One default workspace per account, enforced rather than assumed: it is the
--- fallback for note creation and for notes owned by a departing member.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
     ON workspaces(owner_id) WHERE is_default = 1;
+PRAGMA user_version = 2;
 "#;
 
-const ADDITIVE_MIGRATIONS: &[&str] = &[
-    "ALTER TABLE attachments ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
-    "ALTER TABLE attachments ADD COLUMN size INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE notes ADD COLUMN transcript_status TEXT NOT NULL DEFAULT 'none'",
-    "ALTER TABLE notes ADD COLUMN last_editor_id TEXT",
-    "ALTER TABLE notes ADD COLUMN reminder_fired_at TEXT",
-    "ALTER TABLE notes ADD COLUMN reminder_repeat TEXT",
-    "ALTER TABLE labels ADD COLUMN color TEXT",
-    "ALTER TABLE labels ADD COLUMN icon TEXT",
-    "ALTER TABLE notes ADD COLUMN stage_id TEXT",
-    "ALTER TABLE notes ADD COLUMN stage_position REAL",
-    "ALTER TABLE labels ADD COLUMN position REAL",
-    "ALTER TABLE workspaces ADD COLUMN notes_enabled INTEGER NOT NULL DEFAULT 1",
-    "ALTER TABLE workspaces ADD COLUMN board_enabled INTEGER NOT NULL DEFAULT 1",
-];
-
-/// Creates the current schema and upgrades databases written by older builds.
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
-    sqlx::raw_sql(SCHEMA).execute(pool).await?;
-    apply_additive_migrations(pool).await;
-    migrate_user_accounts(pool).await?;
-    migrate_checklist_history(pool).await?;
-    migrate_stage_positions(pool).await?;
-    migrate_label_positions(pool).await?;
-    Ok(())
-}
-
-/// Seed board ordering from the grid's custom order, so an existing database's
-/// first board opens in the arrangement its owner already made rather than an
-/// arbitrary one.
-///
-/// This is a data backfill, not DDL, so it cannot live in
-/// [`ADDITIVE_MIGRATIONS`], those re-run on every startup. The `IS NULL`
-/// guard is what makes re-running it harmless, the same way
-/// [`migrate_user_accounts`] guards its own updates. Every row written after
-/// this point carries a stage position from the start.
-async fn migrate_stage_positions(pool: &SqlitePool) -> anyhow::Result<()> {
-    sqlx::query("UPDATE notes SET stage_position = position WHERE stage_position IS NULL")
-        .execute(pool)
+    let application_tables: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master
+         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+    )
+    .fetch_one(pool)
+    .await?;
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(pool)
         .await?;
-    Ok(())
-}
-
-/// Seed label ordering from the alphabetical order they used to be
-/// permanently sorted in, so an existing database's sidebar keeps its
-/// familiar order the first time drag-reorder becomes available, rather than
-/// jumping to an arbitrary one. Same `IS NULL`-guarded backfill shape as
-/// [`migrate_stage_positions`]. The rank is computed without a window
-/// function (portable across older SQLite builds): count how many sibling
-/// labels sort before this one.
-async fn migrate_label_positions(pool: &SqlitePool) -> anyhow::Result<()> {
-    sqlx::query(
-        "UPDATE labels SET position = (
-            SELECT COUNT(*) * 1024.0 FROM labels AS l2
-            WHERE l2.workspace_id = labels.workspace_id
-              AND (l2.name COLLATE NOCASE < labels.name COLLATE NOCASE
-                   OR (l2.name COLLATE NOCASE = labels.name COLLATE NOCASE AND l2.id < labels.id))
-         )
-         WHERE position IS NULL",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// Older rows need values for the new account columns. The placeholder keeps
-/// the migration additive, but it is not a legacy login alias: authentication
-/// always queries the email column only.
-async fn migrate_user_accounts(pool: &SqlitePool) -> anyhow::Result<()> {
-    sqlx::query(
-        "UPDATE users SET name = username
-         WHERE name IS NULL OR trim(name) = ''",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query(
-        "UPDATE users SET email = lower(username) || '@local.invalid'
-         WHERE email IS NULL OR trim(email) = ''",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// These statements intentionally ignore duplicate-column errors: SQLite has
-/// no portable `ADD COLUMN IF NOT EXISTS`, and every migration is additive.
-async fn apply_additive_migrations(pool: &SqlitePool) {
-    for ddl in ADDITIVE_MIGRATIONS {
-        let _ = sqlx::query(ddl).execute(pool).await;
+    if application_tables != 0 && version != SCHEMA_VERSION {
+        anyhow::bail!(
+            "database schema version {version} is incompatible with workspace-owned schema \
+             version {SCHEMA_VERSION}; start with an empty database"
+        );
     }
+    sqlx::raw_sql(SCHEMA).execute(pool).await?;
+    Ok(())
 }
 
-/// Checklist suggestions were once keyed by user. Old rows cannot be safely
-/// attributed to a note, so rebuild and seed from each note's checked items.
-async fn migrate_checklist_history(pool: &SqlitePool) -> anyhow::Result<()> {
-    let has_note_id = sqlx::query("SELECT note_id FROM checklist_history LIMIT 1")
-        .fetch_optional(pool)
+#[cfg(test)]
+mod tests {
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use uuid::Uuid;
+
+    use crate::store::sqlite::SqliteRepository;
+
+    #[tokio::test]
+    async fn workspace_integrity_is_enforced_by_foreign_keys_and_checks() {
+        let path = std::env::temp_dir().join(format!("skippy-schema-{}.db", Uuid::new_v4()));
+        let path_text = path.to_str().unwrap();
+        let repo = SqliteRepository::connect(path_text).await.unwrap();
+        drop(repo);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&path)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+
+        sqlx::raw_sql(
+            "INSERT INTO users (id, name, email, password_hash, created_at) VALUES
+                 ('u1', 'One', 'one@example.test', 'hash', '2026-01-01T00:00:00Z'),
+                 ('u2', 'Two', 'two@example.test', 'hash', '2026-01-01T00:00:00Z');
+             INSERT INTO workspaces (id, owner_id, name, is_default, created_at) VALUES
+                 ('w1', 'u1', 'One', 1, '2026-01-01T00:00:00Z'),
+                 ('w2', 'u2', 'Two', 1, '2026-01-01T00:00:00Z');
+             INSERT INTO stages (id, workspace_id, name) VALUES ('s2', 'w2', 'Other');
+             INSERT INTO labels (id, workspace_id, name) VALUES ('l2', 'w2', 'Other');
+             INSERT INTO notes
+                 (id, workspace_id, created_by, created_at, updated_at)
+             VALUES ('n1', 'w1', 'u1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .execute(&pool)
         .await
-        .is_ok();
-    if has_note_id {
-        return Ok(());
+        .unwrap();
+
+        assert!(
+            sqlx::query("UPDATE notes SET stage_id = 's2' WHERE id = 'n1'")
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        assert!(
+            sqlx::query(
+                "INSERT INTO note_labels (workspace_id, note_id, label_id)
+                 VALUES ('w1', 'n1', 'l2')",
+            )
+            .execute(&pool)
+            .await
+            .is_err()
+        );
+        assert!(
+            sqlx::query("UPDATE notes SET pinned = 2 WHERE id = 'n1'")
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        assert!(
+            sqlx::query("UPDATE notes SET trashed = 1 WHERE id = 'n1'")
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        sqlx::query(
+            "UPDATE notes SET trashed = 1, trashed_at = '2026-01-02T00:00:00Z'
+             WHERE id = 'n1'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            sqlx::query("UPDATE notes SET trashed = 0 WHERE id = 'n1'")
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+        sqlx::query("UPDATE notes SET trashed = 0, trashed_at = NULL WHERE id = 'n1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        pool.close().await;
+        let _ = std::fs::remove_file(path);
     }
 
-    sqlx::query("DROP TABLE checklist_history")
-        .execute(pool)
-        .await?;
-    sqlx::raw_sql(SCHEMA).execute(pool).await?;
-    sqlx::query(
-        "INSERT OR IGNORE INTO checklist_history (note_id, text, uses, last_used_at)
-         SELECT n.id, json_extract(je.value, '$.text'), 1, n.updated_at
-         FROM notes n, json_each(n.items) je
-         WHERE json_extract(je.value, '$.done') = 1
-           AND trim(coalesce(json_extract(je.value, '$.text'), '')) != ''",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
+    #[tokio::test]
+    async fn any_partial_database_fails_fast_instead_of_partially_starting() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(":memory:"))
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE users (id TEXT PRIMARY KEY)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let error = super::initialize(&pool).await.unwrap_err().to_string();
+        assert!(error.contains("start with an empty database"), "{error}");
+    }
 }

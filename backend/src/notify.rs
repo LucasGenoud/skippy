@@ -485,7 +485,7 @@ mod tests {
         NoteRecord {
             workspace_id: "w1".to_string(),
             id: "n1".into(),
-            owner_id: "u1".into(),
+            created_by: Some("u1".into()),
             kind: "text".into(),
             title: title.into(),
             content: content.into(),

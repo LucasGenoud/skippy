@@ -129,7 +129,7 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
 
 /// Attachment blob storage wiring, from STICKY_NOTES_STORAGE:
 /// - "disk" (default): flat files under STICKY_NOTES_UPLOADS.
-/// - "s3": one bucket per note owner in any S3-compatible store (the bundled
+/// - "s3": one installation-wide bucket in any S3-compatible store (the bundled
 ///   docker-compose runs Garage). Unlike the optional services this is a hard
 ///   requirement once selected, so missing config fails startup instead of
 ///   degrading.
@@ -156,7 +156,7 @@ fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
                     .unwrap_or_else(|_| "sticky-notes-".to_string()),
             };
             println!(
-                "file storage: s3 at {} (one bucket per user, prefix {})",
+                "file storage: s3 at {} (attachment bucket prefix {})",
                 cfg.url, cfg.bucket_prefix
             );
             Ok(Arc::new(S3Store::new(cfg)?))

@@ -24,7 +24,7 @@ use crate::search::register_sqlite_vec;
 
 const MAGIC: &[u8; 8] = b"SKPSYS01";
 const FORMAT: &str = "skippy-system-backup";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const MAX_HEADER_BYTES: u32 = 64 * 1024;
 const MAX_RECORD_BYTES: u32 = 64 * 1024;
 const MAX_ATTACHMENTS: u64 = 1_000_000;
@@ -41,7 +41,6 @@ struct ArchiveHeader {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct BlobRecord {
-    owner_id: String,
     id: String,
     size: u64,
     sha256: String,
@@ -49,7 +48,6 @@ struct BlobRecord {
 
 #[derive(Debug, Clone)]
 struct AttachmentRef {
-    owner_id: String,
     id: String,
     size: u64,
 }
@@ -216,15 +214,12 @@ async fn backup_inner(
 
     let mut total_bytes = database_size;
     for attachment in &attachments {
-        let bytes = files
-            .read(&attachment.owner_id, &attachment.id)
-            .await
-            .with_context(|| {
-                format!(
-                    "attachment {} referenced by the database is missing",
-                    attachment.id
-                )
-            })?;
+        let bytes = files.read(&attachment.id).await.with_context(|| {
+            format!(
+                "attachment {} referenced by the database is missing",
+                attachment.id
+            )
+        })?;
         ensure!(
             bytes.len() as u64 == attachment.size,
             "attachment {} has {} bytes but the database records {}",
@@ -233,7 +228,6 @@ async fn backup_inner(
             attachment.size
         );
         let record = BlobRecord {
-            owner_id: attachment.owner_id.clone(),
             id: attachment.id.clone(),
             size: bytes.len() as u64,
             sha256: hex::encode(Sha256::digest(&bytes)),
@@ -342,7 +336,7 @@ async fn restore_inner(
     for (index, record) in records.iter().enumerate() {
         let bytes = fs::read(staged_blobs.join(index.to_string()))?;
         files
-            .save(&record.owner_id, &record.id, &bytes)
+            .save(&record.id, &bytes)
             .await
             .with_context(|| format!("restoring attachment {}", record.id))?;
     }
@@ -352,13 +346,10 @@ async fn restore_inner(
     // Old blobs not referenced by the restored database are now unreachable.
     // FileStore deletion is deliberately best-effort, matching ordinary note
     // deletion; any storage orphan is harmless and can be pruned separately.
-    let restored: HashSet<(String, String)> = records
-        .iter()
-        .map(|r| (r.owner_id.clone(), r.id.clone()))
-        .collect();
+    let restored: HashSet<String> = records.iter().map(|r| r.id.clone()).collect();
     for old in old_attachments {
-        if !restored.contains(&(old.owner_id.clone(), old.id.clone())) {
-            files.delete(&old.owner_id, &old.id).await;
+        if !restored.contains(&old.id) {
+            files.delete(&old.id).await;
         }
     }
 
@@ -407,21 +398,16 @@ async fn open_readonly(path: &Path) -> anyhow::Result<SqlitePool> {
 
 async fn attachment_refs(path: &Path) -> anyhow::Result<Vec<AttachmentRef>> {
     let pool = open_readonly(path).await?;
-    let rows = sqlx::query(
-        "SELECT a.id, n.owner_id, a.size
-         FROM attachments a JOIN notes n ON n.id = a.note_id
-         ORDER BY a.id",
-    )
-    .fetch_all(&pool)
-    .await
-    .context("reading attachment inventory")?;
+    let rows = sqlx::query("SELECT id, size FROM attachments ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .context("reading attachment inventory")?;
     pool.close().await;
     rows.into_iter()
         .map(|row| {
             let size: i64 = row.get("size");
             ensure!(size >= 0, "attachment has a negative size");
             Ok(AttachmentRef {
-                owner_id: row.get("owner_id"),
                 id: row.get("id"),
                 size: size as u64,
             })
@@ -476,7 +462,7 @@ fn extract_and_validate_archive(
             serde_json::from_slice(&read_exact_vec(&mut reader, metadata_len as u64)?)
                 .context("invalid attachment metadata")?;
         ensure!(
-            !record.owner_id.is_empty() && !record.id.is_empty(),
+            !record.id.is_empty(),
             "backup contains an invalid attachment identity"
         );
         ensure!(
@@ -485,7 +471,7 @@ fn extract_and_validate_archive(
             record.id
         );
         ensure!(
-            seen.insert((record.owner_id.clone(), record.id.clone())),
+            seen.insert(record.id.clone()),
             "backup contains a duplicate attachment"
         );
         let path = staged_blobs.join(index.to_string());
@@ -515,23 +501,20 @@ async fn validate_database(path: &Path, records: &[BlobRecord]) -> anyhow::Resul
         integrity == "ok",
         "restored database failed integrity check: {integrity}"
     );
-    let rows = sqlx::query(
-        "SELECT a.id, n.owner_id, a.size
-         FROM attachments a JOIN notes n ON n.id = a.note_id",
-    )
-    .fetch_all(&pool)
-    .await?;
+    let rows = sqlx::query("SELECT id, size FROM attachments")
+        .fetch_all(&pool)
+        .await?;
     pool.close().await;
-    let database: HashMap<(String, String), u64> = rows
+    let database: HashMap<String, u64> = rows
         .into_iter()
         .map(|row| {
             let size: i64 = row.get("size");
-            ((row.get("owner_id"), row.get("id")), size.max(0) as u64)
+            (row.get("id"), size.max(0) as u64)
         })
         .collect();
-    let archived: HashMap<(String, String), u64> = records
+    let archived: HashMap<String, u64> = records
         .iter()
-        .map(|record| ((record.owner_id.clone(), record.id.clone()), record.size))
+        .map(|record| (record.id.clone(), record.size))
         .collect();
     ensure!(
         database == archived,
@@ -709,8 +692,8 @@ mod tests {
             .connect_with(options)
             .await?;
         sqlx::query(
-            "INSERT INTO users (id, username, name, email, password_hash, created_at)
-             VALUES ('u1', 'user', 'User', 'before@example.test', 'hash', '2026-01-01T00:00:00Z')",
+            "INSERT INTO users (id, name, email, password_hash, created_at)
+             VALUES ('u1', 'User', 'before@example.test', 'hash', '2026-01-01T00:00:00Z')",
         )
         .execute(&pool)
         .await?;
@@ -722,10 +705,10 @@ mod tests {
         .await?;
         sqlx::query(
             "INSERT INTO notes
-             (id, owner_id, workspace_id, kind, title, content, items, color, pinned,
+             (id, workspace_id, created_by, kind, title, content, items, color, pinned,
               archived, trashed, position, transcript_status, created_at, updated_at,
               stage_position)
-             VALUES ('n1', 'u1', 'w1', 'text', 'Backup note', 'body', '[]', 'default',
+             VALUES ('n1', 'w1', 'u1', 'text', 'Backup note', 'body', '[]', 'default',
                      0, 0, 0, 0, 'none', '2026-01-01T00:00:00Z',
                      '2026-01-01T00:00:00Z', 0)",
         )
@@ -750,7 +733,7 @@ mod tests {
         let archive = root.join("system.skb");
         seed_database(&db).await?;
         let disk: Arc<dyn FileStore> = Arc::new(DiskStore::new(&uploads));
-        disk.save("u1", "a1", b"old").await?;
+        disk.save("a1", b"old").await?;
 
         // A running server lock does not block an online backup.
         let server_lock = SystemLock::acquire(&db)?;
@@ -768,7 +751,7 @@ mod tests {
             .execute(&pool)
             .await?;
         pool.close().await;
-        disk.save("u1", "a1", b"new").await?;
+        disk.save("a1", b"new").await?;
 
         let restored = system_restore(&db, disk.clone(), &archive, false).await?;
         assert_eq!(restored.attachments, 1);
@@ -778,10 +761,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|path| path.exists())
         );
-        assert_eq!(
-            disk.read("u1", "a1").await.as_deref(),
-            Some(b"old".as_slice())
-        );
+        assert_eq!(disk.read("a1").await.as_deref(), Some(b"old".as_slice()));
 
         let pool = open_readonly(&db).await?;
         let email: String = sqlx::query("SELECT email FROM users WHERE id = 'u1'")
@@ -803,7 +783,7 @@ mod tests {
         let archive = root.join("system.skb");
         seed_database(&db).await?;
         let disk: Arc<dyn FileStore> = Arc::new(DiskStore::new(&uploads));
-        disk.save("u1", "a1", b"old").await?;
+        disk.save("a1", b"old").await?;
         system_backup(&db, disk.clone(), &archive).await?;
 
         let _server_lock = SystemLock::acquire(&db)?;
@@ -822,7 +802,7 @@ mod tests {
         let archive = root.join("system.skb");
         seed_database(&db).await?;
         let disk: Arc<dyn FileStore> = Arc::new(DiskStore::new(&uploads));
-        disk.save("u1", "a1", b"old").await?;
+        disk.save("a1", b"old").await?;
         system_backup(&db, disk.clone(), &archive).await?;
         let mut bytes = fs::read(&archive)?;
         *bytes.last_mut().unwrap() ^= 0xff;
@@ -833,10 +813,7 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert_eq!(
-            disk.read("u1", "a1").await.as_deref(),
-            Some(b"old".as_slice())
-        );
+        assert_eq!(disk.read("a1").await.as_deref(), Some(b"old".as_slice()));
         let pool = open_readonly(&db).await?;
         let count: i64 = sqlx::query("SELECT COUNT(*) FROM users")
             .fetch_one(&pool)

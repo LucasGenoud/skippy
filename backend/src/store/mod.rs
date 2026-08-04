@@ -1,6 +1,7 @@
 pub mod sqlite;
 mod sqlite_rows;
 mod sqlite_schema;
+mod sqlite_views;
 
 use async_trait::async_trait;
 
@@ -22,23 +23,21 @@ impl<E: Into<anyhow::Error>> From<E> for RepoError {
 pub type RepoResult<T> = Result<T, RepoError>;
 
 /// What `purge_trash_before` removed, enough for the caller to clean up the
-/// state that lives outside the rows (attachment blobs keyed by the owner,
-/// search-index entries).
+/// state that lives outside the rows (attachment blobs and search entries).
 pub struct PurgedNote {
     pub note_id: String,
-    pub owner_id: String,
     pub attachment_ids: Vec<String>,
 }
 
 /// Everything outside the relational database that must be refreshed after an
 /// account is removed.
 pub struct DeletedAccount {
-    /// Notes deleted because the account owned either the note or its
-    /// workspace. Their attachment rows cascade away, so callers need this
-    /// snapshot to remove the actual blobs.
+    /// Notes deleted because the account owned their workspace. Their
+    /// attachment rows cascade away, so callers need this snapshot to remove
+    /// the actual blobs.
     pub purged_notes: Vec<PurgedNote>,
-    /// Notes that survive but whose participants or workspace changed.
-    pub remaining_note_ids: Vec<String>,
+    /// Workspace vector collections that can be dropped wholesale.
+    pub deleted_workspace_ids: Vec<String>,
     /// Accounts whose open clients need to refetch workspace/note rosters.
     pub audience: Vec<String>,
 }
@@ -47,6 +46,7 @@ pub struct DeletedAccount {
 /// Attachment rows cascade with their notes, so callers need this snapshot to
 /// remove the actual blobs and semantic-index entries after the transaction.
 pub struct DeletedWorkspace {
+    pub workspace_id: String,
     pub purged_notes: Vec<PurgedNote>,
     /// Former roster members and direct note collaborators whose open clients
     /// need to refetch after the workspace and notes disappear.
@@ -73,9 +73,9 @@ pub trait Repository: Send + Sync {
     /// workspace with them. Used to refresh public display names after a
     /// profile change.
     async fn account_audience(&self, user_id: &str) -> RepoResult<Vec<String>>;
-    /// Permanently remove an account in one transaction. Every note owned by
-    /// the account is deleted, as is every note inside a workspace the account
-    /// owns, regardless of that note's owner.
+    /// Permanently remove an account in one transaction. Its workspaces and
+    /// every note they own are deleted. Notes created by the account in other
+    /// users' workspaces survive with creator attribution cleared.
     async fn delete_account(&self, user_id: &str) -> RepoResult<Option<DeletedAccount>>;
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()>;
     async fn user_id_for_token(&self, token: &str) -> RepoResult<Option<String>>;
@@ -99,18 +99,12 @@ pub trait Repository: Send + Sync {
     async fn workspace_member_ids(&self, workspace_id: &str) -> RepoResult<Vec<String>>;
     async fn is_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;
     async fn add_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<()>;
-    /// Atomically remove a member and move every note they own in that
-    /// workspace back to their default workspace. `None` means they were not
-    /// a member; `Some` carries the moved ids for visibility reindexing.
-    async fn remove_workspace_member(
-        &self,
-        workspace_id: &str,
-        user_id: &str,
-    ) -> RepoResult<Option<Vec<String>>>;
+    /// Atomically remove a member. Workspace-owned notes stay in place.
+    async fn remove_workspace_member(&self, workspace_id: &str, user_id: &str) -> RepoResult<bool>;
 
     // -- notes ---------------------------------------------------------------
-    /// Every note the user can see, owned, shared with them directly, or held
-    /// by a workspace they belong to, decorated for that user.
+    /// Every note the user can see through workspace membership or a direct
+    /// share, decorated for that user.
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>>;
     async fn note_view(&self, note_id: &str, viewer_id: &str) -> RepoResult<Option<NoteView>>;
     /// One note only when `user_id` can currently see it. Use this at request
@@ -182,8 +176,8 @@ pub trait Repository: Send + Sync {
     ) -> RepoResult<()>;
 
     // -- sharing ---------------------------------------------------------------
-    /// Everyone who can see the note: its owner, its direct collaborators, and
-    /// every member of the workspace holding it.
+    /// Everyone who can see the note: direct collaborators and every member
+    /// of the workspace that owns it.
     async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>>;
     async fn is_participant(&self, note_id: &str, user_id: &str) -> RepoResult<bool>;
     async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()>;

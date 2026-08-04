@@ -182,3 +182,98 @@ async fn deleting_a_shared_note_removes_it_for_everyone() {
     assert_eq!(list_notes(&app, &ada).await.len(), 0);
     assert_eq!(list_notes(&app, &bob).await.len(), 0);
 }
+
+#[tokio::test]
+async fn workspace_owner_controls_sharing_of_member_authored_notes() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada_workspace_share").await;
+    let (bob, bob_id) = register(&app, "bob_workspace_share").await;
+    let (eve, _) = register(&app, "eve_workspace_share").await;
+
+    let (_, workspace) = send(
+        &app,
+        "POST",
+        "/api/workspaces",
+        Some(&ada),
+        Some(json!({"name": "Team"})),
+    )
+    .await;
+    let workspace_id = workspace["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/workspaces/{workspace_id}/members"),
+        Some(&ada),
+        Some(json!({"email": test_email("bob_workspace_share")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let note = create_note(
+        &app,
+        &bob,
+        json!({
+            "title": "Written by Bob",
+            "workspace_id": workspace_id,
+        }),
+    )
+    .await;
+    let note_id = note["id"].as_str().unwrap();
+
+    // Creation attribution does not grant lifecycle authority: Bob may edit
+    // the workspace's note, but only workspace owner Ada may share it.
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{note_id}/collaborators"),
+        Some(&bob),
+        Some(json!({"email": test_email("eve_workspace_share")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, shared) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{note_id}/collaborators"),
+        Some(&ada),
+        Some(json!({"email": test_email("eve_workspace_share")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(shared["owner"]["name"], "ada_workspace_share");
+    assert_eq!(list_notes(&app, &eve).await.len(), 1);
+
+    // Direct sharing and workspace membership are independent grants. Giving
+    // Bob an explicit share keeps access after he is removed from the roster;
+    // removing that final grant then hides the note.
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{note_id}/collaborators"),
+        Some(&ada),
+        Some(json!({"email": test_email("bob_workspace_share")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/workspaces/{workspace_id}/members/{bob_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(list_notes(&app, &bob).await.len(), 1);
+
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/notes/{note_id}/collaborators/{bob_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(list_notes(&app, &bob).await.is_empty());
+}

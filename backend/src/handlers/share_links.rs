@@ -25,7 +25,7 @@ use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::now;
+use super::{is_note_workspace_owner, now};
 
 /// Bytes of randomness in a token. A link is a bearer capability, so the token
 /// carries the whole security of the page: 192 bits is far past guessing, and
@@ -57,6 +57,12 @@ pub async fn list_share_links(
     let links = state.repo.share_links_for_user(&user_id).await?;
     let mut out = Vec::with_capacity(links.len());
     for link in links {
+        // Settings describes this as the list of things that are currently
+        // public. Keep expired capabilities out of it; create_share_link also
+        // replaces them when the same target is published again.
+        if expired(&link) {
+            continue;
+        }
         out.push(view_of(&state, &link).await?);
     }
     Ok(Json(out))
@@ -96,7 +102,7 @@ pub async fn create_share_link(
                 .note_record_for_user(&id, &user_id)
                 .await?
                 .ok_or(ApiError::NotFound)?;
-            if record.owner_id != user_id {
+            if !is_note_workspace_owner(&state, &record, &user_id).await? {
                 return Err(ApiError::Forbidden(
                     "only the owner can share a note publicly",
                 ));
@@ -142,13 +148,22 @@ pub async fn create_share_link(
         )
         .await?
     {
-        let view = view_of(&state, &existing).await?;
-        return Ok((StatusCode::OK, Json(view)));
+        if !expired(&existing) {
+            let view = view_of(&state, &existing).await?;
+            return Ok((StatusCode::OK, Json(view)));
+        }
+        // An expired token is no longer a public link. Remove it before
+        // minting the replacement so idempotency does not strand a target on
+        // a permanently dead capability.
+        state
+            .repo
+            .delete_share_link(&user_id, &existing.token)
+            .await?;
     }
 
     let link = ShareLink {
         token: new_token(),
-        owner_id: user_id,
+        created_by: user_id,
         target,
         note_id,
         workspace_id,
@@ -189,15 +204,15 @@ pub async fn public_share(
 
     let owner = state
         .repo
-        .user_by_id(&link.owner_id)
+        .user_by_id(&link.created_by)
         .await?
         .ok_or(ApiError::NotFound)?;
     // Everything the publisher can currently see. The target narrows it below,
     // which is what keeps a public page from ever outrunning its owner's own
     // access: lose access to a note, and it drops out of the page too.
-    let mut visible = state.repo.notes_for_user(&link.owner_id).await?;
+    let mut visible = state.repo.notes_for_user(&link.created_by).await?;
     state.sign_views(&mut visible);
-    let labels = state.repo.labels_for_user(&link.owner_id).await?;
+    let labels = state.repo.labels_for_user(&link.created_by).await?;
 
     let (title, notes, stages) = match link.target.as_str() {
         SHARE_TARGET_NOTE => {
@@ -215,7 +230,11 @@ pub async fn public_share(
                 .workspace(&workspace_id)
                 .await?
                 .ok_or(ApiError::NotFound)?;
-            (workspace.name, live_in_workspace(visible, &workspace_id), vec![])
+            (
+                workspace.name,
+                live_in_workspace(visible, &workspace_id),
+                vec![],
+            )
         }
         SHARE_TARGET_BOARD => {
             let workspace_id = link.workspace_id.clone().unwrap_or_default();
@@ -226,7 +245,7 @@ pub async fn public_share(
                 .ok_or(ApiError::NotFound)?;
             let stages = state
                 .repo
-                .stages_for_user(&link.owner_id)
+                .stages_for_user(&link.created_by)
                 .await?
                 .into_iter()
                 .filter(|stage| stage.workspace_id == workspace_id)
@@ -245,9 +264,7 @@ pub async fn public_share(
                 .ok_or(ApiError::NotFound)?;
             let notes = visible
                 .into_iter()
-                .filter(|v| {
-                    !v.note.trashed && !v.note.archived && v.label_ids.contains(&label_id)
-                })
+                .filter(|v| !v.note.trashed && !v.note.archived && v.label_ids.contains(&label_id))
                 .collect();
             (label.name.clone(), notes, vec![])
         }
@@ -295,9 +312,7 @@ pub async fn public_share(
 fn live_in_workspace(views: Vec<NoteView>, workspace_id: &str) -> Vec<NoteView> {
     let mut notes: Vec<NoteView> = views
         .into_iter()
-        .filter(|v| {
-            v.note.workspace_id == workspace_id && !v.note.trashed && !v.note.archived
-        })
+        .filter(|v| v.note.workspace_id == workspace_id && !v.note.trashed && !v.note.archived)
         .collect();
     notes.sort_by(|a, b| {
         b.note
@@ -397,7 +412,7 @@ async fn view_of(state: &AppState, link: &ShareLink) -> ApiResult<ShareLinkView>
         _ => match &link.label_id {
             Some(id) => state
                 .repo
-                .labels_for_user(&link.owner_id)
+                .labels_for_user(&link.created_by)
                 .await?
                 .into_iter()
                 .find(|l| l.id == *id)

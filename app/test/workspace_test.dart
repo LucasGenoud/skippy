@@ -234,31 +234,52 @@ void main() {
       expect(api.notes.containsKey('d'), isFalse);
     });
 
-    test('leaving one keeps our notes and forgets the rest', () async {
-      api.workspaces[work] = const Workspace(
-        id: work,
-        name: 'Work',
-        owner: UserRef(id: 'u-ada', name: 'Ada'),
-        members: [UserRef(id: 'u-me', name: 'Me Example')],
-      );
-      api.notes['b'] = noteIn(work, 'b', title: 'mine');
-      api.notes['c'] = noteIn(
-        work,
-        'c',
-        title: 'theirs',
-        owner: const UserRef(id: 'u-ada', name: 'Ada'),
-      );
-      await store.load();
+    test(
+      'leaving keeps notes in the workspace and retains direct shares',
+      () async {
+        api.workspaces[work] = const Workspace(
+          id: work,
+          name: 'Work',
+          owner: UserRef(id: 'u-ada', name: 'Ada'),
+          members: [UserRef(id: 'u-me', name: 'Me Example')],
+        );
+        api.notes['b'] = noteIn(
+          work,
+          'b',
+          title: 'workspace note',
+          owner: const UserRef(id: 'u-ada', name: 'Ada'),
+        );
+        api.notes['c'] = noteIn(
+          work,
+          'c',
+          title: 'shared directly too',
+          owner: const UserRef(id: 'u-ada', name: 'Ada'),
+          collaborators: const [UserRef(id: 'u-me', name: 'Me Example')],
+        );
+        await store.load();
 
-      expect(store.canDeleteWorkspace(work), isFalse, reason: 'not the owner');
-      store.leaveWorkspace(work);
+        expect(
+          store.canDeleteWorkspace(work),
+          isFalse,
+          reason: 'not the owner',
+        );
+        store.leaveWorkspace(work);
 
-      expect(store.workspaceById(work), isNull);
-      expect(store.noteById('b')?.workspaceId, 'w-default');
-      expect(store.noteById('c'), isNull);
-      await settle();
-      expect(api.workspaces[work]?.members, isEmpty);
-    });
+        expect(store.workspaceById(work), isNull);
+        expect(store.noteById('b'), isNull);
+        expect(store.noteById('c')?.workspaceId, work);
+        expect(
+          store.notesFor(ViewSelection.notes, '').others.map((note) => note.id),
+          contains('c'),
+        );
+        await settle();
+        expect(api.workspaces[work]?.members, isEmpty);
+        // Leaving changes access, not ownership or placement. Both rows remain
+        // in the workspace on the server; only the direct share stays visible.
+        expect(api.notes['b']?.workspaceId, work);
+        expect(api.notes['c']?.workspaceId, work);
+      },
+    );
 
     test('inviting a member surfaces the server rejection', () async {
       await store.load();

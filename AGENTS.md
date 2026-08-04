@@ -111,7 +111,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/background.rs`: shared post-write jobs for versions, search, auto-labeling, and notifications.
 - `backend/src/store/mod.rs`: `Repository` contract. This is the persistence seam and permission-aware query boundary.
 - `backend/src/store/sqlite.rs`: SQLite repository implementation and high-level query methods.
-- `backend/src/store/sqlite_schema.rs`: schema creation and additive startup migrations.
+- `backend/src/store/sqlite_schema.rs`: current clean-break schema creation.
 - `backend/src/store/sqlite_rows.rs`: SQL row structs and conversion into domain models.
 - `backend/src/files.rs`: independent `FileStore` seam, disk and S3 implementations, signing helpers.
 - `backend/src/search.rs`: embeddings API client, sqlite-vec tables, indexing and search implementation.
@@ -179,9 +179,9 @@ Supported note kinds are `text`, `markdown`, `checklist`, and `audio`. Audio tra
 
 ### Permissions and ownership
 
-Every note and label belongs to exactly one workspace. A participant is the note's owner, one of its direct collaborators, or a member of the workspace holding it; the repository derives all three, so a new note-related query gets workspace access for free by going through `participant_ids`/`is_participant` rather than reading `note_shares` directly.
+Every note and label belongs to exactly one workspace. The workspace is the note's sole owner; `notes.created_by` is nullable attribution and grants no lifecycle authority. A participant is a direct collaborator or a member (including the owner) of the workspace holding it, so new note-related queries should go through `participant_ids`/`is_participant` rather than reading `note_shares` directly.
 
-Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. Owners control destructive sharing and note lifecycle actions, including moving a note between workspaces; collaborators can edit and leave. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. Deleting a workspace permanently deletes every note and attachment it contains, regardless of author; leaving or being removed moves that member's own notes to their default workspace. A user's default workspace can never be deleted or left.
+Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. The owning workspace's owner controls destructive sharing and note lifecycle actions, including moving a note between workspaces; members and direct collaborators can edit. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. Deleting a workspace permanently deletes every note and attachment it contains, regardless of creator; leaving or being removed never moves or deletes workspace-owned notes. Deleting an account deletes its owned workspaces but preserves notes it created in other users' workspaces, clearing creator attribution. A user's default workspace can never be deleted or left while the account exists.
 
 Labels are a workspace's shared taxonomy, not personal state: every member sees and applies the same set. Someone who reached a note through a direct share is not in its workspace, so they see none of its labels and their `label_ids` patch is ignored rather than clearing what members attached. Pin, archive, reminder, color, and custom ordering are shared note state.
 
@@ -195,7 +195,7 @@ Recheck the entire permission matrix when adding a note-related endpoint. Do not
 
 Note content edits drive version capture, semantic reindexing, automatic labeling, collaborator notification, and WebSocket fan-out. Organization-only edits should retain their deliberately smaller side-effect set.
 
-Anything that changes who can see a note, a workspace roster change or a note moving workspaces, must reindex the affected notes, because the vector index stores one row per participant. Workspace deletion must remove every contained note from the index and delete its attachment blobs. A move must also notify the workspace it left, not only the one it joined. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
+Each note has one embedding in the collection owned by its workspace. Sharing and roster changes do not rewrite embeddings; authorization is rechecked against the relational repository over vector candidates. A note move relocates its vector between workspace collections and must notify the workspace it left, not only the one it joined. Workspace deletion drops its collection and deletes attachment blobs. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
 
 Checklist history is recorded on a transition to checked, shared with participants in that note, and capped at 500 records per note.
 
@@ -211,7 +211,7 @@ Every notification connector key in `kNotifyChannels` must match a backend conne
 
 ### Semantic search and chat
 
-Embeddings come from an external OpenAI-compatible API (`STICKY_NOTES_EMBED_URL`), never from a model loaded in-process, keep it that way, since an in-process model dominates the server's memory. The vector width is probed at startup rather than hardcoded, and `{model}:{dims}` is the index signature: change either and `SqliteVectorIndex::connect` drops the table so the startup reindex re-embeds. sqlite-vec stores participant-scoped rows so sharing changes visibility without leaking results. It partitions by participant and not by workspace, so a `workspace_id` filter on search or chat is applied over the index's hits and has to over-fetch to keep the ranked list full. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
+Embeddings come from an external OpenAI-compatible API (`STICKY_NOTES_EMBED_URL`), never from a model loaded in-process, keep it that way, since an in-process model dominates the server's memory. The vector width is probed at startup rather than hardcoded, and `{model}:{dims}` is the index signature: change either and `SqliteVectorIndex::connect` drops all workspace collections so startup reindexing re-embeds. sqlite-vec uses one virtual table per workspace and one vector per note. Search/chat select the caller's accessible workspace collections and must still recheck every hit through the repository, especially for direct shares into an otherwise inaccessible workspace. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
 
 Chat retrieval and writes depend on the same optional embedding and LLM configuration paths. Stream frame types are shared conceptually between `handlers/chat.rs` and `models/chat.dart`; add unknown-frame resilience on the client when extending the protocol.
 
@@ -245,11 +245,11 @@ Decide first whether it is workspace state (shared by every member, like labels)
 
 1. Update Rust domain and request/update payloads.
 2. Update create/update application logic and side-effect classification.
-3. Update the `Repository` trait, SQLite schema/migration, SQL statements, row decoding, and tests.
+3. Update the `Repository` trait, SQLite schema, SQL statements, row decoding, and tests.
 4. Update the Dart model, copy/JSON methods, local cache, API payloads, and `FakeApi`.
 5. Update store/UI behavior and both focused and cross-layer tests.
 
-Migrations run at startup and should be additive and safe for existing databases. Never rewrite or delete a developer's local database as part of a code change.
+The current workspace-owned schema is a clean break and has no in-place migration layer. Schema changes must update fresh-database creation and compatible backup validation. Never rewrite or delete a developer's local database as part of a code change.
 
 ### Add a setting or optional capability
 

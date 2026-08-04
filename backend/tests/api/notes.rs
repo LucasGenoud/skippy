@@ -353,19 +353,13 @@ async fn trash_and_purge() {
 async fn purging_trash_deletes_attachment_blobs() {
     let app_state = state().await;
     let app = build_app(app_state.clone());
-    let (token, user_id) = register(&app, "ada").await;
+    let (token, _user_id) = register(&app, "ada").await;
     let note = create_note(&app, &token, json!({"title": "with file"})).await;
     let id = note["id"].as_str().unwrap();
     let (status, attachment) = upload(&app, &token, id, "image/png", b"pixels").await;
     assert_eq!(status, StatusCode::CREATED);
     let attachment_id = attachment["id"].as_str().unwrap();
-    assert!(
-        app_state
-            .files
-            .read(&user_id, attachment_id)
-            .await
-            .is_some()
-    );
+    assert!(app_state.files.read(attachment_id).await.is_some());
 
     let (status, _) = send(
         &app,
@@ -386,11 +380,7 @@ async fn purging_trash_deletes_attachment_blobs() {
 
     assert_eq!(list_notes(&app, &token).await.len(), 0);
     assert!(
-        app_state
-            .files
-            .read(&user_id, attachment_id)
-            .await
-            .is_none(),
+        app_state.files.read(attachment_id).await.is_none(),
         "purging a trashed note must delete its blobs"
     );
 }

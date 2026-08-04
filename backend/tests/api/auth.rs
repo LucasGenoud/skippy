@@ -181,6 +181,7 @@ async fn deleting_an_account_removes_owned_workspaces_and_every_note_inside_them
     let app = build_app(app_state.clone());
     let (ada, ada_id) = register(&app, "ada").await;
     let (grace, grace_id) = register(&app, "grace").await;
+    let (linus, _) = register(&app, "linus").await;
 
     let (_, second_login) = send(
         &app,
@@ -197,6 +198,8 @@ async fn deleting_an_account_removes_owned_workspaces_and_every_note_inside_them
 
     let (_, ada_workspaces) = send(&app, "GET", "/api/workspaces", Some(&ada), None).await;
     let ada_default = ada_workspaces[0]["id"].as_str().unwrap();
+    let (_, grace_workspaces) = send(&app, "GET", "/api/workspaces", Some(&grace), None).await;
+    let grace_default = grace_workspaces[0]["id"].as_str().unwrap();
     let (status, _) = send(
         &app,
         "POST",
@@ -206,13 +209,22 @@ async fn deleting_an_account_removes_owned_workspaces_and_every_note_inside_them
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/workspaces/{grace_default}/members"),
+        Some(&grace),
+        Some(json!({"email": "ada@example.test"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 
     let ada_note = create_note(&app, &ada, json!({"title": "Ada's note"})).await;
     let ada_note_id = ada_note["id"].as_str().unwrap();
     let (status, attachment) = upload(&app, &ada, ada_note_id, "text/plain", b"owned bytes").await;
     assert_eq!(status, StatusCode::CREATED);
     let attachment_id = attachment["id"].as_str().unwrap();
-    assert!(app_state.files.read(&ada_id, attachment_id).await.is_some());
+    assert!(app_state.files.read(attachment_id).await.is_some());
 
     let grace_note = create_note(
         &app,
@@ -229,13 +241,63 @@ async fn deleting_an_account_removes_owned_workspaces_and_every_note_inside_them
         upload(&app, &grace, grace_note_id, "text/plain", b"grace bytes").await;
     assert_eq!(status, StatusCode::CREATED);
     let grace_attachment_id = grace_attachment["id"].as_str().unwrap();
-    assert!(
+    assert!(app_state.files.read(grace_attachment_id).await.is_some());
+    let retained_note = create_note(
+        &app,
+        &ada,
+        json!({
+            "id": "ada-in-graces-workspace",
+            "workspace_id": grace_default,
+            "title": "Owned by Grace's workspace"
+        }),
+    )
+    .await;
+    assert_eq!(retained_note["owner"]["id"], grace_id);
+    assert_eq!(
         app_state
-            .files
-            .read(&grace_id, grace_attachment_id)
+            .repo
+            .note_record("ada-in-graces-workspace")
             .await
-            .is_some()
+            .unwrap()
+            .unwrap()
+            .created_by,
+        Some(ada_id.clone())
     );
+    let (status, retained_attachment) = upload(
+        &app,
+        &ada,
+        "ada-in-graces-workspace",
+        "text/plain",
+        b"survives creator deletion",
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let retained_attachment_id = retained_attachment["id"].as_str().unwrap();
+
+    // Grace's workspace owns this note, so Grace also owns its sharing
+    // lifecycle even though Ada created it. Both grants must outlive Ada.
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes/ada-in-graces-workspace/collaborators",
+        Some(&grace),
+        Some(json!({"email": "linus@example.test"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, public_link) = send(
+        &app,
+        "POST",
+        "/api/share-links",
+        Some(&grace),
+        Some(json!({
+            "target": "note",
+            "note_id": "ada-in-graces-workspace"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let public_token = public_link["token"].as_str().unwrap().to_string();
 
     // A password typo must leave the account and both sessions untouched.
     let (status, _) = send(
@@ -271,21 +333,42 @@ async fn deleting_an_account_removes_owned_workspaces_and_every_note_inside_them
             StatusCode::UNAUTHORIZED
         );
     }
-    assert!(app_state.files.read(&ada_id, attachment_id).await.is_none());
-    assert!(
-        app_state
-            .files
-            .read(&grace_id, grace_attachment_id)
-            .await
-            .is_none()
-    );
+    assert!(app_state.files.read(attachment_id).await.is_none());
+    assert!(app_state.files.read(grace_attachment_id).await.is_none());
+    assert!(app_state.files.read(retained_attachment_id).await.is_some());
 
     // Grace keeps her account and default workspace, but her note was inside
     // Ada's workspace and is therefore deleted with that workspace.
     let (_, grace_workspaces) = send(&app, "GET", "/api/workspaces", Some(&grace), None).await;
     assert_eq!(grace_workspaces.as_array().unwrap().len(), 1);
     let notes = list_notes(&app, &grace).await;
-    assert!(notes.is_empty());
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0]["id"], "ada-in-graces-workspace");
+    assert_eq!(notes[0]["owner"]["id"], grace_id);
+    let linus_notes = list_notes(&app, &linus).await;
+    assert_eq!(linus_notes.len(), 1);
+    assert_eq!(linus_notes[0]["id"], "ada-in-graces-workspace");
+    let (status, public_page) = send(
+        &app,
+        "GET",
+        &format!("/api/public/{public_token}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(public_page["notes"][0]["id"], "ada-in-graces-workspace");
+    assert_eq!(
+        app_state
+            .repo
+            .note_record("ada-in-graces-workspace")
+            .await
+            .unwrap()
+            .unwrap()
+            .created_by,
+        None,
+        "creator attribution is cleared without deleting the workspace-owned note"
+    );
 
     // The email is free again because the account row itself was removed.
     let (status, _) = send(

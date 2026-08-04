@@ -14,7 +14,9 @@ use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
 use super::versions::{VERSION_SESSION_GAP_SECS, seconds_since, version_of};
-use super::{CHANGED_MSG, new_id, now, require_participant, resolve_workspace};
+use super::{
+    CHANGED_MSG, is_note_workspace_owner, new_id, now, require_participant, resolve_workspace,
+};
 
 const TRASH_RETENTION_DAYS: i64 = 7;
 
@@ -47,8 +49,8 @@ fn validate_reminder_repeat(value: Option<&str>) -> ApiResult<()> {
     Ok(())
 }
 
-fn validate_update(record: &NoteRecord, user_id: &str, body: &UpdateNote) -> ApiResult<()> {
-    if body.trashed.is_some() && record.owner_id != user_id {
+fn validate_update(record: &NoteRecord, is_owner: bool, body: &UpdateNote) -> ApiResult<()> {
+    if body.trashed.is_some() && !is_owner {
         return Err(ApiError::Forbidden(
             "only the owner can trash or restore a note",
         ));
@@ -59,7 +61,7 @@ fn validate_update(record: &NoteRecord, user_id: &str, body: &UpdateNote) -> Api
         .workspace_id
         .as_ref()
         .is_some_and(|id| *id != record.workspace_id)
-        && record.owner_id != user_id
+        && !is_owner
     {
         return Err(ApiError::Forbidden(
             "only the owner can move a note to another workspace",
@@ -161,7 +163,7 @@ pub async fn purge_old_trash(state: &AppState) -> ApiResult<()> {
 pub async fn purge_trash(state: &AppState, cutoff: &str) -> ApiResult<()> {
     for note in state.repo.purge_trash_before(cutoff).await? {
         for attachment_id in &note.attachment_ids {
-            state.files.delete(&note.owner_id, attachment_id).await;
+            state.files.delete(attachment_id).await;
         }
         state.unindex_note_later(&note.note_id);
     }
@@ -195,6 +197,19 @@ pub async fn create_note_for_user(
         ));
     }
     let workspace_id = resolve_workspace(state, user_id, body.workspace_id.as_deref()).await?;
+    let stage_id = match body.stage_id.filter(|id| !id.trim().is_empty()) {
+        Some(stage_id)
+            if state
+                .repo
+                .stages_for_user(user_id)
+                .await?
+                .into_iter()
+                .any(|stage| stage.id == stage_id && stage.workspace_id == workspace_id) =>
+        {
+            Some(stage_id)
+        }
+        _ => None,
+    };
     let restored_created = validate_restore_timestamp(body.created_at.as_deref())?;
     let restored_updated = validate_restore_timestamp(body.updated_at.as_deref())?;
     let id = match body.id {
@@ -211,8 +226,8 @@ pub async fn create_note_for_user(
     let updated_at = restored_updated.unwrap_or_else(|| ts.clone());
     let record = NoteRecord {
         id: id.clone(),
-        owner_id: user_id.to_string(),
         workspace_id,
+        created_by: Some(user_id.to_string()),
         kind,
         title: body.title,
         content: body.content,
@@ -230,7 +245,7 @@ pub async fn create_note_for_user(
         updated_at,
         // Set on the first edit; until then there's nothing to attribute.
         last_editor_id: None,
-        stage_id: body.stage_id.filter(|id| !id.trim().is_empty()),
+        stage_id,
         // Board order starts out matching grid order, so a note is in the same
         // relative place however you look at it.
         stage_position: body.stage_position.unwrap_or(position),
@@ -315,12 +330,24 @@ pub async fn apply_note_update(
 ) -> ApiResult<NoteView> {
     let mut record = require_participant(state, id, user_id).await?;
     let old_items = record.items.clone();
-    validate_update(&record, user_id, &body)?;
+    let is_owner = is_note_workspace_owner(state, &record, user_id).await?;
+    validate_update(&record, is_owner, &body)?;
     // A move must land in a workspace the mover belongs to; anything else is
     // treated as a stray id rather than a way to file notes out of reach.
     let moving_to = match &body.workspace_id {
         Some(target) if *target != record.workspace_id => {
-            Some(resolve_workspace(state, user_id, Some(target)).await?)
+            let target = resolve_workspace(state, user_id, Some(target)).await?;
+            let target_is_owned = state
+                .repo
+                .workspace(&target)
+                .await?
+                .is_some_and(|workspace| workspace.owner_id == user_id);
+            if !target_is_owned {
+                return Err(ApiError::Forbidden(
+                    "a note can only be moved into a workspace you own",
+                ));
+            }
+            Some(target)
         }
         _ => None,
     };
@@ -330,6 +357,19 @@ pub async fn apply_note_update(
         Some(_) => state.repo.participant_ids(id).await?,
         None => Vec::new(),
     };
+    if moving_to.is_none()
+        && let Some(Some(stage_id)) = body.stage_id.as_ref()
+    {
+        let valid = state
+            .repo
+            .stages_for_user(user_id)
+            .await?
+            .into_iter()
+            .any(|stage| stage.id == *stage_id && stage.workspace_id == record.workspace_id);
+        if !valid {
+            body.stage_id = Some(None);
+        }
+    }
     let content_changed = changes_content(&body, &record);
     // Read before `apply_to` consumes the body. Present-but-null is a real
     // change (back to unassigned), so this asks whether the key was sent.
@@ -352,6 +392,11 @@ pub async fn apply_note_update(
     }
 
     body.apply_to(&mut record);
+    if moving_to.is_some() {
+        // The stage foreign key includes workspace_id, so ownership transfer
+        // returns the note to Unassigned before the row is updated.
+        record.stage_id = None;
+    }
     record.updated_at = now();
     state.repo.update_note(&record).await?;
 
@@ -408,7 +453,7 @@ pub async fn delete_note(
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let record = require_participant(&state, &id, &user_id).await?;
-    if record.owner_id != user_id {
+    if !is_note_workspace_owner(&state, &record, &user_id).await? {
         return Err(ApiError::Forbidden("only the owner can delete a note"));
     }
     // Snapshot the roster and blobs before rows cascade away.
@@ -421,7 +466,7 @@ pub async fn delete_note(
         .unwrap_or_default();
     state.repo.delete_note(&id).await?;
     for attachment in attachments {
-        state.files.delete(&record.owner_id, &attachment.id).await;
+        state.files.delete(&attachment.id).await;
     }
     state.unindex_note_later(&id);
     state.hub.notify(&participants, CHANGED_MSG);

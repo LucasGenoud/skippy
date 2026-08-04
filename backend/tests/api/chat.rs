@@ -163,7 +163,17 @@ async fn chat_live_authorizes_stale_index_hits_after_revocation() {
         .search
         .as_ref()
         .unwrap()
-        .search(&bob_id, "classified zephyr", 8)
+        .search(
+            &[state
+                .repo
+                .note_record(note_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .workspace_id],
+            "classified zephyr",
+            8,
+        )
         .await
         .unwrap();
     assert!(stale.iter().any(|(id, _)| id == note_id));

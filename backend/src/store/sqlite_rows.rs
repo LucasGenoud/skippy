@@ -7,8 +7,8 @@ pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let position: f64 = row.get("position");
     NoteRecord {
         id: row.get("id"),
-        owner_id: row.get("owner_id"),
         workspace_id: row.get("workspace_id"),
+        created_by: row.get("created_by"),
         kind: row.get("kind"),
         title: row.get("title"),
         content: row.get("content"),
@@ -78,7 +78,7 @@ pub(super) fn now() -> String {
 pub(super) fn share_link_from_row(row: &SqliteRow) -> ShareLink {
     ShareLink {
         token: row.get("token"),
-        owner_id: row.get("owner_id"),
+        created_by: row.get("created_by"),
         target: row.get("target"),
         note_id: row.get("note_id"),
         workspace_id: row.get("workspace_id"),

@@ -61,7 +61,11 @@ async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
         .search
         .as_ref()
         .unwrap()
-        .search(&bob_id, "milk", 20)
+        .search(
+            &[groceries["workspace_id"].as_str().unwrap().to_string()],
+            "milk",
+            20,
+        )
         .await
         .unwrap();
     assert!(stale.iter().any(|(id, _)| id == gid));

@@ -178,10 +178,13 @@ pub struct Attachment {
 #[derive(Debug, Clone)]
 pub struct NoteRecord {
     pub id: String,
-    pub owner_id: String,
-    /// The workspace this note lives in. Everyone in that workspace can see
-    /// and edit it; per-note collaborators are an additional, narrower grant.
+    /// The workspace owns the note and controls its lifecycle. Everyone in
+    /// that workspace can see and edit it; per-note collaborators are an
+    /// additional, narrower grant.
     pub workspace_id: String,
+    /// Creator attribution only. It is nullable so a note in somebody else's
+    /// workspace survives when its creator deletes their account.
+    pub created_by: Option<String>,
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -363,7 +366,7 @@ pub struct ShareLink {
     pub token: String,
     /// Who published it. Only they can revoke it, and the public payload is
     /// assembled from what *they* can see.
-    pub owner_id: String,
+    pub created_by: String,
     /// One of [`SHARE_TARGETS`].
     pub target: String,
     pub note_id: Option<String>,

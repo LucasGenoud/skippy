@@ -10,7 +10,9 @@ git push  ->  .forgejo/workflows/build.yml  ->  registry :latest  ->  Watchtower
 ```
 
 Your data (SQLite DB + uploads in the `app_data` volume, or Garage) survives the
-restart untouched, and DB migrations run on startup.
+restart untouched. The workspace-owned schema release is a clean break: start
+with a new database (or restore a backup produced by the same schema version);
+the server does not migrate older database files in place.
 
 ## One-time setup
 

@@ -4,8 +4,8 @@
 
 use std::collections::HashMap;
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use chrono::Utc;
 
 use crate::AppState;
@@ -41,7 +41,10 @@ pub(super) fn version_of(record: &NoteRecord) -> NoteVersion {
         title: record.title.clone(),
         content: record.content.clone(),
         items: record.items.clone(),
-        edited_by: record.last_editor_id.clone().or_else(|| Some(record.owner_id.clone())),
+        edited_by: record
+            .last_editor_id
+            .clone()
+            .or_else(|| record.created_by.clone()),
         created_at: record.updated_at.clone(),
     }
 }
@@ -93,7 +96,11 @@ pub async fn restore_note_version(
     Path((id, version_id)): Path<(String, String)>,
 ) -> ApiResult<Json<NoteView>> {
     let mut record = require_participant(&state, &id, &user_id).await?;
-    let version = state.repo.note_version(&id, &version_id).await?.ok_or(ApiError::NotFound)?;
+    let version = state
+        .repo
+        .note_version(&id, &version_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     // Nothing to do when the note already matches the target version.
     let unchanged = record.kind == version.kind
@@ -113,7 +120,11 @@ pub async fn restore_note_version(
         state.notify_note(&id).await;
     }
 
-    let mut view = state.repo.note_view(&id, &user_id).await?.ok_or(ApiError::NotFound)?;
+    let mut view = state
+        .repo
+        .note_view(&id, &user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(Json(view))
 }

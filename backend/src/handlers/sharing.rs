@@ -9,7 +9,7 @@ use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::{CHANGED_MSG, require_participant};
+use super::{CHANGED_MSG, is_note_workspace_owner, require_participant};
 
 pub async fn add_collaborator(
     State(state): State<AppState>,
@@ -18,7 +18,7 @@ pub async fn add_collaborator(
     Json(body): Json<AddCollaborator>,
 ) -> ApiResult<Json<NoteView>> {
     let record = require_participant(&state, &id, &user_id).await?;
-    if record.owner_id != user_id {
+    if !is_note_workspace_owner(&state, &record, &user_id).await? {
         return Err(ApiError::Forbidden("only the owner can share a note"));
     }
     let target = state
@@ -32,7 +32,6 @@ pub async fn add_collaborator(
         ));
     }
     state.repo.add_collaborator(&id, &target.id).await?;
-    state.index_note_later(&id); // participants changed -> access filter changed
     state.notify_note(&id).await;
     let mut view = state
         .repo
@@ -50,7 +49,7 @@ pub async fn remove_collaborator(
 ) -> ApiResult<StatusCode> {
     let record = require_participant(&state, &id, &user_id).await?;
     // Owners can remove anyone; collaborators can only remove themselves.
-    if record.owner_id != user_id && target_id != user_id {
+    if !is_note_workspace_owner(&state, &record, &user_id).await? && target_id != user_id {
         return Err(ApiError::Forbidden(
             "collaborators can only remove themselves",
         ));
@@ -60,7 +59,6 @@ pub async fn remove_collaborator(
     if !state.repo.remove_collaborator(&id, &target_id).await? {
         return Err(ApiError::NotFound);
     }
-    state.index_note_later(&id); // participants changed -> access filter changed
     state.hub.notify(&participants, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }

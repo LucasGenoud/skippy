@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use serde::Deserialize;
+use std::collections::HashSet;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -62,8 +63,20 @@ pub async fn semantic_search(
         }
         None => None,
     };
+    let workspace_ids: Vec<String> = match workspace {
+        Some(workspace_id) => vec![workspace_id.to_string()],
+        None => state
+            .repo
+            .notes_for_user(&user_id)
+            .await?
+            .into_iter()
+            .map(|view| view.note.workspace_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect(),
+    };
     let mut hits = Vec::with_capacity(limit);
-    for (note_id, score) in search.search(&user_id, query, fetch).await? {
+    for (note_id, score) in search.search(&workspace_ids, query, fetch).await? {
         if hits.len() >= limit {
             break;
         }
@@ -95,14 +108,16 @@ pub async fn search_stats(
     // indexed, see `index_note`, so counting them in the total would leave the
     // "X / Y embedded" stat permanently short of complete. Only count notes that
     // actually have text to embed.
-    let total_notes = state
-        .repo
-        .notes_for_user(&user_id)
-        .await?
+    let visible_notes = state.repo.notes_for_user(&user_id).await?;
+    let total_notes = visible_notes
         .iter()
         .filter(|v| has_embeddable_text(&v.note))
         .count();
-    let indexed_notes = search.indexed_count(&user_id).await?;
+    let indexed_ids = search.indexed_note_ids().await?;
+    let indexed_notes = visible_notes
+        .iter()
+        .filter(|view| indexed_ids.contains(&view.note.id) && has_embeddable_text(&view.note))
+        .count();
     Ok(Json(serde_json::json!({
         "enabled": true,
         "model": search.model_name(),
@@ -155,11 +170,10 @@ pub async fn reindex_search(
     let worker = state.clone();
     tokio::spawn(async move {
         for id in ids {
-            if let Ok(Some(record)) = worker.repo.note_record(&id).await {
-                let participants = worker.repo.participant_ids(&id).await.unwrap_or_default();
-                if let Err(e) = search.index_note(&record, participants).await {
-                    eprintln!("reindex failed for {id}: {e:#}");
-                }
+            if let Ok(Some(record)) = worker.repo.note_record(&id).await
+                && let Err(e) = search.index_note(&record).await
+            {
+                eprintln!("reindex failed for {id}: {e:#}");
             }
             // Count the note as processed even if it errored, so a single bad
             // note can't stall the bar; the next reindex retries it.

@@ -358,6 +358,72 @@ async fn only_the_workspace_owner_may_publish_a_view() {
 }
 
 #[tokio::test]
+async fn workspace_owner_may_publish_member_authored_notes() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada_public_workspace").await;
+    let (bob, _) = register(&app, "bob_public_workspace").await;
+    let (_, workspace) = send(
+        &app,
+        "POST",
+        "/api/workspaces",
+        Some(&ada),
+        Some(json!({"name": "Team recipes"})),
+    )
+    .await;
+    let workspace_id = workspace["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/workspaces/{workspace_id}/members"),
+        Some(&ada),
+        Some(json!({"email": test_email("bob_public_workspace")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let note = create_note(
+        &app,
+        &bob,
+        json!({
+            "title": "Bob's focaccia",
+            "content": "flour and water",
+            "workspace_id": workspace_id,
+        }),
+    )
+    .await;
+    let note_id = note["id"].as_str().unwrap();
+
+    // The creator is a member/editor, not the note owner, so cannot publish it.
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/share-links",
+        Some(&bob),
+        Some(json!({"target": "note", "note_id": note_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let note_link = publish(&app, &ada, json!({"target": "note", "note_id": note_id})).await;
+    let (status, page) = public(&app, note_link["token"].as_str().unwrap()).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!(page["shared_by"], "ada_public_workspace");
+    assert_eq!(page["notes"][0]["title"], "Bob's focaccia");
+
+    // Publishing the workspace includes all workspace-owned notes, regardless
+    // of which member originally created them.
+    let workspace_link = publish(
+        &app,
+        &ada,
+        json!({"target": "notes", "workspace_id": workspace_id}),
+    )
+    .await;
+    let (status, page) = public(&app, workspace_link["token"].as_str().unwrap()).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!(page["notes"].as_array().unwrap().len(), 1);
+    assert_eq!(page["notes"][0]["title"], "Bob's focaccia");
+}
+
+#[tokio::test]
 async fn publishing_twice_returns_the_same_link() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
@@ -394,12 +460,7 @@ async fn revoking_a_link_takes_the_page_down() {
     let (ada, _) = register(&app, "ada").await;
     let (bob, _) = register(&app, "bob").await;
     let note = create_note(&app, &ada, json!({"title": "Focaccia"})).await;
-    let link = publish(
-        &app,
-        &ada,
-        json!({"target": "note", "note_id": note["id"]}),
-    )
-    .await;
+    let link = publish(&app, &ada, json!({"target": "note", "note_id": note["id"]})).await;
     let token = link["token"].as_str().unwrap();
     assert_eq!(public(&app, token).await.0, StatusCode::OK);
 
@@ -526,7 +587,7 @@ async fn an_expired_link_reads_as_missing() {
 
     let link = sticky_notes_server::models::ShareLink {
         token: "expired-token".to_string(),
-        owner_id: ada_id,
+        created_by: ada_id,
         target: "note".to_string(),
         note_id: Some(note["id"].as_str().unwrap().to_string()),
         workspace_id: None,
@@ -537,6 +598,69 @@ async fn an_expired_link_reads_as_missing() {
     state.repo.insert_share_link(&link).await.unwrap();
 
     assert_eq!(public(&app, "expired-token").await.0, StatusCode::NOT_FOUND);
+
+    // Expired links are not advertised as currently public and do not block
+    // publishing the same target again with a fresh capability.
+    let (_, listed) = send(&app, "GET", "/api/share-links", Some(&ada), None).await;
+    assert_eq!(listed, json!([]));
+    let (status, replacement) = send(
+        &app,
+        "POST",
+        "/api/share-links",
+        Some(&ada),
+        Some(json!({"target": "note", "note_id": note["id"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_ne!(replacement["token"], "expired-token");
+    assert_eq!(
+        public(&app, replacement["token"].as_str().unwrap()).await.0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_workspace_revokes_every_public_link_into_it() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada_public_delete").await;
+    let (_, workspace) = send(
+        &app,
+        "POST",
+        "/api/workspaces",
+        Some(&ada),
+        Some(json!({"name": "Temporary"})),
+    )
+    .await;
+    let workspace_id = workspace["id"].as_str().unwrap();
+    let note = create_note(
+        &app,
+        &ada,
+        json!({"title": "Temporary note", "workspace_id": workspace_id}),
+    )
+    .await;
+    let note_link = publish(&app, &ada, json!({"target": "note", "note_id": note["id"]})).await;
+    let view_link = publish(
+        &app,
+        &ada,
+        json!({"target": "notes", "workspace_id": workspace_id}),
+    )
+    .await;
+    let note_token = note_link["token"].as_str().unwrap();
+    let view_token = view_link["token"].as_str().unwrap();
+
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/workspaces/{workspace_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(public(&app, note_token).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(public(&app, view_token).await.0, StatusCode::NOT_FOUND);
+    let (_, listed) = send(&app, "GET", "/api/share-links", Some(&ada), None).await;
+    assert_eq!(listed, json!([]));
 }
 
 #[tokio::test]
@@ -544,12 +668,7 @@ async fn a_public_page_is_not_for_crawlers_or_shared_caches() {
     let app = app().await;
     let (ada, _) = register(&app, "ada").await;
     let note = create_note(&app, &ada, json!({"title": "Focaccia"})).await;
-    let link = publish(
-        &app,
-        &ada,
-        json!({"target": "note", "note_id": note["id"]}),
-    )
-    .await;
+    let link = publish(&app, &ada, json!({"target": "note", "note_id": note["id"]})).await;
 
     let request = Request::builder()
         .method("GET")

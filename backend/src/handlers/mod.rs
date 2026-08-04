@@ -64,8 +64,8 @@ fn new_id() -> String {
     Uuid::new_v4().to_string()
 }
 
-/// Load a note, requiring the user to be owner or collaborator. Strangers get
-/// 404 rather than 403 so note ids leak nothing.
+/// Load a note, requiring workspace membership or a direct share. Strangers
+/// get 404 rather than 403 so note ids leak nothing.
 async fn require_participant(
     state: &AppState,
     note_id: &str,
@@ -82,9 +82,22 @@ async fn require_participant(
     Ok(record)
 }
 
+/// Check the authority that follows note ownership: the owner of the
+/// workspace that owns the note controls its lifecycle and sharing.
+async fn is_note_workspace_owner(
+    state: &AppState,
+    record: &NoteRecord,
+    user_id: &str,
+) -> ApiResult<bool> {
+    Ok(state
+        .repo
+        .workspace(&record.workspace_id)
+        .await?
+        .is_some_and(|workspace| workspace.owner_id == user_id))
+}
+
 /// Ids of the notes a user can see in one workspace. Used to narrow retrieval
-/// (search, chat) to the workspace the client has open, which the vector index
-/// cannot express on its own: it partitions by participant, not by workspace.
+/// (search, chat) to the workspace the client has open.
 pub(super) async fn workspace_note_ids(
     state: &AppState,
     user_id: &str,

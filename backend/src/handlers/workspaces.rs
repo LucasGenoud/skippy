@@ -5,8 +5,6 @@
 //! Only the owner may rename, delete, or change the roster. Members can edit
 //! the workspace's notes and labels, and can leave it.
 
-use std::collections::HashSet;
-
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -199,10 +197,10 @@ pub async fn delete_workspace(
     };
     for note in &deleted.purged_notes {
         for attachment_id in &note.attachment_ids {
-            state.files.delete(&note.owner_id, attachment_id).await;
+            state.files.delete(attachment_id).await;
         }
-        state.unindex_note_later(&note.note_id);
     }
+    state.unindex_workspace_later(&deleted.workspace_id);
     state.hub.notify(&deleted.audience, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -225,9 +223,6 @@ pub async fn add_workspace_member(
         ));
     }
     state.repo.add_workspace_member(&id, &target.id).await?;
-    // The new member can now see every note in the workspace, so each one's
-    // access filter in the vector index has to be rewritten.
-    reindex_workspace_notes(&state, &id, &user_id).await?;
     notify_workspace(&state, &id).await;
     Ok(Json(view_of(&state, &id, &user_id).await?))
 }
@@ -249,41 +244,10 @@ pub async fn remove_workspace_member(
     }
     // Notify before removal so the departing member's client refreshes too.
     let members = state.repo.workspace_member_ids(&id).await?;
-    // Their own notes follow them out to their default workspace while notes
-    // owned by others stay behind. Membership and note moves share one
-    // repository transaction so neither half can commit alone.
-    let Some(moved) = state.repo.remove_workspace_member(&id, &target_id).await? else {
+    // Notes belong to the workspace, not its members, and remain untouched.
+    if !state.repo.remove_workspace_member(&id, &target_id).await? {
         return Err(ApiError::NotFound);
-    };
-    reindex_workspace_notes(&state, &id, &user_id).await?;
-    let mut audience: HashSet<String> = members.into_iter().collect();
-    for note_id in &moved {
-        if let Ok(participants) = state.repo.participant_ids(note_id).await {
-            audience.extend(participants);
-        }
-        state.index_note_later(note_id);
     }
-    state
-        .hub
-        .notify(&audience.into_iter().collect::<Vec<_>>(), CHANGED_MSG);
+    state.hub.notify(&members, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Re-embed every note in a workspace whose roster just changed: the vector
-/// index stores one row per participant, so visibility only follows membership
-/// once the notes are rewritten.
-async fn reindex_workspace_notes(
-    state: &AppState,
-    workspace_id: &str,
-    viewer_id: &str,
-) -> ApiResult<()> {
-    if state.search.is_none() {
-        return Ok(());
-    }
-    for view in state.repo.notes_for_user(viewer_id).await? {
-        if view.note.workspace_id == workspace_id {
-            state.index_note_later(&view.note.id);
-        }
-    }
-    Ok(())
 }

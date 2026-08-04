@@ -26,7 +26,10 @@ struct FakeS3 {
 
 impl FakeS3 {
     fn record_auth(&self, headers: &HeaderMap) {
-        let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).map(String::from);
+        let auth = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
         *self.last_authorization.lock().unwrap() = auth;
     }
 }
@@ -38,7 +41,11 @@ async fn create_bucket(
 ) -> StatusCode {
     s3.record_auth(&headers);
     s3.bucket_creates.lock().unwrap().push(bucket.clone());
-    if s3.buckets.lock().unwrap().insert(bucket) { StatusCode::OK } else { StatusCode::CONFLICT }
+    if s3.buckets.lock().unwrap().insert(bucket) {
+        StatusCode::OK
+    } else {
+        StatusCode::CONFLICT
+    }
 }
 
 async fn put_object(
@@ -51,7 +58,10 @@ async fn put_object(
     if !s3.buckets.lock().unwrap().contains(&bucket) {
         return StatusCode::NOT_FOUND;
     }
-    s3.objects.lock().unwrap().insert((bucket, key), body.to_vec());
+    s3.objects
+        .lock()
+        .unwrap()
+        .insert((bucket, key), body.to_vec());
     StatusCode::OK
 }
 
@@ -77,7 +87,10 @@ async fn spawn_fake_s3() -> (Arc<FakeS3>, String) {
     let s3 = Arc::new(FakeS3::default());
     let router = Router::new()
         .route("/{bucket}", put(create_bucket))
-        .route("/{bucket}/{key}", put(put_object).get(get_object).delete(delete_object))
+        .route(
+            "/{bucket}/{key}",
+            put(put_object).get(get_object).delete(delete_object),
+        )
         .with_state(s3.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -103,35 +116,56 @@ async fn save_read_delete_roundtrip_with_lazy_bucket() {
     let (s3, url) = spawn_fake_s3().await;
     let store = store(&url);
 
-    store.save("User-1", "att-1", b"hello").await.unwrap();
-    store.save("User-1", "att-2", b"world").await.unwrap();
+    store.save("att-1", b"hello").await.unwrap();
+    store.save("att-2", b"world").await.unwrap();
 
-    // Owner id is lowercased into the bucket name; bucket created only once
-    // even across two saves (the ensured-cache short-circuits the second).
-    assert_eq!(*s3.bucket_creates.lock().unwrap(), vec!["test-user-1".to_string()]);
-    assert!(s3.objects.lock().unwrap().contains_key(&("test-user-1".to_string(), "att-1".to_string())));
+    // The installation-wide attachment bucket is created only once.
+    assert_eq!(
+        *s3.bucket_creates.lock().unwrap(),
+        vec!["test-attachments".to_string()]
+    );
+    assert!(
+        s3.objects
+            .lock()
+            .unwrap()
+            .contains_key(&("test-attachments".to_string(), "att-1".to_string()))
+    );
 
-    assert_eq!(store.read("User-1", "att-1").await, Some(b"hello".to_vec()));
-    assert_eq!(store.read("User-1", "missing").await, None);
+    assert_eq!(store.read("att-1").await, Some(b"hello".to_vec()));
+    assert_eq!(store.read("missing").await, None);
 
-    store.delete("User-1", "att-1").await;
-    assert_eq!(store.read("User-1", "att-1").await, None);
-    assert_eq!(store.read("User-1", "att-2").await, Some(b"world".to_vec()));
+    store.delete("att-1").await;
+    assert_eq!(store.read("att-1").await, None);
+    assert_eq!(store.read("att-2").await, Some(b"world".to_vec()));
 
-    let auth = s3.last_authorization.lock().unwrap().clone().expect("requests are signed");
-    assert!(auth.starts_with("AWS4-HMAC-SHA256 Credential=GKtestkey/"), "{auth}");
+    let auth = s3
+        .last_authorization
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("requests are signed");
+    assert!(
+        auth.starts_with("AWS4-HMAC-SHA256 Credential=GKtestkey/"),
+        "{auth}"
+    );
     assert!(auth.contains("/garage/s3/aws4_request"), "{auth}");
-    assert!(auth.contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date"), "{auth}");
+    assert!(
+        auth.contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date"),
+        "{auth}"
+    );
 }
 
 #[tokio::test]
 async fn existing_bucket_is_tolerated() {
     let (s3, url) = spawn_fake_s3().await;
-    s3.buckets.lock().unwrap().insert("test-u2".to_string());
+    s3.buckets
+        .lock()
+        .unwrap()
+        .insert("test-attachments".to_string());
 
     // A fresh process (empty ensured-cache) meets the existing bucket: the
     // CreateBucket 409 must be treated as "already there", not an error.
     let store = store(&url);
-    store.save("u2", "att", b"bytes").await.unwrap();
-    assert_eq!(store.read("u2", "att").await, Some(b"bytes".to_vec()));
+    store.save("att", b"bytes").await.unwrap();
+    assert_eq!(store.read("att").await, Some(b"bytes".to_vec()));
 }

@@ -190,12 +190,11 @@ pub async fn delete_account(
         .ok_or(ApiError::Unauthorized)?;
     for note in &deleted.purged_notes {
         for attachment_id in &note.attachment_ids {
-            state.files.delete(&note.owner_id, attachment_id).await;
+            state.files.delete(attachment_id).await;
         }
-        state.unindex_note_later(&note.note_id);
     }
-    for note_id in &deleted.remaining_note_ids {
-        state.index_note_later(note_id);
+    for workspace_id in &deleted.deleted_workspace_ids {
+        state.unindex_workspace_later(workspace_id);
     }
     state.hub.notify(&deleted.audience, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
