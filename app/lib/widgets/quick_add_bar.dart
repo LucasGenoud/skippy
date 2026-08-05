@@ -22,6 +22,7 @@ import 'color_picker.dart';
 import 'file_drop.dart';
 import 'labels_sheet.dart';
 import 'markdown_toolbar.dart';
+import 'paste_files.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
 
@@ -338,6 +339,14 @@ class _QuickAddBarState extends State<QuickAddBar> {
     }
   });
 
+  /// A paste lands on the note being composed, exactly like a pick: images
+  /// show as thumbnails, everything else as a file chip, and nothing is
+  /// uploaded until the note is saved.
+  Future<void> _addPastedFiles(List<DroppedFile> files) async {
+    if (!_expanded) return;
+    _addFiles(files);
+  }
+
   /// Sharing needs a real note, so this saves first and hands the created note
   /// to the dialog.
   Future<void> _share() => _withModal(() async {
@@ -430,50 +439,54 @@ class _QuickAddBarState extends State<QuickAddBar> {
     // Expanding is a pleasant, deliberate reveal. Closing follows a focus
     // loss, however, and must get out of the way immediately, otherwise the
     // still-visible composer makes the page feel like it ignored the click.
-    return TapRegion(
-      onTapOutside: (_) => _saveAndCollapse(),
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): _saveAndCollapse,
-        },
-        child: Material(
-          color: fill ?? scheme.surface,
-          elevation: 2,
-          shadowColor: Colors.black.withValues(alpha: 0.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(kRadius),
-            side: BorderSide(color: scheme.outlineVariant),
-          ),
-          child: AnimatedSize(
-            // Ease the open/close on the Material-3 emphasized bezier so the
-            // bar unfurls into the composer rather than snapping linearly.
-            // A zero reverse duration trips an AnimatedSize layout assertion,
-            // so one millisecond is used: visually instant, framework-safe.
-            duration: Motion.base,
-            reverseDuration: const Duration(milliseconds: 1),
-            curve: Motion.emphasized,
-            alignment: Alignment.topCenter,
-            // Cross-fade bar <-> composer while the size animates, so the
-            // expansion reads as one motion instead of a hard content swap.
-            child: AnimatedSwitcher(
+    return PasteFileArea(
+      enabled: _expanded,
+      onFiles: _addPastedFiles,
+      child: TapRegion(
+        onTapOutside: (_) => _saveAndCollapse(),
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): _saveAndCollapse,
+          },
+          child: Material(
+            color: fill ?? scheme.surface,
+            elevation: 2,
+            shadowColor: Colors.black.withValues(alpha: 0.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(kRadius),
+              side: BorderSide(color: scheme.outlineVariant),
+            ),
+            child: AnimatedSize(
+              // Ease the open/close on the Material-3 emphasized bezier so the
+              // bar unfurls into the composer rather than snapping linearly.
+              // A zero reverse duration trips an AnimatedSize layout assertion,
+              // so one millisecond is used: visually instant, framework-safe.
               duration: Motion.base,
-              reverseDuration: Duration.zero,
-              switchInCurve: Motion.emphasized,
-              switchOutCurve: Curves.easeIn,
-              layoutBuilder: (currentChild, previousChildren) => Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.topCenter,
-                children: [...previousChildren, ?currentChild],
+              reverseDuration: const Duration(milliseconds: 1),
+              curve: Motion.emphasized,
+              alignment: Alignment.topCenter,
+              // Cross-fade bar <-> composer while the size animates, so the
+              // expansion reads as one motion instead of a hard content swap.
+              child: AnimatedSwitcher(
+                duration: Motion.base,
+                reverseDuration: Duration.zero,
+                switchInCurve: Motion.emphasized,
+                switchOutCurve: Curves.easeIn,
+                layoutBuilder: (currentChild, previousChildren) => Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.topCenter,
+                  children: [...previousChildren, ?currentChild],
+                ),
+                child: _expanded
+                    ? KeyedSubtree(
+                        key: const ValueKey('composer'),
+                        child: _buildComposer(context),
+                      )
+                    : KeyedSubtree(
+                        key: const ValueKey('bar'),
+                        child: _buildBar(context),
+                      ),
               ),
-              child: _expanded
-                  ? KeyedSubtree(
-                      key: const ValueKey('composer'),
-                      child: _buildComposer(context),
-                    )
-                  : KeyedSubtree(
-                      key: const ValueKey('bar'),
-                      child: _buildBar(context),
-                    ),
             ),
           ),
         ),
@@ -566,6 +579,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
                       focusNode: _titleFocus,
                       maxLines: null,
                       textInputAction: TextInputAction.next,
+                      contentInsertionConfiguration: PasteFileArea.insertionOf(
+                        context,
+                      ),
                       onSubmitted: (_) {
                         if (_kind != NoteKind.checklist) {
                           _contentFocus.requestFocus();
@@ -636,6 +652,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       focusNode: _contentFocus,
       maxLines: null,
       minLines: 2,
+      contentInsertionConfiguration: PasteFileArea.insertionOf(context),
       style: _kind == NoteKind.markdown
           ? Theme.of(context).textTheme.bodyLarge?.copyWith(
               fontFamily: 'monospace',

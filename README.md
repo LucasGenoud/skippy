@@ -1,387 +1,150 @@
-# Sticky Notes
+# Skippy
 
-A cross-platform notes app: **Flutter** frontend (web + iOS + Android) with a **Rust** backend (axum + SQLite). Built for smoothness, every interaction is optimistic-first, every layout change animates, and collaboration syncs live over WebSockets.
-
-<p align="center"><em>Masonry grid · drag-to-reorder · text, markdown, checklist, and audio notes · sharing and live co-editing · reminders · labels · kanban board · attachments · dark mode</em></p>
+Skippy is a cross-platform notes app with a Flutter client and a Rust/axum
+backend. It supports web, iOS, and Android, with SQLite persistence and
+optimistic, offline-capable edits.
 
 ## Features
 
-**Note types**
-- Text, **markdown**, and **checklist** notes, with conversion between text-based kinds
-- **Audio notes** recorded on web, iOS, or Android and transcribed by an optional self-hosted Whisper service
-- **Image attachments** (including SVG) rendered inline, playable audio-note clips, and **any other file type** as a safe download with its original filename
-- Rich link previews from Open Graph/HTML metadata, fetched through an SSRF-guarded backend endpoint and cached on both client and server
-- Checklists **remember what you've checked off** and **suggest items while you type**, in a popup anchored under the row with the matched prefix bolded, type "mi" and get "Milk" from your history; your most frequent items surface when the field is empty. Perfect for grocery lists.
-- Checking an item **animates it down into a collapsible "checked" section** where it stays visible; unchecking glides it back
-- Clearing the **last** pending item throws a short "All done" confetti burst over the list (skipped under reduce motion)
-- **Drag handles** (⠿) reorder checklist items with live animated reflow
-- **Undo/redo** in the editor (bottom-bar arrows, Cmd/Ctrl+Z / Shift+Z): typing groups into bursts; checks, adds, removes, reorders, and conversions are each one step
-- **Version history** groups content edits into sessions, attributes collaborator edits, and supports reversible restores
+- Text, Markdown, checklist, audio, and attachment notes
+- Grid, list, and kanban board views with drag-to-reorder
+- Workspaces, labels, stages, archive, trash, reminders, search, and exports
+- Sharing, public read-only links, live sync, and version history
+- Optional self-hosted Whisper transcription and OpenAI-compatible embeddings
+- Optional LLM features: automatic labels, note editing, and notes chat
+- Dark mode, responsive layouts, keyboard shortcuts, share-sheet intake, and
+  home-screen widgets
 
-**Organization**
-- **Workspaces**: every account starts with a default workspace and can create more, switching from the header of the drawer/sidebar. Notes, labels, archive, trash, search, and chat are all scoped to the open one, and a note can be moved between workspaces from its menu. Each workspace can expose Notes, Board, or both; both views are enabled by default. On each device, every workspace reopens its last-used view.
-- An 8-color palette (white, red, orange, yellow, green, teal, blue, gray) with dark-mode variants
-- Flat labels per workspace (create/rename/delete; filter from the drawer)
-- **Board view**: a kanban board whose columns are the workspace's *stages*, a system deliberately separate from labels, so a note carries any number of labels and sits in at most one column. Columns are side by side on wide screens and paged behind a name strip on phones; cards move with "Move to column" from the card menu. Unplaced notes collect in a capped **Unassigned** column.
-- Pinning, archive, trash (auto-purged after 7 days)
-- **Drag-to-reorder** with animated reflow, edge auto-scroll, haptics
-- Grid / single-column list toggle; responsive density and width presets support up to 8 columns
-- **Sort by** custom order / recently edited / recently added / oldest
-- Library-wide instant search + **find-in-note** with match highlighting
-- **Search operators**: `label:work`, `is:pinned|archived|trashed|shared|open|done`, `has:reminder|attachment|image|audio|link|label`, `color:red`, `kind:checklist`, quoted values (`label:"to do"`), and a leading `-` to exclude. Terms are ANDed, so every word narrows. An explicit `is:archived` or `is:trashed` overrides the view's own state filter, which is what makes archived notes findable from the grid. A cheat sheet sits behind the filter button in the search bar: it stays open so several filters can be toggled on and off in one visit, and applied filters get a tinted background in the search box so operators read apart from the words around them.
-- **Smart views**: save any search (operators included) as a named, colored, icon-bearing entry in the sidebar. They re-evaluate every time they are opened, so "Overdue work" stays right as notes change, and typing in the box narrows a smart view further rather than replacing it. Stored in the per-user settings document, so they sync across devices.
-- **Semantic search** (meaning-ranking toggle in the search bar): notes are embedded by a self-hostable **OpenAI-compatible embeddings API** (Ollama, LM Studio, ...) and ranked by meaning, "internet access code" finds your "Wifi password" note. Vectors live in SQLite itself via the **sqlite-vec** extension, with one collection per workspace and one vector per note, and no separate vector database. The server runs no model of its own, so its memory footprint doesn't depend on the model you choose.
-- **Audio notes**: record a voice clip in a focused overlay with a live level meter, then play it back through a compact waveform player. When a self-hosted **Whisper** service is connected, the clip is transcribed locally; without Whisper it remains a fully usable playable audio note with an editable transcript field.
-- **Feature detection**: semantic search hides when its backing service is unavailable; audio transcription activates automatically when Whisper is connected (`GET /api/capabilities`).
+The app is deliberately out of scope for drawings, OCR, calendar sync, and
+CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
-**Per-user settings** (synced across devices, gear icon in the drawer)
-- Theme (system/light/dark), default grid vs list layout
-- Accent color plus grid density and maximum-width presets
-- Date format (5 styles) and 12h/24h time, applied to reminder chips and "Edited" stamps everywhere
-- **Personalized note palette**: rename, recolor (light + dark shade each), delete, or add custom colors; notes with removed colors fall back gracefully
-- Create portable zip backups of every owned workspace, including notes (also archived and trashed), labels, board columns, reminders, ordering, timestamps, and attachment bytes. Restore previews the workspaces in the archive and replaces owned workspace data with the selected backup workspaces; workspaces shared with the user are untouched. Readable JSON, Markdown, and plain-text exports remain available.
-- Operators can create whole-system `.skb` archives from the server CLI while Skippy is online. These contain a consistent database snapshot plus every referenced attachment from disk or S3, can be scheduled with cron, and restore the complete instance offline with an automatic pre-restore safety backup.
-
-**Optional AI integration**
-- Each user can configure an OpenAI-compatible endpoint, API key, and model; Ollama, LM Studio, vLLM, and hosted providers can use the same path
-- **Automatic labeling** asks the configured model which of the note's workspace labels apply after content edits; it never invents or removes labels
-- **Opt-in AI note editing** can clean up and shorten a note or correct grammar and syntax; it only appears after an AI provider is configured and the feature is enabled in Settings
-- **Notes chat** retrieves semantically relevant notes, streams answers over WebSocket, cites source notes, and can create or append notes after a model-planned write
-- Self-hosters can pin and lock any LLM field or feature toggle with server environment variables; managed secrets are never sent to the app
-
-**Reminders**
-- Time-based reminders per note, shown as chips (overdue = struck through) and collected in a drawer "Reminders" view. Reminders can repeat daily, weekly, monthly, or yearly; a missed recurring reminder sends one catch-up notification and advances to the next future occurrence. No calendar integration.
-- On phones, one reminder sheet provides quick presets for tomorrow morning, noon, evening, next week, and seven days from now, plus an inline custom date/time picker.
-- **Push notifications via [ntfy](https://ntfy.sh) and/or Telegram** (Settings → Notifications): each user brings their own ntfy topic URL and/or Telegram bot token + chat id, no server-side setup. A background sweep (every 30 s) delivers due reminders to every participant of the note with a configured channel, exactly once per scheduled time (rescheduling re-arms it); checklist reminders list only the still-pending items. A "Send test" button delivers a real probe notification before you save. Channels are pluggable, a new one is a single `Connector` impl on the backend plus a spec entry in the app.
-
-**Collaboration**
-- User accounts with a display name and email + password sign-in (Argon2-hashed passwords, SHA-256 session verifiers at rest); name, email, and password are editable in Settings. Password-confirmed account deletion removes every workspace the account owns and all notes inside those workspaces, including notes created by other users. Notes the account created inside somebody else's workspace stay with that workspace and lose only their creator attribution.
-- Share a single note with other users by email; every participant can edit, while the owning workspace's owner controls trash/delete/share
-- **Or share a whole workspace**: invite people by email and they see and edit every note it holds. Only the owner renames it, deletes it, changes the roster, or controls note lifecycle/sharing; members can edit and leave. Notes belong to the workspace, so deleting it permanently deletes every note and attachment inside it regardless of creator, while leaving or being removed never moves or deletes its notes.
-- **Public read-only links** for people without an account: share one note, or a whole view (a workspace's grid, its board, or one label's notes). Each URL combines a random stored identifier with an HMAC capability, so copying a `share_links` row does not itself reveal a working link; links remain revocable, listable, and can carry an expiry (1/7/30 days or none). Publishing the same thing twice hands back the same URL. Anyone holding it reads the notes and their images through the existing signed attachment URLs; nothing on the page can be edited, and no owner, collaborator, reminder, or archive/trash state ever goes out with it. Only the owning workspace's owner may publish a note or view, and Settings → Sharing lists everything currently public with a one-tap revoke.
-- **Live sync over WebSockets**: collaborator edits (and your other devices) update in place, last-write-wins
-- Labels are a workspace's shared taxonomy: everyone in it sees and applies the same set. Someone who only has a per-note share is not in that workspace and sees none of them.
-
-**Platform integration**
-- Web drag-and-drop and file picking; native file/image pickers on mobile
-- Adaptive overlays: input-heavy editors use full-screen pages on phones and compact dialogs on web; quick choices use phone bottom sheets and centered web surfaces.
-- Android/iOS share-sheet intake turns shared text/links into text notes and shared files into attachment notes
-- **Home-screen widgets** pin a note to the phone home screen: tap to open it, or **tick checklist items straight from the widget** without opening the app. Ticks apply instantly (offline included), sync to the server in the background, and are queued and replayed by the app if that fails. An **Add item** row opens the note with an empty checklist row already focused. See [Home-screen widgets](#home-screen-widgets).
-- Offline startup from a per-user local cache, with pending writes persisted and replayed after connectivity returns
-
-**Out of scope:** drawings/handwriting, OCR, calendar synchronization, and CRDT-style conflict-free collaborative editing.
-
-## Keyboard shortcuts
-
-Web/desktop. Press **`?`** on the notes screen for the in-app cheat sheet (also in Settings → Help). Letter shortcuts never fire while you're typing in a text field, the keystroke goes into the field instead, and they match the *character* produced, so they work on any keyboard layout.
-
-| Keys | Where | Action |
-| --- | --- | --- |
-| `c` or `n` | Notes screen | New note |
-| `l` | Notes screen | New checklist |
-| `m` | Notes screen | New markdown note |
-| `/` or `Ctrl`/`⌘` `K` | Notes screen | Search |
-| `Esc` | Notes screen | Exit selection mode, else clear search |
-| `Ctrl`/`⌘` `G` | Notes screen | Toggle grid / list |
-| `?` | Notes screen | Shortcut help |
-| `Ctrl`/`⌘` `Z` · `Shift` + `Ctrl`/`⌘` `Z` | Editor | Undo · redo |
-| `Esc` | Editor (modal) | Close and save |
-| `Esc` | Quick add | Save and close |
-
-## Home-screen widgets
-
-Pin any note to the phone home screen. Tapping the widget opens that note in the
-app; on a checklist, the items can be ticked without opening the app at all.
-
-**Adding one**
-
-- **Android** — the editor's ⋮ menu → *Add to Home Screen* asks the launcher to
-  place a widget, then opens a picker for the note. You can also add it from the
-  launcher's widget tray, which opens the same picker.
-- **iOS** — iOS gives apps no API to place a widget, so this is the system
-  gesture: touch and hold the Home Screen → **+** → *Skippy* → pick a size, then
-  touch and hold the new widget → *Edit Widget* → choose the note. The editor's
-  ⋮ menu shows these steps.
-
-**What differs between the platforms**
-
-WidgetKit has no scroll view at any widget size, so a long checklist cannot
-scroll on iOS. Both platforms publish **pending items first**; iOS shows as many
-as the widget size fits and adds a `+N more` footer that opens the note, while
-**Android widgets do scroll** and show the whole list.
-
-Interactive ticking needs **iOS 17+** (`AppIntent`-backed buttons); below that
-the widget still renders and still opens the note. The app itself supports
-iOS 14+.
-
-**Adding an item**
-
-Neither platform lets a widget take text — WidgetKit has no text field, and
-Android's `RemoteViews` has no editable view — so a checklist widget carries an
-**Add item** row that opens the note with an empty checklist row already focused
-and the keyboard up (`skippy://note/<id>?homeWidget=1&add=1`). On iOS it appears
-on medium and large widgets only: the small family is a single tap target driven
-by `widgetURL`, where a per-row link is ignored.
-
-Rows are deliberately a size larger than the in-app list (bigger checkbox,
-bigger label): a home screen is read at arm's length and ticked with a thumb.
-
-**How a tick reaches the server**
-
-The widget writes to shared storage the app publishes into (an App Group on
-iOS, private `SharedPreferences` on Android). A tick flips the item there
-immediately, so the widget responds instantly and correctly with no network,
-then queues the change and pushes it to `PATCH /api/notes/{id}` from the widget
-process. Anything that fails to send stays queued and is replayed by the app on
-its next launch, through the same optimistic path as an edit made in the app.
-The bearer token is mirrored into that shared storage for this, and is cleared
-on sign-out.
-
-Only recently-edited notes are published (60, trimmed to 40 items each). A
-widget showing a note outside that window records that it still needs it, and
-the app keeps publishing it.
-
-## Architecture
-
-```
-sticky_notes/
-├── backend/            Rust: axum + SQLite
-│   ├── src/
-│   │   ├── main.rs       process wiring, optional services, static web serving
-│   │   ├── lib.rs        AppState + /api router (build_app), reused by tests
-│   │   ├── handlers/     HTTP/WS handlers by feature area + background work
-│   │   ├── store/        domain repository traits + SQLite modules/schema/rows
-│   │   ├── models.rs     domain, request, and response types
-│   │   ├── files.rs      FileStore trait, disk/S3 backends, signed file URLs
-│   │   ├── cleanup.rs    durable external-state cleanup worker
-│   │   ├── telemetry.rs  request IDs, JSON request/job events, health counters
-│   │   ├── rate_limit.rs bounded auth-attempt limiter
-│   │   ├── system_backup.rs whole-instance archive, validation, and restore
-│   │   ├── search.rs     embeddings API client + sqlite-vec index
-│   │   ├── assist.rs     LLM settings, prompts, routing, and reply parsing
-│   │   ├── llm.rs        OpenAI-compatible completion and streaming client
-│   │   ├── notify.rs     reminder scheduler + ntfy/Telegram connectors
-│   │   └── unfurl.rs     safe URL fetching and metadata parsing
-│   └── tests/           API integration modules + S3 tests
-└── app/                Flutter
-    ├── lib/
-    │   ├── api/          Api seam + HTTP/WS client
-    │   ├── models/       wire/domain models
-    │   ├── state/        auth, settings, optimistic notes, cache, share intake
-    │   ├── screens/      login, home, editor, history, settings, chat
-    │   ├── widgets/      masonry, cards, checklist, media, dialogs, settings
-    │   ├── util/         platform adapters, links, export, downloads, motion
-    │   └── theme.dart    Material light/dark themes
-    └── test/           unit, store, integration-style widget tests + FakeApi
-```
-
-**Swappable storage.** Persistence is split into focused account, workspace, note, sharing, taxonomy, history, attachment, and infrastructure repository traits, composed as `Repository` ([backend/src/store/mod.rs](backend/src/store/mod.rs)). SQLite is the only implementation today; another backend implements those domain seams and changes one constructor in `main.rs`. Attachment blobs live behind a separate `FileStore` trait ([backend/src/files.rs](backend/src/files.rs)) with two backends: local disk (default) and any S3-compatible object store. Relational deletes transactionally enqueue cleanup for attachment blobs and workspace-owned vector collections, then an idempotent worker retries external failures across restarts. S3 uses one installation-wide attachment bucket and globally unique attachment keys; relational ownership remains in SQLite. Requests are signed with a minimal built-in SigV4 (no AWS SDK). `STICKY_NOTES_STORAGE=disk|s3` picks the backend; the compose stack bundles [Garage](https://garagehq.deuxfleurs.fr/) for the S3 side.
-
-**Optimistic-first client.** Every action updates the UI immediately; writes flow through a serial queue that retries on network failure (a banner shows offline state). The network is never in the tap path, that's where the smoothness comes from.
-
-**Custom animated masonry.** The grid is a masonry with drag-to-reorder; no Flutter package does both, so [app/lib/widgets/masonry.dart](app/lib/widgets/masonry.dart) implements it: tiles are measured after layout and absolutely positioned, so any reflow, reorder, edit, column change, glides tiles to their new spots. Long-press lifts a card; siblings flow around the pointer in real time.
-
-## Running it
-
-### Docker (everything in one command)
+## Quick start with Docker
 
 ```sh
-docker compose up -d        # builds web + server, starts Whisper + Garage → http://localhost:8787
+docker compose up -d
 ```
 
-The image builds the Flutter web app and the Rust server; volumes persist the SQLite DB, uploads, and the embedding model cache. Semantic search is built into the server (sqlite-vec) and a self-hosted Whisper service backs audio-note transcription inside the stack.
+Open <http://localhost:8787>. The image builds the Flutter web app and Rust
+server. The stack also starts Whisper for audio transcription and Garage for
+optional S3-compatible attachment storage. SQLite data and attachments persist
+in the `app_data` volume.
 
-The workspace-owned database schema is a clean break from older builds. There is no in-place migration: use a new `STICKY_NOTES_DB` file (and matching attachment storage) or restore a system backup produced by this schema version. Startup fails with an explicit incompatibility error when it sees an older database instead of running against a partially matching schema.
+The current database schema has no in-place migration path. Start with a new
+database or restore a system backup created with this schema version.
 
-**Attachment storage** defaults to disk (the `app_data` volume). To keep attachments in the bundled [Garage](https://garagehq.deuxfleurs.fr/) object store instead, one installation-wide S3 attachment bucket is auto-created on first upload:
+Disk storage is the default. To use the bundled Garage service instead:
 
 ```sh
-STICKY_NOTES_STORAGE=s3 docker compose up -d   # or set it in a .env file
+STICKY_NOTES_STORAGE=s3 docker compose up -d
 ```
 
-Garage bootstraps itself (`--single-node --default-bucket`): no CLI setup, credentials come from the compose file, change the default `GARAGE_RPC_SECRET` / `STICKY_NOTES_S3_ACCESS_KEY` / `STICKY_NOTES_S3_SECRET_KEY` for anything beyond a LAN toy. Pick one backend per deployment: switching doesn't migrate already-uploaded blobs.
+Set `GARAGE_RPC_SECRET`, `STICKY_NOTES_S3_ACCESS_KEY`, and
+`STICKY_NOTES_S3_SECRET_KEY` in `.env` before exposing the stack beyond a
+trusted LAN. Choose one attachment backend per deployment; switching does not
+migrate existing blobs.
 
-### Configuration
+To run only the supporting services during local backend development:
 
-Every environment variable the server reads. All are optional, an unset variable takes the default in the second column, and the server runs with none of them set. `docker-compose.yml` lists the same set (the optional ones commented out) so you can uncomment what you need.
+```sh
+docker compose up -d whisper garage
+```
 
-**Core**
+See [Deployment](docs/DEPLOY.md) for production, backups, and the optional GPU
+Whisper overlay.
 
-| Variable | Default | What it does |
+## Configuration
+
+All server settings are optional. The defaults work for a local Docker
+deployment.
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `STICKY_NOTES_ADDR` | `0.0.0.0:8787` | Listen address. |
-| `STICKY_NOTES_DB` | `sticky_notes.db` (`/data/sticky_notes.db` in the image) | SQLite database path. Created if missing. |
-| `STICKY_NOTES_UPLOADS` | `uploads` (`/data/uploads`) | Attachment directory. Disk storage only, ignored when `STICKY_NOTES_STORAGE=s3`. |
-| `STICKY_NOTES_WEB` | `../app/build/web` (`/app/web`) | Flutter web bundle to serve alongside the API. Silently skipped when the directory has no `index.html`. |
-| `STICKY_NOTES_PUBLIC_URL` | unset | The URL browsers should call. Stamped into `index.html` at startup as the app's default backend **and** used as the sole allowed CORS origin. Unset ⇒ same-origin, CORS open to any browser origin. |
+| `STICKY_NOTES_ADDR` | `0.0.0.0:8787` | Listen address |
+| `STICKY_NOTES_DB` | `sticky_notes.db` | SQLite path (`/data/sticky_notes.db` in Docker) |
+| `STICKY_NOTES_UPLOADS` | `uploads` | Disk attachment directory |
+| `STICKY_NOTES_PUBLIC_URL` | unset | Browser API URL and allowed CORS origin |
+| `STICKY_NOTES_STORAGE` | `disk` | `disk` or `s3` |
+| `STICKY_NOTES_WHISPER_URL` | unset | Whisper service URL; Docker sets it to `http://whisper:9000` |
+| `STICKY_NOTES_EMBED_URL` | unset | OpenAI-compatible embeddings URL; enables semantic search and chat |
+| `STICKY_NOTES_EMBED_MODEL` | `bge-m3` | Embedding model |
+| `STICKY_NOTES_EMBED_API_KEY` | unset | Embedding service bearer token |
+| `STICKY_NOTES_S3_URL` | unset | Required when storage is `s3` |
+| `STICKY_NOTES_S3_ACCESS_KEY` | unset | Required when storage is `s3` |
+| `STICKY_NOTES_S3_SECRET_KEY` | unset | Required when storage is `s3` |
+| `STICKY_NOTES_S3_REGION` | `garage` | S3 signing region |
+| `STICKY_NOTES_S3_BUCKET_PREFIX` | `sticky-notes-` | Prefix for per-user buckets |
+| `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | off | Allow user-configured AI/notification URLs on private networks |
+| `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | off | Allow link previews for private/loopback hosts |
+| `STICKY_NOTES_TELEGRAM_API` | `https://api.telegram.org` | Telegram API base URL |
 
-**Semantic search**
+Server-managed LLM fields override and lock the corresponding user setting:
 
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `STICKY_NOTES_EMBED_URL` | unset | Base URL of an OpenAI-compatible embeddings API, e.g. `http://ollama:11434/v1`. Probed once at startup; unset or unreachable ⇒ semantic search stays off for the life of the process. |
-| `STICKY_NOTES_EMBED_MODEL` | `bge-m3` | Embedding model to request. Changing it (or its vector width) rebuilds the index and re-embeds every note. |
-| `STICKY_NOTES_EMBED_API_KEY` | unset | Bearer token for the embeddings API. Omit for Ollama; required for OpenAI. |
+```text
+STICKY_NOTES_LLM_BASE_URL
+STICKY_NOTES_LLM_API_KEY       # secret; never returned to the app
+STICKY_NOTES_LLM_MODEL
+STICKY_NOTES_LLM_LABELING
+STICKY_NOTES_LLM_CHAT
+STICKY_NOTES_LLM_WRITING
+```
 
-**Audio transcription**
+The compose file includes the same settings where they are useful. Whisper
+also accepts `ASR_MODEL` and `ASR_ENGINE`; the GPU overlay adds
+`ASR_DEVICE` and `ASR_QUANTIZATION`. Garage uses `GARAGE_RPC_SECRET`,
+`GARAGE_DEFAULT_ACCESS_KEY`, `GARAGE_DEFAULT_SECRET_KEY`, and
+`GARAGE_DEFAULT_BUCKET`.
 
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `STICKY_NOTES_WHISPER_URL` | unset | Base URL of a Whisper ASR service. Probed once at startup; unset or unreachable ⇒ transcription stays off for the life of the process. |
+The Flutter app uses build-time defines rather than runtime environment
+variables:
 
-**Attachment storage**
+```sh
+--dart-define=API_BASE=http://localhost:8787
+--dart-define=SKIPPY_CLIENT_VERSION=<version>
+```
 
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `STICKY_NOTES_STORAGE` | `disk` | `disk` or `s3`. Any other value aborts startup. |
-| `STICKY_NOTES_S3_URL` |, | **Required** when `s3`. Endpoint, e.g. `http://garage:3900`. |
-| `STICKY_NOTES_S3_ACCESS_KEY` |, | **Required** when `s3`. Needs permission to create buckets. |
-| `STICKY_NOTES_S3_SECRET_KEY` |, | **Required** when `s3`. |
-| `STICKY_NOTES_S3_REGION` | `garage` | SigV4 region. |
-| `STICKY_NOTES_S3_BUCKET_PREFIX` | `sticky-notes-` | Buckets are named `{prefix}{user-id}`. |
+## Local development
 
-Missing a required `s3` variable is a hard startup failure, not a silent downgrade to disk.
+Prerequisites: Rust 1.88+ and Flutter 3.44+ / Dart 3.12+.
 
-**Notifications & link previews**
-
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `STICKY_NOTES_TELEGRAM_API` | `https://api.telegram.org` | Telegram Bot API base, for self-hosted bot-api servers or proxies. |
-| `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | unset (off) | `1`/`true`/`yes`/`on` lets link previews resolve private and loopback hosts. Off by default as an SSRF guard, only turn it on to preview links on your own LAN. |
-| `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | unset (off) | Allows per-user/managed LLM and ntfy URLs to resolve private or loopback addresses. Leave off on public-registration servers; enable only when users are trusted and need LAN services such as Ollama or a private ntfy. Public targets are DNS-pinned and redirects are refused. |
-
-**Server-managed LLM settings**
-
-Each one overrides the per-user value and locks that field in the app's Settings. Booleans accept `true`/`1`/`on`/`yes` and `false`/`0`/`off`/`no`; an empty or unparseable value leaves the field user-owned.
-
-| Variable | Manages | Notes |
-| --- | --- | --- |
-| `STICKY_NOTES_LLM_BASE_URL` | `llm_base_url` | OpenAI-compatible endpoint, e.g. `http://ollama:11434/v1` (private hosts also require `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS=1`). |
-| `STICKY_NOTES_LLM_API_KEY` | `llm_api_key` | **Secret**, drives the server, never sent to the app. |
-| `STICKY_NOTES_LLM_MODEL` | `llm_model` | |
-| `STICKY_NOTES_LLM_LABELING` | `llm_labeling` | Boolean. Auto-labeling on/off. |
-| `STICKY_NOTES_LLM_CHAT` | `llm_chat` | Boolean. Notes chat on/off. |
-| `STICKY_NOTES_LLM_WRITING` | `llm_writing` | Boolean. AI note editing on/off. |
-
-**Other services in the compose stack** (read by those images, not by this server): `ASR_MODEL` (`base`; `tiny`/`small`/`medium`/`large-v3`) and `ASR_ENGINE` (`faster_whisper`) on Whisper; `GARAGE_RPC_SECRET`, `GARAGE_DEFAULT_ACCESS_KEY`, `GARAGE_DEFAULT_SECRET_KEY`, `GARAGE_DEFAULT_BUCKET` on Garage, the access/secret pair must match the `STICKY_NOTES_S3_*` keys given to the server, which is why the compose file feeds both from the same variables.
-
-The Flutter app has build-time knobs rather than environment variables: `--dart-define=API_BASE=<url>` sets the backend it targets by default (see [Local development](#local-development)); `--dart-define=SKIPPY_CLIENT_VERSION=<version>` sets the client identifier shown in Settings. Local builds report explicit SemVer development versions (`1.0.0-dev+local` for the client and `0.2.0-dev+local` for the server). The production image build retains those release numbers and adds SemVer build metadata: `1.0.0+<commit-count>.<short-sha>` and `0.2.0+<commit-count>.<short-sha>`. The release number is bumped deliberately for a feature, fix, or breaking change; the metadata identifies the exact deployed commit automatically.
-
-### Local development
-
-Prereqs: Rust 1.88+ (edition 2024) and Flutter 3.44+ / Dart 3.12+.
-
-**Backend** (port 8787):
+Run the backend:
 
 ```sh
 cd backend
 cargo run
-# or with Whisper for audio-note transcription:
-docker compose up -d whisper
-STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
 ```
 
-Every knob is an environment variable and every one is optional, see [Configuration](#configuration) for the full list with defaults. The four settings worth understanding rather than just looking up:
-
-Embeddings run **outside** this process, on any OpenAI-compatible endpoint (`STICKY_NOTES_EMBED_URL`), typically an Ollama you already run: `ollama pull bge-m3`, then point the server at `http://…:11434/v1`. The server therefore holds no model weights and its memory stays flat no matter how large the embedding model is; the cost of a big model lands on the machine actually running it. Leave the URL unset and semantic search (and with it notes chat, which retrieves through the same index) simply stays off. The vector width is discovered from the endpoint at startup, so switching models needs no code change, the index notices the new signature and re-embeds.
-
-Default backend URL for the bundled web app: when the binary also serves the Flutter web build, it normally targets its own origin. Behind a reverse proxy (e.g. `https://notes.example.com` on :443) that heuristic can miss, so set **`STICKY_NOTES_PUBLIC_URL`** to the URL browsers should call, the server stamps it into `index.html` at startup and the app uses it as the default, no rebuild needed. It also restricts HTTP CORS to that URL's origin (scheme, host, and port), rather than allowing every browser origin. Users can still switch servers from the login screen's server picker.
-
-Attachment storage (`STICKY_NOTES_STORAGE`) works against any S3-compatible store, not just the bundled Garage. The app creates one `{bucket-prefix}attachments` bucket on the first upload, so the access key needs permission to create it (Garage's auto-provisioned default key has it). For dev: `docker compose up -d garage`, then run with the compose file's key pair.
-
-Server-managed LLM config (optional): the LLM integration is normally per-user (each account sets its own endpoint/key/model in Settings). A self-hoster can instead **pin** any of the six `STICKY_NOTES_LLM_*` fields from the environment. A set value overrides the user's copy and **locks** that field in Settings (shown as "Managed by the server"), so you can point everyone at one provider without exposing the key. Overrides are per-field, pin the endpoint + model and still let users bring their own key, or the reverse. The API key is a **secret**: it drives the server but its value is never sent to the app.
-
-**Flutter app**, pick a device:
+Run the Flutter app:
 
 ```sh
 cd app
-flutter run -d chrome                 # web (dev)
-flutter run -d <ios-or-android-id>    # mobile
+flutter run -d chrome
+flutter run -d <ios-or-android-id>
 ```
 
-The app talks to `http://localhost:8787` by default. Override with `--dart-define=API_BASE=http://<host>:8787`, needed on Android emulators (`http://10.0.2.2:8787`) or real phones (your machine's LAN IP).
+The default backend is `http://localhost:8787`. On an Android emulator use
+`http://10.0.2.2:8787`; on a physical device use the host machine's LAN IP.
+The login screen can also save and switch between server URLs.
 
-You can also set the backend URL directly from the login screen, tap the server chip below the title to switch between saved servers or add a new one. The selection is persisted locally on the device.
-
-### iOS device deployment
-
-**Build the release binary:**
-
-```sh
-cd app
-flutter build ios --release
-```
-
-**Deploy to a connected iPhone** (USB or wireless):
-
-```sh
-flutter devices                               # find your device ID
-flutter run --release --device-id <device-id>  # build + install + launch
-# or just install without launching:
-flutter install --device-id <device-id>
-```
-
-**First-time setup on the iPhone:**
-
-1. **Enable Developer Mode**, Settings → Privacy & Security → Developer Mode → toggle on (requires restart).
-2. **Trust the developer certificate**, after the first install, go to Settings → General → VPN & Device Management and trust your developer profile.
-3. **Keep the phone unlocked** while the install command runs.
-
-**Fallback, deploy via Xcode:**
-
-```sh
-open ios/Runner.xcworkspace
-```
-
-Select your iPhone as the run destination in the toolbar and press Run. Xcode gives better error messages for signing or provisioning issues.
-
-**Connecting to the backend from a physical device:**
-
-`localhost` won't work from a phone. Either:
-
-- Use the login screen's server selector to point at your Mac's LAN IP (e.g. `http://192.168.1.42:8787`).
-- Or pass it at build time: `flutter run --release --dart-define=API_BASE=http://192.168.1.42:8787`.
-
-Make sure the backend is running with `STICKY_NOTES_ADDR=0.0.0.0:8787` (the default) and that your Mac's firewall allows port 8787.
-
-**Single-binary production deploy:** build the web app, then run the server, it detects and serves the bundle:
+For a single-binary web deployment:
 
 ```sh
 cd app && flutter build web --release
-cd ../backend && cargo run            # → open http://localhost:8787
+cd ../backend && cargo run
 ```
 
-## Whole-system backup and restore
+The backend serves `app/build/web` when it contains `index.html`.
 
-The Settings backup is portable and user-scoped. Server operators also have a
-whole-system backup containing the complete SQLite database (accounts, password
-hashes, active session verifiers, settings, all workspaces and notes, history, server
-metadata, and search tables) plus every referenced attachment byte. Environment
-variables, the container image, and external Whisper/LLM service state are not
-included.
+## Backups
 
-Create a backup while the server is running:
+User backups are available in Settings. Operators can create a complete
+instance backup containing the database and referenced attachment bytes:
 
 ```sh
 cd backend
 cargo run -- system-backup /safe/path/skippy-20260729-030000.skb
 ```
 
-With Docker Compose, `./backups` is mounted at `/backups` by default. Override
-the host path with `STICKY_NOTES_BACKUPS_DIR` in `.env`. A host crontab entry
-for a daily 03:15 UTC backup is:
-
-```cron
-15 3 * * * cd /srv/skippy && docker compose exec -T --user sticky-notes server /app/sticky-notes-server system-backup /backups/skippy-$(date -u +\%Y\%m\%d-\%H\%M\%S).skb
-```
-
-Each backup is written to a private temporary file, checksummed, and renamed
-into place only after the SQLite snapshot and every attachment succeed. Copy or
-sync `/backups` off the Skippy host and apply retention there; a backup stored
-only beside the live server is not disaster recovery.
-
-Restore is intentionally offline and refuses to run while the server holds the
-database lock:
+Docker mounts `./backups` at `/backups` by default. Restore offline:
 
 ```sh
 docker compose stop server
@@ -391,14 +154,9 @@ docker compose run --rm --no-deps server \
 docker compose up -d server
 ```
 
-The archive and its database are fully validated before current data changes,
-including its schema version, SQLite integrity, foreign keys, required tables,
-checksums, and exact attachment inventory.
-The command then creates `/data/system-backups/pre-restore-*.skb`, restores
-attachments through the configured disk/S3 backend, atomically replaces the
-database, and removes now-unreferenced blobs. If the current database is too
-damaged to make the safety archive, `--skip-safety-backup` is the explicit
-last-resort override.
+Restore validates the archive, creates a pre-restore safety backup, then
+replaces the database and attachment state. Copy backups off the host and set
+retention separately.
 
 ## Tests
 
@@ -409,47 +167,32 @@ cd app && flutter test
 cd app && flutter analyze
 ```
 
-Backend tests run the real router against in-memory SQLite and deterministic fakes for embeddings, Whisper, LLMs, notification connectors, outbound unfurls, and S3. They cover auth, permissions, sharing, versions, checklist history, reminders, signed/range-capable file serving, semantic indexing, chat/write flows, managed settings, and optional-service behavior. Flutter tests cover models and pure utilities, the optimistic/offline store, settings persistence, share intake, media flows, keyboard shortcuts, and integration-style widget behavior with `FakeApi`.
+Backend tests use in-memory SQLite and deterministic service fakes. Flutter
+tests use `FakeApi` and cover models, stores, offline sync, settings, and key
+widget flows.
 
-## API sketch
+## Repository layout
 
-All under `/api`, JSON, `Authorization: Bearer <token>` (from `/auth/register` or `/auth/login`).
+```text
+backend/  Rust API, SQLite repository, file storage, optional services
+app/      Flutter client, state stores, screens, widgets, platform adapters
+docs/     Deployment notes and historical design documents
+```
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /health`, `/capabilities` | Cleanup/background-job health and optional-service detection |
-| `GET /managed-settings` | Server-pinned setting descriptors; secrets are redacted |
-| `POST /auth/register` · `/auth/login` · `/auth/logout`, `GET/PATCH/DELETE /auth/me` | Accounts, profile changes, deletion & sessions |
-| `GET/POST /workspaces`, `PATCH/DELETE /workspaces/{id}` | Workspaces, including Notes/Board visibility (the default cannot be deleted; deleting another permanently deletes all notes and attachments inside it) |
-| `POST /workspaces/{id}/members`, `DELETE /workspaces/{id}/members/{user_id}` | Workspace roster; removing yourself leaves it |
-| `GET/POST /notes`, `GET/PATCH/DELETE /notes/{id}` | Notes (PATCH is partial; `reminder_at: null` and `stage_id: null` clear; `workspace_id` moves the note) |
-| `POST /notes/{id}/rewrite` | Opt-in LLM cleanup/concise or grammar-only note edit |
-| `POST /notes/reorder` | Persist drag order (renumbers the given ids) |
-| `GET /notes/{id}/versions`, `POST /notes/{id}/versions/{version_id}/restore` | Version timeline and reversible restore |
-| `POST /notes/{id}/collaborators`, `DELETE /notes/{id}/collaborators/{user_id}` | Sharing |
-| `POST /notes/{id}/attachments`, `DELETE /attachments/{id}`, `GET /files/{id}?exp=…&sig=…` | Attachments and signed, expiring media/download access |
-| `GET/POST /labels`, `PATCH/DELETE /labels/{id}` | Labels (per workspace, shared by its members) |
-| `GET/POST /stages`, `PATCH/DELETE /stages/{id}` | Board columns (per workspace, shared by its members; deleting one returns its notes to Unassigned) |
-| `GET /checklist-history` | Checked-off item texts, most used first (typing suggestions) |
-| `GET/POST /share-links`, `DELETE /share-links/{token}` | Public read-only links: list, publish (idempotent per target), revoke |
-| `GET /public/{token}` | **Unauthenticated.** The payload behind a public link; 404 for missing, revoked, or expired |
-| `GET /search?q=…&workspace_id=…` | Semantic search: ranked `{note_id, score}` (503 when disabled) |
-| `GET /search/stats`, `POST /search/reindex`, `GET /search/reindex/status` | Embedding diagnostics and background reindexing |
-| `POST /notes/{id}/transcribe` | Re-run Whisper on an audio note's clip (retry; 503 when disabled) |
-| `GET/PUT /settings` | Per-user settings document (opaque JSON, ≤16 KB) |
-| `GET /unfurl?url=…` | SSRF-guarded link preview metadata |
-| `POST /llm/test`, `/notify/test` | Test unsaved LLM or notification configuration |
-| `GET /chat` | One streaming notes-chat turn over WebSocket; auth is in the first frame |
-| `GET /ws` | Change-event WebSocket; auth is in the first frame, then clients debounce and refetch |
+The main extension seams are the `Repository` in
+[`backend/src/store/mod.rs`](backend/src/store/mod.rs) and the `FileStore` in
+[`backend/src/files.rs`](backend/src/files.rs). SQLite and local disk are the
+defaults; S3-compatible storage is also supported.
 
-For rolling native-app upgrades, the previous `?token=…` WebSocket form is
-temporarily accepted by the server. Current clients never put session tokens
-in URLs; remove the compatibility path after older mobile releases age out.
+## API overview
 
-## Design notes & trade-offs
+Authenticated JSON endpoints live under `/api`. The main groups are:
 
-- **Co-editing is last-write-wins** at note granularity (no CRDT). The WS nudge keeps everyone fresh; a reorder mid-drag from another device is never committed as your drag.
-- **Pin/archive/order are shared** on a shared note (global for simplicity).
-- **Workspace membership is flat**: an owner plus members who can all edit. No viewer/admin roles, the permission matrix stays small enough to reason about on every note endpoint.
-- Client-generated UUIDs let notes be created offline and synced later; the server returns 409 Conflict if an id is reused.
-- Checklist history records on the *check-off* transition and is shared by collaborators on that note, capped at 500 entries per note.
+- `/auth`, `/workspaces`, `/notes`, `/labels`, and `/stages`
+- `/notes/{id}/versions`, `/notes/{id}/attachments`, and sharing endpoints
+- `/search`, `/chat`, `/settings`, `/unfurl`, and `/ws`
+- `/health` and `/capabilities` for service status
+
+Attachments are served through signed, expiring URLs. Optional search,
+transcription, and LLM routes report unavailable services instead of requiring
+them at startup.

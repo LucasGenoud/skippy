@@ -306,7 +306,7 @@ class Note {
       position: (json['position'] as num?)?.toDouble() ?? 0,
       stageId: json['stage_id'] as String?,
       // Absent for a cache written before boards existed; the grid position is
-      // the same seed the server's migration uses.
+      // the natural initial order for a board column.
       stagePosition:
           (json['stage_position'] as num?)?.toDouble() ??
           (json['position'] as num?)?.toDouble() ??

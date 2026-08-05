@@ -37,6 +37,7 @@ import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/markdown_toolbar.dart';
+import '../widgets/paste_files.dart';
 import '../widgets/reminder_picker.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
@@ -741,6 +742,13 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  /// Files on the clipboard attach to this note: a pasted screenshot renders
+  /// inline like any other image, a pasted file becomes a download tile.
+  Future<void> _addPastedFiles(List<DroppedFile> files) async {
+    if (_note?.trashed ?? false) return;
+    await _uploadAll(files, failureMessage: "Couldn't upload the pasted files");
+  }
+
   Future<void> _editReminder() async {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
@@ -944,209 +952,238 @@ class _EditorScreenState extends State<EditorScreen> {
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) FocusManager.instance.primaryFocus?.unfocus();
       },
-      child: FileDropArea(
-        hint: 'Drop files to attach',
-        onFiles: _addDroppedFiles,
-        child: AnimatedContainer(
-          duration: Motion.base,
-          curve: Motion.standard,
-          color: bg,
-          child: CallbackShortcuts(
-            bindings: {
-              const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-                  _undo,
-              const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
-              const SingleActivator(
-                LogicalKeyboardKey.keyZ,
-                control: true,
-                shift: true,
-              ): _redo,
-              const SingleActivator(
-                LogicalKeyboardKey.keyZ,
-                meta: true,
-                shift: true,
-              ): _redo,
-              const SingleActivator(LogicalKeyboardKey.keyY, control: true):
-                  _redo,
-            },
-            child: _editorShell(
-              note: note,
-              body: SafeArea(
-                // heightFactor 1 makes the modal hug its content instead of
-                // stretching to the dialog's max height; fullscreen keeps the
-                // usual fill (the column is max-size there anyway).
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  heightFactor: widget.modal ? 1.0 : null,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: Column(
-                      // Modal: shrink to the note's content (the dialog grows
-                      // with the note) instead of
-                      // filling the screen.
-                      mainAxisSize: widget.modal
-                          ? MainAxisSize.min
-                          : MainAxisSize.max,
-                      children: [
-                        Flexible(
-                          fit: widget.modal ? FlexFit.loose : FlexFit.tight,
-                          child: GestureDetector(
-                            onTap: trashed
-                                ? () => showAppSnack(
-                                    "Can't edit in Trash, restore the note first",
-                                  )
-                                : null,
-                            child: ListView(
-                              shrinkWrap: widget.modal,
-                              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                              children: [
-                                TextField(
-                                  controller: _titleController,
-                                  focusNode: _titleFocus,
-                                  readOnly: trashed,
-                                  enabled: !trashed,
-                                  maxLines: null,
-                                  textInputAction: TextInputAction.next,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                  decoration: const InputDecoration(
-                                    hintText: 'Title',
-                                    border: InputBorder.none,
-                                  ),
+      child: PasteFileArea(
+        enabled: !trashed,
+        onFiles: _addPastedFiles,
+        child: FileDropArea(
+          hint: 'Drop files to attach',
+          onFiles: _addDroppedFiles,
+          child: AnimatedContainer(
+            duration: Motion.base,
+            curve: Motion.standard,
+            color: bg,
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
+                    _undo,
+                const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
+                    _undo,
+                const SingleActivator(
+                  LogicalKeyboardKey.keyZ,
+                  control: true,
+                  shift: true,
+                ): _redo,
+                const SingleActivator(
+                  LogicalKeyboardKey.keyZ,
+                  meta: true,
+                  shift: true,
+                ): _redo,
+                const SingleActivator(LogicalKeyboardKey.keyY, control: true):
+                    _redo,
+              },
+              child: _editorShell(
+                note: note,
+                body: SafeArea(
+                  // heightFactor 1 makes the modal hug its content instead of
+                  // stretching to the dialog's max height; fullscreen keeps the
+                  // usual fill (the column is max-size there anyway).
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    heightFactor: widget.modal ? 1.0 : null,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: Column(
+                        // Modal: shrink to the note's content (the dialog grows
+                        // with the note) instead of
+                        // filling the screen.
+                        mainAxisSize: widget.modal
+                            ? MainAxisSize.min
+                            : MainAxisSize.max,
+                        children: [
+                          Flexible(
+                            fit: widget.modal ? FlexFit.loose : FlexFit.tight,
+                            child: GestureDetector(
+                              onTap: trashed
+                                  ? () => showAppSnack(
+                                      "Can't edit in Trash, restore the note first",
+                                    )
+                                  : null,
+                              child: ListView(
+                                shrinkWrap: widget.modal,
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  8,
+                                  24,
+                                  24,
                                 ),
-                                _contentEditor(trashed: trashed, query: query),
-                                // Images sit directly under the text; other
-                                // files follow as download tiles.
-                                ..._buildAttachments(note),
-                                if (note != null &&
-                                    (note.reminderAt != null ||
-                                        labels.isNotEmpty))
-                                  _metaChips(note, settings, labels),
-                                // Rich preview cards for any links in the
-                                // note, kept as the very last thing so they
-                                // always sit below everything else.
-                                if (note != null && _linkText(note).isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 12),
-                                    child: LinkPreviewList(
-                                      text: _linkText(note),
+                                children: [
+                                  TextField(
+                                    controller: _titleController,
+                                    focusNode: _titleFocus,
+                                    readOnly: trashed,
+                                    enabled: !trashed,
+                                    maxLines: null,
+                                    textInputAction: TextInputAction.next,
+                                    contentInsertionConfiguration:
+                                        PasteFileArea.insertionOf(context),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Title',
+                                      border: InputBorder.none,
                                     ),
                                   ),
-                              ],
+                                  _contentEditor(
+                                    trashed: trashed,
+                                    query: query,
+                                  ),
+                                  // Images sit directly under the text; other
+                                  // files follow as download tiles.
+                                  ..._buildAttachments(note),
+                                  if (note != null &&
+                                      (note.reminderAt != null ||
+                                          labels.isNotEmpty))
+                                    _metaChips(note, settings, labels),
+                                  // Rich preview cards for any links in the
+                                  // note, kept as the very last thing so they
+                                  // always sit below everything else.
+                                  if (note != null &&
+                                      _linkText(note).isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: LinkPreviewList(
+                                        text: _linkText(note),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        // Formatting accessory bar while editing markdown.
-                        if (_kind == NoteKind.markdown &&
-                            !_previewMarkdown &&
-                            !_finding &&
-                            !trashed)
-                          MarkdownToolbar(
-                            controller: _contentController,
-                            focusNode: _contentFocus,
-                          ),
-                        if (_uploading)
-                          const LinearProgressIndicator(minHeight: 2),
-                        DecoratedBox(
-                          key: widget.modal
-                              ? null
-                              : const Key('editor-bottom-separator'),
-                          decoration: BoxDecoration(
-                            border: widget.modal
+                          // Formatting accessory bar while editing markdown.
+                          if (_kind == NoteKind.markdown &&
+                              !_previewMarkdown &&
+                              !_finding &&
+                              !trashed)
+                            MarkdownToolbar(
+                              controller: _contentController,
+                              focusNode: _contentFocus,
+                            ),
+                          if (_uploading)
+                            const LinearProgressIndicator(minHeight: 2),
+                          DecoratedBox(
+                            key: widget.modal
                                 ? null
-                                : Border(
-                                    top: BorderSide(
-                                      color: hairlineColor(scheme),
+                                : const Key('editor-bottom-separator'),
+                            decoration: BoxDecoration(
+                              border: widget.modal
+                                  ? null
+                                  : Border(
+                                      top: BorderSide(
+                                        color: hairlineColor(scheme),
+                                      ),
                                     ),
-                                  ),
+                            ),
+                            child: EditorBottomBar(
+                              trashed: trashed,
+                              isOwner: isOwner,
+                              archived: note?.archived ?? false,
+                              kind: _kind,
+                              editedStamp: note == null
+                                  ? ''
+                                  : 'Edited ${settings.editedLabel(note.updatedAt)}',
+                              onPalette: trashed
+                                  ? null
+                                  : () => ColorPickerSheet.show(
+                                      context,
+                                      selected: () => _note?.color ?? 'default',
+                                      onSelect: _setColor,
+                                    ),
+                              // Labelling is available from the first moment,
+                              // like colour and pin: filing a note is often the
+                              // first thing you do, and the draft materializes
+                              // on demand.
+                              onLabels: trashed ? null : _editLabels,
+                              onReminder: trashed ? null : _editReminder,
+                              onImage: trashed || _uploading
+                                  ? null
+                                  : _pickImage,
+                              onAttach: trashed || _uploading
+                                  ? null
+                                  : _pickFile,
+                              onShare: trashed ? null : _openShare,
+                              onArchive: trashed || autoDiscardable
+                                  ? null
+                                  : _archiveAndClose,
+                              onUndo: trashed || !_history.canUndo
+                                  ? null
+                                  : _undo,
+                              onRedo: trashed || !_history.canRedo
+                                  ? null
+                                  : _redo,
+                              onDelete: trashed || autoDiscardable || !isOwner
+                                  ? null
+                                  : _deleteAndClose,
+                              onDuplicate:
+                                  trashed || note == null || note.isEmpty
+                                  ? null
+                                  : _duplicateNote,
+                              onMoveToWorkspace:
+                                  trashed ||
+                                      note == null ||
+                                      note.isEmpty ||
+                                      !isOwner ||
+                                      _store.workspaces.length < 2
+                                  ? null
+                                  : () => MoveToWorkspaceSheet.show(
+                                      context,
+                                      note.id,
+                                    ),
+                              // Unlike workspaces, a column needs no second one
+                              // to move to, "Unassigned" is always a
+                              // destination, so this only asks that there be a
+                              // board at all.
+                              onMoveToStage:
+                                  trashed ||
+                                      note == null ||
+                                      note.isEmpty ||
+                                      _store.stages.isEmpty
+                                  ? null
+                                  : () =>
+                                        MoveToStageSheet.show(context, note.id),
+                              // Copying to the clipboard reads the note; a
+                              // trashed one is still readable, so this stays
+                              // available.
+                              onCopyToClipboard: note == null || note.isEmpty
+                                  ? null
+                                  : _copyNoteToClipboard,
+                              onHistory: note == null || note.isEmpty
+                                  ? null
+                                  : () => NoteHistoryScreen.open(
+                                      context,
+                                      note.id,
+                                    ),
+                              // A trashed note must not be pinnable: the widget
+                              // would outlive the note itself.
+                              onAddToHomeScreen:
+                                  HomeWidgets.supported && !trashed
+                                  ? _addToHomeScreen
+                                  : null,
+                              onConvert: trashed ? null : _convertKind,
+                              onRewrite:
+                                  trashed ||
+                                      note == null ||
+                                      note.isEmpty ||
+                                      note.isAudio ||
+                                      !settings.noteWritingAvailable
+                                  ? null
+                                  : _rewriteWithAi,
+                              rewriting: isRewriting,
+                            ),
                           ),
-                          child: EditorBottomBar(
-                            trashed: trashed,
-                            isOwner: isOwner,
-                            archived: note?.archived ?? false,
-                            kind: _kind,
-                            editedStamp: note == null
-                                ? ''
-                                : 'Edited ${settings.editedLabel(note.updatedAt)}',
-                            onPalette: trashed
-                                ? null
-                                : () => ColorPickerSheet.show(
-                                    context,
-                                    selected: () => _note?.color ?? 'default',
-                                    onSelect: _setColor,
-                                  ),
-                            // Labelling is available from the first moment,
-                            // like colour and pin: filing a note is often the
-                            // first thing you do, and the draft materializes
-                            // on demand.
-                            onLabels: trashed ? null : _editLabels,
-                            onReminder: trashed ? null : _editReminder,
-                            onImage: trashed || _uploading ? null : _pickImage,
-                            onAttach: trashed || _uploading ? null : _pickFile,
-                            onShare: trashed ? null : _openShare,
-                            onArchive: trashed || autoDiscardable
-                                ? null
-                                : _archiveAndClose,
-                            onUndo: trashed || !_history.canUndo ? null : _undo,
-                            onRedo: trashed || !_history.canRedo ? null : _redo,
-                            onDelete: trashed || autoDiscardable || !isOwner
-                                ? null
-                                : _deleteAndClose,
-                            onDuplicate: trashed || note == null || note.isEmpty
-                                ? null
-                                : _duplicateNote,
-                            onMoveToWorkspace:
-                                trashed ||
-                                    note == null ||
-                                    note.isEmpty ||
-                                    !isOwner ||
-                                    _store.workspaces.length < 2
-                                ? null
-                                : () => MoveToWorkspaceSheet.show(
-                                    context,
-                                    note.id,
-                                  ),
-                            // Unlike workspaces, a column needs no second one
-                            // to move to, "Unassigned" is always a
-                            // destination, so this only asks that there be a
-                            // board at all.
-                            onMoveToStage:
-                                trashed ||
-                                    note == null ||
-                                    note.isEmpty ||
-                                    _store.stages.isEmpty
-                                ? null
-                                : () => MoveToStageSheet.show(context, note.id),
-                            // Copying to the clipboard reads the note; a
-                            // trashed one is still readable, so this stays
-                            // available.
-                            onCopyToClipboard: note == null || note.isEmpty
-                                ? null
-                                : _copyNoteToClipboard,
-                            onHistory: note == null || note.isEmpty
-                                ? null
-                                : () =>
-                                      NoteHistoryScreen.open(context, note.id),
-                            // A trashed note must not be pinnable: the widget
-                            // would outlive the note itself.
-                            onAddToHomeScreen: HomeWidgets.supported && !trashed
-                                ? _addToHomeScreen
-                                : null,
-                            onConvert: trashed ? null : _convertKind,
-                            onRewrite:
-                                trashed ||
-                                    note == null ||
-                                    note.isEmpty ||
-                                    note.isAudio ||
-                                    !settings.noteWritingAvailable
-                                ? null
-                                : _rewriteWithAi,
-                            rewriting: isRewriting,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

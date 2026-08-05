@@ -7,8 +7,6 @@ mod sqlite_schema;
 mod sqlite_sharing;
 mod sqlite_views;
 
-pub(crate) const CURRENT_SCHEMA_VERSION: i64 = sqlite_schema::SCHEMA_VERSION;
-
 use async_trait::async_trait;
 
 use crate::models::*;

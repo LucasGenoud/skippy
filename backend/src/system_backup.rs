@@ -493,14 +493,6 @@ fn extract_and_validate_archive(
 
 async fn validate_database(path: &Path, records: &[BlobRecord]) -> anyhow::Result<()> {
     let pool = open_readonly(path).await?;
-    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(&pool)
-        .await?;
-    ensure!(
-        version == crate::store::CURRENT_SCHEMA_VERSION,
-        "backup database schema version {version} is incompatible with version {}",
-        crate::store::CURRENT_SCHEMA_VERSION
-    );
     let integrity: String = sqlx::query("PRAGMA integrity_check")
         .fetch_one(&pool)
         .await?
@@ -854,38 +846,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn incompatible_schema_is_rejected_before_current_data_changes() -> anyhow::Result<()> {
-        let root = temp_root();
-        fs::create_dir(&root)?;
-        let db = root.join("skippy.db");
-        let uploads = root.join("uploads");
-        let archive = root.join("legacy.skb");
-        seed_database(&db).await?;
-        let disk: Arc<dyn FileStore> = Arc::new(DiskStore::new(&uploads));
-        disk.save("a1", b"old").await?;
-
-        let options = SqliteConnectOptions::new().filename(&db).foreign_keys(true);
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect_with(options)
-            .await?;
-        sqlx::query("PRAGMA user_version = 1")
-            .execute(&pool)
-            .await?;
-        pool.close().await;
-        system_backup(&db, disk.clone(), &archive).await?;
-
-        let error = system_restore(&db, disk.clone(), &archive, true)
-            .await
-            .unwrap_err();
-        assert!(error.to_string().contains("schema version 1"), "{error:#}");
-        assert_eq!(disk.read("a1").await.as_deref(), Some(b"old".as_slice()));
-        fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn partial_current_schema_is_rejected() -> anyhow::Result<()> {
+    async fn partial_schema_is_rejected() -> anyhow::Result<()> {
         let root = temp_root();
         fs::create_dir(&root)?;
         let db = root.join("partial.db");
@@ -900,12 +861,6 @@ mod tests {
         sqlx::query("CREATE TABLE users (id TEXT PRIMARY KEY) STRICT")
             .execute(&pool)
             .await?;
-        sqlx::query(&format!(
-            "PRAGMA user_version = {}",
-            crate::store::CURRENT_SCHEMA_VERSION
-        ))
-        .execute(&pool)
-        .await?;
         pool.close().await;
 
         let error = validate_database(&db, &[]).await.unwrap_err();

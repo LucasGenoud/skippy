@@ -1,11 +1,4 @@
 use sqlx::SqlitePool;
-
-pub(super) const SCHEMA_VERSION: i64 = 2;
-
-/// The database is intentionally initialized as one current schema. Skippy's
-/// workspace-owned storage redesign is a clean-break release: existing files
-/// are not upgraded in place and should be recreated or restored from a
-/// compatible backup.
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -217,25 +210,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
     ON workspaces(owner_id) WHERE is_default = 1;
 CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due
     ON cleanup_jobs(next_attempt_at, id);
-PRAGMA user_version = 2;
 "#;
 
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
-    let application_tables: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_master
-         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-    )
-    .fetch_one(pool)
-    .await?;
-    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
-        .fetch_one(pool)
-        .await?;
-    if application_tables != 0 && version != SCHEMA_VERSION {
-        anyhow::bail!(
-            "database schema version {version} is incompatible with workspace-owned schema \
-             version {SCHEMA_VERSION}; start with an empty database"
-        );
-    }
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
     Ok(())
 }
@@ -329,21 +306,6 @@ mod tests {
 
         pool.close().await;
         let _ = std::fs::remove_file(path);
-    }
-
-    #[tokio::test]
-    async fn any_partial_database_fails_fast_instead_of_partially_starting() {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect_with(SqliteConnectOptions::new().filename(":memory:"))
-            .await
-            .unwrap();
-        sqlx::query("CREATE TABLE users (id TEXT PRIMARY KEY)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let error = super::initialize(&pool).await.unwrap_err().to_string();
-        assert!(error.contains("start with an empty database"), "{error}");
     }
 
     #[tokio::test]

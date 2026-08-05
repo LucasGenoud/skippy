@@ -6,32 +6,7 @@ import '../theme.dart';
 import 'package:web/web.dart' as web;
 
 import '../models/dropped_file.dart';
-import '../util/mime.dart';
-
-/// Snapshot a browser [web.FileList] into a Dart list. Must run
-/// synchronously inside the event handler, a drop's DataTransfer is
-/// neutered once the handler returns.
-List<web.File> _fileHandles(web.FileList? files) => [
-  for (var i = 0; i < (files?.length ?? 0); i++)
-    if (files!.item(i) case final web.File file) file,
-];
-
-/// Read [web.File] handles into in-memory [DroppedFile]s, inferring a mime
-/// type from the name when the browser reports none.
-Future<List<DroppedFile>> _readFiles(List<web.File> handles) async {
-  final files = <DroppedFile>[];
-  for (final handle in handles) {
-    final buffer = await handle.arrayBuffer().toDart;
-    files.add(
-      DroppedFile(
-        name: handle.name,
-        mime: handle.type.isEmpty ? mimeFromName(handle.name) : handle.type,
-        bytes: buffer.toDart.asUint8List(),
-      ),
-    );
-  }
-  return files;
-}
+import 'web_files.dart';
 
 /// Browser file dialog via a bare `<input type=file>`. Empty list on cancel.
 ///
@@ -53,10 +28,10 @@ Future<List<DroppedFile>> pickAnyFiles() {
     'change',
     // toJS only accepts synchronous signatures; do the async reads inside.
     ((web.Event _) {
-      final handles = _fileHandles(input.files);
+      final handles = webFileHandles(input.files);
       input.remove();
       Future(() async {
-        final picked = await _readFiles(handles);
+        final picked = await readWebFiles(handles);
         if (!completer.isCompleted) completer.complete(picked);
       });
     }).toJS,
@@ -180,7 +155,7 @@ class _FileDropAreaState extends State<FileDropArea> {
         final target = _target;
         setDragging(false);
         if (target == null) return;
-        target._receive(_fileHandles(e.dataTransfer!.files));
+        target._receive(webFileHandles(e.dataTransfer!.files));
       }).toJS,
     );
   }
@@ -191,7 +166,7 @@ class _FileDropAreaState extends State<FileDropArea> {
   }
 
   Future<void> _receive(List<web.File> handles) async {
-    final files = await _readFiles(handles);
+    final files = await readWebFiles(handles);
     if (files.isEmpty || !mounted) return;
     await widget.onFiles(files);
   }

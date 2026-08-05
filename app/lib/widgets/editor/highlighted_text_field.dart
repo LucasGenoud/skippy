@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../util/linkify.dart';
+import '../paste_files.dart';
 
 /// The editor's body controller. On top of plain editing it does two things in
 /// [buildTextSpan]: styles URLs as blue underlined links and tints find-in-note
@@ -86,6 +87,9 @@ class HighlightedTextField extends StatelessWidget {
       maxLines: null,
       minLines: 6,
       autofocus: autofocus,
+      // An image committed by the keyboard (Gboard's clipboard panel) attaches
+      // to the note instead of being refused; null outside a PasteFileArea.
+      contentInsertionConfiguration: PasteFileArea.insertionOf(context),
       style: style,
       decoration: const InputDecoration(
         hintText: 'Note',

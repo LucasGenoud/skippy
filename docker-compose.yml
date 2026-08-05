@@ -1,135 +1,64 @@
-# One command for the whole backend stack (API + web app + Whisper + Garage):
-#   docker compose up -d          -> app at http://localhost:8787
-#
-# Attachment files live on disk (the app_data volume) by default. To store
-# them in the bundled Garage object store instead (one S3 bucket per user):
-#   STICKY_NOTES_STORAGE=s3 docker compose up -d
-# (or put STICKY_NOTES_STORAGE=s3 in a .env file next to this compose file).
-# Pick ONE backend per deployment, switching later doesn't migrate existing
-# blobs.
-#
-# For local development you can run just the supporting services and keep
-# `cargo run` on the host:
-#   docker compose up -d whisper garage
-#   STICKY_NOTES_WHISPER_URL=http://localhost:9000 cargo run
-# (add STICKY_NOTES_STORAGE=s3 STICKY_NOTES_S3_URL=http://localhost:3900 plus
-# the access/secret key below to develop against Garage.)
+# Full stack: web app/API, Whisper transcription, and optional Garage S3.
+# Start with: docker compose up -d
+# Use STICKY_NOTES_STORAGE=s3 to store attachments in Garage.
 services:
   server:
     build: .
     image: forgejo.genoud.dev/lucasgenoud/skippy:latest
     ports:
       - "8787:8787"
-    # Every variable the server reads is listed here; the commented-out ones
-    # are optional and shown with their default. README's "Configuration"
-    # section has the same list with full descriptions.
     environment:
-      # ── Core ────────────────────────────────────────────────────────────
-      # When set (for example https://notes.example.com), this becomes the
-      # browser API base and the sole allowed CORS origin.
       STICKY_NOTES_PUBLIC_URL: ${STICKY_NOTES_PUBLIC_URL:-}
-      # Set by the image; override only if you remap the volumes.
-      # STICKY_NOTES_ADDR: 0.0.0.0:8787       # listen address
-      # STICKY_NOTES_DB: /data/sticky_notes.db
-      # STICKY_NOTES_UPLOADS: /data/uploads   # disk storage only
-      # STICKY_NOTES_WEB: /app/web            # bundled Flutter web build
-
-      # ── Semantic search ─────────────────────────────────────────────────
-      # Embeddings come from an external OpenAI-compatible API (Ollama,
-      # OpenAI, LM Studio, ...), the server holds no model, so its memory
-      # stays flat. Unset ⇒ semantic search (and notes chat) stay off.
-      # Probed once at startup; unreachable then ⇒ off for the whole process.
-      # For an Ollama on the host: http://host.docker.internal:11434/v1
       STICKY_NOTES_EMBED_URL: ${STICKY_NOTES_EMBED_URL:-}
-      # The embedding model to ask for; `ollama pull bge-m3` matches the
-      # default. Changing it re-embeds every note on the next start.
       STICKY_NOTES_EMBED_MODEL: ${STICKY_NOTES_EMBED_MODEL:-bge-m3}
-      # Optional; omit for Ollama, needed for OpenAI.
       STICKY_NOTES_EMBED_API_KEY: ${STICKY_NOTES_EMBED_API_KEY:-}
-
-      # ── Audio transcription ─────────────────────────────────────────────
-      # Probed once at startup; unreachable then ⇒ off for the whole process.
       STICKY_NOTES_WHISPER_URL: http://whisper:9000
-
-      # ── Attachment storage ──────────────────────────────────────────────
-      # File storage backend: "disk" (default) keeps blobs in app_data;
-      # "s3" stores them in the garage service, one bucket per user.
       STICKY_NOTES_STORAGE: ${STICKY_NOTES_STORAGE:-disk}
-      # Required when STICKY_NOTES_STORAGE=s3 (ignored in disk mode); a
-      # missing one is a startup failure, not a fallback to disk.
       STICKY_NOTES_S3_URL: http://garage:3900
       STICKY_NOTES_S3_REGION: garage
       STICKY_NOTES_S3_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
       STICKY_NOTES_S3_SECRET_KEY: ${STICKY_NOTES_S3_SECRET_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-      # STICKY_NOTES_S3_BUCKET_PREFIX: sticky-notes-   # buckets: {prefix}{user-id}
-
-      # ── Notifications & link previews ───────────────────────────────────
-      # STICKY_NOTES_TELEGRAM_API: https://api.telegram.org
-      # Lets link previews resolve private/loopback hosts, off by default as
-      # an SSRF guard.
-      # STICKY_NOTES_UNFURL_ALLOW_PRIVATE: "1"
-      # Allows user-configured LLM/ntfy endpoints on the LAN. Keep off when
-      # untrusted people can register.
       STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS: ${STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS:-}
-
-      # ── Server-managed LLM settings ─────────────────────────────────────
-      # Each one overrides the per-user value and locks that field in the
-      # app's Settings. Booleans take true/1/on/yes or false/0/off/no.
+      # Optional server-managed LLM settings:
       # STICKY_NOTES_LLM_BASE_URL: http://ollama:11434/v1
-      # STICKY_NOTES_LLM_API_KEY: ${STICKY_NOTES_LLM_API_KEY:-}  # secret, never sent to the app
+      # STICKY_NOTES_LLM_API_KEY: ${STICKY_NOTES_LLM_API_KEY:-}
       # STICKY_NOTES_LLM_MODEL: llama3.1
-      # STICKY_NOTES_LLM_LABELING: "true"     # auto-labeling
-      # STICKY_NOTES_LLM_CHAT: "true"         # notes chat
-      # STICKY_NOTES_LLM_WRITING: "true"      # AI note editing
+      # STICKY_NOTES_LLM_LABELING: "true"
+      # STICKY_NOTES_LLM_CHAT: "true"
+      # STICKY_NOTES_LLM_WRITING: "true"
+      # Optional link-preview/Telegram settings:
+      # STICKY_NOTES_UNFURL_ALLOW_PRIVATE: "1"
+      # STICKY_NOTES_TELEGRAM_API: https://api.telegram.org
     volumes:
-      - app_data:/data # SQLite DB + uploaded files
-      # Whole-system .skb archives land on the host, outside the live data
-      # volume. Override with STICKY_NOTES_BACKUPS_DIR in .env.
+      - app_data:/data
       - ${STICKY_NOTES_BACKUPS_DIR:-./backups}:/backups
     depends_on:
-      # Wait until Whisper's HTTP server actually answers, not just until its
-      # container starts, otherwise the server probes a not-yet-ready Whisper
-      # and disables transcription for the whole life of the process.
       whisper:
         condition: service_healthy
-      # Harmless in disk mode (garage just idles); in s3 mode it guarantees
-      # the object store answers before the server takes its first upload.
       garage:
         condition: service_healthy
     restart: unless-stopped
 
-  # Local speech-to-text for audio notes. ffmpeg-based, so it accepts the
-  # browser's webm/opus clips directly. First start downloads the model.
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
     ports:
-      - "127.0.0.1:9000:9000" # host `cargo run` can reach it; other hosts cannot
+      - "127.0.0.1:9000:9000"
     environment:
-      ASR_MODEL: base # tiny | base | small | medium | large-v3
+      ASR_MODEL: base
       ASR_ENGINE: faster_whisper
     volumes:
       - whisper_cache:/root/.cache
-    # The image loads its ASR model on boot (tens of seconds), during which the
-    # HTTP server isn't answering yet. This gate lets `server` wait for a real
-    # response before it runs its one-shot reachability probe.
     healthcheck:
-      test: [ "CMD", "curl", "-fsS", "http://localhost:9000/docs" ]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/docs"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 90s
     restart: unless-stopped
 
-  # S3-compatible object storage for attachments, used when
-  # STICKY_NOTES_STORAGE=s3. Fully self-bootstrapping: --single-node creates
-  # the cluster layout on first start, --default-bucket imports the access key
-  # from the GARAGE_DEFAULT_* variables, no manual `garage` CLI setup. The
-  # app then creates one bucket per user with that key on each user's first
-  # upload. CHANGE the three default secrets below (via .env or real env vars)
-  # for any deployment reachable by others.
   garage:
     image: dxflrs/garage:v2.3.0
-    command: [ "/garage", "server", "--single-node", "--default-bucket" ]
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210}
       GARAGE_DEFAULT_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:-GK0123456789abcdef0123456789abcdef}
@@ -140,14 +69,10 @@ services:
       - garage_meta:/var/lib/garage/meta
       - garage_data:/var/lib/garage/data
     ports:
-      # Localhost-only: the server container reaches garage over the compose
-      # network; these are just for host-side `cargo run` dev and debugging.
-      - "127.0.0.1:3900:3900" # S3 API
-      - "127.0.0.1:3903:3903" # admin API (GET /health)
-    # The image has no shell or curl; the garage CLI itself is the probe (it
-    # connects to the running daemon over local RPC and fails until it's up).
+      - "127.0.0.1:3900:3900"
+      - "127.0.0.1:3903:3903"
     healthcheck:
-      test: [ "CMD", "/garage", "status" ]
+      test: ["CMD", "/garage", "status"]
       interval: 5s
       timeout: 5s
       retries: 12

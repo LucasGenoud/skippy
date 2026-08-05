@@ -143,29 +143,9 @@ CREATE TABLE IF NOT EXISTS stages (
 );
 ```
 
-Plus two additive columns on `notes`, appended to `ADDITIVE_MIGRATIONS` in
-[`sqlite_schema.rs`](../../../backend/src/store/sqlite_schema.rs) alongside the
-existing seven:
-
-```
-ALTER TABLE notes ADD COLUMN stage_id TEXT
-ALTER TABLE notes ADD COLUMN stage_position REAL
-```
-
-`stage_id` is nullable, null means Unassigned.
-
-**Backfill.** `ADDITIVE_MIGRATIONS` re-runs every statement on every startup and
-discards errors (`apply_additive_migrations`), so it is DDL-only. The
-`stage_position` seed belongs as its own idempotent step next to
-`migrate_user_accounts`, guarded exactly the way that one is:
-
-```sql
-UPDATE notes SET stage_position = position WHERE stage_position IS NULL
-```
-
-Safe to re-run, seeds every board in the order people already arranged their
-grid, and means `stage_position` is *always set*, no null handling in the sort,
-the decoder, or the Dart model.
+The fresh `notes` schema includes a nullable `stage_id` and a non-null
+`stage_position`. A null stage means Unassigned; new databases initialize these
+fields directly as part of the complete schema.
 
 **Invariant:** a note's stage must belong to the note's workspace. There is
 already a template, `PRUNE_MISMATCHED_LABELS` in

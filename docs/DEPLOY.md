@@ -10,9 +10,8 @@ git push  ->  .forgejo/workflows/build.yml  ->  registry :latest  ->  Watchtower
 ```
 
 Your data (SQLite DB + uploads in the `app_data` volume, or Garage) survives the
-restart untouched. The workspace-owned schema release is a clean break: start
-with a new database (or restore a backup produced by the same schema version);
-the server does not migrate older database files in place.
+restart untouched. A missing database file is initialized with the current
+schema.
 
 ## One-time setup
 
@@ -46,6 +45,34 @@ docker compose up -d
 
 Watchtower is not defined in this repository's `docker-compose.yml`. Configure
 it separately on the homeserver if you want automatic pulls and restarts.
+
+### 4. GPU transcription (optional)
+
+`docker-compose.gpu.yml` moves Whisper onto an NVIDIA GPU and up to the
+`large-v3` model. It is never loaded automatically, because its device
+reservation fails hard on any host without a CUDA GPU. Requires the NVIDIA
+Container Toolkit and a driver new enough for the image's CUDA 12 runtime
+(≥ 525); check `nvidia-smi` on the host first.
+
+Opt in on the homeserver through the `.env` file next to the compose files:
+
+```
+COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+```
+
+Set it there rather than passing `-f` flags, so the bare `docker compose`
+commands elsewhere in this document (backup cron, restore, rollback) pick the
+overlay up too. A forgotten pair of flags silently recreates `whisper` from the
+CPU image.
+
+The first start downloads ~3 GB into the `whisper_cache` volume, which is why
+the overlay widens the health-check start period; `server` gates on
+`condition: service_healthy`, so a timeout there fails the whole stack. Pull it
+once before the switch to keep the window short:
+
+```
+docker compose pull whisper && docker compose up -d whisper
+```
 
 ## Rollback
 
@@ -99,8 +126,8 @@ docker compose up -d server
 Use `--skip-safety-backup` only when the current database is unreadable and no
 safety archive can be created.
 
-Before replacing current data, restore validates the archive checksum, exact
-database schema version, SQLite integrity and foreign keys, required tables,
+Before replacing current data, restore validates the archive checksum, SQLite
+integrity and foreign keys, required tables,
 and the complete attachment inventory.
 
 ## Health and logs
