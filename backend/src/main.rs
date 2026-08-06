@@ -7,7 +7,6 @@ use sticky_notes_server::search::{
 };
 use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
-use sticky_notes_server::system_backup::{SystemLock, system_backup, system_restore};
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
 use sticky_notes_server::{
     AppState, build_app_with_cors_origin, cors_origin_from_public_url, handlers,
@@ -183,84 +182,12 @@ async fn init_transcription() -> Option<Arc<dyn Transcriber>> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if let Some(argument) = std::env::args().nth(1) {
+        anyhow::bail!("sticky-notes-server does not accept command-line arguments (got '{argument}')");
+    }
     let db_path =
         std::env::var("STICKY_NOTES_DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
     let uploads = std::env::var("STICKY_NOTES_UPLOADS").unwrap_or_else(|_| "uploads".to_string());
-    let mut args = std::env::args().skip(1);
-    match args.next().as_deref() {
-        Some("system-backup") => {
-            let output = args
-                .next()
-                .map(PathBuf::from)
-                .ok_or_else(|| anyhow::anyhow!("system-backup requires an output .skb path"))?;
-            if args.next().is_some() {
-                anyhow::bail!("usage: sticky-notes-server system-backup <output.skb>");
-            }
-            let files = init_file_store(&uploads)?;
-            let report = system_backup(Path::new(&db_path), files, &output).await?;
-            println!(
-                "system backup created at {} ({} attachment(s), {} data bytes)",
-                report.path.display(),
-                report.attachments,
-                report.bytes
-            );
-            return Ok(());
-        }
-        Some("system-restore") => {
-            let archive = args
-                .next()
-                .map(PathBuf::from)
-                .ok_or_else(|| anyhow::anyhow!("system-restore requires a backup .skb path"))?;
-            let flags: Vec<String> = args.collect();
-            if !flags.iter().any(|flag| flag == "--confirm") {
-                anyhow::bail!(
-                    "system restore replaces the entire Skippy instance; rerun with --confirm"
-                );
-            }
-            if flags
-                .iter()
-                .any(|flag| flag != "--confirm" && flag != "--skip-safety-backup")
-            {
-                anyhow::bail!(
-                    "usage: sticky-notes-server system-restore <backup.skb> \
-                     --confirm [--skip-safety-backup]"
-                );
-            }
-            let files = init_file_store(&uploads)?;
-            let report = system_restore(
-                Path::new(&db_path),
-                files,
-                &archive,
-                flags.iter().any(|flag| flag == "--skip-safety-backup"),
-            )
-            .await?;
-            println!(
-                "system restore completed ({} attachment(s)); restart the server",
-                report.attachments
-            );
-            if let Some(path) = report.safety_backup {
-                println!("pre-restore safety backup: {}", path.display());
-            }
-            return Ok(());
-        }
-        Some("--help" | "-h") => {
-            println!(
-                "Usage:\n  sticky-notes-server\n  \
-                 sticky-notes-server system-backup <output.skb>\n  \
-                 sticky-notes-server system-restore <backup.skb> --confirm \
-                 [--skip-safety-backup]"
-            );
-            return Ok(());
-        }
-        Some(other) => anyhow::bail!("unknown command '{other}' (use --help)"),
-        None => {}
-    }
-
-    // Restore uses the same advisory lock and therefore cannot replace the
-    // database underneath a running server. Online system backups do not need
-    // the lock: SQLite creates their consistent snapshot itself.
-    let _system_lock = SystemLock::acquire(Path::new(&db_path))?;
-
     // Swap point: implement `Repository` for another database and change
     // this constructor.
     let repo = Arc::new(SqliteRepository::connect(&db_path).await?);

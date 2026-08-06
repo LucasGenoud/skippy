@@ -31,7 +31,6 @@ services:
       # STICKY_NOTES_TELEGRAM_API: https://api.telegram.org
     volumes:
       - app_data:/data
-      - ${STICKY_NOTES_BACKUPS_DIR:-./backups}:/backups
     depends_on:
       whisper:
         condition: service_healthy

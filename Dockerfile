@@ -30,7 +30,7 @@ RUN apt-get update \
     && groupadd --system sticky-notes \
     && useradd --system --gid sticky-notes --home-dir /nonexistent \
         --shell /usr/sbin/nologin sticky-notes \
-    && install -d -o sticky-notes -g sticky-notes /data /backups
+    && install -d -o sticky-notes -g sticky-notes /data
 WORKDIR /app
 COPY --from=server /src/target/release/sticky-notes-server /app/
 COPY --from=web /src/build/web /app/web

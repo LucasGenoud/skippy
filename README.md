@@ -46,7 +46,7 @@ optional S3-compatible attachment storage. SQLite data and attachments persist
 in the `app_data` volume.
 
 The current database schema has no in-place migration path. Start with a new
-database or restore a system backup created with this schema version.
+database when installing a schema revision.
 
 Disk storage is the default. To use the bundled Garage service instead:
 
@@ -65,8 +65,8 @@ To run only the supporting services during local backend development:
 docker compose up -d whisper garage
 ```
 
-See [Deployment](docs/DEPLOY.md) for production, backups, and the optional GPU
-Whisper overlay.
+See [Deployment](docs/DEPLOY.md) for production and the optional GPU Whisper
+overlay.
 
 ## Configuration
 
@@ -104,11 +104,42 @@ STICKY_NOTES_LLM_CHAT
 STICKY_NOTES_LLM_WRITING
 ```
 
-The compose file includes the same settings where they are useful. Whisper
-also accepts `ASR_MODEL` and `ASR_ENGINE`; the GPU overlay adds
-`ASR_DEVICE` and `ASR_QUANTIZATION`. Garage uses `GARAGE_RPC_SECRET`,
-`GARAGE_DEFAULT_ACCESS_KEY`, `GARAGE_DEFAULT_SECRET_KEY`, and
-`GARAGE_DEFAULT_BUCKET`.
+### Docker Compose environment variables
+
+This table covers every variable passed to a service by the bundled Compose
+files. Values marked “host/.env” are set in the shell or `.env`; the remaining
+values are supplied directly by Compose. Optional commented settings must be
+uncommented in `docker-compose.yml` before Compose passes them to `server`.
+
+| Service | Variable | Compose value or host input | Purpose |
+| --- | --- | --- | --- |
+| server | `STICKY_NOTES_PUBLIC_URL` | host/.env; empty by default | Public browser URL and allowed CORS origin. |
+| server | `STICKY_NOTES_EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
+| server | `STICKY_NOTES_EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
+| server | `STICKY_NOTES_EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
+| server | `STICKY_NOTES_WHISPER_URL` | `http://whisper:9000` | Bundled Whisper service URL. |
+| server | `STICKY_NOTES_STORAGE` | host/.env; `disk` by default | Attachment backend: `disk` or `s3`. |
+| server | `STICKY_NOTES_S3_URL` | `http://garage:3900` | Bundled Garage S3 endpoint. |
+| server | `STICKY_NOTES_S3_REGION` | `garage` | S3 signing region. |
+| server | `STICKY_NOTES_S3_ACCESS_KEY` | required host/.env value | S3 access key, also supplied to Garage as its default key. |
+| server | `STICKY_NOTES_S3_SECRET_KEY` | required host/.env value | S3 secret, also supplied to Garage as its default secret. |
+| server | `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
+| server (optional) | `STICKY_NOTES_LLM_BASE_URL` | commented example: `http://ollama:11434/v1` | Server-managed LLM base URL. |
+| server (optional) | `STICKY_NOTES_LLM_API_KEY` | host/.env after uncommenting | Server-managed LLM API key. |
+| server (optional) | `STICKY_NOTES_LLM_MODEL` | commented example: `llama3.1` | Server-managed LLM model. |
+| server (optional) | `STICKY_NOTES_LLM_LABELING` | commented example: `true` | Enables server-managed automatic labeling. |
+| server (optional) | `STICKY_NOTES_LLM_CHAT` | commented example: `true` | Enables server-managed chat. |
+| server (optional) | `STICKY_NOTES_LLM_WRITING` | commented example: `true` | Enables server-managed writing assistance. |
+| server (optional) | `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | commented example: `1` | Allows link previews for private/loopback hosts. |
+| server (optional) | `STICKY_NOTES_TELEGRAM_API` | commented example: `https://api.telegram.org` | Telegram API base URL. |
+| whisper | `ASR_MODEL` | `base` (`large-v3` in GPU overlay) | Whisper model to load. |
+| whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
+| whisper (GPU overlay) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |
+| whisper (GPU overlay) | `ASR_QUANTIZATION` | `float16` | GPU model quantization. |
+| garage | `GARAGE_RPC_SECRET` | required host/.env value | Garage cluster RPC secret. |
+| garage | `GARAGE_DEFAULT_ACCESS_KEY` | `STICKY_NOTES_S3_ACCESS_KEY` | Default Garage access key. |
+| garage | `GARAGE_DEFAULT_SECRET_KEY` | `STICKY_NOTES_S3_SECRET_KEY` | Default Garage secret key. |
+| garage | `GARAGE_DEFAULT_BUCKET` | `sticky-notes-default` | Bucket created for Garage's single-node mode. |
 
 The Flutter app uses build-time defines rather than runtime environment
 variables:
@@ -150,29 +181,10 @@ cd ../backend && cargo run
 
 The backend serves `app/build/web` when it contains `index.html`.
 
-## Backups
+## User backups
 
-User backups are available in Settings. Operators can create a complete
-instance backup containing the database and referenced attachment bytes:
-
-```sh
-cd backend
-cargo run -- system-backup /safe/path/skippy-20260729-030000.skb
-```
-
-Docker mounts `./backups` at `/backups` by default. Restore offline:
-
-```sh
-docker compose stop server
-docker compose run --rm --no-deps server \
-  /app/sticky-notes-server system-restore \
-  /backups/skippy-20260729-030000.skb --confirm
-docker compose up -d server
-```
-
-Restore validates the archive, creates a pre-restore safety backup, then
-replaces the database and attachment state. Copy backups off the host and set
-retention separately.
+Settings lets each user create and restore a portable backup of their own
+workspaces. This remains separate from the server and Docker deployment.
 
 ## Tests
 

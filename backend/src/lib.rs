@@ -12,7 +12,6 @@ mod outbound;
 pub mod rate_limit;
 pub mod search;
 pub mod store;
-pub mod system_backup;
 pub mod telemetry;
 pub mod transcribe;
 pub mod unfurl;

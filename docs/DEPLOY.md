@@ -77,10 +77,9 @@ Opt in on the homeserver through the `.env` file next to the compose files:
 COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
 ```
 
-Set it there rather than passing `-f` flags, so the bare `docker compose`
-commands elsewhere in this document (backup cron, restore, rollback) pick the
-overlay up too. A forgotten pair of flags silently recreates `whisper` from the
-CPU image.
+Set it there rather than passing `-f` flags, so later bare `docker compose`
+commands continue to include the overlay. A forgotten pair of flags silently
+recreates `whisper` from the CPU image.
 
 The first start downloads ~3 GB into the `whisper_cache` volume, which is why
 the overlay widens the health-check start period; `server` gates on
@@ -104,48 +103,6 @@ docker compose up -d server
 ```
 
 Watchtower will leave it alone until a newer `:latest` is pushed.
-
-## Scheduled system backups
-
-`docker-compose.yml` bind-mounts `${STICKY_NOTES_BACKUPS_DIR:-./backups}` at
-`/backups`. Set `STICKY_NOTES_BACKUPS_DIR` to storage outside the application
-host when possible, or sync that directory off-host after each run.
-
-The backup command is online-safe and works in disk and S3 modes:
-
-```sh
-docker compose exec -T --user sticky-notes server /app/sticky-notes-server \
-  system-backup /backups/skippy-$(date -u +%Y%m%d-%H%M%S).skb
-```
-
-Example host crontab (cron treats `%` specially, hence the escaping):
-
-```cron
-15 3 * * * cd /srv/skippy && docker compose exec -T --user sticky-notes server /app/sticky-notes-server system-backup /backups/skippy-$(date -u +\%Y\%m\%d-\%H\%M\%S).skb
-```
-
-The archive includes the complete SQLite database and all attachment objects
-referenced by its consistent snapshot. It contains password hashes, active
-session verifiers, user settings, and private note/file data; protect it like the live
-database. Environment configuration and external service state are not part of
-the archive.
-
-Restores require downtime and create a pre-restore safety archive:
-
-```sh
-docker compose stop server
-docker compose run --rm --no-deps server \
-  /app/sticky-notes-server system-restore \
-  /backups/skippy-20260729-030000.skb --confirm
-docker compose up -d server
-```
-
-Use `--skip-safety-backup` only when the current database is unreadable and no
-safety archive can be created.
-
-Before replacing current data, restore validates the archive checksum, SQLite
-integrity and foreign keys, required tables,
-and the complete attachment inventory.
 
 ## Health and logs
 
