@@ -37,22 +37,21 @@ image (it reads `~/.docker/config.json`):
 docker login forgejo.genoud.dev
 ```
 
-Generate the Garage RPC secret and S3 credentials in a private `.env` file.
-The command refuses to overwrite an existing file:
+Generate credentials before the first start. Copy each output line into the
+private `.env` file:
 
 ```sh
-test ! -e .env || { echo '.env already exists; add the three values manually'; exit 1; }
-umask 077
-{
-  printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
-  printf 'STICKY_NOTES_S3_ACCESS_KEY=GK'; openssl rand -hex 16
-  printf 'STICKY_NOTES_S3_SECRET_KEY='; openssl rand -hex 32
-} > .env
+access_key="GK$(openssl rand -hex 16)"
+secret_key="$(openssl rand -hex 32)"
+printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
+printf 'STICKY_NOTES_S3_ACCESS_KEY=%s\n' "$access_key"
+printf 'GARAGE_DEFAULT_ACCESS_KEY=%s\n' "$access_key"
+printf 'STICKY_NOTES_S3_SECRET_KEY=%s\n' "$secret_key"
+printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 ```
 
-Back up `.env` securely and do not rotate the S3 values without also updating
-the key stored by Garage. Compose intentionally has no default credentials and
-will report the missing variable before starting.
+Keep `.env` private. Keep matching S3/Garage values unchanged after Garage
+setup. Compose has no default credentials and reports missing values.
 
 Then bring the stack up:
 
@@ -65,29 +64,14 @@ it separately on the homeserver if you want automatic pulls and restarts.
 
 ### 4. GPU transcription (optional)
 
-`docker-compose.gpu.yml` moves Whisper onto an NVIDIA GPU and up to the
-`large-v3` model. It is never loaded automatically, because its device
-reservation fails hard on any host without a CUDA GPU. Requires the NVIDIA
-Container Toolkit and a driver new enough for the image's CUDA 12 runtime
-(≥ 525); check `nvidia-smi` on the host first.
-
-Opt in on the homeserver through the `.env` file next to the compose files:
+GPU values are commented in `docker-compose.yml`. For NVIDIA, edit the
+Whisper service to use the GPU image, `large-v3`, `cuda`, and `float16`, then
+uncomment its GPU reservation and use a `900s` health-check start period.
+Requires the NVIDIA Container Toolkit and a CUDA 12-compatible driver (≥ 525).
+Check `nvidia-smi` first.
 
 ```
-COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
-```
-
-Set it there rather than passing `-f` flags, so later bare `docker compose`
-commands continue to include the overlay. A forgotten pair of flags silently
-recreates `whisper` from the CPU image.
-
-The first start downloads ~3 GB into the `whisper_cache` volume, which is why
-the overlay widens the health-check start period; `server` gates on
-`condition: service_healthy`, so a timeout there fails the whole stack. Pull it
-once before the switch to keep the window short:
-
-```
-docker compose pull whisper && docker compose up -d whisper
+docker compose up -d whisper
 ```
 
 ## Rollback

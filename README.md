@@ -20,21 +20,20 @@ CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
 ## Quick start with Docker
 
-Generate unique credentials for the bundled Garage service before the first
-start. This command refuses to overwrite an existing `.env` file:
+Generate credentials before the first start. Copy each output line into `.env`:
 
 ```sh
-test ! -e .env || { echo '.env already exists; add the three values manually'; exit 1; }
-umask 077
-{
-  printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
-  printf 'STICKY_NOTES_S3_ACCESS_KEY=GK'; openssl rand -hex 16
-  printf 'STICKY_NOTES_S3_SECRET_KEY='; openssl rand -hex 32
-} > .env
+access_key="GK$(openssl rand -hex 16)"
+secret_key="$(openssl rand -hex 32)"
+printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
+printf 'STICKY_NOTES_S3_ACCESS_KEY=%s\n' "$access_key"
+printf 'GARAGE_DEFAULT_ACCESS_KEY=%s\n' "$access_key"
+printf 'STICKY_NOTES_S3_SECRET_KEY=%s\n' "$secret_key"
+printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 ```
 
-Keep `.env` private and backed up securely. The S3 values must remain stable
-after Garage creates its initial key.
+Keep `.env` private. Keep matching `STICKY_NOTES_S3_*` and `GARAGE_DEFAULT_*`
+values unchanged after Garage setup.
 
 ```sh
 docker compose up -d
@@ -54,8 +53,10 @@ Disk storage is the default. To use the bundled Garage service instead:
 STICKY_NOTES_STORAGE=s3 docker compose up -d
 ```
 
-Compose requires `GARAGE_RPC_SECRET`, `STICKY_NOTES_S3_ACCESS_KEY`, and
-`STICKY_NOTES_S3_SECRET_KEY` in `.env`; no default credentials are provided.
+Compose requires `GARAGE_RPC_SECRET`, `STICKY_NOTES_S3_ACCESS_KEY`,
+`STICKY_NOTES_S3_SECRET_KEY`, `GARAGE_DEFAULT_ACCESS_KEY`, and
+`GARAGE_DEFAULT_SECRET_KEY` in `.env`; no default credentials are provided.
+The S3 access and secret values must match their corresponding Garage values.
 Choose one attachment backend per deployment; switching does not migrate
 existing blobs.
 
@@ -65,8 +66,8 @@ To run only the supporting services during local backend development:
 docker compose up -d whisper garage
 ```
 
-See [Deployment](docs/DEPLOY.md) for production and the optional GPU Whisper
-overlay.
+See [Deployment](docs/DEPLOY.md) for production and optional GPU Whisper
+settings.
 
 ## Configuration
 
@@ -106,10 +107,8 @@ STICKY_NOTES_LLM_WRITING
 
 ### Docker Compose environment variables
 
-This table covers every variable passed to a service by the bundled Compose
-files. Values marked “host/.env” are set in the shell or `.env`; the remaining
-values are supplied directly by Compose. Optional commented settings must be
-uncommented in `docker-compose.yml` before Compose passes them to `server`.
+This table lists every variable passed by Compose. `host/.env` values come from
+the shell or `.env`; optional entries are commented in `docker-compose.yml`.
 
 | Service | Variable | Compose value or host input | Purpose |
 | --- | --- | --- | --- |
@@ -121,8 +120,8 @@ uncommented in `docker-compose.yml` before Compose passes them to `server`.
 | server | `STICKY_NOTES_STORAGE` | host/.env; `disk` by default | Attachment backend: `disk` or `s3`. |
 | server | `STICKY_NOTES_S3_URL` | `http://garage:3900` | Bundled Garage S3 endpoint. |
 | server | `STICKY_NOTES_S3_REGION` | `garage` | S3 signing region. |
-| server | `STICKY_NOTES_S3_ACCESS_KEY` | required host/.env value | S3 access key, also supplied to Garage as its default key. |
-| server | `STICKY_NOTES_S3_SECRET_KEY` | required host/.env value | S3 secret, also supplied to Garage as its default secret. |
+| server | `STICKY_NOTES_S3_ACCESS_KEY` | required host/.env value | S3 access key; must match Garage’s default access key. |
+| server | `STICKY_NOTES_S3_SECRET_KEY` | required host/.env value | S3 secret; must match Garage’s default secret. |
 | server | `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
 | server (optional) | `STICKY_NOTES_LLM_BASE_URL` | commented example: `http://ollama:11434/v1` | Server-managed LLM base URL. |
 | server (optional) | `STICKY_NOTES_LLM_API_KEY` | host/.env after uncommenting | Server-managed LLM API key. |
@@ -132,13 +131,13 @@ uncommented in `docker-compose.yml` before Compose passes them to `server`.
 | server (optional) | `STICKY_NOTES_LLM_WRITING` | commented example: `true` | Enables server-managed writing assistance. |
 | server (optional) | `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | commented example: `1` | Allows link previews for private/loopback hosts. |
 | server (optional) | `STICKY_NOTES_TELEGRAM_API` | commented example: `https://api.telegram.org` | Telegram API base URL. |
-| whisper | `ASR_MODEL` | `base` (`large-v3` in GPU overlay) | Whisper model to load. |
+| whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |
 | whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
-| whisper (GPU overlay) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |
-| whisper (GPU overlay) | `ASR_QUANTIZATION` | `float16` | GPU model quantization. |
+| whisper (GPU) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |
+| whisper (GPU) | `ASR_QUANTIZATION` | `float16` | GPU model quantization. |
 | garage | `GARAGE_RPC_SECRET` | required host/.env value | Garage cluster RPC secret. |
-| garage | `GARAGE_DEFAULT_ACCESS_KEY` | `STICKY_NOTES_S3_ACCESS_KEY` | Default Garage access key. |
-| garage | `GARAGE_DEFAULT_SECRET_KEY` | `STICKY_NOTES_S3_SECRET_KEY` | Default Garage secret key. |
+| garage | `GARAGE_DEFAULT_ACCESS_KEY` | required host/.env value | Default Garage access key; must match the server’s S3 access key. |
+| garage | `GARAGE_DEFAULT_SECRET_KEY` | required host/.env value | Default Garage secret key; must match the server’s S3 secret key. |
 | garage | `GARAGE_DEFAULT_BUCKET` | `sticky-notes-default` | Bucket created for Garage's single-node mode. |
 
 The Flutter app uses build-time defines rather than runtime environment
@@ -180,6 +179,26 @@ cd ../backend && cargo run
 ```
 
 The backend serves `app/build/web` when it contains `index.html`.
+
+## Mobile release builds
+
+Update the version in `app/pubspec.yaml`, then run from `app/`:
+
+```sh
+flutter pub get
+flutter build appbundle --release --dart-define=API_BASE=https://notes.example.com
+flutter build ipa --release --dart-define=API_BASE=https://notes.example.com
+```
+
+The Android App Bundle is written to
+`app/build/app/outputs/bundle/release/app-release.aab`; an APK can be built with
+`flutter build apk --release`. The iOS archive and IPA are written under
+`app/build/ios/`.
+
+Android currently uses the debug signing key in
+`app/android/app/build.gradle.kts`. Configure a private upload keystore before
+publishing to Google Play. iOS distribution requires macOS/Xcode signing with
+an Apple team and provisioning profile.
 
 ## User backups
 

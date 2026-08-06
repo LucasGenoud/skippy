@@ -1,6 +1,6 @@
-# Full stack: web app/API, Whisper transcription, and optional Garage S3.
-# Start with: docker compose up -d
-# Use STICKY_NOTES_STORAGE=s3 to store attachments in Garage.
+# Full stack: server, Whisper, Garage.
+# Start: docker compose up -d
+# S3: STICKY_NOTES_STORAGE=s3 docker compose up -d
 services:
   server:
     build: .
@@ -19,14 +19,14 @@ services:
       STICKY_NOTES_S3_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:?Set STICKY_NOTES_S3_ACCESS_KEY in .env}
       STICKY_NOTES_S3_SECRET_KEY: ${STICKY_NOTES_S3_SECRET_KEY:?Set STICKY_NOTES_S3_SECRET_KEY in .env}
       STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS: ${STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS:-}
-      # Optional server-managed LLM settings:
+      # Managed LLM:
       # STICKY_NOTES_LLM_BASE_URL: http://ollama:11434/v1
       # STICKY_NOTES_LLM_API_KEY: ${STICKY_NOTES_LLM_API_KEY:-}
       # STICKY_NOTES_LLM_MODEL: llama3.1
       # STICKY_NOTES_LLM_LABELING: "true"
       # STICKY_NOTES_LLM_CHAT: "true"
       # STICKY_NOTES_LLM_WRITING: "true"
-      # Optional link-preview/Telegram settings:
+      # Link preview/Telegram:
       # STICKY_NOTES_UNFURL_ALLOW_PRIVATE: "1"
       # STICKY_NOTES_TELEGRAM_API: https://api.telegram.org
     volumes:
@@ -40,11 +40,15 @@ services:
 
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
+    # GPU image: onerahmet/openai-whisper-asr-webservice:latest-gpu
     ports:
       - "127.0.0.1:9000:9000"
     environment:
-      ASR_MODEL: base
+      ASR_MODEL: base # GPU: large-v3
       ASR_ENGINE: faster_whisper
+      # GPU settings:
+      # ASR_DEVICE: cuda
+      # ASR_QUANTIZATION: float16
     volumes:
       - whisper_cache:/root/.cache
     healthcheck:
@@ -52,7 +56,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 90s
+      start_period: 90s # GPU: 900s
+    # GPU reservation:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [ gpu ]
     restart: unless-stopped
 
   garage:
@@ -60,8 +72,8 @@ services:
     command: [ "/garage", "server", "--single-node", "--default-bucket" ]
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?Set GARAGE_RPC_SECRET in .env}
-      GARAGE_DEFAULT_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:?Set STICKY_NOTES_S3_ACCESS_KEY in .env}
-      GARAGE_DEFAULT_SECRET_KEY: ${STICKY_NOTES_S3_SECRET_KEY:?Set STICKY_NOTES_S3_SECRET_KEY in .env}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:?Set GARAGE_DEFAULT_ACCESS_KEY in .env}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:?Set GARAGE_DEFAULT_SECRET_KEY in .env}
       GARAGE_DEFAULT_BUCKET: sticky-notes-default
     volumes:
       - ./garage.toml:/etc/garage.toml:ro
