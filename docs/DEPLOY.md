@@ -37,6 +37,23 @@ image (it reads `~/.docker/config.json`):
 docker login forgejo.genoud.dev
 ```
 
+Generate the Garage RPC secret and S3 credentials in a private `.env` file.
+The command refuses to overwrite an existing file:
+
+```sh
+test ! -e .env || { echo '.env already exists; add the three values manually'; exit 1; }
+umask 077
+{
+  printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
+  printf 'STICKY_NOTES_S3_ACCESS_KEY=GK'; openssl rand -hex 16
+  printf 'STICKY_NOTES_S3_SECRET_KEY='; openssl rand -hex 32
+} > .env
+```
+
+Back up `.env` securely and do not rotate the S3 values without also updating
+the key stored by Garage. Compose intentionally has no default credentials and
+will report the missing variable before starting.
+
 Then bring the stack up:
 
 ```

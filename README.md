@@ -20,6 +20,22 @@ CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
 ## Quick start with Docker
 
+Generate unique credentials for the bundled Garage service before the first
+start. This command refuses to overwrite an existing `.env` file:
+
+```sh
+test ! -e .env || { echo '.env already exists; add the three values manually'; exit 1; }
+umask 077
+{
+  printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
+  printf 'STICKY_NOTES_S3_ACCESS_KEY=GK'; openssl rand -hex 16
+  printf 'STICKY_NOTES_S3_SECRET_KEY='; openssl rand -hex 32
+} > .env
+```
+
+Keep `.env` private and backed up securely. The S3 values must remain stable
+after Garage creates its initial key.
+
 ```sh
 docker compose up -d
 ```
@@ -38,10 +54,10 @@ Disk storage is the default. To use the bundled Garage service instead:
 STICKY_NOTES_STORAGE=s3 docker compose up -d
 ```
 
-Set `GARAGE_RPC_SECRET`, `STICKY_NOTES_S3_ACCESS_KEY`, and
-`STICKY_NOTES_S3_SECRET_KEY` in `.env` before exposing the stack beyond a
-trusted LAN. Choose one attachment backend per deployment; switching does not
-migrate existing blobs.
+Compose requires `GARAGE_RPC_SECRET`, `STICKY_NOTES_S3_ACCESS_KEY`, and
+`STICKY_NOTES_S3_SECRET_KEY` in `.env`; no default credentials are provided.
+Choose one attachment backend per deployment; switching does not migrate
+existing blobs.
 
 To run only the supporting services during local backend development:
 

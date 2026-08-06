@@ -1,5 +1,6 @@
 .DS_Store
 *.log
+.env
 
 # Runtime data — SQLite DB, uploaded files, downloaded embedding model.
 # The glob also covers sidecars (-wal/-shm) and hand-made backups, so a
