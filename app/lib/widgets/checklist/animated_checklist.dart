@@ -993,6 +993,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     required _RowHandles handles,
     required TextStyle style,
     String? hintText,
+    TextCapitalization textCapitalization = TextCapitalization.none,
     required ValueChanged<String> onChanged,
     required VoidCallback onSubmitted,
   }) {
@@ -1007,6 +1008,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           minLines: 1,
           maxLines: null,
           textInputAction: TextInputAction.next,
+          textCapitalization: textCapitalization,
           inputFormatters: [_stripMarker],
           style: style,
           decoration: InputDecoration(
@@ -1256,6 +1258,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             handles: _composer,
             style: textStyle,
             hintText: 'List item',
+            textCapitalization: TextCapitalization.sentences,
             onChanged: _composerChanged,
             // Enter starts the next item, leaving this one on the list.
             onSubmitted: _commitComposing,

@@ -1,52 +1,13 @@
-# GPU overlay for the Whisper service, for hosts with an NVIDIA card and the
-# NVIDIA Container Toolkit installed. Never loaded automatically: the device
-# reservation below is a hard failure on any host without a CUDA GPU (macOS
-# included, where Docker cannot pass the Apple GPU into a Linux container), so
-# the base docker-compose.yml stays runnable everywhere and this file is opted
-# into per host.
-#
-# On the homeserver, opt in once via the .env file next to the compose files:
-#   COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
-# Every bare `docker compose ...` in docs/DEPLOY.md (backup cron, restore,
-# rollback) then picks the overlay up on its own. Without that variable the
-# flags have to be repeated on every single invocation, and the one that gets
-# forgotten silently recreates `whisper` from the CPU image.
-#
-# One-off, without touching .env:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 services:
   whisper:
-    # The plain `:latest` tag in the base file is CPU-only; the CUDA runtime
-    # ships as a separate image, not as a flag on the same one.
     image: onerahmet/openai-whisper-asr-webservice:latest-gpu
     environment:
-      # large-v3 in float16 is ~5 GB of VRAM, which is the whole reason to
-      # bother with the GPU: the accuracy jump over `base` dwarfs the speedup.
       ASR_MODEL: large-v3
-      # Defaulted to cuda when a GPU is visible; pinned so a container that
-      # can't see the device fails loudly instead of quietly running on CPU
-      # at large-v3 speeds.
       ASR_DEVICE: cuda
-      # The image defaults to float32 on GPU. Turing (RTX 20-series, compute
-      # 7.5) has FP16 tensor cores but no bfloat16, so float16 is the floor
-      # here: it roughly halves VRAM and actually reaches the tensor cores.
-      # Leave bfloat16 alone, it needs Ampere or newer.
       ASR_QUANTIZATION: float16
-      # Seconds of inactivity before the model is unloaded and its VRAM
-      # released; 0 (the image default) keeps it resident. Worth setting only
-      # if something else on the host needs the card between transcriptions,
-      # since the next request then pays the full model load again.
       # MODEL_IDLE_TIMEOUT: 300
     healthcheck:
-      # Only this key is overridden; test/interval/timeout/retries still come
-      # from the base file, because Compose merges healthcheck key by key.
-      #
-      # The base 90s start period plus 10 retries is ~190s, and a first boot
-      # on large-v3 spends longer than that downloading ~3 GB before the HTTP
-      # server answers. Overrun it and whisper is marked unhealthy, and since
-      # `server` gates on `condition: service_healthy` the entire stack fails
-      # to come up. Widened for that first pull; once the model is in the
-      # whisper_cache volume, startup is back to a model load.
       start_period: 900s
     deploy:
       resources:
@@ -54,4 +15,4 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities: [ gpu ]

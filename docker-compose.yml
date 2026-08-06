@@ -49,7 +49,7 @@ services:
     volumes:
       - whisper_cache:/root/.cache
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:9000/docs"]
+      test: [ "CMD", "curl", "-fsS", "http://localhost:9000/docs" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -58,7 +58,7 @@ services:
 
   garage:
     image: dxflrs/garage:v2.3.0
-    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    command: [ "/garage", "server", "--single-node", "--default-bucket" ]
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?Set GARAGE_RPC_SECRET in .env}
       GARAGE_DEFAULT_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:?Set STICKY_NOTES_S3_ACCESS_KEY in .env}
@@ -72,7 +72,7 @@ services:
       - "127.0.0.1:3900:3900"
       - "127.0.0.1:3903:3903"
     healthcheck:
-      test: ["CMD", "/garage", "status"]
+      test: [ "CMD", "/garage", "status" ]
       interval: 5s
       timeout: 5s
       retries: 12

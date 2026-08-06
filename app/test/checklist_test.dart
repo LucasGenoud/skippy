@@ -231,6 +231,15 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('new items request sentence capitalization', (tester) async {
+      await openChecklist(tester);
+
+      final composer = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'List item'),
+      );
+      expect(composer.textCapitalization, TextCapitalization.sentences);
+    });
+
     testWidgets('deleting everything takes the half-written row with it', (
       tester,
     ) async {
