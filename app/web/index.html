@@ -41,14 +41,33 @@
   <link rel="manifest" href="manifest.json">
   <style>
     /* Flutter paints its own selection above an invisible DOM editing element.
-       Keep that element transparent in every supported browser, with Firefox's
-       prefixed pseudo-element in a separate rule. */
+       Hiding only that element's highlight is not enough in Firefox: selected
+       text with no colour of its own is given a contrasting one, so the hidden
+       element's text turns opaque and shows through as a second, offset
+       selection. Pinning the colour transparent too leaves nothing to
+       contrast with. Firefox's prefixed pseudo-element stays in its own rule:
+       a selector list is dropped whole by a browser that does not know one of
+       its parts. */
     .flt-text-editing::selection {
       background-color: transparent;
+      color: transparent;
     }
 
     .flt-text-editing::-moz-selection {
       background-color: transparent;
+      color: transparent;
+    }
+
+    /* Flutter mirrors a login form into the DOM so browsers can autofill it,
+       but sizes every field except the focused one to 0x0, and a password
+       manager skips fields it cannot see. Give them a size back, which is
+       exactly what Flutter itself already does on Safari and for the same
+       reason, and keep them from taking pointer events. They stay invisible:
+       Flutter paints them with no colour, background or border. */
+    flutter-view form input:not(:focus):not(.submitBtn) {
+      width: auto !important;
+      height: auto !important;
+      pointer-events: none !important;
     }
   </style>
 </head>
