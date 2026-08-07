@@ -54,8 +54,7 @@ pub fn parse_llm_settings(settings_json: Option<&str>) -> LlmSettings {
     parse_llm_settings_value(&value)
 }
 
-/// Same as [`parse_llm_settings`] but over an already-parsed document, used
-/// after the server overlays its env-managed keys (see [`crate::config`]).
+/// Parse LLM settings from an already-decoded document.
 pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
     let text = |key: &str| {
         value[key].as_str().map(str::trim).unwrap_or_default().to_string()

@@ -1,7 +1,6 @@
 pub mod assist;
 pub mod auth;
 pub mod cleanup;
-pub mod config;
 pub mod error;
 pub mod files;
 pub mod handlers;
@@ -82,10 +81,6 @@ pub struct AppState {
     /// by default; `main` loads a persisted secret from the store via
     /// [`AppState::with_file_secret`] so URLs survive restarts.
     pub file_secret: Arc<Vec<u8>>,
-    /// Settings the self-hoster pinned via env vars, these override the
-    /// per-user copy in the settings document and lock the field in the app.
-    /// Empty by default (nothing managed); `main` fills it from the env.
-    pub managed: Arc<config::ManagedSettings>,
     /// In-memory cache of link-preview unfurls, keyed by URL. Time-limited so
     /// stale metadata eventually refreshes; not persisted (re-fetched after a
     /// restart). See [`handlers::unfurl`].
@@ -117,7 +112,6 @@ impl AppState {
             reindex_progress: Arc::default(),
             label_delay: Duration::from_secs(20),
             file_secret: Arc::new(secret),
-            managed: Arc::new(config::ManagedSettings::default()),
             unfurl_cache: Arc::default(),
             cleanup_running: Arc::default(),
             auth_attempts: Arc::default(),
@@ -156,10 +150,6 @@ impl AppState {
         self
     }
 
-    pub fn with_managed(mut self, managed: config::ManagedSettings) -> Self {
-        self.managed = Arc::new(managed);
-        self
-    }
 }
 
 /// The full API router. Tests build this against an in-memory repository.
@@ -174,7 +164,6 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
     let api = Router::new()
         .route("/health", get(handlers::health))
         .route("/capabilities", get(handlers::capabilities))
-        .route("/managed-settings", get(handlers::managed_settings))
         .route("/auth/register", post(handlers::register))
         .route("/auth/login", post(handlers::login))
         .route("/auth/logout", post(handlers::logout))

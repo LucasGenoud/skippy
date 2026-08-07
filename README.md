@@ -94,16 +94,8 @@ deployment.
 | `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | off | Allow link previews for private/loopback hosts |
 | `STICKY_NOTES_TELEGRAM_API` | `https://api.telegram.org` | Telegram API base URL |
 
-Server-managed LLM fields override and lock the corresponding user setting:
-
-```text
-STICKY_NOTES_LLM_BASE_URL
-STICKY_NOTES_LLM_API_KEY       # secret; never returned to the app
-STICKY_NOTES_LLM_MODEL
-STICKY_NOTES_LLM_LABELING
-STICKY_NOTES_LLM_CHAT
-STICKY_NOTES_LLM_WRITING
-```
+LLM providers are configured per user in Settings. The server does not use
+LLM environment variables.
 
 ### Docker Compose environment variables
 
@@ -123,12 +115,6 @@ the shell or `.env`; optional entries are commented in `docker-compose.yml`.
 | server | `STICKY_NOTES_S3_ACCESS_KEY` | required host/.env value | S3 access key; must match Garage’s default access key. |
 | server | `STICKY_NOTES_S3_SECRET_KEY` | required host/.env value | S3 secret; must match Garage’s default secret. |
 | server | `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
-| server (optional) | `STICKY_NOTES_LLM_BASE_URL` | commented example: `http://ollama:11434/v1` | Server-managed LLM base URL. |
-| server (optional) | `STICKY_NOTES_LLM_API_KEY` | host/.env after uncommenting | Server-managed LLM API key. |
-| server (optional) | `STICKY_NOTES_LLM_MODEL` | commented example: `llama3.1` | Server-managed LLM model. |
-| server (optional) | `STICKY_NOTES_LLM_LABELING` | commented example: `true` | Enables server-managed automatic labeling. |
-| server (optional) | `STICKY_NOTES_LLM_CHAT` | commented example: `true` | Enables server-managed chat. |
-| server (optional) | `STICKY_NOTES_LLM_WRITING` | commented example: `true` | Enables server-managed writing assistance. |
 | server (optional) | `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | commented example: `1` | Allows link previews for private/loopback hosts. |
 | server (optional) | `STICKY_NOTES_TELEGRAM_API` | commented example: `https://api.telegram.org` | Telegram API base URL. |
 | whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |

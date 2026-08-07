@@ -50,7 +50,6 @@ use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::NoteRecord;
 
@@ -174,16 +173,4 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Val
         "audio_transcription": state.transcribe.is_some(),
         "server_version": crate::SERVER_VERSION,
     }))
-}
-
-/// Which settings keys the self-hoster has pinned via env vars. The client
-/// locks these fields and reflects their values, except secrets, whose values
-/// are redacted (`{"secret": true, "value": null}`) so an env-set API key never
-/// reaches the frontend. Auth-gated: base URLs are server infrastructure, not
-/// for anonymous callers.
-pub async fn managed_settings(
-    State(state): State<AppState>,
-    AuthUser(_user_id): AuthUser,
-) -> Json<serde_json::Value> {
-    Json(state.managed.public_view())
 }

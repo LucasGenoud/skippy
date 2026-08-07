@@ -187,48 +187,9 @@ void main() {
     expect(prefs.getString('notes_cache_$cacheKey'), isNull);
   });
 
-  testWidgets('server-managed LLM fields are locked in the dialog', (
-    tester,
-  ) async {
-    final api = FakeApi();
-    api.managedSettings = {
-      'llm_base_url': const ManagedSetting(
-        secret: false,
-        value: 'http://managed/v1',
-      ),
-      'llm_api_key': const ManagedSetting(secret: true),
-    };
-    await pumpSettings(tester, api);
-
-    // The AI provider row flags that something is server-managed.
-    expect(find.text('Managed by the server'), findsWidgets);
-
-    // Open the config dialog.
-    await tester.ensureVisible(find.text('AI provider'));
-    await tester.tap(find.text('AI provider'));
-    await tester.pumpAndSettle();
-
-    // The managed endpoint field is disabled; the untouched model field is not.
-    final url = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'Server URL').first,
-    );
-    expect(url.enabled, isFalse);
-    final model = tester.widget<TextField>(
-      find.widgetWithText(TextField, 'Model').first,
-    );
-    expect(model.enabled, isTrue);
-
-    // The secret key field is masked and locked, never carrying a value.
-    expect(find.text('•••••• (set by the server)'), findsOneWidget);
-    expect(find.text('Set by the server'), findsWidgets);
-  });
-
-  testWidgets('with nothing managed, all LLM fields are editable', (
-    tester,
-  ) async {
+  testWidgets('LLM fields are editable', (tester) async {
     final api = FakeApi();
     await pumpSettings(tester, api);
-    expect(find.text('Managed by the server'), findsNothing);
 
     await tester.ensureVisible(find.text('AI provider'));
     await tester.tap(find.text('AI provider'));
@@ -237,7 +198,7 @@ void main() {
       final field = tester.widget<TextField>(
         find.widgetWithText(TextField, label).first,
       );
-      expect(field.enabled, isTrue, reason: '$label should be editable');
+      expect(field.enabled, isNot(false), reason: '$label should be editable');
     }
   });
 

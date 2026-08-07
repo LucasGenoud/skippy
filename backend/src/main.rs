@@ -194,8 +194,7 @@ async fn main() -> anyhow::Result<()> {
     let file_secret = load_file_secret(repo.as_ref()).await?;
     let files = init_file_store(&uploads)?;
     let mut state = AppState::new(repo, files)
-        .with_file_secret(file_secret)
-        .with_managed(sticky_notes_server::config::ManagedSettings::from_env());
+        .with_file_secret(file_secret);
     if let Some(service) = init_transcription().await {
         state = state.with_transcription(service);
     }

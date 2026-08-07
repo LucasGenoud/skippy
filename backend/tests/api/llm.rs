@@ -1,8 +1,6 @@
-//! LLM auto-labeling, the connection probe, and server-managed config.
+//! LLM auto-labeling and connection probes.
 
 use crate::helpers::*;
-
-use sticky_notes_server::config::ManagedSettings;
 
 #[tokio::test]
 async fn auto_labeling_applies_only_existing_labels() {
@@ -288,78 +286,4 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     let markdown_prompt = calls.lock().unwrap()[1][0].content.clone();
     assert!(markdown_prompt.contains("Markdown note"));
     assert!(!markdown_prompt.contains("plain text only"));
-}
-
-// ---------------------------------------------------------------------------
-// Server-managed (env-var) settings
-
-/// A managed LLM config pinning endpoint + model + a secret key.
-fn managed_llm() -> ManagedSettings {
-    ManagedSettings::from_lookup(|k| match k {
-        "STICKY_NOTES_LLM_BASE_URL" => Some("http://managed/v1".to_string()),
-        "STICKY_NOTES_LLM_API_KEY" => Some("sk-secret".to_string()),
-        "STICKY_NOTES_LLM_MODEL" => Some("managed-model".to_string()),
-        _ => None,
-    })
-}
-
-#[tokio::test]
-async fn managed_settings_endpoint_locks_and_redacts_secrets() {
-    let app = build_app(state().await.with_managed(managed_llm()));
-    let (token, _) = register(&app, "ada").await;
-
-    let (status, body) = send(&app, "GET", "/api/managed-settings", Some(&token), None).await;
-    assert_eq!(status, StatusCode::OK);
-    // Non-secret keys carry their value so the client can display them.
-    assert_eq!(body["llm_base_url"], json!({"secret": false, "value": "http://managed/v1"}));
-    assert_eq!(body["llm_model"], json!({"secret": false, "value": "managed-model"}));
-    // The secret key is present (so the field locks) but its value never leaks.
-    assert_eq!(body["llm_api_key"], json!({"secret": true, "value": null}));
-    assert!(!body.to_string().contains("sk-secret"), "secret leaked: {body}");
-    // Unmanaged keys are simply absent.
-    assert!(body.get("llm_chat").is_none());
-
-    // Auth-gated: base URLs are server infrastructure.
-    let (status, _) = send(&app, "GET", "/api/managed-settings", None, None).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
-}
-
-#[tokio::test]
-async fn managed_llm_config_drives_labeling_without_user_settings() {
-    let (llm, calls) = FakeLlm::new(r#"["work"]"#);
-    let state = state()
-        .await
-        .with_llm(llm)
-        .with_managed(managed_llm())
-        .with_label_delay(std::time::Duration::from_millis(50));
-    let app = build_app(state);
-    let (token, _) = register(&app, "ada").await;
-    // Deliberately NO configure_llm: the user's settings document is empty, so
-    // labeling can only run because the env-managed config overrides it.
-    let work_id = make_label(&app, &token, "work").await;
-    create_note(&app, &token, json!({"title": "Report", "content": "quarterly numbers"})).await;
-    settle_labeling().await;
-
-    let note = &list_notes(&app, &token).await[0];
-    assert_eq!(note["label_ids"], json!([work_id]));
-    assert_eq!(calls.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn llm_test_falls_back_to_managed_config() {
-    let (llm, _) = FakeLlm::new("OK");
-    let app = build_app(state().await.with_llm(llm).with_managed(managed_llm()));
-    let (token, _) = register(&app, "ada").await;
-    // The client sends empty fields (they're locked); the managed config fills
-    // them in, so the probe still succeeds.
-    let (status, body) = send(
-        &app,
-        "POST",
-        "/api/llm/test",
-        Some(&token),
-        Some(json!({"base_url": "", "api_key": "", "model": ""})),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["ok"], json!(true));
 }

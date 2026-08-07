@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
 import '../form_dialog.dart';
-import 'managed_note.dart';
 import 'probe_row.dart';
 
 /// Summary row for the user's LLM endpoint; taps into the config dialog.
@@ -15,7 +14,6 @@ class LlmConfigTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsStore>();
-    final managed = _llmManaged(settings);
     final String summary;
     if (settings.llmConfigured) {
       final host = Uri.tryParse(settings.llmBaseUrl)?.host;
@@ -31,19 +29,13 @@ class LlmConfigTile extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
-        children: [Text(summary), if (managed) const ManagedNote()],
+        children: [Text(summary)],
       ),
-      trailing: Icon(managed ? Icons.lock_outline : Icons.chevron_right),
+      trailing: const Icon(Icons.chevron_right),
       onTap: () => _LlmConfigDialog.show(context),
     );
   }
 }
-
-/// Are any of the LLM config fields (endpoint/key/model) server-managed?
-bool _llmManaged(SettingsStore s) =>
-    s.isManaged('llm_base_url') ||
-    s.isManaged('llm_api_key') ||
-    s.isManaged('llm_model');
 
 /// Endpoint / API key / model editor with a connection probe. Testing uses
 /// the current field values (not the saved settings), so the config can be
@@ -121,10 +113,6 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.read<SettingsStore>();
-    final urlManaged = settings.isManaged('llm_base_url');
-    final keyManaged = settings.isManaged('llm_api_key');
-    final modelManaged = settings.isManaged('llm_model');
     return FormDialog(
       title: const Text('AI provider'),
       content: Column(
@@ -133,49 +121,30 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
         children: [
           TextField(
             controller: _url,
-            enabled: !urlManaged,
             decoration: InputDecoration(
               labelText: 'Server URL',
               hintText: 'http://localhost:11434/v1',
-              helperText: urlManaged
-                  ? 'Set by the server'
-                  : 'OpenAI-compatible endpoint, including /v1 '
-                        '(Ollama, OpenAI, LM Studio, …)',
+              helperText:
+                  'OpenAI-compatible endpoint, including /v1 '
+                  '(Ollama, OpenAI, LM Studio, …)',
               helperMaxLines: 2,
-              suffixIcon: urlManaged
-                  ? const Icon(Icons.lock_outline, size: 18)
-                  : null,
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _key,
-            enabled: !keyManaged,
-            obscureText: !keyManaged,
+            obscureText: true,
             decoration: InputDecoration(
               labelText: 'API key',
-              // The server never sends a managed key's value, so show a
-              // masked placeholder rather than an empty field.
-              hintText: keyManaged ? '•••••• (set by the server)' : null,
-              helperText: keyManaged
-                  ? 'Set by the server'
-                  : 'Leave empty for Ollama',
-              suffixIcon: keyManaged
-                  ? const Icon(Icons.lock_outline, size: 18)
-                  : null,
+              helperText: 'Leave empty for Ollama',
             ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _model,
-            enabled: !modelManaged,
             decoration: InputDecoration(
               labelText: 'Model',
               hintText: 'gpt-5-mini, llama3.1, …',
-              helperText: modelManaged ? 'Set by the server' : null,
-              suffixIcon: modelManaged
-                  ? const Icon(Icons.lock_outline, size: 18)
-                  : null,
             ),
           ),
           const SizedBox(height: 16),

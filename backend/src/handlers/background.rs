@@ -168,8 +168,7 @@ impl AppState {
                 return;
             }
         };
-        let effective = self.managed.overlay(settings.as_deref());
-        let llm_settings = crate::assist::parse_llm_settings_value(&effective);
+        let llm_settings = crate::assist::parse_llm_settings(settings.as_deref());
         let Some(cfg) = llm_settings.config else {
             return;
         };
