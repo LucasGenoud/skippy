@@ -24,6 +24,9 @@ jobs:
             exit 1
           fi
 
+      - name: Reject tracked secrets
+        run: sh scripts/check-secrets.sh
+
       - name: Log in to the Forgejo registry
         env:
           REGISTRY_USER: ${{ secrets.REGISTRY_USER }}

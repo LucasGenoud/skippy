@@ -1,6 +1,38 @@
 .DS_Store
 *.log
-.env
+# Local environment files. Keep only explicitly safe examples tracked.
+.env*
+*.env
+!.env.example
+!.env.*.example
+
+# Credentials, signing material, and provider configuration.
+**/credentials*.json
+**/credentials*.yaml
+**/credentials*.yml
+**/secrets*.json
+**/secrets*.yaml
+**/secrets*.yml
+**/service-account*.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/key.properties
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/*.mobileprovision
+**/*.provisionprofile
+
+# Local databases and backups.
+*.db*
+*.sqlite*
+*.sqlite3*
+*.bak
+*.backup
+*.dump
 
 # Runtime data — SQLite DB, uploaded files, downloaded embedding model.
 # The glob also covers sidecars (-wal/-shm) and hand-made backups, so a
