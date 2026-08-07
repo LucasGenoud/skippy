@@ -31,6 +31,7 @@ import '../widgets/note_card.dart';
 import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/saved_view_dialog.dart';
+import '../widgets/screen_width.dart';
 import '../widgets/search_filters_sheet.dart';
 import '../widgets/search_query_controller.dart';
 import '../widgets/share_dialog.dart';
@@ -89,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   void _toggleSidebar() {
-    if (MediaQuery.sizeOf(context).width < 600) {
+    if (!ScreenWidth.isAtLeast(context, 600)) {
       _scaffoldKey.currentState?.openDrawer();
     } else {
       setState(() => _isSidebarOpen = !_isSidebarOpen);
@@ -583,7 +584,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();
     _reconcileWorkspaceView(store);
-    final wideLayout = MediaQuery.sizeOf(context).width >= 600;
+    final wideLayout = ScreenWidth.isAtLeast(context, 600);
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.
     final semanticAvailable =
@@ -777,7 +778,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         top: false,
                         child: Row(
                           children: [
-                            if (MediaQuery.sizeOf(context).width >= 600)
+                            if (ScreenWidth.isAtLeast(context, 600))
                               AppSidebar(
                                 isOpen: _isSidebarOpen,
                                 selection: _selection,
@@ -1212,6 +1213,12 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               onStationaryLongPress: (id) =>
                   _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
+              // Everything the itemBuilder below reads beyond the note.
+              itemBuildKey: Object.hash(
+                query,
+                _selectionMode,
+                Object.hashAllUnordered(_selectedNoteIds),
+              ),
               itemBuilder: (context, note) => NoteTile(
                 key: ValueKey(note.id),
                 note: note,

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../util/motion.dart';
+
 /// A Material [Checkbox] that gives a springy scale "pop" every time it's
 /// tapped, on top of Checkbox's own tick-draw and ripple. The pop is fired
 /// from the tap handler itself (not from a value diff), so it plays reliably
@@ -26,7 +28,7 @@ class _PopCheckboxState extends State<PopCheckbox>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 250),
+    duration: Motion.slow,
   );
   // Quickly balloons to 1.6x then bounces back with an elastic settle, so the
   // tap reads clearly even while the ticked row is sliding to "Completed".
@@ -51,10 +53,15 @@ class _PopCheckboxState extends State<PopCheckbox>
   List<_Particle> _particles = const [];
 
   void _handleChanged(bool? value) {
-    // A tiny celebration burst, only when ticking something OFF the list,
-    // not when unchecking it back.
-    _particles = value == true ? _spawnParticles() : const [];
-    _controller.forward(from: 0);
+    // The pop and its dots are pure decoration over a control the user has
+    // already hit, so reduce motion drops them entirely; Checkbox still draws
+    // its own tick.
+    if (!Motion.reduced(context)) {
+      // A tiny celebration burst, only when ticking something OFF the list,
+      // not when unchecking it back.
+      _particles = value == true ? _spawnParticles() : const [];
+      _controller.forward(from: 0);
+    }
     widget.onChanged?.call(value);
   }
 

@@ -27,6 +27,7 @@ import 'util/note_routes.dart';
 import 'util/public_route.dart';
 import 'util/snack.dart';
 import 'widgets/background_guard.dart';
+import 'widgets/screen_width.dart';
 
 void main() {
   runApp(const SkippyApp());
@@ -329,7 +330,9 @@ class _SkippyAppState extends State<SkippyApp> {
                 // holding that tick for us.
                 _widgets?.syncNow();
               },
-              child: child ?? const SizedBox.shrink(),
+              // Publishes the screen width once for the whole app, so the
+              // screens that branch on it are not also tied to the height.
+              child: ScreenWidth(child: child ?? const SizedBox.shrink()),
             ),
           ),
           theme: buildTheme(

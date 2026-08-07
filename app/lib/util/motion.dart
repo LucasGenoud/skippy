@@ -69,6 +69,10 @@ class Motion {
 
   /// True when the OS "reduce motion" accessibility setting is on. Callers skip
   /// or shorten decorative animation so the app stays comfortable to use.
+  ///
+  /// Depends on that one flag rather than on the whole [MediaQuery]: asking for
+  /// all of it subscribes the caller to every unrelated metric change, and the
+  /// soft keyboard sliding up changes them on every frame.
   static bool reduced(BuildContext context) =>
-      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false;
 }

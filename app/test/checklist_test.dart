@@ -7,6 +7,7 @@ import 'package:skippy/state/link_preview_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/widgets/checklist/animated_checklist.dart';
+import 'package:skippy/widgets/screen_width.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
@@ -20,7 +21,10 @@ Widget harness(NotesStore store, Widget child) => MultiProvider(
     ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
     Provider(create: (_) => LinkPreviewCache(api: store.api)),
   ],
-  child: MaterialApp(home: Scaffold(body: child)),
+  child: MaterialApp(
+    builder: (context, child) => ScreenWidth(child: child ?? const SizedBox()),
+    home: Scaffold(body: child),
+  ),
 );
 
 /// Flush the store's debounce (400ms) so no timers leak out of the test.
@@ -262,6 +266,49 @@ void main() {
       expect(itemsOf('n1'), isEmpty);
       expect(find.widgetWithText(TextField, 'List item'), findsOneWidget);
       expect(focusedField(tester).controller.text, isEmpty);
+      await flushTimers(tester);
+    });
+
+    testWidgets('the checkbox takes the "+" slot without shifting the row', (
+      tester,
+    ) async {
+      // The first keystroke swaps the composer's "+" for a real checkbox, and
+      // that swap is animated: it must land exactly where the "+" was, and
+      // must never nudge the field the caret is already in, at any point in
+      // the transition.
+      await openChecklist(tester);
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pumpAndSettle();
+
+      Rect leading() => tester.getRect(find.byType(AnimatedSwitcher).first);
+      Rect field() => tester.getRect(
+        find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(EditableText),
+        ),
+      );
+      final plusSlot = leading();
+      final fieldBefore = field();
+
+      tester.testTextInput.enterText('Milk');
+      // Mid-transition: both marks are on screen, and neither has moved the
+      // row around them.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      expect(find.byIcon(Icons.add), findsOneWidget);
+      expect(find.byType(Checkbox), findsOneWidget);
+      expect(leading(), plusSlot);
+      expect(field(), fieldBefore);
+
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.add), findsNothing);
+      expect(leading(), plusSlot);
+      expect(field(), fieldBefore);
+      // The checkbox is centred on the slot the "+" occupied.
+      expect(
+        tester.getCenter(find.byType(Checkbox)),
+        within(distance: 0.5, from: plusSlot.center),
+      );
       await flushTimers(tester);
     });
 

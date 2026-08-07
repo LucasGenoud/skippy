@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import '../util/motion.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'audio_waveform.dart';
@@ -160,10 +161,19 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
               onTap: _toggle,
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: Icon(
-                  _playing ? Icons.pause : Icons.play_arrow,
-                  color: scheme.onPrimary,
-                  size: 22,
+                // The triangle folds into the bars and back, so the button
+                // answers the tap itself instead of relying on the waveform
+                // to show that anything happened.
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: _playing ? 1.0 : 0.0),
+                  duration: Motion.fast,
+                  curve: Motion.standard,
+                  builder: (context, progress, _) => AnimatedIcon(
+                    icon: AnimatedIcons.play_pause,
+                    progress: AlwaysStoppedAnimation(progress),
+                    color: scheme.onPrimary,
+                    size: 22,
+                  ),
                 ),
               ),
             ),

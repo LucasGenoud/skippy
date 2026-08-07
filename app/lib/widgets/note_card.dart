@@ -30,6 +30,7 @@ import '../util/linkify.dart';
 import '../util/note_image.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
+import 'screen_width.dart';
 
 /// A note in the grid. The whole tile is an [OpenContainer], so tapping it
 /// morphs the card into the editor with a shared container transition.
@@ -460,7 +461,7 @@ class _NoteCardContent extends StatelessWidget {
     // Narrow cards are read at a glance. Preserve the most useful metadata
     // (reminder, then one file and two labels) and summarize the rest instead
     // of letting a dense wrap push the note itself below the fold.
-    final compactMetadata = MediaQuery.sizeOf(context).width < 600;
+    final compactMetadata = !ScreenWidth.isAtLeast(context, 600);
     final visibleFileCount = compactMetadata ? 1 : 2;
     final visibleLabelCount = compactMetadata ? 2 : 3;
 

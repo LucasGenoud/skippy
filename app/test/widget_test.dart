@@ -28,6 +28,7 @@ import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
 import 'package:skippy/widgets/quick_add_bar.dart';
+import 'package:skippy/widgets/screen_width.dart';
 import 'package:skippy/widgets/skeleton.dart';
 
 import 'fake_api.dart';
@@ -40,7 +41,13 @@ Widget harness(NotesStore store, Widget child) {
       ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
       Provider(create: (_) => LinkPreviewCache(api: store.api)),
     ],
-    child: MaterialApp(home: Scaffold(body: child)),
+    child: MaterialApp(
+      // Mirrors main.dart: the app publishes the screen width above every
+      // route so screens can branch on it without depending on the height.
+      builder: (context, child) =>
+          ScreenWidth(child: child ?? const SizedBox()),
+      home: Scaffold(body: child),
+    ),
   );
 }
 
@@ -61,6 +68,7 @@ Widget homeApp(NotesStore store, {SettingsStore? settings}) => MultiProvider(
   child: MaterialApp(
     theme: buildTheme(Brightness.light),
     scaffoldMessengerKey: scaffoldMessengerKey,
+    builder: (context, child) => ScreenWidth(child: child ?? const SizedBox()),
     home: const HomeScreen(),
   ),
 );
@@ -1652,11 +1660,13 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pumpAndSettle();
 
+      // The tint the row is heading for: it fades in over a few frames, and
+      // what matters here is which row is being tinted at all.
       Color? rowColor(String id) {
-        final box = tester.widget<DecoratedBox>(
+        final box = tester.widget<AnimatedContainer>(
           find.byKey(ValueKey('checklist-row-background-$id')),
         );
-        return (box.decoration as BoxDecoration).color;
+        return (box.decoration as BoxDecoration?)?.color;
       }
 
       expect(rowColor('first'), isNull);

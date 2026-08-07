@@ -5,6 +5,7 @@ import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
+import '../util/motion.dart';
 import 'drag_reorder_list.dart';
 import 'form_dialog.dart';
 import 'glyph_picker.dart';
@@ -66,7 +67,7 @@ class LabelsSheet extends StatefulWidget {
       isScrollControlled: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
         ),
         child: LabelsSheet(noteIds: [noteId]),
       ),
@@ -87,7 +88,7 @@ class LabelsSheet extends StatefulWidget {
       isScrollControlled: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
         ),
         child: LabelsSheet(noteIds: ids),
       ),
@@ -107,7 +108,7 @@ class LabelsSheet extends StatefulWidget {
       isScrollControlled: true,
       builder: (sheetContext) => Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+          bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
         ),
         child: LabelsSheet(selection: selected, onToggle: onToggle),
       ),
@@ -167,7 +168,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.6,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.6,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -222,9 +223,19 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       ListTile(
                         leading: LabelGlyph(label: label),
                         title: Text(label.name),
-                        trailing: isAssigned(label)
-                            ? const Icon(Icons.check)
-                            : const Icon(Icons.add),
+                        // Assigning across several notes turns "+" into a
+                        // check in place; it pops through rather than
+                        // switching between two frames.
+                        trailing: AnimatedSwitcher(
+                          duration: Motion.fast,
+                          switchInCurve: Curves.easeOutBack,
+                          switchOutCurve: Motion.standard,
+                          transitionBuilder: (child, animation) =>
+                              ScaleTransition(scale: animation, child: child),
+                          child: isAssigned(label)
+                              ? const Icon(Icons.check, key: ValueKey('on'))
+                              : const Icon(Icons.add, key: ValueKey('off')),
+                        ),
                         onTap: () => toggle(label),
                       )
                     else

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/settings_store.dart';
+import '../util/motion.dart';
 import 'form_dialog.dart';
 
 /// Horizontal strip of the user's note colors (personalized in Settings),
@@ -112,8 +113,8 @@ class _ColorDot extends StatelessWidget {
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
+          duration: Motion.fast,
+          curve: Motion.standard,
           width: 48,
           height: 48,
           decoration: BoxDecoration(
@@ -126,9 +127,9 @@ class _ColorDot extends StatelessWidget {
           ),
           // The check pops in with a small overshoot when a color is picked.
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 150),
+            duration: Motion.fast,
             switchInCurve: Curves.easeOutBack,
-            switchOutCurve: Curves.easeIn,
+            switchOutCurve: Motion.standard,
             transitionBuilder: (child, animation) =>
                 ScaleTransition(scale: animation, child: child),
             child: fill == null && !selected

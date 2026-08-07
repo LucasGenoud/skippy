@@ -7,10 +7,12 @@ import '../../state/board_layout.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../theme.dart';
+import '../../util/motion.dart';
 import '../../util/search_query.dart';
 import '../empty_state.dart';
 import 'board_column_view.dart';
 import 'stage_editor.dart';
+import '../screen_width.dart';
 
 /// The board: one column per stage, plus Unassigned.
 ///
@@ -93,8 +95,7 @@ class _BoardViewState extends State<BoardView> {
 
     if (board.hasNoStages) return _NoStagesYet(hasNotes: !board.isEmpty);
 
-    final paged =
-        MediaQuery.sizeOf(context).width < BoardView.pagedBreakpoint;
+    final paged = !ScreenWidth.isAtLeast(context, BoardView.pagedBreakpoint);
     return paged ? _buildPaged(board) : _buildColumns(board);
   }
 
@@ -340,8 +341,7 @@ class _EdgeScrollZoneState extends State<_EdgeScrollZone> {
         if (_timer == null && widget.controller.hasClients) _start();
       },
       onLeave: (_) => _stop(),
-      builder: (context, _, _) =>
-          const SizedBox(width: _EdgeScrollZone.width),
+      builder: (context, _, _) => const SizedBox(width: _EdgeScrollZone.width),
     );
   }
 }
@@ -504,7 +504,12 @@ class _StageChip extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: kBorderRadius,
-      child: Container(
+      // Both of this chip's states are worth easing: switching columns walks
+      // the fill along the strip, and a card coming over it lights it up as a
+      // drop target while the finger is still moving.
+      child: AnimatedContainer(
+        duration: Motion.fast,
+        curve: Motion.standard,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: hovered
@@ -530,13 +535,17 @@ class _StageChip extends StatelessWidget {
               decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
             ),
             const SizedBox(width: 8),
-            Text(
-              column.title,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: selected
-                    ? scheme.onSecondaryContainer
-                    : scheme.onSurfaceVariant,
-              ),
+            AnimatedDefaultTextStyle(
+              duration: Motion.fast,
+              curve: Motion.standard,
+              style:
+                  Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: selected
+                        ? scheme.onSecondaryContainer
+                        : scheme.onSurfaceVariant,
+                  ) ??
+                  const TextStyle(),
+              child: Text(column.title),
             ),
             const SizedBox(width: 6),
             Text(
@@ -567,7 +576,8 @@ class _NoStagesYet extends StatelessWidget {
         const Expanded(
           child: EmptyState(
             icon: Icons.view_kanban_outlined,
-            message: 'Add columns to build a board\n'
+            message:
+                'Add columns to build a board\n'
                 'for this workspace',
           ),
         ),

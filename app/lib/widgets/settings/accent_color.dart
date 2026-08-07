@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../state/settings_store.dart';
 import '../../theme.dart';
+import '../../util/motion.dart';
 import '../form_dialog.dart';
 
 /// A handful of pleasant seeds to pick from, the amber ([kDefaultAccent])
@@ -90,7 +91,11 @@ class _AccentDot extends StatelessWidget {
     final dot = InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
-      child: Container(
+      // Same motion as the note and label swatches: the ring thickens and the
+      // check pops in, so the accent visibly moves to the dot you picked.
+      child: AnimatedContainer(
+        duration: Motion.fast,
+        curve: Motion.standard,
         width: 32,
         height: 32,
         decoration: BoxDecoration(
@@ -101,11 +106,28 @@ class _AccentDot extends StatelessWidget {
             width: selected ? 2.5 : 1,
           ),
         ),
-        child: fill == null
-            ? Icon(Icons.add, size: 18, color: scheme.onSurfaceVariant)
-            : selected
-            ? Icon(Icons.check, size: 18, color: onFill)
-            : null,
+        child: AnimatedSwitcher(
+          duration: Motion.fast,
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Motion.standard,
+          transitionBuilder: (child, animation) =>
+              ScaleTransition(scale: animation, child: child),
+          child: fill == null
+              ? Icon(
+                  Icons.add,
+                  key: const ValueKey('custom'),
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                )
+              : selected
+              ? Icon(
+                  Icons.check,
+                  key: const ValueKey('check'),
+                  size: 18,
+                  color: onFill,
+                )
+              : const SizedBox.shrink(key: ValueKey('none')),
+        ),
       ),
     );
     // Tooltip asserts on a null message, so only wrap the custom slot (the one

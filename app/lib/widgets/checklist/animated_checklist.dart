@@ -208,7 +208,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// The checked-section header follows the text scale, so it is measured
   /// like the rows; this is what it takes up until it has been.
   static const double _estimatedHeaderHeight = 40;
-  static const Duration _moveDuration = Duration(milliseconds: 230);
 
   final Map<String, _RowHandles> _handles = {};
   final Map<String, double> _rowHeights = {};
@@ -805,6 +804,13 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     );
   }
 
+  /// How long a row's own controls take to settle: the affordances fading
+  /// under the pointer or the caret, the row's highlight, the composer's "+"
+  /// giving way to a checkbox. Short enough that none of it is ever something
+  /// to wait for, but never an instant jump.
+  Duration get _controlFade =>
+      Motion.reduced(context) ? Duration.zero : Motion.fast;
+
   /// Centres a row control on the first text line (see [_RowMetrics]).
   Widget _firstLineBand(Widget child) => SizedBox(
     height: _rowMetrics.bandHeight,
@@ -1110,10 +1116,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     ),
                   ),
                 ),
-                (hovered, focused, child) => Opacity(
+                (hovered, focused, child) => AnimatedOpacity(
                   opacity: !item.done && showsControls(hovered, focused)
                       ? 1
                       : 0,
+                  duration: _controlFade,
+                  curve: Motion.standard,
                   child: IgnorePointer(
                     ignoring: item.done || widget.readOnly,
                     child: child,
@@ -1161,8 +1169,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                 ),
                 (hovered, focused, child) {
                   final show = showsControls(hovered, focused);
-                  return Opacity(
+                  return AnimatedOpacity(
                     opacity: show ? 1 : 0,
+                    duration: _controlFade,
+                    curve: Motion.standard,
                     child: IgnorePointer(ignoring: !show, child: child),
                   );
                 },
@@ -1170,8 +1180,13 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             ],
           ),
         ),
-        (hovered, focused, child) => DecoratedBox(
+        // Animated, so the pointer crossing a row washes its highlight in and
+        // out rather than flicking it, and picking a row up fades its lift in
+        // under the finger.
+        (hovered, focused, child) => AnimatedContainer(
           key: ValueKey('checklist-row-background-${item.id}'),
+          duration: _controlFade,
+          curve: Motion.standard,
           decoration: BoxDecoration(
             color: dragging
                 ? scheme.surfaceContainerHigh
@@ -1232,27 +1247,57 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         children: [
           // Aligned with the drag-handle column above.
           const SizedBox(width: 24),
+          // The first keystroke turns the invitation into a real row, and its
+          // checkbox glides in over the "+" from the same side a new row
+          // enters from (see [_ChecklistRowEntrance]), so the item
+          // materializing under the caret reads as one movement rather than a
+          // control being swapped out underneath it.
           _firstLineBand(
-            composing == null
-                ? SizedBox(
-                    width: 40,
-                    child: Icon(
-                      Icons.add,
-                      size: 20,
-                      color: scheme.onSurfaceVariant,
+            AnimatedSwitcher(
+              duration: _controlFade,
+              switchInCurve: Motion.emphasized,
+              switchOutCurve: Motion.standard,
+              // The stock layout clips to the larger child, which would both
+              // cut the slide off at its edge and swallow the checkbox's
+              // celebration dots.
+              layoutBuilder: (currentChild, previousChildren) => Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [...previousChildren, ?currentChild],
+              ),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween(
+                    begin: const Offset(0.3, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: composing == null
+                  ? SizedBox.square(
+                      key: const ValueKey('checklist-composer-add'),
+                      dimension: 40,
+                      child: Icon(
+                        Icons.add,
+                        size: 20,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    )
+                  : PopCheckbox(
+                      key: const ValueKey('checklist-composer-checkbox'),
+                      value: false,
+                      // Ticking what is being written finishes it: the row is
+                      // handed to the list, then checked off it.
+                      onChanged: (_) {
+                        final item = composing;
+                        _commitComposing();
+                        _handleToggle(item);
+                      },
+                      sideColor: scheme.onSurfaceVariant,
                     ),
-                  )
-                : PopCheckbox(
-                    value: false,
-                    // Ticking what is being written finishes it: the row is
-                    // handed to the list, then checked off it.
-                    onChanged: (_) {
-                      final item = composing;
-                      _commitComposing();
-                      _handleToggle(item);
-                    },
-                    sideColor: scheme.onSurfaceVariant,
-                  ),
+            ),
           ),
           _rowField(
             handles: _composer,
@@ -1267,8 +1312,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             valueListenable: _focusedId,
             builder: (context, focusedId, _) {
               final show = focusedId == _kComposerId;
-              return Opacity(
+              return AnimatedOpacity(
                 opacity: show ? 1 : 0,
+                duration: _controlFade,
+                curve: Motion.standard,
                 child: IgnorePointer(
                   ignoring: !show,
                   // An empty composer has no item to remove yet, so its
@@ -1301,10 +1348,22 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     );
   }
 
+  /// Folds the checked section away, or brings it back. Unfolding puts rows on
+  /// screen that were not in the tree at all, so they get the same short glide
+  /// a newly added row gets rather than blinking into place under the header.
+  void _toggleChecked() {
+    setState(() {
+      _showChecked = !_showChecked;
+      if (_showChecked) {
+        _enteringIds.addAll(_checked.map((item) => item.id));
+      }
+    });
+  }
+
   Widget _checkedHeader(int count) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: () => setState(() => _showChecked = !_showChecked),
+      onTap: _toggleChecked,
       borderRadius: BorderRadius.circular(kRadius),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1313,8 +1372,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             const SizedBox(width: 4),
             AnimatedRotation(
               turns: _showChecked ? 0.25 : 0,
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
+              duration: _controlFade,
+              curve: Motion.standard,
               child: Icon(
                 Icons.chevron_right,
                 size: 20,
@@ -1375,6 +1434,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         if (mounted) setState(() => _snapFrame = false);
       });
     }
+    // A row's glide to its new position, unless this is a frame that has to
+    // land outright (see [_snapFrame]) or motion is turned down.
+    final moveDuration = snap || Motion.reduced(context)
+        ? Duration.zero
+        : Motion.base;
     Widget positioned(String id, Widget child) {
       final dragging = id == _draggingId;
       Widget positionedChild = MeasureSize(
@@ -1393,8 +1457,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       // Duration.zero so it tracks the pointer exactly.
       return AnimatedPositioned(
         key: ValueKey(id),
-        duration: snap || dragging ? Duration.zero : _moveDuration,
-        curve: Curves.easeOutCubic,
+        duration: dragging ? Duration.zero : moveDuration,
+        curve: Motion.standard,
         left: 0,
         right: 0,
         top: dragging ? _dragY : (layout.tops[id] ?? 0),

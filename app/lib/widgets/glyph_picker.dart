@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../util/label_style.dart';
+import '../util/motion.dart';
 
 /// The colour and icon pickers shared by everything that carries the app's
 /// label glyph vocabulary: labels themselves, and saved smart views. One
@@ -32,7 +33,11 @@ class ColorDot extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
-      child: Container(
+      // The ring thickens into place and the check pops in, so picking a
+      // colour is something you watch land rather than a redraw.
+      child: AnimatedContainer(
+        duration: Motion.fast,
+        curve: Motion.standard,
         width: 32,
         height: 32,
         decoration: BoxDecoration(
@@ -43,15 +48,28 @@ class ColorDot extends StatelessWidget {
             width: selected ? 2.5 : 1,
           ),
         ),
-        child: fill == null
-            ? Icon(
-                selected ? Icons.check : Icons.format_color_reset_outlined,
-                size: 18,
-                color: scheme.onSurfaceVariant,
-              )
-            : selected
-            ? Icon(Icons.check, size: 18, color: onFill)
-            : null,
+        child: AnimatedSwitcher(
+          duration: Motion.fast,
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Motion.standard,
+          transitionBuilder: (child, animation) =>
+              ScaleTransition(scale: animation, child: child),
+          child: selected
+              ? Icon(
+                  Icons.check,
+                  key: const ValueKey('check'),
+                  size: 18,
+                  color: fill == null ? scheme.onSurfaceVariant : onFill,
+                )
+              : fill == null
+              ? Icon(
+                  Icons.format_color_reset_outlined,
+                  key: const ValueKey('reset'),
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                )
+              : const SizedBox.shrink(key: ValueKey('none')),
+        ),
       ),
     );
   }
@@ -77,7 +95,9 @@ class IconGrid extends StatelessWidget {
       return InkWell(
         onTap: () => onSelect(key),
         borderRadius: kBorderRadius,
-        child: Container(
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.standard,
           width: 40,
           height: 40,
           decoration: BoxDecoration(
@@ -88,7 +108,14 @@ class IconGrid extends StatelessWidget {
               width: isSel ? 2 : 1,
             ),
           ),
-          child: Icon(icon, size: 20, color: isSel ? tint : scheme.onSurface),
+          // The glyph takes the label's colour along with its cell, rather
+          // than snapping to it while the cell is still filling in.
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: isSel ? tint : scheme.onSurface),
+            duration: Motion.fast,
+            curve: Motion.standard,
+            builder: (context, color, _) => Icon(icon, size: 20, color: color),
+          ),
         ),
       );
     }

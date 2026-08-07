@@ -11,6 +11,7 @@ import '../state/auth_store.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
+import 'screen_width.dart';
 
 /// The top bar displays the active setting, matching Settings → Appearance.
 /// Tapping still cycles to the next choice.
@@ -114,7 +115,7 @@ class HomeTopBar extends StatelessWidget {
     if (selectionMode) return _selectionBar(context, scheme);
     final settings = context.watch<SettingsStore>();
     final themeAction = _currentThemeAction(settings.themeMode);
-    final isNarrow = MediaQuery.sizeOf(context).width < 650;
+    final isNarrow = !ScreenWidth.isAtLeast(context, 650);
     if (isNarrow) return _narrowBar(context, scheme);
 
     return Container(
@@ -402,7 +403,7 @@ class HomeTopBar extends StatelessWidget {
   }
 
   Widget _selectionBar(BuildContext context, ColorScheme scheme) {
-    final narrow = MediaQuery.sizeOf(context).width < 650;
+    final narrow = !ScreenWidth.isAtLeast(context, 650);
     final selectionLabel = selectedCount == 0
         ? 'Select notes'
         : '$selectedCount selected';
@@ -844,7 +845,7 @@ class _UserAvatarMenu extends StatelessWidget {
             ],
           ),
         ),
-        if (MediaQuery.sizeOf(context).width < 650) ...[
+        if (!ScreenWidth.isAtLeast(context, 650)) ...[
           if (onShareView != null)
             PopupMenuItem<String>(
               value: 'share-view',

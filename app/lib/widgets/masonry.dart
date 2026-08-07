@@ -61,6 +61,24 @@ class AnimatedMasonry extends StatefulWidget {
   final int columns;
   final double spacing;
   final Widget Function(BuildContext context, Note note) itemBuilder;
+
+  /// Everything [itemBuilder] reads besides the note itself, as one value that
+  /// compares equal while a tile would come out the same.
+  ///
+  /// [itemBuilder] is a closure rebuilt with its parent, so it is never equal
+  /// to the previous one and cannot say whether it would still produce the
+  /// same card. Left null, the tile cache is therefore dropped on *every*
+  /// parent rebuild, which is always correct but can be very wasteful: the
+  /// parent rebuilds for reasons that have nothing to do with the cards, and
+  /// the grid in particular is built inside a `LayoutBuilder`, so the keyboard
+  /// sliding up (which changes the available height, never the width) re-ran
+  /// it on every frame of the animation and rebuilt every card with it.
+  ///
+  /// Pass the state the builder closes over (selection, query) and the cache
+  /// survives all of that instead, at the cost of having to keep this in step
+  /// with what [itemBuilder] actually reads.
+  final Object? itemBuildKey;
+
   final bool dragEnabled;
   final MasonryReorderCallback? onReorder;
 
@@ -97,6 +115,7 @@ class AnimatedMasonry extends StatefulWidget {
     required this.notes,
     required this.columns,
     required this.itemBuilder,
+    this.itemBuildKey,
     this.spacing = 8,
     this.dragEnabled = true,
     this.onReorder,
@@ -155,10 +174,10 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   // widget). Dragging is exactly this case: the grid setStates on every step
   // and nothing about the cards themselves has changed.
   //
-  // The cache is dropped whenever the note object changes, and wholesale on
-  // every parent rebuild ([didUpdateWidget]), the parent's [itemBuilder] can
-  // read state of its own (selection, search query), so anything that could
-  // make it produce a different card also empties this.
+  // The cache is dropped whenever the note object changes, and wholesale when
+  // [AnimatedMasonry.itemBuildKey] changes (or on every parent rebuild when
+  // there is no key), which is how the parent declares that its [itemBuilder]
+  // would now produce different cards.
   final Map<String, Widget> _tiles = {};
   final Map<String, Note> _tileNotes = {};
 
@@ -237,8 +256,18 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     }
     final live = ids.toSet();
     _heights.removeWhere((id, _) => !live.contains(id));
-    _tiles.clear();
-    _tileNotes.clear();
+    // Cards the parent would now build differently, plus any whose note has
+    // gone away. A note that merely changed is dropped by [_tileFor] itself.
+    // No key means the parent hasn't told us what its builder reads, so assume
+    // the worst, as this did before the key existed.
+    if (widget.itemBuildKey == null ||
+        widget.itemBuildKey != oldWidget.itemBuildKey) {
+      _tiles.clear();
+      _tileNotes.clear();
+    } else {
+      _tiles.removeWhere((id, _) => !live.contains(id));
+      _tileNotes.removeWhere((id, _) => !live.contains(id));
+    }
     _invalidateLayout();
   }
 
