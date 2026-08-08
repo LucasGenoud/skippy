@@ -15,6 +15,14 @@ optimistic, offline-capable edits.
 - Dark mode, responsive layouts, keyboard shortcuts, share-sheet intake, and
   home-screen widgets
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/skippy-desktop-card.png" alt="Skippy desktop notes grid" width="48%">
+  <img src="docs/screenshots/skippy-ios-card-editor.png" alt="Skippy mobile card editor" width="24%">
+  <img src="docs/screenshots/skippy-ios-search.png" alt="Skippy mobile note search" width="24%">
+</p>
+
 The app is deliberately out of scope for drawings, OCR, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
