@@ -1,0 +1,49 @@
+name: build-image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject tracked runtime databases
+        run: |
+          TRACKED=$(git ls-files -- ':(glob)backend/sticky_notes.db*')
+          if [ -n "$TRACKED" ]; then
+            echo "Runtime SQLite files must not be tracked:"
+            echo "$TRACKED"
+            exit 1
+          fi
+
+      - name: Reject tracked secrets
+        run: sh scripts/check-secrets.sh
+
+      - name: Log in to the GitHub Container Registry
+        env:
+          REGISTRY: ghcr.io
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" |
+            docker login "$REGISTRY" --username "$REGISTRY_USER" --password-stdin
+
+      - name: Build and push
+        run: |
+          IMAGE=ghcr.io/lucasgenoud/skippy
+          VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+          docker build --no-cache --pull --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" -t "$IMAGE:latest" .
+          docker push "$IMAGE:latest"
+
+      - name: Drop dangling layers left by this build
+        run: docker image prune -f
