@@ -55,11 +55,13 @@ struct ToggleItemIntent: AppIntent {
 
     let opId = UUID().uuidString
     SharedStore.appendOp(id: opId, noteId: noteId, itemId: itemId, done: done)
-    WidgetCenter.shared.reloadAllTimelines()
-
     if await WidgetSync.pushItems(noteId: noteId, items: items) {
       SharedStore.removeOp(id: opId)
     }
+    // Reload only after the server attempt. If it failed, the queued op makes
+    // the provider retain the optimistic App Group copy instead of fetching an
+    // older server version over it.
+    WidgetCenter.shared.reloadAllTimelines()
     return .result()
   }
 }

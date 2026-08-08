@@ -21,22 +21,39 @@ struct SkippyWidgetProvider: AppIntentTimelineProvider {
   }
 
   func snapshot(for configuration: SelectNoteIntent, in context: Context) async -> NoteEntry {
-    entry(for: configuration)
+    cachedEntry(for: configuration)
   }
 
-  /// A single entry with no refresh date.
-  ///
-  /// Everything a widget shows comes out of the App Group, and both writers of
-  /// that store (the app publishing, an intent ticking) reload the timeline
-  /// themselves. There is nothing for a scheduled wake-up to discover, so
-  /// asking for one would only spend the widget's refresh budget.
+  /// Fetch the selected note periodically as well as accepting immediate
+  /// reloads from the app. WidgetKit chooses the exact time, but this gives a
+  /// widget a chance to catch edits from another device while Skippy itself is
+  /// not running. The cached App Group payload remains the offline fallback.
   func timeline(for configuration: SelectNoteIntent, in context: Context) async -> Timeline<
     NoteEntry
   > {
-    Timeline(entries: [entry(for: configuration)], policy: .never)
+    let cached = cachedEntry(for: configuration)
+    let refreshed: NoteEntry
+    if let id = cached.configuredNoteId, !SharedStore.hasPendingOp(noteId: id) {
+      switch await WidgetSync.fetchNote(noteId: id, cached: cached.note) {
+      case .current(let note):
+        refreshed = NoteEntry(date: Date(), note: note, configuredNoteId: id)
+      case .unavailable:
+        refreshed = NoteEntry(date: Date(), note: nil, configuredNoteId: id)
+      case .failed:
+        refreshed = cached
+      }
+    } else {
+      refreshed = cached
+    }
+    // WidgetKit schedules this opportunistically, not as a real-time timer.
+    // Fifteen minutes is its recommended lower bound for timeline refreshes.
+    return Timeline(
+      entries: [refreshed],
+      policy: .after(Date().addingTimeInterval(15 * 60))
+    )
   }
 
-  private func entry(for configuration: SelectNoteIntent) -> NoteEntry {
+  private func cachedEntry(for configuration: SelectNoteIntent) -> NoteEntry {
     let id = configuration.note?.id
     return NoteEntry(
       date: Date(),

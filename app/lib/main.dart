@@ -142,6 +142,19 @@ class _SkippyAppState extends State<SkippyApp> {
     if (noteId != null) _requestOpenNote(noteId);
   }
 
+  /// A foreground refresh is asynchronous. Publish the widget only after the
+  /// store has finished pulling, otherwise it briefly re-publishes the stale
+  /// cache that was present before the resume.
+  Future<void> _refreshForegroundServices() async {
+    await _store?.onResumed();
+    // Time, permissions and the device's timezone can all have moved while we
+    // were away; re-arm against what the OS actually holds.
+    _reminders?.reconcile();
+    // A widget may have been ticked while we were away, and it is holding that
+    // tick for us. This publishes the refreshed store after draining it.
+    await _widgets?.syncNow();
+  }
+
   /// A note that something outside the widget tree asked to open: a tapped
   /// reminder notification, or a tapped home-screen widget. Held until the
   /// store actually has it.
@@ -322,13 +335,7 @@ class _SkippyAppState extends State<SkippyApp> {
             child: BackgroundGuard(
               onBackground: () => _store?.flushForBackground(),
               onForeground: () {
-                _store?.onResumed();
-                // Time, permissions and the device's timezone can all have moved
-                // while we were away; re-arm against what the OS actually holds.
-                _reminders?.reconcile();
-                // A widget may have been ticked while we were away, and it is
-                // holding that tick for us.
-                _widgets?.syncNow();
+                unawaited(_refreshForegroundServices());
               },
               // Publishes the screen width once for the whole app, so the
               // screens that branch on it are not also tied to the height.

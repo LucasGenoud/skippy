@@ -136,6 +136,14 @@ enum SharedStore {
     writeJSON(ops.filter { ($0["opId"] as? String) != id }, forKey: Key.ops)
   }
 
+  /// A timed read must not replace the widget's optimistic offline tick with
+  /// the older server copy that has not accepted that tick yet.
+  static func hasPendingOp(noteId: String) -> Bool {
+    ((readJSON(Key.ops) as? [[String: Any]]) ?? []).contains {
+      ($0["noteId"] as? String) == noteId
+    }
+  }
+
   // MARK: - Session
 
   /// The server and credential to sync a tick with, mirrored by the app. Absent
@@ -159,6 +167,11 @@ struct WidgetItem: Identifiable, Hashable {
 
 /// A note trimmed to what a widget can render.
 struct WidgetNote {
+  /// The number of rows the Flutter publisher sends for one note. Keep this in
+  /// step with `kMaxWidgetItems` in `widget_payload.dart` so a timed iOS
+  /// refresh has the same compact shape as a refresh from the app.
+  private static let maxItems = 40
+
   let id: String
   let title: String
   let kind: String
@@ -192,6 +205,51 @@ struct WidgetNote {
     itemCount = (json["itemCount"] as? Int) ?? items.count
     pendingCount =
       (json["pendingCount"] as? Int) ?? items.filter { !$0.done }.count
+  }
+
+  /// Builds a widget-sized note from the normal API response. The server owns
+  /// the content but the app owns palette resolution, so retain the finished
+  /// colours from the most recently published copy when one is available.
+  init?(apiJSON: [String: Any], colorsFrom cached: WidgetNote?) {
+    guard let id = apiJSON["id"] as? String, !id.isEmpty,
+      (apiJSON["trashed"] as? Bool) != true
+    else { return nil }
+
+    self.id = id
+    kind = (apiJSON["kind"] as? String) ?? "text"
+    colorLight = cached?.colorLight
+    colorDark = cached?.colorDark
+    content = (apiJSON["content"] as? String) ?? ""
+
+    let allItems = ((apiJSON["items"] as? [[String: Any]]) ?? []).compactMap {
+      row -> WidgetItem? in
+      guard let itemId = row["id"] as? String, !itemId.isEmpty else { return nil }
+      return WidgetItem(
+        id: itemId,
+        text: (row["text"] as? String) ?? "",
+        done: (row["done"] as? Bool) ?? false
+      )
+    }
+    // Match Dart's widget payload: outstanding work first, but preserve the
+    // note's order within each section.
+    items = Array((allItems.filter { !$0.done } + allItems.filter { $0.done }).prefix(Self.maxItems))
+    itemCount = allItems.count
+    pendingCount = allItems.filter { !$0.done }.count
+    let serverTitle = ((apiJSON["title"] as? String) ?? "").trimmingCharacters(
+      in: .whitespacesAndNewlines)
+    if !serverTitle.isEmpty {
+      title = serverTitle
+    } else if let firstLine = content.split(whereSeparator: \.isNewline).first,
+      !firstLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      title = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else if let firstItem = allItems.first(where: {
+      !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }) {
+      title = firstItem.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else {
+      title = "Untitled note"
+    }
   }
 }
 
