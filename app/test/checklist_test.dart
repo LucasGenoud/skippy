@@ -280,7 +280,8 @@ void main() {
       await tester.tap(find.widgetWithText(TextField, 'List item'));
       await tester.pumpAndSettle();
 
-      Rect leading() => tester.getRect(find.byType(AnimatedSwitcher).first);
+      Rect leading() =>
+          tester.getRect(find.byKey(const Key('checklist-composer-leading')));
       Rect field() => tester.getRect(
         find.descendant(
           of: find.byType(AnimatedChecklist),
@@ -291,14 +292,36 @@ void main() {
       final fieldBefore = field();
 
       tester.testTextInput.enterText('Milk');
-      // Mid-transition: both marks are on screen, and neither has moved the
-      // row around them.
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 75));
-      expect(find.byIcon(Icons.add), findsOneWidget);
-      expect(find.byType(Checkbox), findsOneWidget);
-      expect(leading(), plusSlot);
-      expect(field(), fieldBefore);
+
+      // Neither mark travels: they trade the same slot in place, so they can
+      // never be seen sliding past each other. Sampled across the whole
+      // transition rather than at one convenient midpoint.
+      var handedOver = false;
+      for (var elapsed = 0; elapsed <= 240; elapsed += 20) {
+        if (elapsed > 0) await tester.pump(const Duration(milliseconds: 20));
+        final plus = find.byIcon(Icons.add);
+        final box = find.byType(Checkbox);
+        expect(leading(), plusSlot, reason: 'slot moved at ${elapsed}ms');
+        expect(field(), fieldBefore, reason: 'field moved at ${elapsed}ms');
+        for (final mark in [plus, box]) {
+          if (mark.evaluate().isEmpty) continue;
+          expect(
+            tester.getCenter(mark),
+            within(distance: 0.5, from: plusSlot.center),
+            reason: 'mark drifted off centre at ${elapsed}ms',
+          );
+        }
+        // The slot is never left empty: the "+" is still fading out while the
+        // checkbox is already fading in.
+        expect(
+          plus.evaluate().isNotEmpty || box.evaluate().isNotEmpty,
+          isTrue,
+          reason: 'the slot was empty at ${elapsed}ms',
+        );
+        handedOver |= plus.evaluate().isNotEmpty && box.evaluate().isNotEmpty;
+      }
+      expect(handedOver, isTrue, reason: 'the two never overlapped');
 
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.add), findsNothing);

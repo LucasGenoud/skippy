@@ -818,6 +818,88 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   );
 
   // -------------------------------------------------------------------
+  // The composer's "+" giving way to a checkbox
+
+  /// Shaping for that swap, as a fraction of [_swapDuration]. Neither control
+  /// travels: they trade the same slot, so there is nothing to cross paths
+  /// with. The "+" contracts to a point and accelerates away; the checkbox
+  /// grows into the space it leaves, arriving with the same small overshoot
+  /// every other checkbox in the app pops with, so it reads as a checkbox
+  /// appearing rather than an icon being substituted.
+  ///
+  /// The windows overlap by a quarter, which is enough that the slot is never
+  /// empty but not so much that the two are both solid at once.
+  static const Curve _swapOut = Interval(0, 0.55, curve: Curves.easeIn);
+  static const Curve _swapIn = Interval(0.3, 1, curve: Curves.easeOut);
+  static const Curve _swapInScale = Interval(0.3, 1, curve: Curves.easeOutBack);
+
+  /// Longer than [_controlFade] because the two halves run in sequence rather
+  /// than together; each still gets well under a tenth of a second.
+  Duration get _swapDuration =>
+      Motion.reduced(context) ? Duration.zero : Motion.base;
+
+  Widget _composerLeading(ChecklistItem? composing, ColorScheme scheme) {
+    return SizedBox.square(
+      // A fixed slot, so the swap can't nudge the text field beside it.
+      key: const Key('checklist-composer-leading'),
+      dimension: 40,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: composing == null ? 0.0 : 1.0),
+        duration: _swapDuration,
+        builder: (context, t, _) {
+          final leaving = 1 - _swapOut.transform(t);
+          final arriving = _swapIn.transform(t);
+          return Stack(
+            // Unclipped so the checkbox's celebration dots can leave the slot.
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            // Keyed, or the survivor would be matched to the departed one's
+            // element when the list shortens back to one child, rebuilding the
+            // checkbox from scratch — and dropping its pop — as the "+" goes.
+            children: [
+              if (leaving > 0)
+                Opacity(
+                  key: const ValueKey('checklist-composer-add'),
+                  opacity: leaving,
+                  child: Transform.scale(
+                    scale: 0.7 + 0.3 * leaving,
+                    child: Icon(
+                      Icons.add,
+                      size: 20,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              // Present from the keystroke, not from the moment it starts to
+              // show: the item exists as soon as there is text, so the slot
+              // has to be tickable for the whole swap, not just the tail.
+              if (composing != null || arriving > 0)
+                Opacity(
+                  key: const ValueKey('checklist-composer-checkbox'),
+                  opacity: arriving,
+                  child: Transform.scale(
+                    scale: 0.6 + 0.4 * _swapInScale.transform(t),
+                    child: PopCheckbox(
+                      value: false,
+                      // Ticking what is being written finishes it: the row is
+                      // handed to the list, then checked off it.
+                      onChanged: (_) {
+                        final item = composing;
+                        _commitComposing();
+                        _handleToggle(item);
+                      },
+                      sideColor: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------
   // Drag to reorder (handle-initiated, unchecked rows only)
 
   void _dragStart(String id, double startTop) {
@@ -1248,57 +1330,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           // Aligned with the drag-handle column above.
           const SizedBox(width: 24),
           // The first keystroke turns the invitation into a real row, and its
-          // checkbox glides in over the "+" from the same side a new row
-          // enters from (see [_ChecklistRowEntrance]), so the item
-          // materializing under the caret reads as one movement rather than a
-          // control being swapped out underneath it.
-          _firstLineBand(
-            AnimatedSwitcher(
-              duration: _controlFade,
-              switchInCurve: Motion.emphasized,
-              switchOutCurve: Motion.standard,
-              // The stock layout clips to the larger child, which would both
-              // cut the slide off at its edge and swallow the checkbox's
-              // celebration dots.
-              layoutBuilder: (currentChild, previousChildren) => Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [...previousChildren, ?currentChild],
-              ),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween(
-                    begin: const Offset(0.3, 0),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: composing == null
-                  ? SizedBox.square(
-                      key: const ValueKey('checklist-composer-add'),
-                      dimension: 40,
-                      child: Icon(
-                        Icons.add,
-                        size: 20,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    )
-                  : PopCheckbox(
-                      key: const ValueKey('checklist-composer-checkbox'),
-                      value: false,
-                      // Ticking what is being written finishes it: the row is
-                      // handed to the list, then checked off it.
-                      onChanged: (_) {
-                        final item = composing;
-                        _commitComposing();
-                        _handleToggle(item);
-                      },
-                      sideColor: scheme.onSurfaceVariant,
-                    ),
-            ),
-          ),
+          // "+" gives way to a checkbox in place: see [_swapProgress].
+          _firstLineBand(_composerLeading(composing, scheme)),
           _rowField(
             handles: _composer,
             style: textStyle,
