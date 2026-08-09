@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:animations/animations.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,7 @@ import '../state/settings_store.dart';
 import '../util/home_widgets.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
+import '../util/location_geofences.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/note_export.dart';
@@ -32,6 +34,7 @@ import '../widgets/color_picker.dart';
 import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/highlighted_text_field.dart';
+import '../widgets/editor/note_actions_button.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
@@ -39,6 +42,7 @@ import '../widgets/markdown_toolbar.dart';
 import '../widgets/paste_files.dart';
 import '../widgets/pick_image.dart';
 import '../widgets/reminder_picker.dart';
+import '../widgets/screen_width.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
@@ -71,6 +75,10 @@ class EditorScreen extends StatefulWidget {
   /// Board column a note composed from that column starts in.
   final String? stageId;
 
+  /// Whether this editor was opened from the board. Column placement is a
+  /// board-specific control, so it stays out of the ordinary note editor.
+  final bool openedFromBoard;
+
   /// Opens a checklist with its empty "add item" row focused and the keyboard
   /// up, ready to type. For the home-screen widget's Add item row: a widget
   /// takes no text input on either platform, so the item is written here.
@@ -83,6 +91,7 @@ class EditorScreen extends StatefulWidget {
     this.modal = false,
     this.labelIds = const {},
     this.stageId,
+    this.openedFromBoard = false,
     this.addChecklistItem = false,
   });
 
@@ -92,12 +101,24 @@ class EditorScreen extends StatefulWidget {
 
 /// Whether this layout opens notes as a centered modal
 /// instead of fullscreen. Same breakpoint as the quick-add bar.
+///
+/// Reads the width alone: [MediaQuery.sizeOf] is one aspect covering both axes,
+/// so asking it would rebuild the whole editor on every frame of the Android
+/// keyboard's slide (the activity is `adjustResize`, so the view really does
+/// shrink). See [ScreenWidth].
 bool wantsModalEditor(BuildContext context) =>
-    MediaQuery.sizeOf(context).width >= 600;
+    ScreenWidth.isAtLeast(context, 600);
 
 /// Width the wide-layout modal grows to. [_EditorMorph] needs it up front to
 /// know how far the opening surface has to scale.
 const double _modalMaxWidth = 600;
+
+/// Only a gesture that begins within this left-hand edge can dismiss the
+/// fullscreen editor. Keeping the recognizer out of the arena elsewhere
+/// preserves horizontal interactions inside the note.
+const double _edgeDismissWidth = 24;
+const double _edgeDismissDistance = 72;
+const double _edgeDismissFlingVelocity = 700;
 
 /// Global-coordinate bounds of the widget that [context] belongs to, the box a
 /// container morph should grow out of. Pass the result to [openNoteEditor] as
@@ -126,6 +147,7 @@ Future<void> openNoteEditor(
   NoteKind kind = NoteKind.text,
   Set<String> labelIds = const {},
   String? stageId,
+  bool openedFromBoard = false,
   Rect? sourceRect,
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
@@ -166,6 +188,7 @@ Future<void> openNoteEditor(
             modal: true,
             labelIds: labelIds,
             stageId: stageId,
+            openedFromBoard: openedFromBoard,
           ),
         ),
       ),
@@ -234,11 +257,13 @@ class _EditorScreenState extends State<EditorScreen> {
   static const _uuid = Uuid();
 
   late final NotesStore _store;
+  late final SettingsStore _settings;
   late final TextEditingController _titleController;
   late final LinkifyingController _contentController;
   final _findController = TextEditingController();
   final _titleFocus = FocusNode();
   final _contentFocus = FocusNode();
+  final _findFocus = FocusNode();
 
   String? _noteId;
   bool _closing = false;
@@ -249,6 +274,8 @@ class _EditorScreenState extends State<EditorScreen> {
   final List<DroppedFile> _pendingUploads = [];
   bool _previewMarkdown = false;
   bool _reminderPickerOpen = false;
+  double _edgeSwipeDistance = 0;
+  bool _edgeSwipeDismissed = false;
 
   // Undo/redo session history (see EditorHistory for the grouping rules).
   late final EditorHistory _history;
@@ -260,6 +287,7 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     _store = context.read<NotesStore>();
+    _settings = context.read<SettingsStore>();
     _noteId = widget.noteId;
     final note = _note;
     // Existing markdown notes open in their rendered form. A new markdown
@@ -312,6 +340,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _findController.dispose();
     _titleFocus.dispose();
     _contentFocus.dispose();
+    _findFocus.dispose();
     super.dispose();
   }
 
@@ -348,7 +377,10 @@ class _EditorScreenState extends State<EditorScreen> {
         _store.updateNoteContent(_noteId!, items: pruned);
       }
     }
-    _store.finalizeNote(_noteId!);
+    _store.finalizeNote(
+      _noteId!,
+      retainEmpty: _settings.locationReminderForNote(_noteId) != null,
+    );
   }
 
   void _onTextChanged() {
@@ -747,15 +779,51 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
     try {
+      final settings = context.read<SettingsStore>();
       final selection = await ReminderPicker.show(
         context,
         current: _note?.reminderAt,
         currentRepeat: _note?.reminderRepeat,
-        use24hTime: context.read<SettingsStore>().use24hTime,
+        currentLocation: settings.locationReminderForNote(_noteId),
+        savedLocations: settings.savedLocations,
+        locationSupported: LocationGeofences.supported,
+        use24hTime: settings.use24hTime,
       );
       if (!mounted || selection == null) return;
+      if (selection.locationId != null) {
+        final granted = await LocationGeofences.instance
+            .requestReminderPermissions();
+        if (!mounted) return;
+        if (!granted) {
+          showAppSnack(
+            'Allow notifications and “all the time” location access so this '
+            'reminder can fire while Skippy is closed.',
+            icon: Icons.location_disabled_outlined,
+            kind: SnackKind.warning,
+          );
+          return;
+        }
+        _ensureNote();
+        final added = settings.setLocationReminder(
+          _noteId!,
+          selection.locationId!,
+          selection.locationTrigger!,
+        );
+        if (!added) {
+          showAppSnack(
+            'You can have up to 20 active location reminders.',
+            icon: Icons.location_disabled_outlined,
+            kind: SnackKind.warning,
+          );
+          return;
+        }
+        _store.setReminder(_noteId!, null);
+        setState(() {});
+        return;
+      }
       if (selection.at != null) _ensureNote();
       if (_noteId == null) return;
+      settings.removeLocationReminder(_noteId!);
       _store.setReminder(_noteId!, selection.at, selection.repeat);
       setState(() {});
     } finally {
@@ -806,12 +874,37 @@ class _EditorScreenState extends State<EditorScreen> {
     return note.content.toLowerCase().split(q).length - 1;
   }
 
+  /// Enters find-in-note mode with the search field focused.
+  ///
+  /// `autofocus` alone does not do it: it only claims focus when nothing else
+  /// in the scope holds it, so opening search while the caret was in the note
+  /// left focus on the note — you typed your query into the note itself. The
+  /// field does not exist until this rebuild lands, hence the post-frame ask.
+  void _openFind() {
+    setState(() => _finding = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _finding) _findFocus.requestFocus();
+    });
+  }
+
+  /// Leaves find-in-note mode, releasing the keyboard with it. Dropping the
+  /// field from the tree is not enough: focus returns to whatever held it
+  /// before (usually the note's own text field), so the keyboard stays up over
+  /// a note you are no longer typing in.
+  void _closeFind() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _findController.clear();
+    setState(() => _finding = false);
+  }
+
   /// Top bar: find-in-note mode swaps every action for a close button;
   /// otherwise trashed notes get restore/delete and live ones can be pinned.
   AppBar _buildAppBar(Note? note) {
     final trashed = note?.trashed ?? false;
     final pinned = note?.pinned ?? false;
     final scheme = Theme.of(context).colorScheme;
+    final isOwner = note?.isOwnedBy(_store.currentUserId) ?? true;
+    final autoDiscardable = note == null || _store.canAutoDiscard(note.id);
     return AppBar(
       backgroundColor: Colors.transparent,
       // Full-screen editors are the phone presentation. A quiet rule keeps
@@ -833,6 +926,7 @@ class _EditorScreenState extends State<EditorScreen> {
       title: _finding
           ? TextField(
               controller: _findController,
+              focusNode: _findFocus,
               autofocus: true,
               decoration: InputDecoration(
                 hintText: 'Find in note',
@@ -848,10 +942,7 @@ class _EditorScreenState extends State<EditorScreen> {
           IconButton(
             icon: const Icon(Icons.close),
             tooltip: 'Close search',
-            onPressed: () {
-              _findController.clear();
-              setState(() => _finding = false);
-            },
+            onPressed: _closeFind,
           )
         else ...[
           if (_kind == NoteKind.markdown)
@@ -868,7 +959,7 @@ class _EditorScreenState extends State<EditorScreen> {
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Find in note',
-            onPressed: () => setState(() => _finding = true),
+            onPressed: _openFind,
           ),
           if (!trashed) ...[
             IconButton(
@@ -899,6 +990,76 @@ class _EditorScreenState extends State<EditorScreen> {
               },
             ),
           ],
+          // Promoted out of the menu below: the two note actions used often
+          // enough to earn a permanent target, kept adjacent to it so the
+          // whole group still reads as "things you do to this note".
+          IconButton(
+            icon: const Icon(Icons.content_copy_outlined),
+            tooltip: 'Copy to clipboard',
+            onPressed: note == null || note.isEmpty
+                ? null
+                : _copyNoteToClipboard,
+          ),
+          if (!trashed)
+            IconButton(
+              icon: Icon(
+                (note?.archived ?? false)
+                    ? Icons.unarchive_outlined
+                    : Icons.archive_outlined,
+              ),
+              tooltip: (note?.archived ?? false) ? 'Unarchive' : 'Archive',
+              onPressed: autoDiscardable ? null : _archiveAndClose,
+            ),
+          // Everything else you do *to* the note. The bottom bar keeps what
+          // goes *into* it, so neither menu has to nest.
+          NoteActionsButton(
+            isOwner: isOwner,
+            kind: _kind,
+            onShare: trashed ? null : _openShare,
+            onDelete: trashed || autoDiscardable || !isOwner
+                ? null
+                : _deleteAndClose,
+            onDuplicate: trashed || note == null || note.isEmpty
+                ? null
+                : _duplicateNote,
+            onMoveToWorkspace:
+                trashed ||
+                    note == null ||
+                    note.isEmpty ||
+                    !isOwner ||
+                    _store.workspaces.length < 2
+                ? null
+                : () => MoveToWorkspaceSheet.show(context, note.id),
+            // Unlike workspaces, a column needs no second one to move to,
+            // "Unassigned" is always a destination, so this only asks that
+            // there be a board at all.
+            onMoveToStage:
+                !widget.openedFromBoard ||
+                    trashed ||
+                    note == null ||
+                    note.isEmpty ||
+                    _store.stages.isEmpty
+                ? null
+                : () => MoveToStageSheet.show(context, note.id),
+            onHistory: note == null || note.isEmpty
+                ? null
+                : () => NoteHistoryScreen.open(context, note.id),
+            // A trashed note must not be pinnable: the widget would outlive
+            // the note itself.
+            onAddToHomeScreen: HomeWidgets.supported && !trashed
+                ? _addToHomeScreen
+                : null,
+            onConvert: trashed ? null : _convertKind,
+            onRewrite:
+                trashed ||
+                    note == null ||
+                    note.isEmpty ||
+                    note.isAudio ||
+                    !_settings.noteWritingAvailable
+                ? null
+                : _rewriteWithAi,
+            rewriting: note != null && _store.isRewritingNote(note.id),
+          ),
         ],
         const SizedBox(width: 4),
       ],
@@ -928,9 +1089,6 @@ class _EditorScreenState extends State<EditorScreen> {
         : settings.resolveColor(note.color, brightness);
     final bg = fill ?? scheme.surface;
     final trashed = note?.trashed ?? false;
-    final isOwner = note?.isOwnedBy(_store.currentUserId) ?? true;
-    final isRewriting = note != null && _store.isRewritingNote(note.id);
-    final autoDiscardable = note == null || _store.canAutoDiscard(note.id);
     final query = _finding ? _findController.text.trim() : '';
 
     final labels = [
@@ -1038,6 +1196,10 @@ class _EditorScreenState extends State<EditorScreen> {
                                   ..._buildAttachments(note),
                                   if (note != null &&
                                       (note.reminderAt != null ||
+                                          settings.locationReminderForNote(
+                                                note.id,
+                                              ) !=
+                                              null ||
                                           labels.isNotEmpty))
                                     _metaChips(note, settings, labels),
                                   // Rich preview cards for any links in the
@@ -1081,9 +1243,6 @@ class _EditorScreenState extends State<EditorScreen> {
                             ),
                             child: EditorBottomBar(
                               trashed: trashed,
-                              isOwner: isOwner,
-                              archived: note?.archived ?? false,
-                              kind: _kind,
                               editedStamp: note == null
                                   ? ''
                                   : 'Edited ${settings.editedLabel(note.updatedAt)}',
@@ -1106,74 +1265,12 @@ class _EditorScreenState extends State<EditorScreen> {
                               onAttach: trashed || _uploading
                                   ? null
                                   : _pickFile,
-                              onShare: trashed ? null : _openShare,
-                              onArchive: trashed || autoDiscardable
-                                  ? null
-                                  : _archiveAndClose,
                               onUndo: trashed || !_history.canUndo
                                   ? null
                                   : _undo,
                               onRedo: trashed || !_history.canRedo
                                   ? null
                                   : _redo,
-                              onDelete: trashed || autoDiscardable || !isOwner
-                                  ? null
-                                  : _deleteAndClose,
-                              onDuplicate:
-                                  trashed || note == null || note.isEmpty
-                                  ? null
-                                  : _duplicateNote,
-                              onMoveToWorkspace:
-                                  trashed ||
-                                      note == null ||
-                                      note.isEmpty ||
-                                      !isOwner ||
-                                      _store.workspaces.length < 2
-                                  ? null
-                                  : () => MoveToWorkspaceSheet.show(
-                                      context,
-                                      note.id,
-                                    ),
-                              // Unlike workspaces, a column needs no second one
-                              // to move to, "Unassigned" is always a
-                              // destination, so this only asks that there be a
-                              // board at all.
-                              onMoveToStage:
-                                  trashed ||
-                                      note == null ||
-                                      note.isEmpty ||
-                                      _store.stages.isEmpty
-                                  ? null
-                                  : () =>
-                                        MoveToStageSheet.show(context, note.id),
-                              // Copying to the clipboard reads the note; a
-                              // trashed one is still readable, so this stays
-                              // available.
-                              onCopyToClipboard: note == null || note.isEmpty
-                                  ? null
-                                  : _copyNoteToClipboard,
-                              onHistory: note == null || note.isEmpty
-                                  ? null
-                                  : () => NoteHistoryScreen.open(
-                                      context,
-                                      note.id,
-                                    ),
-                              // A trashed note must not be pinnable: the widget
-                              // would outlive the note itself.
-                              onAddToHomeScreen:
-                                  HomeWidgets.supported && !trashed
-                                  ? _addToHomeScreen
-                                  : null,
-                              onConvert: trashed ? null : _convertKind,
-                              onRewrite:
-                                  trashed ||
-                                      note == null ||
-                                      note.isEmpty ||
-                                      note.isAudio ||
-                                      !settings.noteWritingAvailable
-                                  ? null
-                                  : _rewriteWithAi,
-                              rewriting: isRewriting,
                             ),
                           ),
                         ],
@@ -1194,10 +1291,33 @@ class _EditorScreenState extends State<EditorScreen> {
   /// note's content.
   Widget _editorShell({required Note? note, required Widget body}) {
     if (!widget.modal) {
-      return Scaffold(
+      final scaffold = Scaffold(
         backgroundColor: Colors.transparent,
         appBar: _buildAppBar(note),
         body: body,
+      );
+      // Wide layouts use a dialog with a close button. On a narrow fullscreen
+      // editor, match the familiar mobile back gesture without competing with
+      // horizontal controls anywhere other than the screen edge.
+      if (wantsModalEditor(context)) return scaffold;
+      return RawGestureDetector(
+        gestures: {
+          _EdgeDismissGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                _EdgeDismissGestureRecognizer
+              >(
+                () =>
+                    _EdgeDismissGestureRecognizer(edgeWidth: _edgeDismissWidth),
+                (recognizer) {
+                  recognizer
+                    ..onStart = _onEdgeSwipeStart
+                    ..onUpdate = _onEdgeSwipeUpdate
+                    ..onEnd = _onEdgeSwipeEnd
+                    ..onCancel = _resetEdgeSwipe;
+                },
+              ),
+        },
+        child: scaffold,
       );
     }
     return Material(
@@ -1210,6 +1330,36 @@ class _EditorScreenState extends State<EditorScreen> {
         ],
       ),
     );
+  }
+
+  void _onEdgeSwipeStart(DragStartDetails _) {
+    _edgeSwipeDistance = 0;
+    _edgeSwipeDismissed = false;
+  }
+
+  void _onEdgeSwipeUpdate(DragUpdateDetails details) {
+    _edgeSwipeDistance += details.delta.dx;
+    if (_edgeSwipeDistance >= _edgeDismissDistance) {
+      _dismissFromEdgeSwipe();
+    }
+  }
+
+  void _onEdgeSwipeEnd(DragEndDetails details) {
+    if (details.velocity.pixelsPerSecond.dx >= _edgeDismissFlingVelocity) {
+      _dismissFromEdgeSwipe();
+    }
+    _resetEdgeSwipe();
+  }
+
+  void _dismissFromEdgeSwipe() {
+    if (_edgeSwipeDismissed) return;
+    _edgeSwipeDismissed = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).maybePop();
+  }
+
+  void _resetEdgeSwipe() {
+    _edgeSwipeDistance = 0;
   }
 
   /// The note's main content area: checklist rows, rendered markdown
@@ -1344,6 +1494,24 @@ class _EditorScreenState extends State<EditorScreen> {
                       setState(() {});
                     },
             ),
+          if (settings.locationReminderForNote(note.id)
+              case final locationReminder?)
+            if (settings.savedLocationById(locationReminder.locationId)
+                case final location?)
+              InputChip(
+                avatar: const Icon(Icons.location_on_outlined, size: 16),
+                label: Text(
+                  '${locationReminder.trigger.label} · ${location.name}',
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: trashed ? null : _editReminder,
+                onDeleted: trashed
+                    ? null
+                    : () {
+                        settings.removeLocationReminder(note.id);
+                        setState(() {});
+                      },
+              ),
           for (final label in labels)
             _labelChip(context, label, trashed, note.id),
         ],
@@ -1427,6 +1595,22 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       for (final file in pendingFiles) UploadingAttachmentTile(file: file),
     ];
+  }
+}
+
+/// A horizontal drag recognizer that only enters the gesture arena when the
+/// touch starts at the screen's left edge. The editor can therefore offer an
+/// Android/iOS-style back swipe without stealing normal horizontal gestures.
+class _EdgeDismissGestureRecognizer extends HorizontalDragGestureRecognizer {
+  _EdgeDismissGestureRecognizer({required this.edgeWidth});
+
+  final double edgeWidth;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    if (event.position.dx <= edgeWidth) {
+      super.addAllowedPointer(event);
+    }
   }
 }
 

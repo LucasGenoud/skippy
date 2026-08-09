@@ -14,6 +14,7 @@ import 'screens/widget_config_screen.dart';
 import 'state/auth_store.dart';
 import 'state/home_widget_bridge.dart';
 import 'state/link_preview_cache.dart';
+import 'state/location_reminder_scheduler.dart';
 import 'state/local_cache.dart';
 import 'state/notes_store.dart';
 import 'state/reminder_scheduler.dart';
@@ -79,6 +80,10 @@ class _SkippyAppState extends State<SkippyApp> {
 
   /// Mirrors the signed-in user's reminders onto this device's alarms.
   ReminderScheduler? _reminders;
+
+  /// Mirrors personal arrival/departure reminders onto this device's native
+  /// geofence service.
+  LocationReminderScheduler? _locationReminders;
 
   /// Mirrors the signed-in user's notes onto this device's home-screen widgets.
   HomeWidgetBridge? _widgets;
@@ -150,6 +155,7 @@ class _SkippyAppState extends State<SkippyApp> {
     // Time, permissions and the device's timezone can all have moved while we
     // were away; re-arm against what the OS actually holds.
     _reminders?.reconcile();
+    _locationReminders?.reconcile();
     // A widget may have been ticked while we were away, and it is holding that
     // tick for us. This publishes the refreshed store after draining it.
     await _widgets?.syncNow();
@@ -230,6 +236,7 @@ class _SkippyAppState extends State<SkippyApp> {
       _store?.dispose();
       _settings?.dispose();
       _reminders?.dispose();
+      _locationReminders?.dispose();
       _linkPreviews = LinkPreviewCache(api: _api);
       _settings = SettingsStore(api: _api)..load();
       final settings = _settings!;
@@ -249,6 +256,10 @@ class _SkippyAppState extends State<SkippyApp> {
         notes: _store!,
         settings: settings,
         platform: _localNotifications,
+      )..start();
+      _locationReminders = LocationReminderScheduler(
+        notes: _store!,
+        settings: settings,
       )..start();
       _widgets = HomeWidgetBridge(
         notes: _store!,
@@ -270,11 +281,14 @@ class _SkippyAppState extends State<SkippyApp> {
       // whose they were: either would otherwise keep showing their notes.
       _reminders?.clear();
       _reminders?.dispose();
+      _locationReminders?.clear();
+      _locationReminders?.dispose();
       _widgets?.clear();
       _widgets?.dispose();
       _store = null;
       _settings = null;
       _reminders = null;
+      _locationReminders = null;
       _widgets = null;
       _linkPreviews = null;
       _shareIntake.setStore(null);
@@ -291,6 +305,7 @@ class _SkippyAppState extends State<SkippyApp> {
     _store?.dispose();
     _settings?.dispose();
     _reminders?.dispose();
+    _locationReminders?.dispose();
     _widgets?.dispose();
     _auth.dispose();
     super.dispose();

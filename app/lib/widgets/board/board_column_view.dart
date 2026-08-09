@@ -255,6 +255,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
               query: widget.query,
               selectionMode: widget.selectionMode,
               selected: widget.selectedIds.contains(note.id),
+              openedFromBoard: true,
               onSelectionChanged: (selected) =>
                   widget.onSelectionChanged?.call(note.id, selected),
             ),
@@ -278,8 +279,11 @@ Future<void> addCardToStage(BuildContext context, String? stageId) {
   return openNoteEditor(
     context,
     stageId: stageId,
+    openedFromBoard: true,
     openFullscreen: () => Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => EditorScreen(stageId: stageId)),
+      MaterialPageRoute(
+        builder: (_) => EditorScreen(stageId: stageId, openedFromBoard: true),
+      ),
     ),
   );
 }

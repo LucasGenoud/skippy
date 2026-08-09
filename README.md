@@ -8,7 +8,8 @@ optimistic, offline-capable edits.
 
 - Text, Markdown, checklist, audio, and attachment notes
 - Grid, list, and kanban board views with drag-to-reorder
-- Workspaces, labels, stages, archive, trash, reminders, search, and exports
+- Workspaces, labels, stages, archive, trash, time and location reminders,
+  search, and exports
 - Sharing, public read-only links, live sync, and version history
 - Optional self-hosted Whisper transcription, Tesseract image text recognition,
   and OpenAI-compatible embeddings
@@ -38,6 +39,12 @@ library, so a receipt or a whiteboard goes straight from the lens onto a note.
 Uploaded images are read for text when an OCR service is configured, so that
 photo is found again by the words in it. Recognition runs in the background,
 feeds both keyword and semantic search, and never blocks the upload.
+
+On Android and iOS, Settings can hold personal saved places such as Home or
+Work. A note can then raise a one-shot notification when the device arrives at
+or leaves one of those places, even while Skippy is closed. Location reminders
+require notification and background-location permission; saved coordinates
+are user settings and are never exposed to note collaborators.
 
 The app is deliberately out of scope for drawings, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.

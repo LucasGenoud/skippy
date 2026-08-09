@@ -1236,6 +1236,41 @@ void main() {
       },
     );
 
+    testWidgets('a right swipe from the left edge closes a mobile editor', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'Swipe me');
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const EditorScreen(noteId: 'n1'),
+                ),
+              ),
+              child: const Text('Open note'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open note'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsOneWidget);
+
+      await tester.dragFrom(const Offset(12, 200), const Offset(100, 0));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EditorScreen), findsNothing);
+      expect(find.text('Open note'), findsOneWidget);
+    });
+
     testWidgets('markdown opens in preview and tapping edits source', (
       tester,
     ) async {
@@ -1358,18 +1393,14 @@ void main() {
       );
       expect(archive.onPressed, isNotNull);
 
-      await tester.tap(find.byTooltip('More'));
+      // The menu drops a row whose action is null, so the row being there is
+      // the same statement as it being enabled.
+      await tester.tap(find.byTooltip('Note actions'));
       await tester.pumpAndSettle();
-      final delete = tester.widget<PopupMenuItem<String>>(
-        find.ancestor(
-          of: find.text('Delete'),
-          matching: find.byType(PopupMenuItem<String>),
-        ),
-      );
-      expect(delete.enabled, isTrue);
+      expect(find.text('Delete'), findsOneWidget);
     });
 
-    testWidgets('archive lives in the editor bottom actions after sharing', (
+    testWidgets('copy and archive sit in the app bar, next to the menu', (
       tester,
     ) async {
       api.notes['n1'] = serverNote('n1', title: 'Archive me');
@@ -1377,18 +1408,97 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pump();
 
-      final share = find.byTooltip('Collaborators');
+      final copy = find.byTooltip('Copy to clipboard');
       final archive = find.byTooltip('Archive');
-      expect(share, findsOneWidget);
+      final menu = find.byTooltip('Note actions');
+      expect(copy, findsOneWidget);
       expect(archive, findsOneWidget);
+      // In that order, immediately left of the menu they were promoted out of.
+      expect(tester.getCenter(copy).dx, lessThan(tester.getCenter(archive).dx));
       expect(
         tester.getCenter(archive).dx,
-        greaterThan(tester.getCenter(share).dx),
+        lessThan(tester.getCenter(menu).dx),
       );
+      // They are in the app bar, not the bottom bar.
       expect(
-        tester.getCenter(archive).dy,
-        greaterThan(tester.getCenter(find.byType(AppBar)).dy),
+        tester.getRect(find.byType(AppBar)).contains(tester.getCenter(copy)),
+        isTrue,
       );
+
+      // Management no longer lives in the bottom bar at all.
+      expect(find.byTooltip('Collaborators'), findsNothing);
+
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      expect(find.text('Collaborators'), findsOneWidget);
+      // Not offered twice.
+      expect(find.text('Copy to clipboard'), findsNothing);
+    });
+
+    /// Find-in-note has to take the caret and give it back. Both halves were
+    /// broken: `autofocus` only claims focus when nothing else in the scope
+    /// holds it, so opening search from inside the note typed the query into
+    /// the note, and closing it left that field focused with the soft keyboard
+    /// still up.
+    testWidgets('find-in-note takes the caret, and gives it back on close', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Findable', content: 'body');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      bool noteFieldHasFocus() => tester
+          .widgetList<EditableText>(find.byType(EditableText))
+          .any((field) => field.controller.text == 'body' && field.focusNode.hasFocus);
+      int focusedFieldCount() => tester
+          .widgetList<EditableText>(find.byType(EditableText))
+          .where((field) => field.focusNode.hasFocus)
+          .length;
+
+      await tester.tap(find.text('body'));
+      await tester.pumpAndSettle();
+      expect(noteFieldHasFocus(), isTrue);
+
+      await tester.tap(find.byTooltip('Find in note'));
+      await tester.pumpAndSettle();
+      // The query goes to the search box, not into the note.
+      expect(noteFieldHasFocus(), isFalse);
+      expect(focusedFieldCount(), 1);
+
+      await tester.tap(find.byTooltip('Close search'));
+      await tester.pumpAndSettle();
+      expect(focusedFieldCount(), 0);
+    });
+
+    testWidgets('Move to column is only offered from the board editor', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'Board card', content: 'body');
+      api.stages['todo'] = const Stage(
+        id: 'todo',
+        name: 'Todo',
+        workspaceId: 'w-default',
+        position: 1024,
+      );
+      await store.load();
+
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.tap(find.byTooltip('Note actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Move to column'), findsNothing);
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(
+        harness(store, const EditorScreen(noteId: 'n1', openedFromBoard: true)),
+      );
+      await tester.tap(find.byTooltip('Note actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Move to column'), findsOneWidget);
     });
 
     testWidgets('checklist editor: typing suggestions from history add items', (

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../models/notify_channels.dart';
 import '../models/saved_view.dart';
+import '../models/saved_location.dart';
 import '../theme.dart';
 
 /// One entry in the user's note-color palette.
@@ -263,6 +264,25 @@ class SettingsStore extends ChangeNotifier {
   // disclaimer in Settings → Notifications.
   bool deviceNotificationsEnabled = false;
 
+  /// Personal places and note-to-place reminders. These are settings rather
+  /// than shared note fields so collaborators never receive the coordinates.
+  List<SavedLocation> savedLocations = [];
+  List<LocationReminder> locationReminders = [];
+
+  SavedLocation? savedLocationById(String? id) {
+    for (final location in savedLocations) {
+      if (location.id == id) return location;
+    }
+    return null;
+  }
+
+  LocationReminder? locationReminderForNote(String? noteId) {
+    for (final reminder in locationReminders) {
+      if (reminder.noteId == noteId) return reminder;
+    }
+    return null;
+  }
+
   bool get notifyConfigured =>
       kNotifyChannels.any((c) => c.configuredIn(notifyValues));
 
@@ -359,6 +379,25 @@ class SettingsStore extends ChangeNotifier {
     };
     reminderNotificationsEnabled = json['reminder_notifications'] != false;
     deviceNotificationsEnabled = json['device_notifications'] == true;
+    final rawLocations = json['saved_locations'];
+    savedLocations = rawLocations is! List
+        ? []
+        : [
+            for (final entry in rawLocations)
+              if (entry is Map<String, dynamic>)
+                if (SavedLocation.fromJson(entry) case final SavedLocation l) l,
+          ];
+    final locationIds = {for (final location in savedLocations) location.id};
+    final rawLocationReminders = json['location_reminders'];
+    locationReminders = rawLocationReminders is! List
+        ? []
+        : [
+            for (final entry in rawLocationReminders)
+              if (entry is Map<String, dynamic>)
+                if (LocationReminder.fromJson(entry)
+                    case final LocationReminder reminder)
+                  if (locationIds.contains(reminder.locationId)) reminder,
+          ];
     final rawViews = json['saved_views'];
     savedViews = rawViews is! List
         ? []
@@ -403,6 +442,12 @@ class SettingsStore extends ChangeNotifier {
     for (final key in kNotifyFieldKeys) key: notifyValues[key] ?? '',
     'reminder_notifications': reminderNotificationsEnabled,
     'device_notifications': deviceNotificationsEnabled,
+    'saved_locations': [
+      for (final location in savedLocations) location.toJson(),
+    ],
+    'location_reminders': [
+      for (final reminder in locationReminders) reminder.toJson(),
+    ],
     'palette': [for (final entry in palette) entry.toJson()],
     'saved_views': [for (final view in savedViews) view.toJson()],
   };
@@ -470,6 +515,97 @@ class SettingsStore extends ChangeNotifier {
       _mutate(() => reminderNotificationsEnabled = value);
   void setDeviceNotificationsEnabled(bool value) =>
       _mutate(() => deviceNotificationsEnabled = value);
+
+  // -- saved locations and personal location reminders ----------------------
+
+  SavedLocation addSavedLocation({
+    required String name,
+    required double latitude,
+    required double longitude,
+    required double radiusMeters,
+  }) {
+    final location = SavedLocation(
+      id: 'location-${DateTime.now().millisecondsSinceEpoch}-${_customCounter++}',
+      name: name.trim(),
+      latitude: latitude,
+      longitude: longitude,
+      radiusMeters: radiusMeters,
+    );
+    if (!location.isValid) {
+      throw ArgumentError.value(location, 'location', 'Invalid saved location');
+    }
+    _mutate(() => savedLocations = [...savedLocations, location]);
+    return location;
+  }
+
+  void updateSavedLocation(
+    String id, {
+    required String name,
+    required double latitude,
+    required double longitude,
+    required double radiusMeters,
+  }) {
+    final existing = savedLocationById(id);
+    if (existing == null) return;
+    final updated = existing.copyWith(
+      name: name.trim(),
+      latitude: latitude,
+      longitude: longitude,
+      radiusMeters: radiusMeters,
+    );
+    if (!updated.isValid) {
+      throw ArgumentError.value(updated, 'location', 'Invalid saved location');
+    }
+    _mutate(() {
+      savedLocations = [
+        for (final location in savedLocations)
+          if (location.id == id) updated else location,
+      ];
+    });
+  }
+
+  void removeSavedLocation(String id) => _mutate(() {
+    savedLocations = savedLocations.where((l) => l.id != id).toList();
+    locationReminders = locationReminders
+        .where((reminder) => reminder.locationId != id)
+        .toList();
+  });
+
+  /// iOS can monitor at most 20 regions for one app. Returning false lets the
+  /// caller explain the limit without silently dropping an older reminder.
+  bool setLocationReminder(
+    String noteId,
+    String locationId,
+    LocationReminderTrigger trigger,
+  ) {
+    if (savedLocationById(locationId) == null) return false;
+    final replacing = locationReminderForNote(noteId) != null;
+    if (!replacing && locationReminders.length >= 20) return false;
+    _mutate(() {
+      locationReminders = [
+        for (final reminder in locationReminders)
+          if (reminder.noteId != noteId) reminder,
+        LocationReminder(
+          noteId: noteId,
+          locationId: locationId,
+          trigger: trigger,
+        ),
+      ];
+    });
+    return true;
+  }
+
+  void removeLocationReminder(String noteId) =>
+      removeLocationReminders({noteId});
+
+  void removeLocationReminders(Set<String> noteIds) {
+    if (!locationReminders.any((r) => noteIds.contains(r.noteId))) return;
+    _mutate(() {
+      locationReminders = locationReminders
+          .where((reminder) => !noteIds.contains(reminder.noteId))
+          .toList();
+    });
+  }
 
   // -- saved views -----------------------------------------------------------
 

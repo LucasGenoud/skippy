@@ -25,7 +25,7 @@ Future<SettingsStore> pumpSettings(
   AuthStore? authStore,
 }) async {
   // Tall surface so the whole settings list builds (no lazy off-screen tiles).
-  tester.view.physicalSize = const Size(1200, 4000);
+  tester.view.physicalSize = const Size(1200, 6000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final settings = SettingsStore(api: api);
@@ -293,6 +293,31 @@ void main() {
     await tester.tap(find.text('Day.month.year (15.07.2026)'));
     await tester.pumpAndSettle();
     expect(settings.dateFormat, AppDateFormat.numericEU);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('saved locations can be created in settings', (tester) async {
+    final settings = await pumpSettings(tester, FakeApi());
+
+    await tester.ensureVisible(find.text('Add saved location'));
+    await tester.tap(find.text('Add saved location'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Home');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Latitude'),
+      '46.948',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Longitude'),
+      '7.4474',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(settings.savedLocations.single.name, 'Home');
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.textContaining('150 m radius'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 600));
   });
 }

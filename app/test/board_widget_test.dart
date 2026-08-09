@@ -729,7 +729,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(EditorScreen), findsOneWidget);
 
-    await tester.tap(find.byTooltip('More'));
+    await tester.tap(find.byTooltip('Note actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Move to column'));
     await tester.pumpAndSettle();

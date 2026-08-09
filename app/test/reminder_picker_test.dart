@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/widgets/reminder_picker.dart';
 
 void main() {
@@ -194,6 +195,55 @@ void main() {
 
       expect(result, isNotNull);
       expect(result!.at, isNull);
+    });
+
+    testWidgets('selects a saved place and departure trigger', (tester) async {
+      tester.view.physicalSize = phoneSize;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      ReminderSelection? result;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => FilledButton(
+                onPressed: () async {
+                  result = await ReminderPicker.show(
+                    context,
+                    current: null,
+                    use24hTime: true,
+                    locationSupported: true,
+                    savedLocations: const [
+                      SavedLocation(
+                        id: 'home',
+                        name: 'Home',
+                        latitude: 46.948,
+                        longitude: 7.4474,
+                      ),
+                    ],
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('At a saved location'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('When I leave'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('save-location-reminder')));
+      await tester.pumpAndSettle();
+
+      expect(result?.locationId, 'home');
+      expect(result?.locationTrigger, LocationReminderTrigger.leave);
+      expect(result?.at, isNull);
     });
   });
 }

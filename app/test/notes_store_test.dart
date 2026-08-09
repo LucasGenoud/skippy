@@ -115,6 +115,20 @@ void main() {
       },
     );
 
+    test('an empty draft can be retained for a personal reminder', () async {
+      final draft = store.createDraft();
+
+      expect(store.finalizeNote(draft.id, retainEmpty: true), isFalse);
+      await settle();
+
+      expect(store.noteById(draft.id), isNotNull);
+      expect(api.notes.containsKey(draft.id), isTrue);
+      expect(
+        api.log.where((entry) => entry.startsWith('createNote')).length,
+        1,
+      );
+    });
+
     test('a wordless draft with a reminder is kept, not discarded', () async {
       final at = DateTime.now().add(const Duration(hours: 2));
       final draft = store.createDraft();

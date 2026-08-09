@@ -27,6 +27,7 @@ import 'transcribing_indicator.dart';
 import '../util/highlight.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
+import '../util/location_geofences.dart';
 import '../util/note_image.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
@@ -44,6 +45,9 @@ class NoteTile extends StatefulWidget {
   final bool selected;
   final ValueChanged<bool>? onSelectionChanged;
 
+  /// Board cards retain the column picker when opened in the editor.
+  final bool openedFromBoard;
+
   const NoteTile({
     super.key,
     required this.note,
@@ -51,6 +55,7 @@ class NoteTile extends StatefulWidget {
     this.selectionMode = false,
     this.selected = false,
     this.onSelectionChanged,
+    this.openedFromBoard = false,
   });
 
   @override
@@ -66,15 +71,47 @@ class _NoteTileState extends State<NoteTile> {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
     final store = context.read<NotesStore>();
+    final settings = context.read<SettingsStore>();
     final note = store.noteById(widget.note.id) ?? widget.note;
     try {
       final selection = await ReminderPicker.show(
         context,
         current: note.reminderAt,
         currentRepeat: note.reminderRepeat,
-        use24hTime: context.read<SettingsStore>().use24hTime,
+        currentLocation: settings.locationReminderForNote(note.id),
+        savedLocations: settings.savedLocations,
+        locationSupported: LocationGeofences.supported,
+        use24hTime: settings.use24hTime,
       );
-      if (selection != null) {
+      if (!mounted || selection == null) return;
+      if (selection.locationId != null) {
+        final granted = await LocationGeofences.instance
+            .requestReminderPermissions();
+        if (!mounted) return;
+        if (!granted) {
+          showAppSnack(
+            'Allow notifications and “all the time” location access so this '
+            'reminder can fire while Skippy is closed.',
+            icon: Icons.location_disabled_outlined,
+            kind: SnackKind.warning,
+          );
+          return;
+        }
+        if (!settings.setLocationReminder(
+          note.id,
+          selection.locationId!,
+          selection.locationTrigger!,
+        )) {
+          showAppSnack(
+            'You can have up to 20 active location reminders.',
+            icon: Icons.location_disabled_outlined,
+            kind: SnackKind.warning,
+          );
+          return;
+        }
+        store.setReminder(note.id, null);
+      } else {
+        settings.removeLocationReminder(note.id);
         store.setReminder(note.id, selection.at, selection.repeat);
       }
     } finally {
@@ -307,6 +344,7 @@ class _NoteTileState extends State<NoteTile> {
               context,
               openFullscreen: open,
               noteId: note.id,
+              openedFromBoard: widget.openedFromBoard,
               sourceRect: morphSourceRect(context),
             );
           },
@@ -364,7 +402,10 @@ class _NoteTileState extends State<NoteTile> {
             ],
           ),
         ),
-        openBuilder: (context, close) => EditorScreen(noteId: note.id),
+        openBuilder: (context, close) => EditorScreen(
+          noteId: note.id,
+          openedFromBoard: widget.openedFromBoard,
+        ),
       ),
     );
 
@@ -444,6 +485,12 @@ class _NoteCardContent extends StatelessWidget {
     final labels = joinedLabels.isEmpty
         ? const <String>[]
         : joinedLabels.split('\u0000');
+    final locationReminderLabel = context.select<SettingsStore, String?>((s) {
+      final reminder = s.locationReminderForNote(note.id);
+      final location = s.savedLocationById(reminder?.locationId);
+      if (reminder == null || location == null) return null;
+      return '${reminder.trigger.label} · ${location.name}';
+    });
 
     final visibleItems = note.items
         .where((i) => i.text.trim().isNotEmpty)
@@ -475,6 +522,7 @@ class _NoteCardContent extends StatelessWidget {
         note.isEmpty; // truly empty draft shows the placeholder
     final hasFooter =
         note.reminderAt != null ||
+        locationReminderLabel != null ||
         (showLabelsInBody && labels.isNotEmpty) ||
         files.isNotEmpty ||
         note.isShared;
@@ -646,6 +694,8 @@ class _NoteCardContent extends StatelessWidget {
                     reminderAt: note.reminderAt!,
                     repeat: note.reminderRepeat,
                   ),
+                if (locationReminderLabel != null)
+                  _LocationReminderChip(label: locationReminderLabel),
                 for (final file in files.take(visibleFileCount))
                   _FileChip(file: file),
                 if (files.length > visibleFileCount)
@@ -982,6 +1032,11 @@ class _NoteActions extends StatelessWidget {
     final aiEditingEnabled = context.select<SettingsStore, bool>(
       (settings) => settings.noteWritingAvailable,
     );
+    final hasReminder = context.select<SettingsStore, bool>(
+      (settings) =>
+          note.reminderAt != null ||
+          settings.locationReminderForNote(note.id) != null,
+    );
     return Positioned(
       left: 8,
       right: 8,
@@ -1016,12 +1071,10 @@ class _NoteActions extends StatelessWidget {
                   onPressed: onLabel,
                 ),
                 _button(
-                  icon: note.reminderAt == null
+                  icon: !hasReminder
                       ? Icons.notification_add_outlined
                       : Icons.notifications_active_outlined,
-                  tooltip: note.reminderAt == null
-                      ? 'Add reminder'
-                      : 'Edit reminder',
+                  tooltip: !hasReminder ? 'Add reminder' : 'Edit reminder',
                   onPressed: onReminder,
                 ),
                 _button(
@@ -1567,6 +1620,20 @@ class _ReminderChip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LocationReminderChip extends StatelessWidget {
+  final String label;
+
+  const _LocationReminderChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) => Chip(
+    avatar: const Icon(Icons.location_on_outlined, size: 15),
+    label: Text(label),
+    visualDensity: VisualDensity.compact,
+    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 }
 
 /// Non-image attachments show as a compact paperclip chip on the card.

@@ -13,6 +13,7 @@ import '../widgets/settings/llm_section.dart';
 import '../widgets/settings/notify_section.dart';
 import '../widgets/settings/palette_section.dart';
 import '../widgets/settings/public_links_section.dart';
+import '../widgets/settings/saved_locations_section.dart';
 import '../widgets/shortcut_help.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -158,6 +159,9 @@ class SettingsScreen extends StatelessWidget {
                     : null,
               ),
               const DeviceNotificationsTile(),
+              const Divider(height: 32),
+              const _SectionHeader('Saved locations'),
+              const SavedLocationsSection(),
               const Divider(height: 32),
               const _SectionHeader('Date & time'),
               Padding(

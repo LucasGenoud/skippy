@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/theme.dart';
 
 import 'fake_api.dart';
@@ -146,6 +147,82 @@ void main() {
       expect(settings.savedViews.map((v) => v.id), [other.id]);
       await settleSave();
       expect((api.settings['saved_views'] as List).length, 1);
+    });
+  });
+
+  group('saved locations', () {
+    test('places and personal reminders persist and roundtrip', () async {
+      await settings.load();
+      final home = settings.addSavedLocation(
+        name: 'Home',
+        latitude: 46.948,
+        longitude: 7.4474,
+        radiusMeters: 150,
+      );
+      expect(
+        settings.setLocationReminder(
+          'note-1',
+          home.id,
+          LocationReminderTrigger.arrive,
+        ),
+        isTrue,
+      );
+      await settleSave();
+
+      final other = SettingsStore(api: api);
+      await other.load();
+      expect(other.savedLocations.single.name, 'Home');
+      expect(other.savedLocations.single.latitude, 46.948);
+      expect(
+        other.locationReminderForNote('note-1')?.trigger,
+        LocationReminderTrigger.arrive,
+      );
+      other.dispose();
+    });
+
+    test('deleting a place removes reminders that reference it', () async {
+      final work = settings.addSavedLocation(
+        name: 'Work',
+        latitude: 47.3769,
+        longitude: 8.5417,
+        radiusMeters: 200,
+      );
+      settings.setLocationReminder(
+        'note-1',
+        work.id,
+        LocationReminderTrigger.leave,
+      );
+
+      settings.removeSavedLocation(work.id);
+
+      expect(settings.savedLocations, isEmpty);
+      expect(settings.locationReminders, isEmpty);
+    });
+
+    test('malformed places and orphan reminders are ignored', () async {
+      api.settings = {
+        'saved_locations': [
+          {
+            'id': 'home',
+            'name': 'Home',
+            'latitude': 46.9,
+            'longitude': 7.4,
+            'radius_meters': 150,
+          },
+          {'id': 'broken', 'name': 'Broken', 'latitude': 999, 'longitude': 0},
+        ],
+        'location_reminders': [
+          {'note_id': 'a', 'location_id': 'home', 'trigger': 'arrive'},
+          {'note_id': 'b', 'location_id': 'missing', 'trigger': 'leave'},
+        ],
+      };
+
+      await settings.load();
+
+      expect(settings.savedLocations.map((location) => location.id), ['home']);
+      expect(settings.locationReminders.map((reminder) => reminder.noteId), [
+        'a',
+      ]);
     });
   });
 

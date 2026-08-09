@@ -1491,15 +1491,20 @@ class NotesStore extends ChangeNotifier {
 
   /// Flush pending edits when an editor closes. Returns true when the note
   /// was empty and has been discarded.
-  bool finalizeNote(String id) {
+  bool finalizeNote(String id, {bool retainEmpty = false}) {
     final note = noteById(id);
     if (note == null) return false;
-    if (canAutoDiscard(id)) {
+    if (!retainEmpty && canAutoDiscard(id)) {
       deleteForever(id);
       return true;
     }
     if (_drafts.contains(id)) {
-      _materializeIfNeeded(id);
+      if (retainEmpty) {
+        _drafts.remove(id);
+        _enqueue(PendingOp(PendingOpKind.create, id: id));
+      } else {
+        _materializeIfNeeded(id);
+      }
     } else {
       final timer = _saveDebounce.remove(id);
       if (timer != null) {

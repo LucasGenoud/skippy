@@ -33,6 +33,10 @@
 	<string>Skippy uses the camera to take photos you attach to a note.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Skippy saves images you download to your photo library.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Skippy uses your position to save places for personal reminders.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Skippy monitors saved places so arrival and departure reminders work while the app is closed.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
