@@ -1,6 +1,3 @@
-# Full stack: server, Whisper, Tesseract, Garage.
-# Start: docker compose up -d
-# S3: STORAGE=s3 docker compose up -d
 services:
   server:
     build: .
@@ -14,17 +11,13 @@ services:
       EMBED_API_KEY: ${EMBED_API_KEY:-}
       WHISPER_URL: http://whisper:9000
       OCR_URL: http://tesseract:8884
-      # Language packs the OCR image ships, e.g. fra+eng.
       OCR_LANGUAGES: ${OCR_LANGUAGES:-eng}
-      STORAGE: ${STORAGE:-disk}
+      STORAGE: s3
       S3_URL: http://garage:3900
       S3_REGION: garage
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
       ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
-      # Link preview/Telegram:
-      # UNFURL_ALLOW_PRIVATE: "1"
-      # TELEGRAM_API: https://api.telegram.org
     volumes:
       - app_data:/data
     depends_on:
@@ -38,15 +31,11 @@ services:
 
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
-    # GPU image: onerahmet/openai-whisper-asr-webservice:latest-gpu
     ports:
       - "127.0.0.1:9000:9000"
     environment:
-      ASR_MODEL: base # GPU: large-v3
+      ASR_MODEL: base
       ASR_ENGINE: faster_whisper
-      # GPU settings:
-      # ASR_DEVICE: cuda
-      # ASR_QUANTIZATION: float16
     volumes:
       - whisper_cache:/root/.cache
     healthcheck:
@@ -54,19 +43,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 90s # GPU: 900s
-    # GPU reservation:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [ gpu ]
+      start_period: 90s
     restart: unless-stopped
 
-  # Reads uploaded images so their text is searchable. The server retries this
-  # probe a few times at startup, so no healthcheck is needed to order it.
   tesseract:
     image: hertzg/tesseract-server:latest
     ports:

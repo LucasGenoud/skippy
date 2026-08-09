@@ -51,7 +51,21 @@ CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
 ## Quick start with Docker
 
-Generate credentials before the first start. Copy each output line into `.env`:
+Choose a Compose file:
+
+```sh
+docker compose -f docker-compose.minimal.yml up -d
+docker compose -f docker-compose.simple.yml up -d
+docker compose -f docker-compose.all.yml up -d
+```
+
+`docker-compose.minimal.yml` runs Skippy with disk storage.
+`docker-compose.simple.yml` adds Whisper and Tesseract while keeping disk
+storage. `docker-compose.all.yml` is the full stack and uses Garage for S3
+storage.
+
+For the full stack, generate credentials before the first start. Copy each
+output line into `.env`:
 
 ```sh
 access_key="GK$(openssl rand -hex 16)"
@@ -66,37 +80,19 @@ printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 Keep `.env` private. Keep matching `S3_*` and `GARAGE_DEFAULT_*`
 values unchanged after Garage setup.
 
-```sh
-docker compose up -d
-```
-
 Open <http://localhost:8787>. The image builds the Flutter web app and Rust
-server. The stack also starts Whisper for audio transcription, Tesseract for
-reading text out of uploaded images, and Garage for optional S3-compatible
-attachment storage. SQLite data and attachments persist in the `app_data`
-volume.
+server. SQLite data persists in the `app_data` volume. Disk-storage deployments
+also keep attachments there; the full stack stores attachments in Garage.
 
 The current database schema has no in-place migration path. Start with a new
 database when installing a schema revision.
 
-Disk storage is the default. To use the bundled Garage service instead:
-
-```sh
-STORAGE=s3 docker compose up -d
-```
-
-Compose requires `GARAGE_RPC_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
+The full stack requires `GARAGE_RPC_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
 `GARAGE_DEFAULT_ACCESS_KEY`, and
 `GARAGE_DEFAULT_SECRET_KEY` in `.env`; no default credentials are provided.
 The S3 access and secret values must match their corresponding Garage values.
 Choose one attachment backend per deployment; switching does not migrate
 existing blobs.
-
-To run only the supporting services during local backend development:
-
-```sh
-docker compose up -d whisper tesseract garage
-```
 
 See [Deployment](docs/DEPLOY.md) for production and optional GPU Whisper
 settings.
@@ -133,8 +129,8 @@ LLM environment variables.
 
 ### Docker Compose environment variables
 
-This table lists every variable passed by Compose. `host/.env` values come from
-the shell or `.env`; optional entries are commented in `docker-compose.yml`.
+This table lists every variable passed by the Compose variants. `host/.env`
+values come from the shell or `.env`.
 
 | Service | Variable | Compose value or host input | Purpose |
 | --- | --- | --- | --- |
@@ -142,17 +138,15 @@ the shell or `.env`; optional entries are commented in `docker-compose.yml`.
 | server | `EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
 | server | `EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
 | server | `EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
-| server | `WHISPER_URL` | `http://whisper:9000` | Bundled Whisper service URL. |
-| server | `OCR_URL` | `http://tesseract:8884` | Bundled Tesseract service URL. |
-| server | `OCR_LANGUAGES` | host/.env; `eng` by default | Tesseract language packs used to read images. |
-| server | `STORAGE` | host/.env; `disk` by default | Attachment backend: `disk` or `s3`. |
-| server | `S3_URL` | `http://garage:3900` | Bundled Garage S3 endpoint. |
-| server | `S3_REGION` | `garage` | S3 signing region. |
-| server | `S3_ACCESS_KEY` | required host/.env value | S3 access key; must match Garage’s default access key. |
-| server | `S3_SECRET_KEY` | required host/.env value | S3 secret; must match Garage’s default secret. |
+| server | `WHISPER_URL` | simple/all: `http://whisper:9000` | Bundled Whisper service URL. |
+| server | `OCR_URL` | simple/all: `http://tesseract:8884` | Bundled Tesseract service URL. |
+| server | `OCR_LANGUAGES` | simple/all; host/.env; `eng` by default | Tesseract language packs used to read images. |
+| server | `STORAGE` | minimal/simple: `disk`; all: `s3` | Attachment backend. |
+| server | `S3_URL` | all: `http://garage:3900` | Bundled Garage S3 endpoint. |
+| server | `S3_REGION` | all: `garage` | S3 signing region. |
+| server | `S3_ACCESS_KEY` | all; required host/.env value | S3 access key; must match Garage’s default access key. |
+| server | `S3_SECRET_KEY` | all; required host/.env value | S3 secret; must match Garage’s default secret. |
 | server | `ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
-| server (optional) | `UNFURL_ALLOW_PRIVATE` | commented example: `1` | Allows link previews for private/loopback hosts. |
-| server (optional) | `TELEGRAM_API` | commented example: `https://api.telegram.org` | Telegram API base URL. |
 | whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |
 | whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
 | whisper (GPU) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |

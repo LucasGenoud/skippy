@@ -1,0 +1,19 @@
+services:
+  server:
+    build: .
+    image: forgejo.genoud.dev/lucasgenoud/skippy:latest
+    ports:
+      - "8787:8787"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      STORAGE: disk
+      ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+
+volumes:
+  app_data:

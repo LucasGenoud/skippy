@@ -1,0 +1,51 @@
+services:
+  server:
+    build: .
+    image: forgejo.genoud.dev/lucasgenoud/skippy:latest
+    ports:
+      - "8787:8787"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      WHISPER_URL: http://whisper:9000
+      OCR_URL: http://tesseract:8884
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-eng}
+      STORAGE: disk
+      ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
+    volumes:
+      - app_data:/data
+    depends_on:
+      whisper:
+        condition: service_healthy
+      tesseract:
+        condition: service_started
+    restart: unless-stopped
+
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    ports:
+      - "127.0.0.1:9000:9000"
+    environment:
+      ASR_MODEL: base
+      ASR_ENGINE: faster_whisper
+    volumes:
+      - whisper_cache:/root/.cache
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://localhost:9000/docs" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+
+  tesseract:
+    image: hertzg/tesseract-server:latest
+    ports:
+      - "127.0.0.1:8884:8884"
+    restart: unless-stopped
+
+volumes:
+  app_data:
+  whisper_cache:
