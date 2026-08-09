@@ -64,10 +64,119 @@ impl AppState {
                     return;
                 }
             };
-            if let Err(e) = search.index_note(&record).await {
+            let ocr_texts = state.note_ocr_text(&note_id).await;
+            if let Err(e) = search.index_note(&record, &ocr_texts).await {
                 state.report_background_failure("semantic_index", &e);
             }
         });
+    }
+
+    /// Text read out of a note's images, or nothing at all if the lookup
+    /// fails: a note is still worth indexing on its own words when the OCR
+    /// cache is unavailable.
+    pub(crate) async fn note_ocr_text(&self, note_id: &str) -> Vec<String> {
+        match self.repo.note_ocr_text(note_id).await {
+            Ok(texts) => texts,
+            Err(error) => {
+                self.report_background_failure("ocr_text_load", &format!("{error:?}"));
+                Vec::new()
+            }
+        }
+    }
+
+    /// Read an image attachment for text in the background (fire and forget),
+    /// then re-index its note so the words inside the picture are searchable.
+    /// No-op when OCR is disabled or the format holds no raster to read.
+    ///
+    /// A failure deliberately stores nothing: the attachment stays in the
+    /// backlog [`ocr_backlog`](Self::ocr_backlog) works through at startup, so
+    /// an OCR service that was down or restarting gets another chance.
+    /// `labeled_for` is the user whose LLM may re-label the note once the text
+    /// lands, absent for backlog work so a restart cannot fire a burst of
+    /// labeling calls.
+    pub fn ocr_later(
+        &self,
+        attachment_id: &str,
+        note_id: &str,
+        mime: &str,
+        filename: &str,
+        labeled_for: Option<&str>,
+    ) {
+        let Some(engine) = self.ocr.clone() else {
+            return;
+        };
+        if !crate::ocr::is_ocr_candidate(mime) {
+            return;
+        }
+        let state = self.clone();
+        let attachment_id = attachment_id.to_string();
+        let note_id = note_id.to_string();
+        let filename = filename.to_string();
+        let labeled_for = labeled_for.map(str::to_string);
+        tokio::spawn(async move {
+            // Bounded concurrency: a backlog pass must not hand a small
+            // self-hosted container every picture at once.
+            let Ok(_slot) = state.ocr_slots.clone().acquire_owned().await else {
+                return;
+            };
+            let Some(bytes) = state.files.read(&attachment_id).await else {
+                state.report_background_failure("ocr_blob_read", &"attachment blob unavailable");
+                return;
+            };
+            let text = match engine.recognize(bytes, &filename).await {
+                Ok(text) => text,
+                Err(e) => {
+                    state.report_background_failure("ocr", &e);
+                    return;
+                }
+            };
+            if let Err(error) = state.repo.set_attachment_ocr(&attachment_id, &text).await {
+                state.report_background_failure("ocr_persist", &format!("{error:?}"));
+                return;
+            }
+            // A picture with no words in it is recorded (so it leaves the
+            // backlog) but changes nothing anyone can see or search.
+            if text.is_empty() {
+                return;
+            }
+            state.index_note_later(&note_id);
+            if let Some(user_id) = labeled_for {
+                state.label_note_later(&note_id, &user_id);
+            }
+            state.notify_note(&note_id).await;
+        });
+    }
+
+    /// Queue recognition for images that carry no recognized text yet, so
+    /// turning OCR on makes an existing library searchable and an interrupted
+    /// or failed reading is retried. Bounded per call; a large library catches
+    /// up over successive starts rather than in one burst.
+    pub async fn ocr_backlog(&self, limit: u32) -> usize {
+        if self.ocr.is_none() {
+            return 0;
+        }
+        let jobs = match self.repo.attachments_awaiting_ocr(limit).await {
+            Ok(jobs) => jobs,
+            Err(error) => {
+                self.report_background_failure("ocr_backlog", &format!("{error:?}"));
+                return 0;
+            }
+        };
+        let mut queued = 0;
+        for job in jobs {
+            if !crate::ocr::is_ocr_candidate(&job.mime) {
+                continue;
+            }
+            self.ocr_later(
+                &job.attachment_id,
+                &job.note_id,
+                &job.mime,
+                &job.filename,
+                None,
+            );
+            queued += 1;
+        }
+        queued
     }
 
     /// Transcribe an audio attachment in the background (fire and forget).
@@ -186,7 +295,10 @@ impl AppState {
         if record.trashed {
             return;
         }
-        let text = crate::search::SearchService::note_text(&record);
+        // The same text the embedder sees, so a note whose only content is a
+        // photograph can still be labeled from the words in it.
+        let ocr_texts = self.note_ocr_text(note_id).await;
+        let text = crate::search::SearchService::note_text_with_ocr(&record, &ocr_texts);
         if text.is_empty() {
             return;
         }

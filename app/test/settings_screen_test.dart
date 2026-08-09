@@ -241,6 +241,7 @@ void main() {
     api.capabilities = (
       semanticSearch: false,
       audioTranscription: false,
+      imageOcr: false,
       serverVersion: 'test-server',
     );
     await pumpSettings(tester, api);

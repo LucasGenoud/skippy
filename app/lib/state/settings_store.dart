@@ -202,6 +202,10 @@ class SettingsStore extends ChangeNotifier {
   // notes must remain available even while Whisper is offline.
   bool semanticSearchCapable = false;
   bool audioTranscriptionCapable = false;
+  // Whether the server reads uploaded pictures for text. There is no user
+  // toggle: recognition is a property of the server, and the text it produces
+  // only ever widens what search finds.
+  bool imageOcrCapable = false;
   String? serverVersion;
   bool semanticSearchEnabled = true;
 
@@ -282,7 +286,12 @@ class SettingsStore extends ChangeNotifier {
   /// every note card each time.
   String _fingerprint() => jsonEncode({
     'doc': toJson(),
-    'caps': [semanticSearchCapable, audioTranscriptionCapable, serverVersion],
+    'caps': [
+      semanticSearchCapable,
+      audioTranscriptionCapable,
+      imageOcrCapable,
+      serverVersion,
+    ],
   });
 
   Future<void> load() async {
@@ -295,6 +304,7 @@ class SettingsStore extends ChangeNotifier {
       if (_disposed) return;
       semanticSearchCapable = caps.semanticSearch;
       audioTranscriptionCapable = caps.audioTranscription;
+      imageOcrCapable = caps.imageOcr;
       serverVersion = caps.serverVersion;
     } catch (_) {
       if (_disposed) return;

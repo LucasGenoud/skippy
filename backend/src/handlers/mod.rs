@@ -163,14 +163,15 @@ pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
 }
 
 /// Which optional, service-backed features this server has enabled. The client
-/// uses it to show or hide semantic search and to decide whether audio notes
-/// are transcribed. Recording and playing audio notes does not require an
-/// optional service. Unauthenticated, like [`health`]: it leaks nothing
-/// user-specific.
+/// uses it to show or hide semantic search, to decide whether audio notes are
+/// transcribed, and to say whether uploaded images are read for text.
+/// Recording and playing audio notes does not require an optional service.
+/// Unauthenticated, like [`health`]: it leaks nothing user-specific.
 pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "semantic_search": state.search.is_some(),
         "audio_transcription": state.transcribe.is_some(),
+        "image_ocr": state.ocr.is_some(),
         "server_version": crate::SERVER_VERSION,
     }))
 }

@@ -10,6 +10,7 @@ async fn capabilities_reflect_wired_services() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(caps["semantic_search"], json!(false));
     assert_eq!(caps["audio_transcription"], json!(false));
+    assert_eq!(caps["image_ocr"], json!(false));
     assert_eq!(
         caps["server_version"],
         json!(sticky_notes_server::SERVER_VERSION)
@@ -19,11 +20,18 @@ async fn capabilities_reflect_wired_services() {
     let (_, caps) = send(&app, "GET", "/api/capabilities", None, None).await;
     assert_eq!(caps["semantic_search"], json!(true));
     assert_eq!(caps["audio_transcription"], json!(false));
+    assert_eq!(caps["image_ocr"], json!(false));
 
     let app = build_app(state_with_transcription().await);
     let (_, caps) = send(&app, "GET", "/api/capabilities", None, None).await;
     assert_eq!(caps["semantic_search"], json!(false));
     assert_eq!(caps["audio_transcription"], json!(true));
+    assert_eq!(caps["image_ocr"], json!(false));
+
+    let (state, _) = state_with_ocr("text in a picture").await;
+    let app = build_app(state);
+    let (_, caps) = send(&app, "GET", "/api/capabilities", None, None).await;
+    assert_eq!(caps["image_ocr"], json!(true));
 }
 
 #[tokio::test]

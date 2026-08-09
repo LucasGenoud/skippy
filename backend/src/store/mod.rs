@@ -321,6 +321,21 @@ pub trait AttachmentRepository: Send + Sync {
         attachment_id: &str,
     ) -> RepoResult<Option<(String, Attachment)>>;
     async fn delete_attachment(&self, attachment_id: &str) -> RepoResult<bool>;
+
+    // -- recognized image text -------------------------------------------------
+    /// Record what an OCR service read out of an image. Empty text is a real
+    /// result (a picture with no words in it) and still counts as read, so the
+    /// backlog pass leaves it alone from then on.
+    async fn set_attachment_ocr(&self, attachment_id: &str, text: &str) -> RepoResult<()>;
+    /// Text recognized in a note's images, oldest attachment first. Feeds the
+    /// note's embedding so a picture is findable by what it says.
+    async fn note_ocr_text(&self, note_id: &str) -> RepoResult<Vec<String>>;
+    /// Image attachments with no recognized text stored yet, oldest first.
+    /// Covers pictures uploaded while OCR was disabled, down, or interrupted
+    /// mid-recognition. Filtered loosely to `image/*` here; which formats are
+    /// actually worth reading is the OCR module's policy, so the caller
+    /// narrows further and `limit` bounds one pass, not the whole backlog.
+    async fn attachments_awaiting_ocr(&self, limit: u32) -> RepoResult<Vec<OcrJob>>;
 }
 
 /// Per-user settings, server metadata, and durable maintenance jobs.

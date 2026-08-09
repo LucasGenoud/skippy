@@ -48,10 +48,16 @@ class FakeApi implements Api {
 
   /// Server feature flags returned by [fetchCapabilities]; tests flip these to
   /// exercise the availability logic.
-  ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+  ({
+    bool semanticSearch,
+    bool audioTranscription,
+    bool imageOcr,
+    String? serverVersion,
+  })
   capabilities = (
     semanticSearch: true,
     audioTranscription: false,
+    imageOcr: false,
     serverVersion: 'test-server',
   );
 
@@ -708,7 +714,12 @@ class FakeApi implements Api {
 
   @override
   Future<
-    ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+    ({
+      bool semanticSearch,
+      bool audioTranscription,
+      bool imageOcr,
+      String? serverVersion,
+    })
   >
   fetchCapabilities() async {
     final gate = fetchCapabilitiesGate;

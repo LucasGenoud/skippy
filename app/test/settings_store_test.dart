@@ -233,11 +233,13 @@ void main() {
       api.capabilities = (
         semanticSearch: true,
         audioTranscription: false,
+        imageOcr: false,
         serverVersion: 'test-server',
       );
       await settings.load();
       expect(settings.semanticSearchCapable, isTrue);
       expect(settings.audioTranscriptionCapable, isFalse);
+      expect(settings.imageOcrCapable, isFalse);
       // Audio recording remains available without Whisper; only transcription is
       // disabled. Search still requires its backing service.
       expect(settings.semanticSearchAvailable, isTrue);
@@ -249,17 +251,21 @@ void main() {
       await settleSave();
       expect(api.settings['semantic_search'], isFalse);
 
-      // Another device with both services up keeps audio available, while the
+      // Another device with every service up keeps audio available, while the
       // user-disabled search feature remains hidden.
       api.capabilities = (
         semanticSearch: true,
         audioTranscription: true,
+        imageOcr: true,
         serverVersion: 'test-server',
       );
       final other = SettingsStore(api: api);
       await other.load();
       expect(other.audioNotesAvailable, isTrue);
       expect(other.semanticSearchAvailable, isFalse);
+      // Reading pictures for text has no user toggle: the server either does
+      // it or it does not.
+      expect(other.imageOcrCapable, isTrue);
       other.dispose();
     },
   );
@@ -268,6 +274,7 @@ void main() {
     api.capabilities = (
       semanticSearch: true,
       audioTranscription: false,
+      imageOcr: false,
       serverVersion: 'test-server',
     );
     await settings.load();
@@ -316,6 +323,7 @@ void main() {
     api.capabilities = (
       semanticSearch: false,
       audioTranscription: false,
+      imageOcr: false,
       serverVersion: 'test-server',
     );
     final third = SettingsStore(api: api);

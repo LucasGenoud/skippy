@@ -47,6 +47,7 @@ pub async fn upload_attachment(
             filename,
             size: bytes.len() as i64,
             url: None,
+            ocr_text: None,
         };
         state.files.save(&attachment.id, &bytes).await?;
         if let Err(error) = state.repo.insert_attachment(&attachment, &id).await {
@@ -84,6 +85,16 @@ pub async fn upload_attachment(
                 .await?;
             state.transcribe_later(&id, &attachment.id, &attachment.filename, &user_id);
         }
+        // A picture is read for text in the background so it can be found
+        // later by the words in it. No-op when OCR is disabled or the format
+        // holds no raster to read.
+        state.ocr_later(
+            &attachment.id,
+            &id,
+            &attachment.mime,
+            &attachment.filename,
+            Some(&user_id),
+        );
         state.notify_note(&id).await;
         state.sign_attachment(&mut attachment);
         return Ok((StatusCode::CREATED, Json(attachment)));
@@ -142,7 +153,7 @@ pub async fn delete_attachment(
     AuthUser(user_id): AuthUser,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    let (note_id, _info) = state
+    let (note_id, info) = state
         .repo
         .attachment_info(&id)
         .await?
@@ -150,6 +161,12 @@ pub async fn delete_attachment(
     require_participant(&state, &note_id, &user_id).await?;
     state.repo.delete_attachment(&id).await?;
     state.drain_cleanup_jobs().await;
+    // Removing a picture removes whatever was read out of it (the OCR row
+    // cascades), so the note's searchable text just changed and its embedding
+    // is stale. No-op when semantic search is off.
+    if crate::ocr::is_ocr_candidate(&info.mime) {
+        state.index_note_later(&note_id);
+    }
     state.notify_note(&note_id).await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
+use sticky_notes_server::ocr::{ImageOcr, TesseractService};
 use sticky_notes_server::search::{
     ApiEmbedder, EmbedConfig, SearchService, SqliteVectorIndex, TextEmbedder,
 };
@@ -12,6 +13,11 @@ use sticky_notes_server::{
     AppState, build_app_with_cors_origin, cors_origin_from_public_url, handlers,
 };
 use tower_http::services::{ServeDir, ServeFile};
+
+/// How many unread images one start hands to the OCR service. The jobs run
+/// two at a time behind `AppState::ocr_slots`, so this bounds how long a
+/// backlog pass keeps the container busy, not how much memory it costs.
+const OCR_BACKLOG_PER_START: u32 = 500;
 
 /// Load the persistent HMAC key used to sign file-access URLs, creating and
 /// storing one on first run. Persisting it means signed URLs stay valid across
@@ -180,6 +186,29 @@ async fn init_transcription() -> Option<Arc<dyn Transcriber>> {
     }
 }
 
+/// Image text recognition wiring: a self-hosted Tesseract service, enabled by
+/// OCR_URL. Unset or unreachable -> feature stays off. OCR_LANGUAGES picks the
+/// language packs (e.g. `fra+eng`); which ones exist is a property of that
+/// container, not of a user's settings.
+async fn init_ocr() -> Option<Arc<dyn ImageOcr>> {
+    let url = std::env::var("OCR_URL").ok()?;
+    let languages = std::env::var("OCR_LANGUAGES")
+        .ok()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| "eng".to_string());
+    match TesseractService::connect(&url, &languages).await {
+        Ok(service) => {
+            println!("image text recognition: tesseract at {url} ({languages})");
+            Some(Arc::new(service))
+        }
+        Err(e) => {
+            eprintln!("image text recognition disabled ({e:#})");
+            None
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if let Some(argument) = std::env::args().nth(1) {
@@ -197,6 +226,24 @@ async fn main() -> anyhow::Result<()> {
         .with_file_secret(file_secret);
     if let Some(service) = init_transcription().await {
         state = state.with_transcription(service);
+    }
+    if let Some(service) = init_ocr().await {
+        state = state.with_ocr(service);
+        // Read whatever is still unread: pictures uploaded while OCR was off
+        // or unreachable, and any recognition a restart interrupted. Bounded
+        // per start so a large library catches up over several of them
+        // instead of flooding the container in one go.
+        let state_for_ocr = state.clone();
+        tokio::spawn(async move {
+            let queued = state_for_ocr.ocr_backlog(OCR_BACKLOG_PER_START).await;
+            if queued > 0 {
+                sticky_notes_server::telemetry::event(
+                    "info",
+                    "ocr_backlog_queued",
+                    serde_json::json!({ "queued": queued }),
+                );
+            }
+        });
     }
     if let Some(service) = init_search(&db_path).await {
         state = state.with_search(service);

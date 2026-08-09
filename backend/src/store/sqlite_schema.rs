@@ -137,6 +137,19 @@ CREATE TABLE IF NOT EXISTS attachments (
     created_at TEXT NOT NULL
 ) STRICT;
 
+-- Text an OCR service read out of an image attachment. Derived, regenerable
+-- data, so it is cached beside the attachment rather than stored on it: a row
+-- exists only once recognition has succeeded (an empty `text` records a
+-- picture with no words in it), and its absence is exactly the backlog the
+-- startup pass works through. Keeping it out of `attachments` also means an
+-- existing database picks the feature up on the next start, since a new table
+-- is created where a new column would not be.
+CREATE TABLE IF NOT EXISTS attachment_ocr (
+    attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+) WITHOUT ROWID, STRICT;
+
 CREATE TABLE IF NOT EXISTS share_links (
     token TEXT PRIMARY KEY,
     created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

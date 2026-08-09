@@ -311,6 +311,35 @@ void main() {
       final byLabel = note('b', labelIds: {'l-work'});
       expect(parseSearchQuery('wor').matches(byLabel, context), isTrue);
     });
+
+    test('free text reaches the words the server read out of a picture', () {
+      // A photo of a receipt: nothing the user typed says "ibuprofen", so
+      // without the recognized text this note would be unfindable.
+      final photo = note(
+        'a',
+        attachments: const [
+          Attachment(
+            id: 'f1',
+            mime: 'image/jpeg',
+            ocrText: 'PHARMACY RECEIPT ibuprofen 4.20',
+          ),
+        ],
+      );
+      expect(parseSearchQuery('ibuprofen').matches(photo, context), isTrue);
+      // Case-insensitive, like every other field.
+      expect(parseSearchQuery('pharmacy').matches(photo, context), isTrue);
+      // And it still narrows: an unrelated word matches nothing.
+      expect(parseSearchQuery('aspirin').matches(photo, context), isFalse);
+      // Negation covers it too, so `-ibuprofen` hides the photo.
+      expect(parseSearchQuery('-ibuprofen').matches(photo, context), isFalse);
+
+      // A picture the server has not read (or could not read) is inert.
+      final unread = note(
+        'b',
+        attachments: const [Attachment(id: 'f2', mime: 'image/jpeg')],
+      );
+      expect(parseSearchQuery('ibuprofen').matches(unread, context), isFalse);
+    });
   });
 
   group('view integration', () {

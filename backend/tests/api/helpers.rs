@@ -1,10 +1,11 @@
 //! Shared test harness: in-memory app state, request helpers, and the
-//! deterministic fakes (embedder, transcriber, LLM) used across modules.
+//! deterministic fakes (embedder, transcriber, OCR, LLM) used across modules.
 
 use async_trait::async_trait;
 
 use sticky_notes_server::files::DiskStore;
 use sticky_notes_server::llm::{ChatMessage, Llm, LlmConfig};
+use sticky_notes_server::ocr::ImageOcr;
 use sticky_notes_server::search::TextEmbedder;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::Transcriber;
@@ -93,6 +94,58 @@ impl Transcriber for FakeTranscriber {
 
 pub async fn state_with_transcription() -> AppState {
     state().await.with_transcription(Arc::new(FakeTranscriber))
+}
+
+/// Deterministic stand-in for the OCR service: every image "contains" the
+/// words the test planted, and each reading is counted so a test can prove a
+/// picture is read once and only once.
+pub struct FakeOcr {
+    text: String,
+    pub reads: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl FakeOcr {
+    pub fn new(text: &str) -> (Arc<Self>, Arc<std::sync::atomic::AtomicUsize>) {
+        let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        (
+            Arc::new(Self {
+                text: text.to_string(),
+                reads: reads.clone(),
+            }),
+            reads,
+        )
+    }
+}
+
+#[async_trait]
+impl ImageOcr for FakeOcr {
+    async fn recognize(&self, _image: Vec<u8>, _filename: &str) -> anyhow::Result<String> {
+        self.reads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(self.text.clone())
+    }
+}
+
+/// An OCR engine whose every reading fails, for the backlog/retry paths.
+pub struct FailOcr;
+
+#[async_trait]
+impl ImageOcr for FailOcr {
+    async fn recognize(&self, _image: Vec<u8>, _filename: &str) -> anyhow::Result<String> {
+        anyhow::bail!("connection refused")
+    }
+}
+
+/// Semantic search plus OCR: the combination that makes the words inside a
+/// picture findable.
+pub async fn state_with_ocr(text: &str) -> (AppState, Arc<std::sync::atomic::AtomicUsize>) {
+    let (engine, reads) = FakeOcr::new(text);
+    (state_with_search().await.with_ocr(engine), reads)
+}
+
+/// Recognition and the re-index it triggers are two hops of spawned work.
+pub async fn settle_ocr() {
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 }
 
 /// Background indexing runs on spawned tasks; give them a beat to finish.

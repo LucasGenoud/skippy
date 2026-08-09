@@ -277,7 +277,9 @@ void main() {
     ) async {
       settings.semanticSearchCapable = true;
       await tester.pumpWidget(harness());
-      await tester.scrollUntilVisible(find.text('Notes chat'), 200);
+      // Scroll to the last of the three provider-backed rows, so every one of
+      // them is built before they are counted.
+      await tester.scrollUntilVisible(find.text('AI note editing'), 200);
 
       // Unconfigured: every provider-backed feature is inert and explains why.
       expect(find.text('Configure an AI provider first'), findsNWidgets(3));

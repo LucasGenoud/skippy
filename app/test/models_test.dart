@@ -49,6 +49,30 @@ void main() {
     expect(note.isOwnedBy('u2'), isFalse);
   });
 
+  test('an image carries the text the server read out of it', () {
+    final attachment = Attachment.fromJson({
+      'id': 'a1',
+      'mime': 'image/jpeg',
+      'filename': 'receipt.jpg',
+      'size': 12,
+      'url': '/api/files/a1?exp=1&sig=x',
+      'ocr_text': 'PHARMACY RECEIPT ibuprofen 4.20',
+    });
+    expect(attachment.ocrText, 'PHARMACY RECEIPT ibuprofen 4.20');
+    // The offline cache stores notes as JSON, so the recognized text has to
+    // survive the round trip or search would stop finding pictures offline.
+    expect(
+      Attachment.fromJson(attachment.toJson()).ocrText,
+      attachment.ocrText,
+    );
+
+    // A server without OCR (or a picture with no words) simply says nothing.
+    const plain = Attachment(id: 'a2', mime: 'image/png');
+    expect(plain.ocrText, '');
+    expect(plain.toJson().containsKey('ocr_text'), isFalse);
+    expect(Attachment.fromJson(plain.toJson()).ocrText, '');
+  });
+
   test('missing optional fields fall back to sane defaults', () {
     final note = Note.fromJson({
       'id': 'n1',

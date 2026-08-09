@@ -74,6 +74,18 @@ Check `nvidia-smi` first.
 docker compose up -d whisper
 ```
 
+### 5. Image text recognition (optional)
+
+The `tesseract` service reads uploaded pictures so their text is searchable.
+`OCR_LANGUAGES` selects the language packs, `eng` by default; set it to
+something like `fra+eng` only if the OCR image ships those packs, since
+Tesseract fails on a language it does not have.
+
+Turning the service on for the first time backfills existing pictures: each
+start queues up to 500 images that have never been read, so a large library
+catches up over several restarts. Recognition failures are retried the same
+way, which is why a temporary outage needs no manual repair.
+
 ## Rollback
 
 Every build also pushes a `:<commit-sha>` tag. To pin an old build, bypass

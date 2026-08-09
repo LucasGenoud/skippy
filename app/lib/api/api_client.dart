@@ -195,9 +195,15 @@ abstract class Api {
   });
 
   /// Which optional, service-backed features this server has enabled. Drives
-  /// semantic-search availability and whether audio recordings are transcribed.
+  /// semantic-search availability, whether audio recordings are transcribed,
+  /// and whether uploaded pictures are read for text.
   Future<
-    ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+    ({
+      bool semanticSearch,
+      bool audioTranscription,
+      bool imageOcr,
+      String? serverVersion,
+    })
   >
   fetchCapabilities();
 
@@ -891,7 +897,12 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<
-    ({bool semanticSearch, bool audioTranscription, String? serverVersion})
+    ({
+      bool semanticSearch,
+      bool audioTranscription,
+      bool imageOcr,
+      String? serverVersion,
+    })
   >
   fetchCapabilities() async {
     // Unauthenticated endpoint; no bearer needed.
@@ -903,6 +914,7 @@ class ApiClient extends _ApiTransport implements Api {
     return (
       semanticSearch: map['semantic_search'] == true,
       audioTranscription: map['audio_transcription'] == true,
+      imageOcr: map['image_ocr'] == true,
       // Older servers do not advertise their version; leave it unavailable
       // rather than treating a missing field as a malformed response.
       serverVersion: map['server_version']?.toString(),

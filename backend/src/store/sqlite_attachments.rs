@@ -3,7 +3,7 @@ use sqlx::Row;
 
 use super::sqlite::{SqliteRepository, enqueue_cleanup_tx, now};
 use super::{AttachmentRepository, CleanupKind, RepoResult};
-use crate::models::Attachment;
+use crate::models::{Attachment, OcrJob};
 
 #[async_trait]
 impl AttachmentRepository for SqliteRepository {
@@ -40,9 +40,63 @@ impl AttachmentRepository for SqliteRepository {
                     filename: row.get("filename"),
                     size: row.get("size"),
                     url: None,
+                    ocr_text: None,
                 },
             )
         }))
+    }
+
+    async fn set_attachment_ocr(&self, attachment_id: &str, text: &str) -> RepoResult<()> {
+        // Re-running recognition (a retried backlog entry) replaces the old
+        // reading rather than failing on the primary key.
+        sqlx::query(
+            "INSERT INTO attachment_ocr (attachment_id, text, created_at) VALUES (?, ?, ?)
+             ON CONFLICT(attachment_id) DO UPDATE SET text = excluded.text",
+        )
+        .bind(attachment_id)
+        .bind(text)
+        .bind(now())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn note_ocr_text(&self, note_id: &str) -> RepoResult<Vec<String>> {
+        let rows = sqlx::query(
+            "SELECT o.text FROM attachment_ocr o
+             JOIN attachments a ON a.id = o.attachment_id
+             WHERE a.note_id = ? AND trim(o.text) <> ''
+             ORDER BY a.created_at",
+        )
+        .bind(note_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| row.get::<String, _>("text"))
+            .collect())
+    }
+
+    async fn attachments_awaiting_ocr(&self, limit: u32) -> RepoResult<Vec<OcrJob>> {
+        let rows = sqlx::query(
+            "SELECT a.id, a.note_id, a.mime, a.filename FROM attachments a
+             WHERE a.mime LIKE 'image/%'
+               AND NOT EXISTS (SELECT 1 FROM attachment_ocr o WHERE o.attachment_id = a.id)
+             ORDER BY a.created_at
+             LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| OcrJob {
+                attachment_id: row.get("id"),
+                note_id: row.get("note_id"),
+                mime: row.get("mime"),
+                filename: row.get("filename"),
+            })
+            .collect())
     }
 
     async fn delete_attachment(&self, attachment_id: &str) -> RepoResult<bool> {

@@ -504,6 +504,24 @@ impl SearchService {
             .to_string()
     }
 
+    /// [`note_text`](Self::note_text) plus whatever an OCR service read out of
+    /// the note's images (see [`crate::ocr`]), so a photo of a receipt is
+    /// findable by the words printed on it. A note holding nothing but such a
+    /// picture is text as far as the embedder is concerned.
+    pub fn note_text_with_ocr(record: &NoteRecord, ocr_texts: &[String]) -> String {
+        let own = Self::note_text(record);
+        let recognized = ocr_texts
+            .iter()
+            .map(String::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if recognized.is_empty() {
+            return own;
+        }
+        format!("{own}\n{recognized}").trim().to_string()
+    }
+
     async fn embed_one(&self, text: String) -> anyhow::Result<Vec<f32>> {
         let _slot = self.embed_slots.acquire().await?;
         let mut vectors = self.embedder.embed(vec![text]).await?;
@@ -512,8 +530,14 @@ impl SearchService {
             .ok_or_else(|| anyhow::anyhow!("embedder returned nothing"))
     }
 
-    pub async fn index_note(&self, record: &NoteRecord) -> anyhow::Result<()> {
-        let text = Self::note_text(record);
+    /// Embed and index a note. `ocr_texts` carries the text recognized in its
+    /// image attachments (empty when OCR is off or the note has no pictures).
+    pub async fn index_note(
+        &self,
+        record: &NoteRecord,
+        ocr_texts: &[String],
+    ) -> anyhow::Result<()> {
+        let text = Self::note_text_with_ocr(record, ocr_texts);
         if text.is_empty() {
             return self.index.remove(&record.id).await;
         }

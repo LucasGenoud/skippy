@@ -10,7 +10,8 @@ optimistic, offline-capable edits.
 - Grid, list, and kanban board views with drag-to-reorder
 - Workspaces, labels, stages, archive, trash, reminders, search, and exports
 - Sharing, public read-only links, live sync, and version history
-- Optional self-hosted Whisper transcription and OpenAI-compatible embeddings
+- Optional self-hosted Whisper transcription, Tesseract image text recognition,
+  and OpenAI-compatible embeddings
 - Optional LLM features: automatic labels, note editing, and notes chat
 - Dark mode, responsive layouts, keyboard shortcuts, share-sheet intake, and
   home-screen widgets
@@ -32,7 +33,12 @@ optimistic, offline-capable edits.
   </tr>
 </table>
 
-The app is deliberately out of scope for drawings, OCR, calendar sync, and
+Uploaded images are read for text when an OCR service is configured, so a photo
+of a receipt or a whiteboard is found again by the words in it. Recognition runs
+in the background, feeds both keyword and semantic search, and never blocks the
+upload.
+
+The app is deliberately out of scope for drawings, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
 ## Quick start with Docker
@@ -57,9 +63,10 @@ docker compose up -d
 ```
 
 Open <http://localhost:8787>. The image builds the Flutter web app and Rust
-server. The stack also starts Whisper for audio transcription and Garage for
-optional S3-compatible attachment storage. SQLite data and attachments persist
-in the `app_data` volume.
+server. The stack also starts Whisper for audio transcription, Tesseract for
+reading text out of uploaded images, and Garage for optional S3-compatible
+attachment storage. SQLite data and attachments persist in the `app_data`
+volume.
 
 The current database schema has no in-place migration path. Start with a new
 database when installing a schema revision.
@@ -80,7 +87,7 @@ existing blobs.
 To run only the supporting services during local backend development:
 
 ```sh
-docker compose up -d whisper garage
+docker compose up -d whisper tesseract garage
 ```
 
 See [Deployment](docs/DEPLOY.md) for production and optional GPU Whisper
@@ -99,6 +106,8 @@ deployment.
 | `PUBLIC_URL` | unset | Browser API URL and allowed CORS origin |
 | `STORAGE` | `disk` | `disk` or `s3` |
 | `WHISPER_URL` | unset | Whisper service URL; Docker sets it to `http://whisper:9000` |
+| `OCR_URL` | unset | Tesseract service URL; enables text search inside images. Docker sets it to `http://tesseract:8884` |
+| `OCR_LANGUAGES` | `eng` | Tesseract language packs, e.g. `fra+eng`; the pack must exist in the OCR image |
 | `EMBED_URL` | unset | OpenAI-compatible embeddings URL; enables semantic search and chat |
 | `EMBED_MODEL` | `bge-m3` | Embedding model |
 | `EMBED_API_KEY` | unset | Embedding service bearer token |
@@ -126,6 +135,8 @@ the shell or `.env`; optional entries are commented in `docker-compose.yml`.
 | server | `EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
 | server | `EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
 | server | `WHISPER_URL` | `http://whisper:9000` | Bundled Whisper service URL. |
+| server | `OCR_URL` | `http://tesseract:8884` | Bundled Tesseract service URL. |
+| server | `OCR_LANGUAGES` | host/.env; `eng` by default | Tesseract language packs used to read images. |
 | server | `STORAGE` | host/.env; `disk` by default | Attachment backend: `disk` or `s3`. |
 | server | `S3_URL` | `http://garage:3900` | Bundled Garage S3 endpoint. |
 | server | `S3_REGION` | `garage` | S3 signing region. |
@@ -244,5 +255,5 @@ Authenticated JSON endpoints live under `/api`. The main groups are:
 - `/health` and `/capabilities` for service status
 
 Attachments are served through signed, expiring URLs. Optional search,
-transcription, and LLM routes report unavailable services instead of requiring
-them at startup.
+transcription, image text recognition, and LLM routes report unavailable
+services instead of requiring them at startup.

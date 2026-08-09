@@ -338,6 +338,12 @@ bool _containsText(Note note, String needle, SearchContext context) {
   if (note.items.any((item) => item.text.toLowerCase().contains(needle))) {
     return true;
   }
+  // Words the server read out of an attached picture count as the note's own
+  // text, so a photo of a receipt is found by what is printed on it. Nothing
+  // matches here unless the server does OCR.
+  if (note.attachments.any((a) => a.ocrText.toLowerCase().contains(needle))) {
+    return true;
+  }
   return note.labelIds.any(
     (id) =>
         context.labelsById[id]?.name.toLowerCase().contains(needle) ?? false,

@@ -56,7 +56,7 @@ The WebSocket is a change nudge, not a stream of note patches. Multiple notifica
 
 ### Server startup and requests
 
-`backend/src/main.rs` reads configuration and wires the SQLite repository, disk or S3 file store, WebSocket hub, managed settings, reminder scheduler, optional embedding service, optional Whisper client, and static Flutter web serving.
+`backend/src/main.rs` reads configuration and wires the SQLite repository, disk or S3 file store, WebSocket hub, managed settings, reminder scheduler, optional embedding service, optional Whisper client, optional OCR client, and static Flutter web serving.
 
 `backend/src/lib.rs` defines `AppState` and `build_app`. Integration tests reuse this router with in-memory SQLite and deterministic fakes.
 
@@ -120,6 +120,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/files.rs`: independent `FileStore` seam, disk and S3 implementations, signing helpers.
 - `backend/src/search.rs`: embeddings API client, sqlite-vec tables, indexing and search implementation.
 - `backend/src/transcribe.rs`: Whisper service interface and HTTP implementation.
+- `backend/src/ocr.rs`: image text recognition interface, HTTP implementation, reply parsing, and which image types are worth reading.
 - `backend/src/assist.rs`: effective LLM settings, prompts, assistant routing, and structured-output parsing.
 - `backend/src/llm.rs`: OpenAI-compatible completion and streaming client.
 - `backend/src/notify.rs`: reminder scheduler and ntfy/Telegram connectors.
@@ -232,6 +233,8 @@ Link previews are fetched by the backend. Preserve URL scheme validation, DNS/IP
 
 Audio-note creation and retranscription are asynchronous. Keep the note usable while the transcript is pending or failed, and keep transcription failures from rolling back the uploaded clip.
 
+Text recognized in an image is derived data cached in `attachment_ocr`, not attachment metadata: a row exists only after a successful reading, an empty `text` is the real answer for a wordless picture, and a missing row is the backlog every start works through. Recognition failures therefore store nothing on purpose. It reaches search twice over, appended to the note's embedded text on the server and matched as note text by the client, so both paths must keep seeing it. Adding or deleting a picture changes the note's searchable text and has to re-index it.
+
 ## Common change paths
 
 ### Add or change an endpoint
@@ -274,7 +277,7 @@ An attachment change usually touches upload handlers, metadata persistence, both
 
 ## Testing guidance
 
-Backend API tests use the real router and in-memory SQLite. Use the fake embedder, Whisper client, LLM client, and notification connectors in `backend/tests/api/helpers.rs`; do not call real providers. Use local deterministic HTTP fixtures for unfurl and S3 behavior.
+Backend API tests use the real router and in-memory SQLite. Use the fake embedder, Whisper client, OCR engine, LLM client, and notification connectors in `backend/tests/api/helpers.rs`; do not call real providers. Use local deterministic HTTP fixtures for unfurl and S3 behavior.
 
 Frontend tests use `FakeApi`. Store tests should cover optimistic state immediately, eventual server calls, retry/drop policy, queue persistence, and server-refetch reconciliation. Widget tests should avoid timing assumptions when a shared motion duration or debounce helper can be awaited instead.
 

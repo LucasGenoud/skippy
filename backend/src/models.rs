@@ -172,6 +172,24 @@ pub struct Attachment {
     /// note is served; `None` in the storage layer, which knows no signing key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// Text an OCR service read out of the image, so a picture can be found by
+    /// the words in it. `None` means "never successfully read", which is what
+    /// keeps an interrupted or failed recognition eligible for a later retry;
+    /// `Some("")` records that the picture holds no words. Never `Some` for a
+    /// non-image, and always `None` when OCR is disabled on this server. Like
+    /// [`Attachment::url`], it is only loaded where a note is served.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ocr_text: Option<String>,
+}
+
+/// An image attachment that has never been read for text, as handed to the
+/// OCR backlog pass at startup. See [`crate::ocr`].
+#[derive(Debug, Clone)]
+pub struct OcrJob {
+    pub attachment_id: String,
+    pub note_id: String,
+    pub mime: String,
+    pub filename: String,
 }
 
 /// A note as stored, without the per-viewer decorations.

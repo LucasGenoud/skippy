@@ -106,12 +106,20 @@ class Attachment {
   /// hasn't round-tripped through the server yet.
   final String? url;
 
+  /// Text the server read out of the picture, when it runs OCR. Empty for
+  /// everything else: a non-image, a server without the feature, a photo with
+  /// no words in it, or a reading that has not finished. Search matches
+  /// against it, which is how a photographed receipt is found again by what
+  /// is printed on it.
+  final String ocrText;
+
   const Attachment({
     required this.id,
     required this.mime,
     this.filename = '',
     this.size = 0,
     this.url,
+    this.ocrText = '',
   });
 
   bool get isImage => mime.startsWith('image/');
@@ -123,6 +131,7 @@ class Attachment {
     filename: json['filename'] as String? ?? '',
     size: (json['size'] as num?)?.toInt() ?? 0,
     url: json['url'] as String?,
+    ocrText: json['ocr_text'] as String? ?? '',
   );
 
   Map<String, dynamic> toJson() => {
@@ -131,6 +140,7 @@ class Attachment {
     'filename': filename,
     'size': size,
     if (url != null) 'url': url,
+    if (ocrText.isNotEmpty) 'ocr_text': ocrText,
   };
 }
 

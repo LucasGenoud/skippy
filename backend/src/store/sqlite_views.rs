@@ -78,9 +78,11 @@ pub(super) async fn build_note_views(
 
     let mut attachments_by_note: HashMap<String, Vec<Attachment>> = HashMap::new();
     for row in sqlx::query(
-        "SELECT id, note_id, mime, filename, size FROM attachments
-         WHERE note_id IN (SELECT value FROM json_each(?))
-         ORDER BY created_at",
+        "SELECT a.id, a.note_id, a.mime, a.filename, a.size, o.text AS ocr_text
+         FROM attachments a
+         LEFT JOIN attachment_ocr o ON o.attachment_id = a.id
+         WHERE a.note_id IN (SELECT value FROM json_each(?))
+         ORDER BY a.created_at",
     )
     .bind(&note_ids)
     .fetch_all(pool)
@@ -95,6 +97,7 @@ pub(super) async fn build_note_views(
                 filename: row.get("filename"),
                 size: row.get("size"),
                 url: None,
+                ocr_text: row.get("ocr_text"),
             });
     }
 

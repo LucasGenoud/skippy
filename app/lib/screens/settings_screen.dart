@@ -82,6 +82,15 @@ class SettingsScreen extends StatelessWidget {
                       : 'Record and play voice notes; transcription needs local Whisper',
                 ),
               ),
+              ListTile(
+                leading: const Icon(Icons.image_search_outlined),
+                title: const Text('Text in images'),
+                subtitle: Text(
+                  settings.imageOcrCapable
+                      ? 'Uploaded pictures are read so you can search the words in them'
+                      : 'Searching the words inside pictures needs local OCR',
+                ),
+              ),
               const Divider(height: 32),
               const _SectionHeader('AI'),
               const LlmConfigTile(),

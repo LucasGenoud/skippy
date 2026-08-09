@@ -15,6 +15,7 @@ mod labels;
 mod llm;
 mod notes;
 mod notify;
+mod ocr;
 mod search;
 mod settings;
 mod share_links;

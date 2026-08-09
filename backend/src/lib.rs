@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod llm;
 pub mod models;
 pub mod notify;
+pub mod ocr;
 mod outbound;
 pub mod rate_limit;
 pub mod search;
@@ -40,6 +41,10 @@ pub const SERVER_VERSION: &str = match option_env!("SERVER_VERSION") {
     _ => concat!(env!("CARGO_PKG_VERSION"), "-dev+local"),
 };
 
+/// How many images may be at the OCR service at once (see
+/// [`AppState::ocr_slots`]).
+const MAX_CONCURRENT_OCR: usize = 2;
+
 /// Progress of a per-user "re-run embeddings" job. `done` counts notes
 /// embedded so far out of `total`; the job is finished once they are equal.
 #[derive(Clone, Copy, Default)]
@@ -59,6 +64,12 @@ pub struct AppState {
     pub search: Option<Arc<search::SearchService>>,
     /// Present when audio transcription (Whisper) is enabled.
     pub transcribe: Option<Arc<dyn transcribe::Transcriber>>,
+    /// Present when image text recognition (OCR) is enabled.
+    pub ocr: Option<Arc<dyn ocr::ImageOcr>>,
+    /// Ceiling on OCR jobs in flight. Recognition is fire-and-forget, one task
+    /// per uploaded image, so a startup backfill would otherwise hand a small
+    /// self-hosted container every picture in the installation at once.
+    pub ocr_slots: Arc<tokio::sync::Semaphore>,
     /// Always present, LLM availability is per-user configuration (endpoint,
     /// key, model in the user's settings document), not server wiring.
     pub llm: Arc<dyn llm::Llm>,
@@ -106,6 +117,8 @@ impl AppState {
             files,
             search: None,
             transcribe: None,
+            ocr: None,
+            ocr_slots: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_OCR)),
             llm: Arc::new(llm::OpenAiCompatLlm),
             notifiers: Arc::new(notify::default_connectors()),
             label_generations: Arc::default(),
@@ -132,6 +145,11 @@ impl AppState {
 
     pub fn with_transcription(mut self, service: Arc<dyn transcribe::Transcriber>) -> Self {
         self.transcribe = Some(service);
+        self
+    }
+
+    pub fn with_ocr(mut self, service: Arc<dyn ocr::ImageOcr>) -> Self {
+        self.ocr = Some(service);
         self
     }
 

@@ -8,16 +8,22 @@ use std::collections::HashSet;
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
-use crate::models::NoteFields;
+use crate::models::NoteView;
 
-/// Whether a note has any text the embedder would index, its title, content,
-/// or a checklist item. Mirrors the emptiness check in
-/// [`crate::search::SearchService::note_text`]: a note with only whitespace (or
-/// only non-text attachments) is never embedded.
-fn has_embeddable_text(note: &NoteFields) -> bool {
+/// Whether a note has any text the embedder would index: its title, content, a
+/// checklist item, or words an OCR service read out of one of its pictures.
+/// Mirrors the emptiness check in
+/// [`crate::search::SearchService::note_text_with_ocr`]: a note with only
+/// whitespace (or only wordless attachments) is never embedded.
+fn has_embeddable_text(view: &NoteView) -> bool {
+    let note = &view.note;
     !note.title.trim().is_empty()
         || !note.content.trim().is_empty()
         || note.items.iter().any(|i| !i.text.trim().is_empty())
+        || view
+            .attachments
+            .iter()
+            .any(|a| a.ocr_text.as_deref().is_some_and(|t| !t.trim().is_empty()))
 }
 
 #[derive(Deserialize)]
@@ -111,12 +117,12 @@ pub async fn search_stats(
     let visible_notes = state.repo.notes_for_user(&user_id).await?;
     let total_notes = visible_notes
         .iter()
-        .filter(|v| has_embeddable_text(&v.note))
+        .filter(|v| has_embeddable_text(v))
         .count();
     let indexed_ids = search.indexed_note_ids().await?;
     let indexed_notes = visible_notes
         .iter()
-        .filter(|view| indexed_ids.contains(&view.note.id) && has_embeddable_text(&view.note))
+        .filter(|view| indexed_ids.contains(&view.note.id) && has_embeddable_text(view))
         .count();
     Ok(Json(serde_json::json!({
         "enabled": true,
@@ -172,7 +178,8 @@ pub async fn reindex_search(
         for id in ids {
             match worker.repo.note_record(&id).await {
                 Ok(Some(record)) => {
-                    if let Err(e) = search.index_note(&record).await {
+                    let ocr_texts = worker.note_ocr_text(&id).await;
+                    if let Err(e) = search.index_note(&record, &ocr_texts).await {
                         worker.report_background_failure("semantic_reindex", &e);
                     }
                 }
