@@ -56,17 +56,26 @@ const Set<String> _genericPastedNames = {'image', 'file', 'blob', 'unknown'};
 /// stays distinguishable in the attachment list.
 String pastedFileName(String mime, {String? suggested, DateTime? at}) {
   final name = (suggested ?? '').trim();
-  final ext = extensionFromMime(mime);
   final dot = name.lastIndexOf('.');
   final stem = (dot <= 0 ? name : name.substring(0, dot)).toLowerCase();
   if (name.isNotEmpty && !_genericPastedNames.contains(stem)) return name;
+  return _stampedFileName('pasted', mime, at);
+}
 
+/// Filename for a picture taken with the camera. The plugin hands back the
+/// name of its own temp file, which says nothing about the photo, so these are
+/// stamped the same way pasted screenshots are.
+String capturedFileName(String mime, {DateTime? at}) =>
+    _stampedFileName('photo', mime, at);
+
+String _stampedFileName(String prefix, String mime, DateTime? at) {
+  final ext = extensionFromMime(mime);
   final t = at ?? DateTime.now();
   String pad(int value) => value.toString().padLeft(2, '0');
   final stamp =
       '${t.year}${pad(t.month)}${pad(t.day)}'
       '-${pad(t.hour)}${pad(t.minute)}${pad(t.second)}';
-  return 'pasted-$stamp${ext == null ? '' : '.$ext'}';
+  return '$prefix-$stamp${ext == null ? '' : '.$ext'}';
 }
 
 String formatBytes(int bytes) {

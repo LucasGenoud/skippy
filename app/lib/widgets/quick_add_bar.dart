@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -23,6 +22,7 @@ import 'file_drop.dart';
 import 'labels_sheet.dart';
 import 'markdown_toolbar.dart';
 import 'paste_files.dart';
+import 'pick_image.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
 
@@ -313,17 +313,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   Future<void> _addImage() => _withModal(() async {
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
-      if (!mounted) return;
-      _addFiles([
-        DroppedFile(
-          name: picked.name,
-          mime: picked.mimeType ?? mimeFromName(picked.name),
-          bytes: bytes,
-        ),
-      ]);
+      final picked = await pickNoteImage(context);
+      if (picked == null || !mounted) return;
+      _addFiles([picked]);
     } catch (_) {
       showAppSnack("Couldn't add the image");
     }
@@ -406,20 +398,18 @@ class _QuickAddBarState extends State<QuickAddBar> {
   Future<void> _quickImageNote() async {
     final store = context.read<NotesStore>();
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await pickNoteImage(context);
       if (picked == null) return;
-      final bytes = await picked.readAsBytes();
-      if (bytes.length > maxUploadBytes) {
+      if (picked.bytes.length > maxUploadBytes) {
         showAppSnack('Files are limited to 25 MB');
         return;
       }
-      setState(() => _uploading = true);
+      // The picker can outlive this bar (the camera is a whole other screen),
+      // so the spinner is only for a bar that is still on screen; the note
+      // still gets created either way.
+      if (mounted) setState(() => _uploading = true);
       final id = await store.createNoteWithFiles([
-        DroppedFile(
-          name: picked.name,
-          mime: picked.mimeType ?? mimeFromName(picked.name),
-          bytes: bytes,
-        ),
+        picked,
       ], labelIds: widget.labelIds);
       if (id == null) showAppSnack("Couldn't upload the image");
     } catch (_) {

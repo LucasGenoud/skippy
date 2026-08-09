@@ -67,4 +67,19 @@ void main() {
       );
     });
   });
+
+  group('capturedFileName', () {
+    final at = DateTime(2026, 8, 5, 14, 3, 9);
+
+    test('stamps a camera capture, whose own name is a temp file', () {
+      expect(
+        capturedFileName('image/jpeg', at: at),
+        'photo-20260805-140309.jpg',
+      );
+      expect(
+        capturedFileName('image/heic', at: at),
+        'photo-20260805-140309.heic',
+      );
+    });
+  });
 }

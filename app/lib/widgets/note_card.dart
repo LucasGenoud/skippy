@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note.dart';
@@ -21,6 +20,7 @@ import 'workspace_menu.dart';
 import 'labels_sheet.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
+import 'pick_image.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
 import 'transcribing_indicator.dart';
@@ -104,10 +104,9 @@ class _NoteTileState extends State<NoteTile> {
   Future<void> _addImage() async {
     final store = context.read<NotesStore>();
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await pickNoteImage(context);
       if (picked == null) return;
-      final bytes = await picked.readAsBytes();
-      if (bytes.length > maxUploadBytes) {
+      if (picked.bytes.length > maxUploadBytes) {
         showAppSnack(
           'Files are limited to 25 MB',
           icon: Icons.error_outline,
@@ -117,8 +116,8 @@ class _NoteTileState extends State<NoteTile> {
       }
       await store.uploadFile(
         widget.note.id,
-        bytes,
-        picked.mimeType ?? mimeFromName(picked.name),
+        picked.bytes,
+        picked.mime,
         picked.name,
       );
     } catch (_) {

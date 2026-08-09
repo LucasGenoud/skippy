@@ -33,10 +33,11 @@ optimistic, offline-capable edits.
   </tr>
 </table>
 
-Uploaded images are read for text when an OCR service is configured, so a photo
-of a receipt or a whiteboard is found again by the words in it. Recognition runs
-in the background, feeds both keyword and semantic search, and never blocks the
-upload.
+On Android and iOS, adding an image offers the camera alongside the photo
+library, so a receipt or a whiteboard goes straight from the lens onto a note.
+Uploaded images are read for text when an OCR service is configured, so that
+photo is found again by the words in it. Recognition runs in the background,
+feeds both keyword and semantic search, and never blocks the upload.
 
 The app is deliberately out of scope for drawings, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.

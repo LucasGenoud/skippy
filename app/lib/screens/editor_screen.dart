@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
@@ -38,6 +37,7 @@ import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/paste_files.dart';
+import '../widgets/pick_image.dart';
 import '../widgets/reminder_picker.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
@@ -697,15 +697,9 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _pickImage() async {
     _ensureNote();
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await pickNoteImage(context);
       if (picked == null) return;
-      await _uploadAll([
-        DroppedFile(
-          name: picked.name,
-          mime: picked.mimeType ?? mimeFromName(picked.name),
-          bytes: await picked.readAsBytes(),
-        ),
-      ], failureMessage: "Couldn't upload the image");
+      await _uploadAll([picked], failureMessage: "Couldn't upload the image");
     } catch (_) {
       showAppSnack(
         "Couldn't upload the image",

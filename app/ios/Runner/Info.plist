@@ -29,6 +29,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Skippy uses the microphone to record audio notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Skippy uses the camera to take photos you attach to a note.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Skippy saves images you download to your photo library.</string>
 	<key>CFBundleDevelopmentRegion</key>
