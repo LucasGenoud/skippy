@@ -33,12 +33,12 @@ pub struct ManagedKey {
 /// The registry. Keep the `key` strings in sync with the settings-document
 /// contract shared with the app's `SettingsStore` (see [`crate::assist`]).
 pub const MANAGED_KEYS: &[ManagedKey] = &[
-    ManagedKey { env: "STICKY_NOTES_LLM_BASE_URL", key: "llm_base_url", secret: false, kind: Kind::Text },
-    ManagedKey { env: "STICKY_NOTES_LLM_API_KEY", key: "llm_api_key", secret: true, kind: Kind::Text },
-    ManagedKey { env: "STICKY_NOTES_LLM_MODEL", key: "llm_model", secret: false, kind: Kind::Text },
-    ManagedKey { env: "STICKY_NOTES_LLM_LABELING", key: "llm_labeling", secret: false, kind: Kind::Bool },
-    ManagedKey { env: "STICKY_NOTES_LLM_CHAT", key: "llm_chat", secret: false, kind: Kind::Bool },
-    ManagedKey { env: "STICKY_NOTES_LLM_WRITING", key: "llm_writing", secret: false, kind: Kind::Bool },
+    ManagedKey { env: "LLM_BASE_URL", key: "llm_base_url", secret: false, kind: Kind::Text },
+    ManagedKey { env: "LLM_API_KEY", key: "llm_api_key", secret: true, kind: Kind::Text },
+    ManagedKey { env: "LLM_MODEL", key: "llm_model", secret: false, kind: Kind::Text },
+    ManagedKey { env: "LLM_LABELING", key: "llm_labeling", secret: false, kind: Kind::Bool },
+    ManagedKey { env: "LLM_CHAT", key: "llm_chat", secret: false, kind: Kind::Bool },
+    ManagedKey { env: "LLM_WRITING", key: "llm_writing", secret: false, kind: Kind::Bool },
 ];
 
 /// A resolved managed value plus whether it should be hidden from the frontend.
@@ -157,11 +157,11 @@ mod tests {
     #[test]
     fn from_lookup_inclusion_and_bool_parsing() {
         let m = managed(&[
-            ("STICKY_NOTES_LLM_BASE_URL", "  http://x/v1  "),
-            ("STICKY_NOTES_LLM_MODEL", ""), // empty -> skipped
-            ("STICKY_NOTES_LLM_API_KEY", "sk-secret"),
-            ("STICKY_NOTES_LLM_LABELING", "off"),
-            ("STICKY_NOTES_LLM_CHAT", "maybe"), // unparseable -> skipped
+            ("LLM_BASE_URL", "  http://x/v1  "),
+            ("LLM_MODEL", ""), // empty -> skipped
+            ("LLM_API_KEY", "sk-secret"),
+            ("LLM_LABELING", "off"),
+            ("LLM_CHAT", "maybe"), // unparseable -> skipped
         ]);
         assert_eq!(m.text("llm_base_url"), Some("http://x/v1")); // trimmed
         assert_eq!(m.get("llm_model"), None);
@@ -174,8 +174,8 @@ mod tests {
     #[test]
     fn overlay_overrides_user_keys_and_keeps_others() {
         let m = managed(&[
-            ("STICKY_NOTES_LLM_BASE_URL", "http://managed/v1"),
-            ("STICKY_NOTES_LLM_API_KEY", "sk-managed"),
+            ("LLM_BASE_URL", "http://managed/v1"),
+            ("LLM_API_KEY", "sk-managed"),
         ]);
         let user = r#"{"llm_base_url":"http://user/v1","llm_model":"m","theme":"dark"}"#;
         let eff = m.overlay(Some(user));
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn overlay_handles_missing_and_garbage_documents() {
-        let m = managed(&[("STICKY_NOTES_LLM_MODEL", "m")]);
+        let m = managed(&[("LLM_MODEL", "m")]);
         assert_eq!(m.overlay(None)["llm_model"], "m");
         assert_eq!(m.overlay(Some("not json"))["llm_model"], "m");
         // Empty managed set + no user doc is a bare object, not null.
@@ -197,9 +197,9 @@ mod tests {
     #[test]
     fn public_view_redacts_secrets_and_echoes_the_rest() {
         let m = managed(&[
-            ("STICKY_NOTES_LLM_BASE_URL", "http://x/v1"),
-            ("STICKY_NOTES_LLM_API_KEY", "sk-secret"),
-            ("STICKY_NOTES_LLM_LABELING", "true"),
+            ("LLM_BASE_URL", "http://x/v1"),
+            ("LLM_API_KEY", "sk-secret"),
+            ("LLM_LABELING", "true"),
         ]);
         let view = m.public_view();
         assert_eq!(view["llm_base_url"], serde_json::json!({"secret": false, "value": "http://x/v1"}));

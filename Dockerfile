@@ -18,7 +18,7 @@ RUN flutter build web --wasm --release \
 FROM rust:trixie AS server
 WORKDIR /src
 ARG VERSION_SUFFIX=-dev+local
-ENV STICKY_NOTES_SERVER_VERSION=0.2.0${VERSION_SUFFIX}
+ENV SERVER_VERSION=0.2.0${VERSION_SUFFIX}
 COPY backend/ ./
 RUN cargo build --release
 
@@ -36,9 +36,9 @@ COPY --from=server /src/target/release/sticky-notes-server /app/
 COPY --from=web /src/build/web /app/web
 COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-ENV STICKY_NOTES_WEB=/app/web \
-    STICKY_NOTES_DB=/data/sticky_notes.db \
-    STICKY_NOTES_UPLOADS=/data/uploads
+ENV WEB=/app/web \
+    DB=/data/sticky_notes.db \
+    UPLOADS=/data/uploads
 
 VOLUME ["/data"]
 EXPOSE 8787

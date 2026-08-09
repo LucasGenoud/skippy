@@ -1,6 +1,6 @@
 /// Reads runtime configuration the server injected into the page. When the
 /// Rust binary serves the web build it can stamp `window.stickyNotesApiBase`
-/// into index.html (from the `STICKY_NOTES_PUBLIC_URL` env var), letting a
+/// into index.html (from the `PUBLIC_URL` env var), letting a
 /// self-hoster point the app at a fixed backend without rebuilding it. Off the
 /// web there's no injected config, so the stub returns null.
 library;

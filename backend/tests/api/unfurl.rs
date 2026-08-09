@@ -3,7 +3,7 @@
 //! endpoint parses metadata and that a second call is served from cache.
 //!
 //! The SSRF guard blocks the loopback test server unless opted out, so these
-//! set `STICKY_NOTES_UNFURL_ALLOW_PRIVATE=1` (the guard itself is unit-tested
+//! set `UNFURL_ALLOW_PRIVATE=1` (the guard itself is unit-tested
 //! in `src/unfurl.rs`, no network needed).
 
 use std::sync::Arc;
@@ -47,7 +47,7 @@ async fn spawn_og_server() -> (String, Arc<AtomicUsize>) {
 fn allow_private_fetch() {
     // Safe: no other test reads this env var, and the unfurl endpoint tests all
     // want it set. Process-global by nature of env.
-    unsafe { std::env::set_var("STICKY_NOTES_UNFURL_ALLOW_PRIVATE", "1") };
+    unsafe { std::env::set_var("UNFURL_ALLOW_PRIVATE", "1") };
 }
 
 #[tokio::test]

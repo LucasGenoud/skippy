@@ -36,12 +36,12 @@ async fn load_file_secret(repo: &dyn Repository) -> anyhow::Result<Vec<u8>> {
 }
 
 /// Resolve the index.html to serve as the SPA fallback. When
-/// STICKY_NOTES_PUBLIC_URL is set, inject it as `window.stickyNotesApiBase`
+/// PUBLIC_URL is set, inject it as `window.stickyNotesApiBase`
 /// into a runtime copy so the web app targets that backend without a rebuild;
 /// otherwise serve the original file untouched.
 fn serve_index_path(web_dir: &str) -> PathBuf {
     let index = Path::new(web_dir).join("index.html");
-    let url = match std::env::var("STICKY_NOTES_PUBLIC_URL") {
+    let url = match std::env::var("PUBLIC_URL") {
         Ok(u) if !u.trim().is_empty() => u.trim().trim_end_matches('/').to_string(),
         _ => return index,
     };
@@ -51,7 +51,7 @@ fn serve_index_path(web_dir: &str) -> PathBuf {
     };
     let injected = inject_api_base(&html, &url);
     // Namespace the temp copy by a hash of the URL so two instances on one host
-    // (different STICKY_NOTES_PUBLIC_URL) can't clobber each other's file.
+    // (different PUBLIC_URL) can't clobber each other's file.
     let tag = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -90,12 +90,12 @@ fn inject_api_base(html: &str, url: &str) -> String {
 }
 
 /// Semantic search wiring: an external OpenAI-compatible embeddings API plus
-/// the built-in sqlite-vec index. Enabled by STICKY_NOTES_EMBED_URL; unset or
+/// the built-in sqlite-vec index. Enabled by EMBED_URL; unset or
 /// unreachable disables search gracefully, leaving the rest of the app
 /// unaffected.
 async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
     let Some(config) = EmbedConfig::from_env() else {
-        println!("semantic search disabled (set STICKY_NOTES_EMBED_URL to enable)");
+        println!("semantic search disabled (set EMBED_URL to enable)");
         return None;
     };
     let url = config.base_url.clone();
@@ -126,14 +126,14 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
     Some(Arc::new(SearchService::new(embedder, Arc::new(index))))
 }
 
-/// Attachment blob storage wiring, from STICKY_NOTES_STORAGE:
-/// - "disk" (default): flat files under STICKY_NOTES_UPLOADS.
+/// Attachment blob storage wiring, from STORAGE:
+/// - "disk" (default): flat files under UPLOADS.
 /// - "s3": one installation-wide bucket in any S3-compatible store (the bundled
 ///   docker-compose runs Garage). Unlike the optional services this is a hard
 ///   requirement once selected, so missing config fails startup instead of
 ///   degrading.
 fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
-    let storage = std::env::var("STICKY_NOTES_STORAGE").unwrap_or_default();
+    let storage = std::env::var("STORAGE").unwrap_or_default();
     match storage.as_str() {
         "" | "disk" => {
             println!("file storage: local disk at {uploads}");
@@ -142,16 +142,16 @@ fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
         "s3" => {
             let require = |key: &str| {
                 std::env::var(key).map_err(|_| {
-                    anyhow::anyhow!("STICKY_NOTES_STORAGE=s3 requires {key} to be set")
+                    anyhow::anyhow!("STORAGE=s3 requires {key} to be set")
                 })
             };
             let cfg = S3Config {
-                url: require("STICKY_NOTES_S3_URL")?,
-                region: std::env::var("STICKY_NOTES_S3_REGION")
+                url: require("S3_URL")?,
+                region: std::env::var("S3_REGION")
                     .unwrap_or_else(|_| "garage".to_string()),
-                access_key: require("STICKY_NOTES_S3_ACCESS_KEY")?,
-                secret_key: require("STICKY_NOTES_S3_SECRET_KEY")?,
-                bucket_prefix: std::env::var("STICKY_NOTES_S3_BUCKET_PREFIX")
+                access_key: require("S3_ACCESS_KEY")?,
+                secret_key: require("S3_SECRET_KEY")?,
+                bucket_prefix: std::env::var("S3_BUCKET_PREFIX")
                     .unwrap_or_else(|_| "sticky-notes-".to_string()),
             };
             println!(
@@ -160,14 +160,14 @@ fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
             );
             Ok(Arc::new(S3Store::new(cfg)?))
         }
-        other => anyhow::bail!("unknown STICKY_NOTES_STORAGE '{other}' (expected 'disk' or 's3')"),
+        other => anyhow::bail!("unknown STORAGE '{other}' (expected 'disk' or 's3')"),
     }
 }
 
 /// Audio transcription wiring: a self-hosted Whisper service, enabled by
-/// STICKY_NOTES_WHISPER_URL. Unset or unreachable -> feature stays off.
+/// WHISPER_URL. Unset or unreachable -> feature stays off.
 async fn init_transcription() -> Option<Arc<dyn Transcriber>> {
-    let url = std::env::var("STICKY_NOTES_WHISPER_URL").ok()?;
+    let url = std::env::var("WHISPER_URL").ok()?;
     match WhisperService::connect(&url).await {
         Ok(service) => {
             println!("audio transcription: whisper at {url}");
@@ -186,8 +186,8 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("sticky-notes-server does not accept command-line arguments (got '{argument}')");
     }
     let db_path =
-        std::env::var("STICKY_NOTES_DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
-    let uploads = std::env::var("STICKY_NOTES_UPLOADS").unwrap_or_else(|_| "uploads".to_string());
+        std::env::var("DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
+    let uploads = std::env::var("UPLOADS").unwrap_or_else(|_| "uploads".to_string());
     // Swap point: implement `Repository` for another database and change
     // this constructor.
     let repo = Arc::new(SqliteRepository::connect(&db_path).await?);
@@ -246,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
     // Due reminders push to each user's configured channels (ntfy, Telegram).
     sticky_notes_server::notify::spawn_reminder_scheduler(state.clone());
 
-    let cors_origin = std::env::var("STICKY_NOTES_PUBLIC_URL")
+    let cors_origin = std::env::var("PUBLIC_URL")
         .ok()
         .filter(|url| !url.trim().is_empty())
         .map(|url| cors_origin_from_public_url(&url))
@@ -255,10 +255,10 @@ async fn main() -> anyhow::Result<()> {
 
     // If the Flutter web build exists, serve it so the whole app runs off one binary.
     let web_dir =
-        std::env::var("STICKY_NOTES_WEB").unwrap_or_else(|_| "../app/build/web".to_string());
+        std::env::var("WEB").unwrap_or_else(|_| "../app/build/web".to_string());
     if Path::new(&web_dir).join("index.html").exists() {
         // A self-hoster can pin the backend URL browsers should use via
-        // STICKY_NOTES_PUBLIC_URL (e.g. behind a reverse proxy on :443). We
+        // PUBLIC_URL (e.g. behind a reverse proxy on :443). We
         // stamp it into a runtime copy of index.html as `window.stickyNotesApiBase`
         // so the app reads it without a rebuild; unset ⇒ serve the file as-is
         // and the app falls back to same-origin.
@@ -273,7 +273,7 @@ async fn main() -> anyhow::Result<()> {
         println!("serving web app from {web_dir}");
     }
 
-    let addr = std::env::var("STICKY_NOTES_ADDR").unwrap_or_else(|_| "0.0.0.0:8787".to_string());
+    let addr = std::env::var("ADDR").unwrap_or_else(|_| "0.0.0.0:8787".to_string());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("sticky-notes-server listening on http://{addr} (db: {db_path})");
     axum::serve(listener, app).await?;

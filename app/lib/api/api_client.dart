@@ -260,7 +260,7 @@ class ApiClient extends _ApiTransport implements Api {
   static const requestTimeout = Duration(seconds: 15);
 
   /// Resolution order: --dart-define=API_BASE (compile-time), then the URL the
-  /// server injected into the page (STICKY_NOTES_PUBLIC_URL env var), then
+  /// server injected into the page (PUBLIC_URL env var), then
   /// same-origin when the app is served by the Rust binary itself, then the
   /// local dev default.
   static String defaultBaseUrl() {

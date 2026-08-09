@@ -17,11 +17,20 @@ optimistic, offline-capable edits.
 
 ## Screenshots
 
-<p align="center">
-  <img src="docs/screenshots/skippy-desktop-card.png" alt="Skippy desktop notes grid" width="48%">
-  <img src="docs/screenshots/skippy-ios-card-editor.png" alt="Skippy mobile card editor" width="24%">
-  <img src="docs/screenshots/skippy-ios-search.png" alt="Skippy mobile note search" width="24%">
-</p>
+<table>
+  <tr>
+    <td><img src="docs/screenshots/skippy-desktop-masonry.png" alt="Skippy desktop masonry notes grid with one colored card" width="100%"></td>
+    <td><img src="docs/screenshots/skippy-desktop-board-features.png" alt="Skippy desktop board mode" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/skippy-desktop-search-features.png" alt="Skippy desktop note search" width="100%"></td>
+    <td><img src="docs/screenshots/skippy-desktop-markdown-edit.png" alt="Skippy desktop Markdown note editor" width="100%"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/skippy-android-home-mockup.png" alt="Skippy Android Pixel emulator notes grid" width="100%"></td>
+    <td><img src="docs/screenshots/skippy-iphone-editor-mockup.png" alt="Skippy iPhone card editor" width="100%"></td>
+  </tr>
+</table>
 
 The app is deliberately out of scope for drawings, OCR, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.
@@ -34,13 +43,13 @@ Generate credentials before the first start. Copy each output line into `.env`:
 access_key="GK$(openssl rand -hex 16)"
 secret_key="$(openssl rand -hex 32)"
 printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
-printf 'STICKY_NOTES_S3_ACCESS_KEY=%s\n' "$access_key"
+printf 'S3_ACCESS_KEY=%s\n' "$access_key"
 printf 'GARAGE_DEFAULT_ACCESS_KEY=%s\n' "$access_key"
-printf 'STICKY_NOTES_S3_SECRET_KEY=%s\n' "$secret_key"
+printf 'S3_SECRET_KEY=%s\n' "$secret_key"
 printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 ```
 
-Keep `.env` private. Keep matching `STICKY_NOTES_S3_*` and `GARAGE_DEFAULT_*`
+Keep `.env` private. Keep matching `S3_*` and `GARAGE_DEFAULT_*`
 values unchanged after Garage setup.
 
 ```sh
@@ -58,11 +67,11 @@ database when installing a schema revision.
 Disk storage is the default. To use the bundled Garage service instead:
 
 ```sh
-STICKY_NOTES_STORAGE=s3 docker compose up -d
+STORAGE=s3 docker compose up -d
 ```
 
-Compose requires `GARAGE_RPC_SECRET`, `STICKY_NOTES_S3_ACCESS_KEY`,
-`STICKY_NOTES_S3_SECRET_KEY`, `GARAGE_DEFAULT_ACCESS_KEY`, and
+Compose requires `GARAGE_RPC_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
+`GARAGE_DEFAULT_ACCESS_KEY`, and
 `GARAGE_DEFAULT_SECRET_KEY` in `.env`; no default credentials are provided.
 The S3 access and secret values must match their corresponding Garage values.
 Choose one attachment backend per deployment; switching does not migrate
@@ -84,23 +93,23 @@ deployment.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `STICKY_NOTES_ADDR` | `0.0.0.0:8787` | Listen address |
-| `STICKY_NOTES_DB` | `sticky_notes.db` | SQLite path (`/data/sticky_notes.db` in Docker) |
-| `STICKY_NOTES_UPLOADS` | `uploads` | Disk attachment directory |
-| `STICKY_NOTES_PUBLIC_URL` | unset | Browser API URL and allowed CORS origin |
-| `STICKY_NOTES_STORAGE` | `disk` | `disk` or `s3` |
-| `STICKY_NOTES_WHISPER_URL` | unset | Whisper service URL; Docker sets it to `http://whisper:9000` |
-| `STICKY_NOTES_EMBED_URL` | unset | OpenAI-compatible embeddings URL; enables semantic search and chat |
-| `STICKY_NOTES_EMBED_MODEL` | `bge-m3` | Embedding model |
-| `STICKY_NOTES_EMBED_API_KEY` | unset | Embedding service bearer token |
-| `STICKY_NOTES_S3_URL` | unset | Required when storage is `s3` |
-| `STICKY_NOTES_S3_ACCESS_KEY` | unset | Required when storage is `s3` |
-| `STICKY_NOTES_S3_SECRET_KEY` | unset | Required when storage is `s3` |
-| `STICKY_NOTES_S3_REGION` | `garage` | S3 signing region |
-| `STICKY_NOTES_S3_BUCKET_PREFIX` | `sticky-notes-` | Prefix for per-user buckets |
-| `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | off | Allow user-configured AI/notification URLs on private networks |
-| `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | off | Allow link previews for private/loopback hosts |
-| `STICKY_NOTES_TELEGRAM_API` | `https://api.telegram.org` | Telegram API base URL |
+| `ADDR` | `0.0.0.0:8787` | Listen address |
+| `DB` | `sticky_notes.db` | SQLite path (`/data/sticky_notes.db` in Docker) |
+| `UPLOADS` | `uploads` | Disk attachment directory |
+| `PUBLIC_URL` | unset | Browser API URL and allowed CORS origin |
+| `STORAGE` | `disk` | `disk` or `s3` |
+| `WHISPER_URL` | unset | Whisper service URL; Docker sets it to `http://whisper:9000` |
+| `EMBED_URL` | unset | OpenAI-compatible embeddings URL; enables semantic search and chat |
+| `EMBED_MODEL` | `bge-m3` | Embedding model |
+| `EMBED_API_KEY` | unset | Embedding service bearer token |
+| `S3_URL` | unset | Required when storage is `s3` |
+| `S3_ACCESS_KEY` | unset | Required when storage is `s3` |
+| `S3_SECRET_KEY` | unset | Required when storage is `s3` |
+| `S3_REGION` | `garage` | S3 signing region |
+| `S3_BUCKET_PREFIX` | `sticky-notes-` | Prefix for per-user buckets |
+| `ALLOW_PRIVATE_USER_ENDPOINTS` | off | Allow user-configured AI/notification URLs on private networks |
+| `UNFURL_ALLOW_PRIVATE` | off | Allow link previews for private/loopback hosts |
+| `TELEGRAM_API` | `https://api.telegram.org` | Telegram API base URL |
 
 LLM providers are configured per user in Settings. The server does not use
 LLM environment variables.
@@ -112,19 +121,19 @@ the shell or `.env`; optional entries are commented in `docker-compose.yml`.
 
 | Service | Variable | Compose value or host input | Purpose |
 | --- | --- | --- | --- |
-| server | `STICKY_NOTES_PUBLIC_URL` | host/.env; empty by default | Public browser URL and allowed CORS origin. |
-| server | `STICKY_NOTES_EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
-| server | `STICKY_NOTES_EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
-| server | `STICKY_NOTES_EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
-| server | `STICKY_NOTES_WHISPER_URL` | `http://whisper:9000` | Bundled Whisper service URL. |
-| server | `STICKY_NOTES_STORAGE` | host/.env; `disk` by default | Attachment backend: `disk` or `s3`. |
-| server | `STICKY_NOTES_S3_URL` | `http://garage:3900` | Bundled Garage S3 endpoint. |
-| server | `STICKY_NOTES_S3_REGION` | `garage` | S3 signing region. |
-| server | `STICKY_NOTES_S3_ACCESS_KEY` | required host/.env value | S3 access key; must match Garage’s default access key. |
-| server | `STICKY_NOTES_S3_SECRET_KEY` | required host/.env value | S3 secret; must match Garage’s default secret. |
-| server | `STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
-| server (optional) | `STICKY_NOTES_UNFURL_ALLOW_PRIVATE` | commented example: `1` | Allows link previews for private/loopback hosts. |
-| server (optional) | `STICKY_NOTES_TELEGRAM_API` | commented example: `https://api.telegram.org` | Telegram API base URL. |
+| server | `PUBLIC_URL` | host/.env; empty by default | Public browser URL and allowed CORS origin. |
+| server | `EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
+| server | `EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
+| server | `EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
+| server | `WHISPER_URL` | `http://whisper:9000` | Bundled Whisper service URL. |
+| server | `STORAGE` | host/.env; `disk` by default | Attachment backend: `disk` or `s3`. |
+| server | `S3_URL` | `http://garage:3900` | Bundled Garage S3 endpoint. |
+| server | `S3_REGION` | `garage` | S3 signing region. |
+| server | `S3_ACCESS_KEY` | required host/.env value | S3 access key; must match Garage’s default access key. |
+| server | `S3_SECRET_KEY` | required host/.env value | S3 secret; must match Garage’s default secret. |
+| server | `ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
+| server (optional) | `UNFURL_ALLOW_PRIVATE` | commented example: `1` | Allows link previews for private/loopback hosts. |
+| server (optional) | `TELEGRAM_API` | commented example: `https://api.telegram.org` | Telegram API base URL. |
 | whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |
 | whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
 | whisper (GPU) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |

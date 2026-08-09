@@ -33,9 +33,9 @@ use crate::store::Repository;
 use crate::ws::Hub;
 
 /// Server build identifier shown by the client's Settings page. Docker builds
-/// stamp this with `STICKY_NOTES_SERVER_VERSION`; local and test builds use an
+/// stamp this with `SERVER_VERSION`; local and test builds use an
 /// explicit SemVer development version without extra environment setup.
-pub const SERVER_VERSION: &str = match option_env!("STICKY_NOTES_SERVER_VERSION") {
+pub const SERVER_VERSION: &str = match option_env!("SERVER_VERSION") {
     Some(version) if !version.is_empty() => version,
     _ => concat!(env!("CARGO_PKG_VERSION"), "-dev+local"),
 };
@@ -53,7 +53,7 @@ pub struct AppState {
     pub repo: Arc<dyn Repository>,
     pub hub: Hub,
     /// Attachment blob storage, local disk or S3, chosen in `main` from
-    /// `STICKY_NOTES_STORAGE`.
+    /// `STORAGE`.
     pub files: Arc<dyn FileStore>,
     /// Present when semantic search is enabled.
     pub search: Option<Arc<search::SearchService>>,
@@ -158,7 +158,7 @@ pub fn build_app(state: AppState) -> Router {
 }
 
 /// Build the API router with an optional browser-origin allow-list. The
-/// production binary supplies the origin derived from `STICKY_NOTES_PUBLIC_URL`.
+/// production binary supplies the origin derived from `PUBLIC_URL`.
 /// Tests and local development without that setting retain permissive CORS.
 pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<HeaderValue>) -> Router {
     let api = Router::new()
@@ -291,10 +291,10 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
 pub fn cors_origin_from_public_url(raw: &str) -> anyhow::Result<HeaderValue> {
     let url = reqwest::Url::parse(raw.trim())?;
     if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
-        anyhow::bail!("STICKY_NOTES_PUBLIC_URL must be an absolute http(s) URL");
+        anyhow::bail!("PUBLIC_URL must be an absolute http(s) URL");
     }
     HeaderValue::try_from(url.origin().ascii_serialization())
-        .map_err(|_| anyhow::anyhow!("STICKY_NOTES_PUBLIC_URL contains an invalid origin"))
+        .map_err(|_| anyhow::anyhow!("PUBLIC_URL contains an invalid origin"))
 }
 
 #[cfg(test)]

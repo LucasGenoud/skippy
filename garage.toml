@@ -1,5 +1,5 @@
 # Configuration for the bundled Garage object store, attachment storage when
-# STICKY_NOTES_STORAGE=s3 in docker-compose.yml. Bootstrap is automatic: the
+# STORAGE=s3 in docker-compose.yml. Bootstrap is automatic: the
 # container runs `garage server --single-node --default-bucket`, which
 # initializes the cluster layout on first start and imports the S3 access key
 # from the GARAGE_DEFAULT_* environment variables. docker-compose.yml requires

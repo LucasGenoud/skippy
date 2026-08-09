@@ -48,16 +48,16 @@ pub struct EmbedConfig {
 }
 
 impl EmbedConfig {
-    /// Read the config from `STICKY_NOTES_EMBED_*`. `None` (no URL set)
+    /// Read the config from `EMBED_*`. `None` (no URL set)
     /// disables semantic search entirely.
     pub fn from_env() -> Option<Self> {
-        let base_url = non_empty_env("STICKY_NOTES_EMBED_URL")?;
+        let base_url = non_empty_env("EMBED_URL")?;
         Some(Self {
             base_url,
-            api_key: non_empty_env("STICKY_NOTES_EMBED_API_KEY").unwrap_or_default(),
+            api_key: non_empty_env("EMBED_API_KEY").unwrap_or_default(),
             // Sensible default for a self-hosted Ollama; `ollama pull bge-m3`
             // matches the model the local embedder used to run.
-            model: non_empty_env("STICKY_NOTES_EMBED_MODEL")
+            model: non_empty_env("EMBED_MODEL")
                 .unwrap_or_else(|| "bge-m3".to_string()),
         })
     }

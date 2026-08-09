@@ -1,6 +1,6 @@
 # Full stack: server, Whisper, Garage.
 # Start: docker compose up -d
-# S3: STICKY_NOTES_STORAGE=s3 docker compose up -d
+# S3: STORAGE=s3 docker compose up -d
 services:
   server:
     build: .
@@ -8,20 +8,20 @@ services:
     ports:
       - "8787:8787"
     environment:
-      STICKY_NOTES_PUBLIC_URL: ${STICKY_NOTES_PUBLIC_URL:-}
-      STICKY_NOTES_EMBED_URL: ${STICKY_NOTES_EMBED_URL:-}
-      STICKY_NOTES_EMBED_MODEL: ${STICKY_NOTES_EMBED_MODEL:-bge-m3}
-      STICKY_NOTES_EMBED_API_KEY: ${STICKY_NOTES_EMBED_API_KEY:-}
-      STICKY_NOTES_WHISPER_URL: http://whisper:9000
-      STICKY_NOTES_STORAGE: ${STICKY_NOTES_STORAGE:-disk}
-      STICKY_NOTES_S3_URL: http://garage:3900
-      STICKY_NOTES_S3_REGION: garage
-      STICKY_NOTES_S3_ACCESS_KEY: ${STICKY_NOTES_S3_ACCESS_KEY:?Set STICKY_NOTES_S3_ACCESS_KEY in .env}
-      STICKY_NOTES_S3_SECRET_KEY: ${STICKY_NOTES_S3_SECRET_KEY:?Set STICKY_NOTES_S3_SECRET_KEY in .env}
-      STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS: ${STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      WHISPER_URL: http://whisper:9000
+      STORAGE: ${STORAGE:-disk}
+      S3_URL: http://garage:3900
+      S3_REGION: garage
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
       # Link preview/Telegram:
-      # STICKY_NOTES_UNFURL_ALLOW_PRIVATE: "1"
-      # STICKY_NOTES_TELEGRAM_API: https://api.telegram.org
+      # UNFURL_ALLOW_PRIVATE: "1"
+      # TELEGRAM_API: https://api.telegram.org
     volumes:
       - app_data:/data
     depends_on:

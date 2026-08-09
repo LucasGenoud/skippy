@@ -60,7 +60,7 @@ pub fn verify_file_access(secret: &[u8], attachment_id: &str, exp: i64, sig: &st
 
 /// Attachment blob storage. Kept deliberately separate from
 /// [`crate::store::Repository`]: object storage is its own swap point, and
-/// `main` picks the implementation from `STICKY_NOTES_STORAGE`.
+/// `main` picks the implementation from `STORAGE`.
 ///
 /// Attachment ids are globally unique and relational ownership flows through
 /// attachment -> note -> workspace. The blob layer needs no second ownership
@@ -124,7 +124,7 @@ impl FileStore for DiskStore {
 // ---------------------------------------------------------------------------
 // S3 backend
 
-/// Connection settings for [`S3Store`], read from `STICKY_NOTES_S3_*` env vars
+/// Connection settings for [`S3Store`], read from `S3_*` env vars
 /// in `main`. Works against any S3-compatible endpoint; the bundled
 /// docker-compose wires it to a Garage instance.
 pub struct S3Config {

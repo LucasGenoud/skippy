@@ -1,6 +1,6 @@
 //! Audio transcription: recorded clips are transcribed locally (no external
 //! AI services) by a self-hosted Whisper container. Optional and enabled the
-//! same way as [`crate::search`], set `STICKY_NOTES_WHISPER_URL` and the
+//! same way as [`crate::search`], set `WHISPER_URL` and the
 //! feature turns on; leave it unset (or unreachable) and it stays off,
 //! gracefully, without affecting the rest of the app.
 //!

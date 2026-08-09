@@ -32,7 +32,7 @@ impl ResolvedHttpUrl {
 
 pub(crate) fn allow_private_user_endpoints() -> bool {
     matches!(
-        std::env::var("STICKY_NOTES_ALLOW_PRIVATE_USER_ENDPOINTS")
+        std::env::var("ALLOW_PRIVATE_USER_ENDPOINTS")
             .ok()
             .as_deref(),
         Some("1") | Some("true") | Some("yes") | Some("on")

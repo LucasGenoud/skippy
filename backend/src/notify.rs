@@ -251,14 +251,14 @@ impl Connector for NtfyConnector {
 /// server-side coordination.
 pub struct TelegramConnector {
     client: reqwest::Client,
-    /// Bot API base; `STICKY_NOTES_TELEGRAM_API` overrides it (self-hosted
+    /// Bot API base; `TELEGRAM_API` overrides it (self-hosted
     /// bot-api servers, proxies, e2e stubs).
     base: String,
 }
 
 impl TelegramConnector {
     pub fn new(client: reqwest::Client) -> Self {
-        let base = std::env::var("STICKY_NOTES_TELEGRAM_API")
+        let base = std::env::var("TELEGRAM_API")
             .unwrap_or_else(|_| "https://api.telegram.org".to_string());
         Self {
             client,

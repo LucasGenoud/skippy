@@ -44,9 +44,9 @@ private `.env` file:
 access_key="GK$(openssl rand -hex 16)"
 secret_key="$(openssl rand -hex 32)"
 printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
-printf 'STICKY_NOTES_S3_ACCESS_KEY=%s\n' "$access_key"
+printf 'S3_ACCESS_KEY=%s\n' "$access_key"
 printf 'GARAGE_DEFAULT_ACCESS_KEY=%s\n' "$access_key"
-printf 'STICKY_NOTES_S3_SECRET_KEY=%s\n' "$secret_key"
+printf 'S3_SECRET_KEY=%s\n' "$secret_key"
 printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 ```
 

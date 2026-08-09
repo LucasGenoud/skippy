@@ -10,7 +10,7 @@
 //! Because the server fetches user-supplied URLs, `validate_public_http_url`
 //! is an SSRF guard: it rejects loopback/private/link-local addresses (and
 //! resolves DNS so a public hostname can't point at an internal IP). The env
-//! `STICKY_NOTES_UNFURL_ALLOW_PRIVATE=1` disables it (self-hosters unfurling
+//! `UNFURL_ALLOW_PRIVATE=1` disables it (self-hosters unfurling
 //! internal links; also used by the e2e/localhost tests).
 
 use std::collections::HashSet;
@@ -73,7 +73,7 @@ fn client(target: &ParsedUrl) -> anyhow::Result<reqwest::Client> {
 /// Whether the SSRF guard is disabled by env. Read per-call so tests can set it.
 pub fn allow_private() -> bool {
     matches!(
-        std::env::var("STICKY_NOTES_UNFURL_ALLOW_PRIVATE")
+        std::env::var("UNFURL_ALLOW_PRIVATE")
             .ok()
             .as_deref(),
         Some("1") | Some("true") | Some("yes") | Some("on")
