@@ -25,6 +25,7 @@ import 'reminder_picker.dart';
 import 'share_dialog.dart';
 import 'transcribing_indicator.dart';
 import '../util/highlight.dart';
+import '../util/keyboard.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/location_geofences.dart';
@@ -101,6 +102,7 @@ class _NoteTileState extends State<NoteTile> {
           note.id,
           selection.locationId!,
           selection.locationTrigger!,
+          repeats: selection.locationRepeats,
         )) {
           showAppSnack(
             'You can have up to 20 active location reminders.',
@@ -139,6 +141,9 @@ class _NoteTileState extends State<NoteTile> {
   }
 
   Future<void> _addImage() async {
+    // The picker is a native screen; anything still focused behind it (the
+    // search field, a quick-add composer) comes back with the keyboard up.
+    dismissKeyboard();
     final store = context.read<NotesStore>();
     try {
       final picked = await pickNoteImage(context);
@@ -169,7 +174,29 @@ class _NoteTileState extends State<NoteTile> {
   void _moveToWorkspace() => MoveToWorkspaceSheet.show(context, widget.note.id);
 
   void _duplicate() {
-    context.read<NotesStore>().duplicate(widget.note.id);
+    final copy = context.read<NotesStore>().duplicate(widget.note.id);
+    if (copy == null) return;
+    // The copy lands at the front of the grid, which is not necessarily where
+    // you are looking, so name it and offer the way in. Opening it outright
+    // would get in the way of duplicating a few notes in a row.
+    showAppSnack(
+      'Duplicated as “${copy.title}”',
+      icon: Icons.copy_all_outlined,
+      actionLabel: 'Open',
+      onAction: () {
+        if (!mounted) return;
+        openNoteEditor(
+          context,
+          noteId: copy.id,
+          sourceRect: morphSourceRect(context),
+          openFullscreen: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => EditorScreen(noteId: copy.id),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _copyToClipboard() async {
@@ -489,7 +516,7 @@ class _NoteCardContent extends StatelessWidget {
       final reminder = s.locationReminderForNote(note.id);
       final location = s.savedLocationById(reminder?.locationId);
       if (reminder == null || location == null) return null;
-      return '${reminder.trigger.label} · ${location.name}';
+      return '${reminder.label} · ${location.name}';
     });
 
     final visibleItems = note.items

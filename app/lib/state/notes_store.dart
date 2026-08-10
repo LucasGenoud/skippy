@@ -1451,17 +1451,21 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
-  /// "Duplicate": clone content into a fresh note at the front of the grid.
+  /// "Duplicate": clone content into a fresh note at the front of the grid,
+  /// and return it so the caller can switch to what it just made.
   /// Attachments and collaborators intentionally stay behind.
-  void duplicate(String id) {
+  ///
+  /// The copy is titled "Copy …" so the two are never confused in the grid;
+  /// an untitled note's copy is simply "Copy".
+  Note? duplicate(String id) {
     final source = noteById(id);
-    if (source == null) return;
+    if (source == null) return null;
     final now = DateTime.now();
     final copy = Note(
       id: _uuid.v4(),
       workspaceId: source.workspaceId,
       kind: source.kind,
-      title: source.title,
+      title: copyTitle(source.title),
       content: source.content,
       items: [
         for (final item in source.items)
@@ -1487,6 +1491,7 @@ class NotesStore extends ChangeNotifier {
         ),
       );
     }
+    return copy;
   }
 
   /// Flush pending edits when an editor closes. Returns true when the note

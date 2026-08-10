@@ -546,7 +546,7 @@ void main() {
         await tester.pumpAndSettle();
         final all = store.notesFor(ViewSelection.notes, '').others;
         expect(all.length, 2);
-        expect(all.firstWhere((n) => n.id != 'n1').title, 'Groceries');
+        expect(all.firstWhere((n) => n.id != 'n1').title, 'Groceries (copy)');
         await flushTimers(tester);
       },
     );
@@ -1271,6 +1271,65 @@ void main() {
       expect(find.text('Open note'), findsOneWidget);
     });
 
+    testWidgets('adding media puts the keyboard away before the picker', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: null)));
+      await tester.pump();
+
+      await tester.tap(find.widgetWithText(TextField, 'Note'));
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      // The picker is a native screen. A field left focused across it comes
+      // back with the keyboard up, and it then survives the editor closing.
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.image_outlined));
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isFalse);
+
+      // Back out of the camera/gallery sheet the picker opened.
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(195, 40));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isFalse);
+      await flushTimers(tester);
+    });
+
+    testWidgets('duplicating carries on in the copy, not the original', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Recipe', content: 'flour');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Note actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Duplicate'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextField, 'Recipe (copy)'), findsOneWidget);
+
+      // Typing now belongs to the copy; the original keeps what it had.
+      await tester.enterText(
+        find.widgetWithText(TextField, 'flour'),
+        'flour and sugar',
+      );
+      await tester.pump();
+
+      final notes = store.notesFor(ViewSelection.notes, '').others;
+      expect(notes, hasLength(2));
+      expect(store.noteById('n1')!.content, 'flour');
+      final copy = notes.firstWhere((note) => note.id != 'n1');
+      expect(copy.title, 'Recipe (copy)');
+      expect(copy.content, 'flour and sugar');
+      await flushTimers(tester);
+    });
+
     testWidgets('markdown opens in preview and tapping edits source', (
       tester,
     ) async {
@@ -1415,10 +1474,7 @@ void main() {
       expect(archive, findsOneWidget);
       // In that order, immediately left of the menu they were promoted out of.
       expect(tester.getCenter(copy).dx, lessThan(tester.getCenter(archive).dx));
-      expect(
-        tester.getCenter(archive).dx,
-        lessThan(tester.getCenter(menu).dx),
-      );
+      expect(tester.getCenter(archive).dx, lessThan(tester.getCenter(menu).dx));
       // They are in the app bar, not the bottom bar.
       expect(
         tester.getRect(find.byType(AppBar)).contains(tester.getCenter(copy)),
@@ -1450,7 +1506,10 @@ void main() {
 
       bool noteFieldHasFocus() => tester
           .widgetList<EditableText>(find.byType(EditableText))
-          .any((field) => field.controller.text == 'body' && field.focusNode.hasFocus);
+          .any(
+            (field) =>
+                field.controller.text == 'body' && field.focusNode.hasFocus,
+          );
       int focusedFieldCount() => tester
           .widgetList<EditableText>(find.byType(EditableText))
           .where((field) => field.focusNode.hasFocus)

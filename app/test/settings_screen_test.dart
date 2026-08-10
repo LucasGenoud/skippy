@@ -14,6 +14,7 @@ import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/util/backup.dart';
 import 'package:skippy/util/app_version.dart';
 import 'package:skippy/widgets/settings/export_section.dart';
+import 'package:skippy/widgets/settings/location_map_picker.dart';
 
 import 'fake_api.dart';
 
@@ -302,6 +303,10 @@ void main() {
     await tester.ensureVisible(find.text('Add saved location'));
     await tester.tap(find.text('Add saved location'));
     await tester.pumpAndSettle();
+
+    // The place is picked on a map; the coordinate fields are the precise
+    // way to say the same thing.
+    expect(find.byType(LocationMapPicker), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Home');
     await tester.enterText(

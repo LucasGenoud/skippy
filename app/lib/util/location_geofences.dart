@@ -14,6 +14,7 @@ import 'reminder_schedule.dart';
 
 const String _metadataKey = 'skippy_location_geofence_metadata';
 const String _firedKey = 'skippy_location_geofence_fired';
+const String _repeatFiredKey = 'skippy_location_geofence_repeat_fired';
 const String _channelId = 'location_reminders';
 
 /// Runs in the plugin's background isolate, including when the app was
@@ -37,6 +38,7 @@ Future<void> locationGeofenceTriggered(GeofenceCallbackParams params) async {
     ),
   );
 
+  final recent = _readRepeatFires(prefs);
   for (final geofence in params.geofences) {
     final raw = metadata[geofence.id];
     if (raw is! Map<String, dynamic>) continue;
@@ -50,12 +52,26 @@ Future<void> locationGeofenceTriggered(GeofenceCallbackParams params) async {
       GeofenceEvent.exit => expected == LocationReminderTrigger.leave,
       GeofenceEvent.dwell => false,
     };
-    if (!matches || fired.contains(noteId)) continue;
+    if (!matches) continue;
+    final repeats = raw['repeats'] == true;
 
-    fired.add(noteId);
-    metadata.remove(geofence.id);
-    await prefs.setStringList(_firedKey, fired.toList());
-    await prefs.setString(_metadataKey, jsonEncode(metadata));
+    if (repeats) {
+      // Deliberately not added to the fired list: that list is how the app
+      // learns which reminders to delete, and this one has to stay armed.
+      final now = DateTime.now();
+      if (locationReminderMuted(recent, noteId, now)) continue;
+      recent[noteId] = now.millisecondsSinceEpoch;
+      await prefs.setString(
+        _repeatFiredKey,
+        jsonEncode(prunedRepeatFires(recent, now)),
+      );
+    } else {
+      if (fired.contains(noteId)) continue;
+      fired.add(noteId);
+      metadata.remove(geofence.id);
+      await prefs.setStringList(_firedKey, fired.toList());
+      await prefs.setString(_metadataKey, jsonEncode(metadata));
+    }
 
     final place = raw['place'] as String? ?? 'saved place';
     final action = expected == LocationReminderTrigger.arrive
@@ -81,12 +97,23 @@ Future<void> locationGeofenceTriggered(GeofenceCallbackParams params) async {
       ),
     );
 
+    if (repeats) continue;
     try {
       await NativeGeofenceManager.instance.initialize();
       await NativeGeofenceManager.instance.removeGeofenceById(geofence.id);
     } catch (error) {
       debugPrint('location reminder cleanup failed: $error');
     }
+  }
+}
+
+Map<String, dynamic> _readRepeatFires(SharedPreferences prefs) {
+  try {
+    final raw = prefs.getString(_repeatFiredKey);
+    final decoded = raw == null ? null : jsonDecode(raw);
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+  } catch (_) {
+    return <String, dynamic>{};
   }
 }
 
@@ -191,6 +218,7 @@ class LocationGeofences {
         'body': reminder.body,
         'place': reminder.location.name,
         'trigger': reminder.trigger.wire,
+        'repeats': reminder.repeats,
       };
     }
     await prefs.setString(_metadataKey, jsonEncode(metadata));

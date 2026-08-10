@@ -576,8 +576,9 @@ class SettingsStore extends ChangeNotifier {
   bool setLocationReminder(
     String noteId,
     String locationId,
-    LocationReminderTrigger trigger,
-  ) {
+    LocationReminderTrigger trigger, {
+    bool repeats = false,
+  }) {
     if (savedLocationById(locationId) == null) return false;
     final replacing = locationReminderForNote(noteId) != null;
     if (!replacing && locationReminders.length >= 20) return false;
@@ -589,6 +590,7 @@ class SettingsStore extends ChangeNotifier {
           noteId: noteId,
           locationId: locationId,
           trigger: trigger,
+          repeats: repeats,
         ),
       ];
     });

@@ -1,5 +1,12 @@
 import '../models/note.dart';
 
+/// Title a duplicate carries, so the copy is never mistaken for the original
+/// in the grid, in search results, or on a home-screen widget. The marker
+/// trails the title so notes stay sorted and scanned by their own names; an
+/// untitled note's copy is titled "(copy)" rather than left blank, since the
+/// title is the only place the difference can show.
+String copyTitle(String title) => '$title (copy)'.trim();
+
 /// Converts a note's content between text, markdown, and checklist forms.
 ///
 /// The caller supplies [newItemId], keeping UUID generation out of this pure

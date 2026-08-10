@@ -6,6 +6,7 @@ import '../../state/settings_store.dart';
 import '../../util/location_geofences.dart';
 import '../../util/snack.dart';
 import '../form_dialog.dart';
+import 'location_map_picker.dart';
 
 class SavedLocationsSection extends StatelessWidget {
   const SavedLocationsSection({super.key});
@@ -84,11 +85,25 @@ class SavedLocationDialog extends StatefulWidget {
 }
 
 class _SavedLocationDialogState extends State<SavedLocationDialog> {
+  /// Where a place with no coordinates yet starts: the middle of the map,
+  /// zoomed out far enough that panning to your own part of the world is a
+  /// couple of gestures. "Use current location" is the short way there.
+  static const double _fallbackLatitude = 46.948;
+  static const double _fallbackLongitude = 7.4474;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _name;
   late final TextEditingController _latitude;
   late final TextEditingController _longitude;
   late final TextEditingController _radius;
+
+  // What the map is showing. Deliberately the last values that *parsed*, not
+  // whatever the fields currently hold: halfway through typing "46.9" the
+  // latitude reads 46, and a map that jumps to the equator and back on every
+  // keystroke is unusable.
+  late double _mapLatitude;
+  late double _mapLongitude;
+  late double _mapRadius;
   bool _locating = false;
 
   @override
@@ -96,15 +111,24 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
     super.initState();
     final location = widget.location;
     _name = TextEditingController(text: location?.name ?? '');
+    // A new place starts on the coordinates the map opens at, rather than
+    // empty: the pin is then always the thing that gets saved, and moving it
+    // is the whole edit. Nothing is saved until the dialog is submitted.
     _latitude = TextEditingController(
-      text: location?.latitude.toStringAsFixed(6) ?? '',
+      text: (location?.latitude ?? _fallbackLatitude).toStringAsFixed(6),
     );
     _longitude = TextEditingController(
-      text: location?.longitude.toStringAsFixed(6) ?? '',
+      text: (location?.longitude ?? _fallbackLongitude).toStringAsFixed(6),
     );
     _radius = TextEditingController(
       text: (location?.radiusMeters ?? 150).round().toString(),
     );
+    _mapLatitude = location?.latitude ?? _fallbackLatitude;
+    _mapLongitude = location?.longitude ?? _fallbackLongitude;
+    _mapRadius = location?.radiusMeters ?? 150;
+    _latitude.addListener(_onCoordinateTyped);
+    _longitude.addListener(_onCoordinateTyped);
+    _radius.addListener(_onCoordinateTyped);
   }
 
   @override
@@ -114,6 +138,36 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
     _longitude.dispose();
     _radius.dispose();
     super.dispose();
+  }
+
+  /// The map follows the fields as they are typed, not only on save.
+  void _onCoordinateTyped() {
+    final latitude = _parsed(_latitude, -90, 90);
+    final longitude = _parsed(_longitude, -180, 180);
+    final radius = _parsed(_radius, 50, 5000);
+    if (latitude == _mapLatitude &&
+        longitude == _mapLongitude &&
+        radius == _mapRadius) {
+      return;
+    }
+    setState(() {
+      _mapLatitude = latitude ?? _mapLatitude;
+      _mapLongitude = longitude ?? _mapLongitude;
+      _mapRadius = radius ?? _mapRadius;
+    });
+  }
+
+  double? _parsed(TextEditingController controller, double min, double max) {
+    final value = double.tryParse(controller.text.trim());
+    if (value == null || value < min || value > max) return null;
+    return value;
+  }
+
+  /// Panning the map is the same edit as typing coordinates, so it writes to
+  /// the same fields rather than keeping a second copy of the truth.
+  void _onMapMoved(({double latitude, double longitude}) point) {
+    _latitude.text = point.latitude.toStringAsFixed(6);
+    _longitude.text = point.longitude.toStringAsFixed(6);
   }
 
   String? _coordinateValidator(String? raw, double min, double max) {
@@ -203,6 +257,42 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
                 value == null || value.trim().isEmpty ? 'Enter a name' : null,
           ),
           const SizedBox(height: 12),
+          LocationMapPicker(
+            latitude: _mapLatitude,
+            longitude: _mapLongitude,
+            radiusMeters: _mapRadius,
+            onMoved: _onMapMoved,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Drag the map to put the pin on the place. The circle is '
+                  'how close you have to be.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (LocationGeofences.supported) ...[
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  key: const ValueKey('use-current-location'),
+                  tooltip: 'Use current location',
+                  onPressed: _locating ? null : _useCurrentPosition,
+                  icon: _locating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.my_location),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -246,24 +336,6 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
               return null;
             },
           ),
-          if (LocationGeofences.supported) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                key: const ValueKey('use-current-location'),
-                onPressed: _locating ? null : _useCurrentPosition,
-                icon: _locating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.my_location),
-                label: const Text('Use current location'),
-              ),
-            ),
-          ],
         ],
       ),
     ),

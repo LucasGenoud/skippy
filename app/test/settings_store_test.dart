@@ -177,7 +177,42 @@ void main() {
         other.locationReminderForNote('note-1')?.trigger,
         LocationReminderTrigger.arrive,
       );
+      expect(other.locationReminderForNote('note-1')?.repeats, isFalse);
       other.dispose();
+    });
+
+    test('a repeating reminder stays repeating across a reload', () async {
+      await settings.load();
+      final home = settings.addSavedLocation(
+        name: 'Home',
+        latitude: 46.948,
+        longitude: 7.4474,
+        radiusMeters: 150,
+      );
+      settings.setLocationReminder(
+        'note-1',
+        home.id,
+        LocationReminderTrigger.arrive,
+        repeats: true,
+      );
+      await settleSave();
+
+      final other = SettingsStore(api: api);
+      await other.load();
+      final reminder = other.locationReminderForNote('note-1');
+      expect(reminder?.repeats, isTrue);
+      expect(reminder?.label, 'Every time I arrive');
+      other.dispose();
+    });
+
+    test('a reminder saved before repeating existed stays one-shot', () {
+      final reminder = LocationReminder.fromJson({
+        'note_id': 'note-1',
+        'location_id': 'home',
+        'trigger': 'leave',
+      });
+      expect(reminder?.repeats, isFalse);
+      expect(reminder?.label, 'When I leave');
     });
 
     test('deleting a place removes reminders that reference it', () async {

@@ -62,12 +62,19 @@ class SavedLocation {
 }
 
 enum LocationReminderTrigger {
-  arrive('arrive', 'When I arrive'),
-  leave('leave', 'When I leave');
+  arrive('arrive', 'When I arrive', 'Every time I arrive'),
+  leave('leave', 'When I leave', 'Every time I leave');
 
   final String wire;
+
+  /// How a one-shot reminder on this trigger reads.
   final String label;
-  const LocationReminderTrigger(this.wire, this.label);
+
+  /// How a repeating one reads, which is a different sentence rather than the
+  /// same one with a badge: the distinction is what the reminder *does*.
+  final String repeatingLabel;
+
+  const LocationReminderTrigger(this.wire, this.label, this.repeatingLabel);
 
   static LocationReminderTrigger? fromWire(String? value) {
     for (final trigger in values) {
@@ -77,22 +84,32 @@ enum LocationReminderTrigger {
   }
 }
 
-/// One personal, one-shot location reminder attached to a note.
+/// One personal location reminder attached to a note.
+///
+/// A one-shot reminder ([repeats] false) deletes itself once it has fired;
+/// a repeating one stays armed and fires on every later crossing, which is
+/// what a standing errand ("water the plants when I get home") needs.
 class LocationReminder {
   final String noteId;
   final String locationId;
   final LocationReminderTrigger trigger;
+  final bool repeats;
 
   const LocationReminder({
     required this.noteId,
     required this.locationId,
     required this.trigger,
+    this.repeats = false,
   });
+
+  /// The reminder in words, for a chip: "Every time I arrive".
+  String get label => repeats ? trigger.repeatingLabel : trigger.label;
 
   Map<String, dynamic> toJson() => {
     'note_id': noteId,
     'location_id': locationId,
     'trigger': trigger.wire,
+    'repeats': repeats,
   };
 
   static LocationReminder? fromJson(Map<String, dynamic> json) {
@@ -106,6 +123,9 @@ class LocationReminder {
       noteId: noteId,
       locationId: locationId,
       trigger: trigger,
+      // Reminders saved before repeating existed are one-shot, which is what
+      // they have been doing all along.
+      repeats: json['repeats'] == true,
     );
   }
 }

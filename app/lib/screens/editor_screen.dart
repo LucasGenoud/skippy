@@ -17,6 +17,7 @@ import '../state/editor_history.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/home_widgets.dart';
+import '../util/keyboard.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/location_geofences.dart';
@@ -278,7 +279,8 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _edgeSwipeDismissed = false;
 
   // Undo/redo session history (see EditorHistory for the grouping rules).
-  late final EditorHistory _history;
+  // Replaced outright when the editor switches notes (duplicate).
+  late EditorHistory _history;
   bool _restoring = false;
 
   Note? get _note => _noteId == null ? null : _store.noteById(_noteId!);
@@ -572,10 +574,30 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  /// Duplicate the open note and keep editing the copy, so the next thing
+  /// typed lands in the new note rather than in the one that was copied.
   void _duplicateNote() {
     final note = _note;
     if (note == null || note.isEmpty) return;
-    _store.duplicate(note.id);
+    final copy = _store.duplicate(note.id);
+    if (copy == null) return;
+    // The original is left behind by this editor, so give it the same ending
+    // it would get from closing: a still-unsaved draft has to be materialized
+    // here, nothing else will come back for it.
+    _store.finalizeNote(note.id, retainEmpty: true);
+    _restoring = true;
+    _noteId = copy.id;
+    _titleController.text = copy.title;
+    if (!copy.isChecklist) _contentController.text = copy.content;
+    _restoring = false;
+    // Undo belongs to the note being edited; the copy starts its own session
+    // so an undo can't reach back into the original's edits.
+    _history = EditorHistory(_currentSnapshot());
+    setState(() {});
+    showAppSnack(
+      'Duplicated. You are now editing “${copy.title}”',
+      icon: Icons.copy_all_outlined,
+    );
   }
 
   Future<void> _copyNoteToClipboard() async {
@@ -727,6 +749,11 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _pickImage() async {
+    // Adding a picture is a deliberate step away from typing, and the picker
+    // it opens is a native screen: leaving a field focused across that
+    // round-trip is what leaves the keyboard stuck up over the note (and,
+    // after closing it, over the grid).
+    dismissKeyboard();
     _ensureNote();
     try {
       final picked = await pickNoteImage(context);
@@ -744,6 +771,8 @@ class _EditorScreenState extends State<EditorScreen> {
   /// Attach any files (documents, archives, audio…). Images render inline;
   /// everything else becomes a download tile.
   Future<void> _pickFile() async {
+    // Same native round-trip as [_pickImage].
+    dismissKeyboard();
     _ensureNote();
     try {
       await _uploadAll(
@@ -808,6 +837,7 @@ class _EditorScreenState extends State<EditorScreen> {
           _noteId!,
           selection.locationId!,
           selection.locationTrigger!,
+          repeats: selection.locationRepeats,
         );
         if (!added) {
           showAppSnack(
@@ -1102,7 +1132,7 @@ class _EditorScreenState extends State<EditorScreen> {
       // route finishes disposing, otherwise it lingers through the whole
       // closing animation and can stay stuck up.
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) FocusManager.instance.primaryFocus?.unfocus();
+        if (didPop) dismissKeyboard();
       },
       child: PasteFileArea(
         enabled: !trashed,
@@ -1354,7 +1384,7 @@ class _EditorScreenState extends State<EditorScreen> {
   void _dismissFromEdgeSwipe() {
     if (_edgeSwipeDismissed) return;
     _edgeSwipeDismissed = true;
-    FocusManager.instance.primaryFocus?.unfocus();
+    dismissKeyboard();
     Navigator.of(context).maybePop();
   }
 
@@ -1500,9 +1530,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 case final location?)
               InputChip(
                 avatar: const Icon(Icons.location_on_outlined, size: 16),
-                label: Text(
-                  '${locationReminder.trigger.label} · ${location.name}',
-                ),
+                label: Text('${locationReminder.label} · ${location.name}'),
                 visualDensity: VisualDensity.compact,
                 onPressed: trashed ? null : _editReminder,
                 onDeleted: trashed

@@ -238,17 +238,28 @@ void main() {
           items: [const ChecklistItem(id: 'i1', text: 'Milk', done: true)],
         );
         await store.load();
-        store.duplicate('n1');
+        final returned = store.duplicate('n1');
         final all = store.notesFor(ViewSelection.notes, '').others;
         expect(all.length, 2);
         final copy = all.firstWhere((n) => n.id != 'n1');
-        expect(copy.title, 'orig');
+        expect(returned?.id, copy.id);
+        expect(copy.title, 'orig (copy)');
         expect(copy.items.single.text, 'Milk');
         expect(copy.items.single.id, isNot('i1'));
         await settle();
         expect(api.notes.length, 2);
+        expect(api.notes[copy.id]!.title, 'orig (copy)');
       },
     );
+
+    test('an untitled note is duplicated as "(copy)"', () async {
+      api.notes['n1'] = serverNote('n1', content: 'no title here');
+      await store.load();
+      final copy = store.duplicate('n1');
+      expect(copy?.title, '(copy)');
+      expect(copy?.content, 'no title here');
+      await settle();
+    });
 
     test('convertKind maps lines to items and back', () async {
       api.notes['n1'] = serverNote('n1', content: 'Milk\n\nEggs');

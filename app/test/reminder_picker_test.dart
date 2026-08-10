@@ -243,7 +243,64 @@ void main() {
 
       expect(result?.locationId, 'home');
       expect(result?.locationTrigger, LocationReminderTrigger.leave);
+      expect(result?.locationRepeats, isFalse);
       expect(result?.at, isNull);
+    });
+
+    testWidgets('a saved place can remind on every visit, not just the next', (
+      tester,
+    ) async {
+      tester.view.physicalSize = phoneSize;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      ReminderSelection? result;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => FilledButton(
+                onPressed: () async {
+                  result = await ReminderPicker.show(
+                    context,
+                    current: null,
+                    use24hTime: true,
+                    locationSupported: true,
+                    savedLocations: const [
+                      SavedLocation(
+                        id: 'home',
+                        name: 'Home',
+                        latitude: 46.948,
+                        longitude: 7.4474,
+                      ),
+                    ],
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('At a saved location'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Every time'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Stays on the note and reminds you on every visit.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('save-location-reminder')));
+      await tester.pumpAndSettle();
+
+      expect(result?.locationRepeats, isTrue);
+      expect(result?.locationTrigger, LocationReminderTrigger.arrive);
     });
   });
 }

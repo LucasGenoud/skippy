@@ -14,20 +14,30 @@ class ReminderSelection {
   final String? locationId;
   final LocationReminderTrigger? locationTrigger;
 
+  /// Whether a location reminder fires on every crossing instead of retiring
+  /// after the first. Meaningless for a time reminder, which says the same
+  /// thing through [repeat].
+  final bool locationRepeats;
+
   const ReminderSelection.set(this.at, {this.repeat})
     : assert(at != null),
       locationId = null,
-      locationTrigger = null;
-  const ReminderSelection.location(this.locationId, this.locationTrigger)
-    : assert(locationId != null),
-      assert(locationTrigger != null),
-      at = null,
-      repeat = null;
+      locationTrigger = null,
+      locationRepeats = false;
+  const ReminderSelection.location(
+    this.locationId,
+    this.locationTrigger, {
+    this.locationRepeats = false,
+  }) : assert(locationId != null),
+       assert(locationTrigger != null),
+       at = null,
+       repeat = null;
   const ReminderSelection.clear()
     : at = null,
       repeat = null,
       locationId = null,
-      locationTrigger = null;
+      locationTrigger = null,
+      locationRepeats = false;
 }
 
 class ReminderPreset {
@@ -306,6 +316,7 @@ class _LocationReminderSheet extends StatefulWidget {
 class _LocationReminderSheetState extends State<_LocationReminderSheet> {
   late String _locationId;
   late LocationReminderTrigger _trigger;
+  late bool _repeats;
 
   @override
   void initState() {
@@ -315,6 +326,7 @@ class _LocationReminderSheetState extends State<_LocationReminderSheet> {
         ? currentId!
         : widget.locations.first.id;
     _trigger = widget.current?.trigger ?? LocationReminderTrigger.arrive;
+    _repeats = widget.current?.repeats ?? false;
   }
 
   @override
@@ -340,6 +352,35 @@ class _LocationReminderSheetState extends State<_LocationReminderSheet> {
             onSelectionChanged: (value) =>
                 setState(() => _trigger = value.first),
           ),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            key: const ValueKey('location-reminder-repeats'),
+            segments: const [
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.looks_one_outlined),
+                label: Text('Once'),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.repeat),
+                label: Text('Every time'),
+              ),
+            ],
+            selected: {_repeats},
+            showSelectedIcon: false,
+            onSelectionChanged: (value) =>
+                setState(() => _repeats = value.first),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _repeats
+                ? 'Stays on the note and reminds you on every visit.'
+                : 'Comes off the note once it has reminded you.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 12),
           RadioGroup<String>(
             groupValue: _locationId,
@@ -360,9 +401,13 @@ class _LocationReminderSheetState extends State<_LocationReminderSheet> {
           const SizedBox(height: 8),
           FilledButton.icon(
             key: const ValueKey('save-location-reminder'),
-            onPressed: () => Navigator.of(
-              context,
-            ).pop(ReminderSelection.location(_locationId, _trigger)),
+            onPressed: () => Navigator.of(context).pop(
+              ReminderSelection.location(
+                _locationId,
+                _trigger,
+                locationRepeats: _repeats,
+              ),
+            ),
             icon: const Icon(Icons.location_on_outlined),
             label: const Text('Save location reminder'),
           ),

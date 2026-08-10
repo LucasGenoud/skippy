@@ -41,10 +41,13 @@ photo is found again by the words in it. Recognition runs in the background,
 feeds both keyword and semantic search, and never blocks the upload.
 
 On Android and iOS, Settings can hold personal saved places such as Home or
-Work. A note can then raise a one-shot notification when the device arrives at
-or leaves one of those places, even while Skippy is closed. Location reminders
-require notification and background-location permission; saved coordinates
-are user settings and are never exposed to note collaborators.
+Work, each pinned on a map with the radius that counts as being there. A note
+can then raise a notification when the device arrives at or leaves one of those
+places, even while Skippy is closed, either once or on every visit. Location
+reminders require notification and background-location permission; saved
+coordinates are user settings and are never exposed to note collaborators. Map
+tiles come from OpenStreetMap and are only fetched while the place editor is
+open.
 
 The app is deliberately out of scope for drawings, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.
