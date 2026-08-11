@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../api/api_client.dart';
 import '../models/workspace.dart';
+import '../screens/workspace_settings_screen.dart';
 import '../state/notes_store.dart';
 import '../theme.dart';
 import '../util/motion.dart';
@@ -109,7 +109,7 @@ class WorkspaceMenu extends StatelessWidget {
                 enabled: active != null,
                 child: const ListTile(
                   leading: Icon(Icons.settings_outlined),
-                  title: Text('Manage workspace'),
+                  title: Text('Workspace settings'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -151,7 +151,7 @@ class WorkspaceMenu extends StatelessWidget {
                         borderRadius: kBorderRadius,
                       ),
                       child: Text(
-                        _initial(name),
+                        workspaceInitial(name),
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: scheme.onSecondaryContainer,
                         ),
@@ -182,11 +182,6 @@ class WorkspaceMenu extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _initial(String name) {
-    final trimmed = name.trim();
-    return trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
   }
 
   Future<void> _onSelected(
@@ -225,7 +220,14 @@ class WorkspaceMenu extends StatelessWidget {
   static Future<void> _manageWorkspace(
     NavigatorState navigator,
     String workspaceId,
-  ) => ManageWorkspaceDialog.show(navigator.context, workspaceId);
+  ) => navigator.push(WorkspaceSettingsScreen.route(workspaceId));
+}
+
+/// A workspace's, or a member's, first character, for the square and the
+/// avatars that stand in for them.
+String workspaceInitial(String name) {
+  final trimmed = name.trim();
+  return trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
 }
 
 /// Names a new workspace, or renames an existing one.
@@ -298,377 +300,6 @@ class _WorkspaceNameDialogState extends State<WorkspaceNameDialog> {
         FilledButton(
           onPressed: _submit,
           child: Text(creating ? 'Create' : 'Rename'),
-        ),
-      ],
-    );
-  }
-}
-
-/// Workspace settings: rename it, manage who is in it, and delete or leave.
-class ManageWorkspaceDialog extends StatefulWidget {
-  final String workspaceId;
-
-  const ManageWorkspaceDialog({super.key, required this.workspaceId});
-
-  static Future<void> show(BuildContext context, String workspaceId) =>
-      showFormDialog<void>(
-        context,
-        builder: (_) => ManageWorkspaceDialog(workspaceId: workspaceId),
-      );
-
-  @override
-  State<ManageWorkspaceDialog> createState() => _ManageWorkspaceDialogState();
-}
-
-class _ManageWorkspaceDialogState extends State<ManageWorkspaceDialog> {
-  final _controller = TextEditingController();
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _invite() async {
-    final email = _controller.text.trim();
-    if (email.isEmpty || _busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await context.read<NotesStore>().addWorkspaceMember(
-        widget.workspaceId,
-        email,
-      );
-      _controller.clear();
-    } on ApiException catch (e) {
-      _error = e.serverMessage;
-    } catch (_) {
-      _error = "Can't reach the server right now";
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
-    final workspace = store.workspaceById(widget.workspaceId);
-    if (workspace == null) {
-      return FormDialog(
-        title: const Text('Workspace'),
-        content: const Text('Workspace is gone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      );
-    }
-    final me = store.currentUserId;
-    final isOwner = workspace.isOwnedBy(me);
-    final scheme = Theme.of(context).colorScheme;
-    final noteCount = store.notesInActiveWorkspace
-        .where((note) => note.workspaceId == workspace.id && !note.trashed)
-        .length;
-
-    return FormDialog(
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(workspace.name, overflow: TextOverflow.ellipsis),
-          ),
-          if (isOwner)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: 'Rename workspace',
-              onPressed: () => WorkspaceNameDialog.rename(context, workspace),
-            ),
-        ],
-      ),
-      width: 400,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: Text('Views', style: Theme.of(context).textTheme.labelLarge),
-          ),
-          SwitchListTile(
-            dense: true,
-            secondary: const Icon(Icons.sticky_note_2_outlined),
-            title: const Text('Notes'),
-            subtitle: const Text('Grid and list view'),
-            value: workspace.notesEnabled,
-            onChanged:
-                isOwner && (!workspace.notesEnabled || workspace.boardEnabled)
-                ? (value) => store.updateWorkspaceViews(
-                    id: workspace.id,
-                    notesEnabled: value,
-                    boardEnabled: workspace.boardEnabled,
-                  )
-                : null,
-          ),
-          SwitchListTile(
-            dense: true,
-            secondary: const Icon(Icons.view_kanban_outlined),
-            title: const Text('Board'),
-            subtitle: const Text('Kanban view with columns'),
-            value: workspace.boardEnabled,
-            onChanged:
-                isOwner && (!workspace.boardEnabled || workspace.notesEnabled)
-                ? (value) => store.updateWorkspaceViews(
-                    id: workspace.id,
-                    notesEnabled: workspace.notesEnabled,
-                    boardEnabled: value,
-                  )
-                : null,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Text(
-              isOwner
-                  ? 'At least one view must stay enabled.'
-                  : 'Only the owner can change workspace views.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          ListTile(
-            dense: true,
-            leading: CircleAvatar(
-              radius: 16,
-              child: Text(WorkspaceMenu._initial(workspace.owner?.name ?? '?')),
-            ),
-            title: Text(isOwner ? 'You' : (workspace.owner?.name ?? 'Owner')),
-            subtitle: const Text('Owner'),
-          ),
-          for (final member in workspace.members)
-            ListTile(
-              dense: true,
-              leading: CircleAvatar(
-                radius: 16,
-                backgroundColor: scheme.secondaryContainer,
-                child: Text(WorkspaceMenu._initial(member.name)),
-              ),
-              title: Text(
-                member.id == me ? '${member.name} (you)' : member.name,
-              ),
-              subtitle: const Text('Member'),
-              trailing: (isOwner || member.id == me)
-                  ? IconButton(
-                      icon: Icon(member.id == me ? Icons.logout : Icons.close),
-                      tooltip: member.id == me ? 'Leave workspace' : 'Remove',
-                      onPressed: () => _remove(store, workspace, member.id),
-                    )
-                  : null,
-            ),
-          if (isOwner) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        hintText: 'Invite people by email',
-                        isDense: true,
-                        prefixIcon: Icon(Icons.person_add_alt, size: 20),
-                      ),
-                      onSubmitted: (_) => _invite(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _busy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.send),
-                          tooltip: 'Invite',
-                          onPressed: _invite,
-                        ),
-                ],
-              ),
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: scheme.error, fontSize: 13),
-                ),
-              ),
-          ],
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Text(
-              isOwner
-                  ? 'Everyone here can see and edit this workspace\'s notes and labels.'
-                  : 'Everyone here can see and edit this workspace\'s notes and labels. Only the owner can invite people.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        if (store.canDeleteWorkspace(workspace.id))
-          TextButton.icon(
-            onPressed: () => _confirmDelete(store, workspace, noteCount),
-            icon: Icon(Icons.delete_outline, color: scheme.error),
-            label: Text('Delete', style: TextStyle(color: scheme.error)),
-          )
-        else if (!isOwner)
-          TextButton.icon(
-            onPressed: () => _remove(store, workspace, me),
-            icon: const Icon(Icons.logout),
-            label: const Text('Leave'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done'),
-        ),
-      ],
-    );
-  }
-
-  void _remove(NotesStore store, Workspace workspace, String? userId) {
-    if (userId == null) return;
-    final leaving = userId == store.currentUserId;
-    store.removeWorkspaceMember(workspace.id, userId);
-    if (leaving) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  Future<void> _confirmDelete(
-    NotesStore store,
-    Workspace workspace,
-    int noteCount,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) =>
-          _DeleteWorkspaceDialog(workspace: workspace, noteCount: noteCount),
-    );
-    if (confirmed != true || !mounted) return;
-    await Motion.waitForOverlayDismissal(context);
-    if (!mounted) return;
-    store.deleteWorkspace(workspace.id);
-    if (mounted) Navigator.of(context).pop();
-    showAppSnack(
-      'Deleted "${workspace.name}"',
-      icon: Icons.delete_outline,
-      kind: SnackKind.danger,
-    );
-  }
-}
-
-/// Deleting a workspace permanently removes its notes, attachments, shared
-/// taxonomy, and roster, so the name confirmation makes the destructive scope
-/// explicit.
-class _DeleteWorkspaceDialog extends StatefulWidget {
-  final Workspace workspace;
-  final int noteCount;
-
-  const _DeleteWorkspaceDialog({
-    required this.workspace,
-    required this.noteCount,
-  });
-
-  @override
-  State<_DeleteWorkspaceDialog> createState() => _DeleteWorkspaceDialogState();
-}
-
-class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
-  final _controller = TextEditingController();
-  String _typed = '';
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  bool get _matches => _typed == widget.workspace.name;
-
-  void _submit() {
-    if (_matches) Navigator.of(context).pop(true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final noteCount = widget.noteCount;
-    final deletionMessage = switch (noteCount) {
-      0 => 'Its labels and board columns are removed. This can\'t be undone.',
-      1 =>
-        '1 note and all its attachments will be permanently deleted. '
-            'This can\'t be undone.',
-      _ =>
-        '$noteCount notes and all their attachments will be permanently '
-            'deleted. This can\'t be undone.',
-    };
-    return AlertDialog(
-      title: Text('Delete "${widget.workspace.name}"?'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(deletionMessage),
-          const SizedBox(height: 16),
-          Text.rich(
-            TextSpan(
-              text: 'Type ',
-              children: [
-                TextSpan(
-                  text: widget.workspace.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const TextSpan(text: ' to confirm.'),
-              ],
-            ),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (v) => setState(() => _typed = v),
-            onSubmitted: (_) => _submit(),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: scheme.error),
-          onPressed: _matches ? _submit : null,
-          child: const Text('Delete'),
         ),
       ],
     );

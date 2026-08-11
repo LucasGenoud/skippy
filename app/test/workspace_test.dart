@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/models/workspace.dart';
+import 'package:skippy/screens/workspace_settings_screen.dart';
+import 'package:skippy/screens/workspace_stats_screen.dart';
 import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
+import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/theme.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/workspace_menu.dart';
@@ -596,10 +601,10 @@ void main() {
 
       await tester.tap(find.byType(WorkspaceMenu));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Manage workspace'));
+      await tester.tap(find.text('Workspace settings'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+      await tester.tap(find.text('Delete workspace'));
       await tester.pumpAndSettle();
 
       expect(find.text('Delete "Work"?'), findsOneWidget);
@@ -610,7 +615,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      // The manage dialog's own invite field is still mounted underneath, so
+      // The settings page's own invite field is still mounted underneath, so
       // scope to the confirm dialog rather than grabbing the wrong TextField.
       final confirmDialog = find.ancestor(
         of: find.text('Delete "Work"?'),
@@ -636,6 +641,242 @@ void main() {
 
       expect(store.workspaceById(work), isNull);
       expect(store.noteById('a'), isNull);
+      store.dispose();
+    });
+  });
+
+  group('workspace settings', () {
+    /// Open the workspace settings page for the workspace the switcher shows.
+    Future<void> openSettings(WidgetTester tester, NotesStore store) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(WorkspaceMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Workspace settings'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the page carries the views, roster, and a stats summary', (
+      tester,
+    ) async {
+      api.workspaces[work] = const Workspace(
+        id: work,
+        name: 'Work',
+        owner: UserRef(id: 'u-me', name: 'Me Example'),
+        members: [UserRef(id: 'u-ada', name: 'Ada')],
+      );
+      api.notes['a'] = noteIn(work, 'a', title: 'work note');
+      api.notes['b'] = noteIn(work, 'b', title: 'other note');
+      api.notes['gone'] = noteIn(work, 'gone', title: 'binned', trashed: true);
+      api.labels['l1'] = const Label(id: 'l1', name: 'urgent', workspaceId: work);
+      await store.load();
+      store.setActiveWorkspace(work);
+      await openSettings(tester, store);
+
+      expect(find.widgetWithText(AppBar, 'Work'), findsOneWidget);
+      expect(find.text('Owned by you'), findsOneWidget);
+      expect(find.widgetWithText(SwitchListTile, 'Notes'), findsOneWidget);
+      expect(find.widgetWithText(SwitchListTile, 'Board'), findsOneWidget);
+      expect(find.text('Ada'), findsOneWidget);
+      // The summary counts live notes only, and agrees with the grid.
+      expect(find.text('2 notes · 1 label'), findsOneWidget);
+      store.dispose();
+    });
+
+    testWidgets('a member sees no owner controls and can leave', (
+      tester,
+    ) async {
+      api.workspaces[work] = const Workspace(
+        id: work,
+        name: 'Work',
+        owner: UserRef(id: 'u-ada', name: 'Ada'),
+        members: [UserRef(id: 'u-me', name: 'Me Example')],
+      );
+      await store.load();
+      store.setActiveWorkspace(work);
+      await openSettings(tester, store);
+
+      expect(find.text('Owned by Ada'), findsOneWidget);
+      // View switches are the owner's to change.
+      final notesSwitch = tester.widget<SwitchListTile>(
+        find.widgetWithText(SwitchListTile, 'Notes'),
+      );
+      expect(notesSwitch.onChanged, isNull);
+      expect(find.text('Only the owner can change workspace views.'),
+          findsOneWidget);
+      expect(find.text('Invite people by email'), findsNothing);
+      // Leaving, not deleting: the notes are not this member's to remove.
+      expect(find.text('Delete workspace'), findsNothing);
+
+      await tester.tap(find.text('Leave workspace'));
+      await tester.pumpAndSettle();
+      expect(store.workspaceById(work), isNull);
+      store.dispose();
+    });
+
+    testWidgets('the default workspace offers neither delete nor leave', (
+      tester,
+    ) async {
+      await store.load();
+      await openSettings(tester, store);
+
+      expect(find.text('Your default workspace'), findsOneWidget);
+      expect(find.text('Delete workspace'), findsNothing);
+      expect(find.text('Leave workspace'), findsNothing);
+      store.dispose();
+    });
+
+    testWidgets('statistics counts what the workspace holds', (tester) async {
+      final now = DateTime.now();
+      api.notes['a'] = noteIn(work, 'a', title: 'one');
+      api.notes['b'] = noteIn(work, 'b', title: 'two', pinned: true);
+      api.notes['t'] = noteIn(work, 't', title: 'binned', trashed: true);
+      api.notes['c'] = Note(
+        id: 'c',
+        workspaceId: work,
+        kind: NoteKind.checklist,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'milk', done: true),
+          ChecklistItem(id: 'i2', text: 'eggs'),
+        ],
+        createdAt: now,
+        updatedAt: now,
+        owner: const UserRef(id: 'u-me', name: 'me'),
+      );
+      // A note in another workspace must not be counted here.
+      api.notes['elsewhere'] = noteIn('w-default', 'elsewhere', title: 'nope');
+      await store.load();
+      store.setActiveWorkspace(work);
+      await openSettings(tester, store);
+
+      await tester.tap(find.text('Statistics'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AppBar, 'Statistics'), findsOneWidget);
+      // Three live notes, one in the trash, counted separately.
+      expect(find.text('Notes'), findsOneWidget);
+      expect(find.text('In trash'), findsOneWidget);
+      expect(find.text('1 of 2 items ticked'), findsOneWidget);
+      expect(find.text('Checklists'), findsWidgets);
+      store.dispose();
+    });
+
+    /// Phone, tablet, and desktop, in both themes. A layout that overflows
+    /// throws here, which is what stands in for eyeballing the page at every
+    /// size: the month bars in particular are laid out against whatever the
+    /// labels leave, and a fixed-height chart hid an overflow once already.
+    testWidgets('both pages lay out at every width and in the dark', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      for (var i = 0; i < 14; i++) {
+        api.notes['n$i'] = Note(
+          id: 'n$i',
+          workspaceId: work,
+          title: 'Note number $i with a title long enough to need wrapping',
+          kind: i.isEven ? NoteKind.text : NoteKind.checklist,
+          items: i.isOdd
+              ? [
+                  ChecklistItem(id: 'a$i', text: 'first', done: i % 3 == 0),
+                  ChecklistItem(id: 'b$i', text: 'second'),
+                ]
+              : const [],
+          labelIds: {'l1'},
+          stageId: i % 3 == 0 ? 's1' : null,
+          attachments: const [
+            Attachment(id: 'f', mime: 'image/png', size: 4096),
+          ],
+          reminderAt: i == 2 ? now : null,
+          createdAt: DateTime(now.year, now.month - (i % 12), 1 + (i % 27)),
+          updatedAt: now,
+          owner: i.isEven
+              ? const UserRef(id: 'u-me', name: 'Me Example')
+              : const UserRef(id: 'u-ada', name: 'Ada Lovelace'),
+        );
+      }
+      api.labels['l1'] = const Label(
+        id: 'l1',
+        name: 'a label with a fairly long name',
+        workspaceId: work,
+      );
+      api.stages['s1'] = const Stage(id: 's1', name: 'Doing', workspaceId: work);
+      await store.load();
+      store.setActiveWorkspace(work);
+
+      for (final size in const [
+        Size(390, 844), // phone
+        Size(834, 1112), // tablet
+        Size(1440, 900), // desktop
+      ]) {
+        for (final brightness in Brightness.values) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: buildTheme(brightness),
+              home: MultiProvider(
+                providers: [
+                  ChangeNotifierProvider.value(value: store),
+                  ChangeNotifierProvider(
+                    create: (_) => SettingsStore(api: api),
+                  ),
+                ],
+                child: WorkspaceStatsScreen(workspaceId: work),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: 'stats overflowed at $size in $brightness',
+          );
+          expect(find.text('Notes'), findsWidgets);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: buildTheme(brightness),
+              home: MultiProvider(
+                providers: [
+                  ChangeNotifierProvider.value(value: store),
+                  ChangeNotifierProvider(
+                    create: (_) => SettingsStore(api: api),
+                  ),
+                ],
+                child: WorkspaceSettingsScreen(workspaceId: work),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: 'settings overflowed at $size in $brightness',
+          );
+        }
+      }
+      store.dispose();
+    });
+
+    testWidgets('statistics says so when there is nothing to count', (
+      tester,
+    ) async {
+      await store.load();
+      store.setActiveWorkspace(work);
+      await openSettings(tester, store);
+
+      expect(find.text('0 notes · 0 labels'), findsOneWidget);
+      await tester.tap(find.text('Statistics'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Nothing to count yet. Add a note and come back.'),
+        findsOneWidget,
+      );
       store.dispose();
     });
   });

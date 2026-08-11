@@ -167,8 +167,12 @@ class NotesStore extends ChangeNotifier {
 
   /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
   /// so switching workspaces switches the whole sidebar.
-  List<Label> get labels {
-    final scope = workspaceScope;
+  List<Label> get labels => labelsInWorkspace(_activeWorkspaceId);
+
+  /// Labels filed in [workspaceId], for screens that name a workspace instead
+  /// of following the open one.
+  List<Label> labelsInWorkspace(String? workspaceId) {
+    final scope = scopeFor(workspaceId);
     return List.unmodifiable([
       for (final label in _labels)
         if (scope.containsWorkspace(label.workspaceId)) label,
@@ -178,8 +182,11 @@ class NotesStore extends ChangeNotifier {
   /// Board columns of the open workspace, left to right. Like [labels] these
   /// are workspace state, but an independent one: a note has any number of
   /// labels and at most one stage.
-  List<Stage> get stages {
-    final scope = workspaceScope;
+  List<Stage> get stages => stagesInWorkspace(_activeWorkspaceId);
+
+  /// Board columns of [workspaceId], left to right.
+  List<Stage> stagesInWorkspace(String? workspaceId) {
+    final scope = scopeFor(workspaceId);
     return List.unmodifiable([
       for (final stage in _stages)
         if (scope.containsWorkspace(stage.workspaceId)) stage,
@@ -228,18 +235,26 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// How the home screen narrows notes to the open workspace.
-  WorkspaceScope get workspaceScope => WorkspaceScope(
-    workspaceId: _activeWorkspaceId,
-    isDefault:
-        _activeWorkspaceId != null &&
-        _activeWorkspaceId == defaultWorkspace?.id,
+  WorkspaceScope get workspaceScope => scopeFor(_activeWorkspaceId);
+
+  /// How any one workspace narrows the content this device holds. The rule is
+  /// the same wherever it is applied, which is what keeps a workspace's own
+  /// screens counting exactly what its grid shows, the default workspace's
+  /// catch-all for directly shared notes included.
+  WorkspaceScope scopeFor(String? workspaceId) => WorkspaceScope(
+    workspaceId: workspaceId,
+    isDefault: workspaceId != null && workspaceId == defaultWorkspace?.id,
     known: {for (final workspace in _workspaces) workspace.id},
   );
 
   /// Notes in the open workspace, whatever their view, used by the pickers
   /// and counts that must agree with what the grid shows.
-  List<Note> get notesInActiveWorkspace {
-    final scope = workspaceScope;
+  List<Note> get notesInActiveWorkspace =>
+      notesInWorkspace(_activeWorkspaceId);
+
+  /// Notes filed in [workspaceId], whatever their view, trash included.
+  List<Note> notesInWorkspace(String? workspaceId) {
+    final scope = scopeFor(workspaceId);
     return [
       for (final note in _notes)
         if (scope.contains(note)) note,
