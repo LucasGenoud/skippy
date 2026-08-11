@@ -1,5 +1,17 @@
 part of 'api_client.dart';
 
+/// Opens the live-sync and chat sockets. Production passes
+/// [WebSocketChannel.connect]; tests substitute a channel they can drive.
+typedef WebSocketChannelFactory = WebSocketChannel Function(Uri uri);
+
+/// Fire-and-forget cleanup. Cancelling a subscription or closing a sink that
+/// never finished connecting can itself fail, and an unhandled rejection there
+/// would be one more line in the very log storm the reconnect logic exists to
+/// avoid. Nothing downstream cares whether teardown succeeded.
+void _ignoreFailure(Future<void>? work) {
+  work?.then<void>((_) {}, onError: (Object _) {});
+}
+
 /// Wraps a client so no request can hang forever. A phone that is connected to
 /// a network with no route to the server may otherwise wait for the operating
 /// system's much longer socket timeout before the app can report offline.
@@ -26,13 +38,16 @@ abstract class _ApiTransport {
     required Duration requestTimeout,
     required this.probeTimeout,
     http.Client? httpClient,
-  }) : _uploadClient = httpClient ?? http.Client() {
+    WebSocketChannelFactory? webSocketFactory,
+  }) : _uploadClient = httpClient ?? http.Client(),
+       _webSocketFactory = webSocketFactory ?? WebSocketChannel.connect {
     _client = _TimeoutClient(_uploadClient, requestTimeout);
   }
 
   String baseUrl;
   final Duration probeTimeout;
   final http.Client _uploadClient;
+  final WebSocketChannelFactory _webSocketFactory;
   late final http.Client _client;
 
   /// Session token; set by the auth store after sign-in.
@@ -57,6 +72,11 @@ abstract class _ApiTransport {
     };
     return httpUri.replace(scheme: scheme);
   }
+
+  /// The returned channel is not connected yet; await its `ready` before
+  /// writing to the sink.
+  WebSocketChannel _connectWebSocket(String path) =>
+      _webSocketFactory(_webSocketUri(path));
 
   Future<void> checkConnection() async {
     final response = await _client.get(_uri('/health')).timeout(probeTimeout);

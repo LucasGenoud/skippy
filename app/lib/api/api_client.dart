@@ -278,9 +278,10 @@ class ApiClient extends _ApiTransport implements Api {
     return 'http://localhost:8787';
   }
 
-  /// [httpClient] is a test seam (a stubbed or never-answering client stands in
-  /// for the network); production leaves it null.
-  ApiClient({String? baseUrl, super.httpClient})
+  /// [httpClient] and [webSocketFactory] are test seams (a stubbed or
+  /// never-answering client stands in for the network); production leaves them
+  /// null.
+  ApiClient({String? baseUrl, super.httpClient, super.webSocketFactory})
     : super(
         baseUrl: baseUrl ?? defaultBaseUrl(),
         requestTimeout: requestTimeout,
@@ -964,31 +965,85 @@ class ApiClient extends _ApiTransport implements Api {
 
   // -- live sync ---------------------------------------------------------------
 
+  /// How long the live-sync socket waits before its first reconnect.
+  static const liveSyncRetryDelay = Duration(seconds: 5);
+
+  /// Ceiling on that wait. A server that stays unreachable is retried once a
+  /// minute rather than continuously.
+  static const maxLiveSyncRetryDelay = Duration(minutes: 1);
+
+  /// Wait before the [attempt]-th consecutive reconnect (0-based): 5s, 10s,
+  /// 20s, 40s, then the ceiling. A connection that comes up resets the ladder,
+  /// so an ordinary blip is still retried promptly while a host that is simply
+  /// gone stops costing anything.
+  static Duration liveSyncBackoff(int attempt) {
+    final delay = liveSyncRetryDelay * (1 << attempt.clamp(0, 16));
+    return delay > maxLiveSyncRetryDelay ? maxLiveSyncRetryDelay : delay;
+  }
+
   @override
   Stream<void> changeEvents() {
     final controller = StreamController<void>();
     WebSocketChannel? channel;
+    StreamSubscription<dynamic>? frames;
     Timer? reconnect;
     var closed = false;
+    var attempt = 0;
 
-    late final void Function() connect;
+    late final Future<void> Function() connect;
+
     void scheduleReconnect() {
-      if (!closed) reconnect = Timer(const Duration(seconds: 5), connect);
+      // One pending timer at a time. Without this the reconnects compound:
+      // every scheduled attempt that fails schedules more than one successor.
+      if (closed || reconnect != null) return;
+      final delay = liveSyncBackoff(attempt);
+      attempt++;
+      reconnect = Timer(delay, () {
+        reconnect = null;
+        connect();
+      });
     }
 
-    connect = () {
+    connect = () async {
       final sessionToken = token;
       if (closed || sessionToken == null) return;
-      try {
-        channel = WebSocketChannel.connect(_webSocketUri('/ws'));
-        channel!.sink.add(jsonEncode({'token': sessionToken}));
-        channel!.stream.listen(
-          (_) => controller.add(null),
-          onDone: scheduleReconnect,
-          onError: (Object _) => scheduleReconnect(),
-        );
-      } catch (_) {
+
+      WebSocketChannel? socket;
+      var retried = false;
+
+      // A failed connection announces itself more than once: the socket raises
+      // an error, the stream then closes, and `ready` rejects on top of that.
+      // Retrying on each signal doubled the number of live attempts every
+      // cycle, which is how one unreachable host pinned the app at 100% CPU.
+      // The first signal for this attempt wins; the rest are noise.
+      void retry() {
+        if (retried) return;
+        retried = true;
+        // Release this attempt's socket: a handshake that failed, or a server
+        // that hung up, can leave the subscription or the sink open behind us.
+        _ignoreFailure(frames?.cancel());
+        _ignoreFailure(socket?.sink.close());
         scheduleReconnect();
+      }
+
+      try {
+        socket = _connectWebSocket('/ws');
+        channel = socket;
+        frames = socket.stream.listen(
+          (_) => controller.add(null),
+          onDone: retry,
+          onError: (Object _) => retry(),
+          cancelOnError: true,
+        );
+        // The sink only accepts frames once the handshake has landed. Writing
+        // before that throws asynchronously, into a zone with no handler —
+        // the unhandled WebSocketChannelExceptions that flooded the log.
+        await socket.ready;
+        if (closed || retried) return;
+        attempt = 0;
+        socket.sink.add(jsonEncode({'token': sessionToken}));
+      } catch (_) {
+        retry();
       }
     };
 
@@ -996,7 +1051,8 @@ class ApiClient extends _ApiTransport implements Api {
     controller.onCancel = () {
       closed = true;
       reconnect?.cancel();
-      channel?.sink.close();
+      _ignoreFailure(frames?.cancel());
+      _ignoreFailure(channel?.sink.close());
     };
     return controller.stream;
   }
@@ -1057,29 +1113,21 @@ class ApiClient extends _ApiTransport implements Api {
       controller.add(event);
       if (event is ChatDoneEvent || event is ChatErrorEvent) {
         terminal = true;
-        channel?.sink.close();
+        _ignoreFailure(channel?.sink.close());
         controller.close();
       }
     }
 
-    controller.onListen = () {
+    controller.onListen = () async {
       final sessionToken = token;
       if (sessionToken == null) {
         emit(const ChatErrorEvent('sign in to use chat'));
         return;
       }
       try {
-        channel = WebSocketChannel.connect(_webSocketUri('/chat'));
-        channel!.sink.add(
-          jsonEncode({
-            'token': sessionToken,
-            'message': message,
-            'history': [for (final m in history) m.toJson()],
-            if (workspaceId != null && workspaceId.isNotEmpty)
-              'workspace_id': workspaceId,
-          }),
-        );
-        channel!.stream.listen(
+        final socket = _connectWebSocket('/chat');
+        channel = socket;
+        socket.stream.listen(
           (frame) {
             try {
               final decoded = jsonDecode(frame as String);
@@ -1098,13 +1146,27 @@ class ApiClient extends _ApiTransport implements Api {
             if (!terminal) emit(const ChatErrorEvent('connection lost'));
           },
         );
+        // As in [changeEvents]: the request frame has to wait for the
+        // handshake, or a failed connection throws it into the zone instead of
+        // into the catch below.
+        await socket.ready;
+        if (terminal) return;
+        socket.sink.add(
+          jsonEncode({
+            'token': sessionToken,
+            'message': message,
+            'history': [for (final m in history) m.toJson()],
+            if (workspaceId != null && workspaceId.isNotEmpty)
+              'workspace_id': workspaceId,
+          }),
+        );
       } catch (_) {
         emit(const ChatErrorEvent('could not reach the server'));
       }
     };
     controller.onCancel = () {
       terminal = true;
-      channel?.sink.close();
+      _ignoreFailure(channel?.sink.close());
     };
     return controller.stream;
   }
