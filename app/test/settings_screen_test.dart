@@ -188,9 +188,73 @@ void main() {
     expect(prefs.getString('notes_cache_$cacheKey'), isNull);
   });
 
-  testWidgets('LLM fields are editable', (tester) async {
+  testWidgets('server-managed LLM fields are locked in the dialog', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    api.managedSettings = {
+      'llm_base_url': const ManagedSetting(
+        secret: false,
+        value: 'http://managed/v1',
+      ),
+      'llm_api_key': const ManagedSetting(secret: true),
+    };
+    await pumpSettings(tester, api);
+
+    // The AI provider row flags that something is server-managed.
+    expect(find.text('Managed by the server'), findsWidgets);
+
+    // Open the config dialog.
+    await tester.ensureVisible(find.text('AI provider'));
+    await tester.tap(find.text('AI provider'));
+    await tester.pumpAndSettle();
+
+    // The managed endpoint field is disabled; the untouched model field is not.
+    final url = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Server URL').first,
+    );
+    expect(url.enabled, isFalse);
+    final model = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Model').first,
+    );
+    expect(model.enabled, isNot(false));
+
+    // The secret key field is masked and locked, never carrying a value.
+    expect(find.text('•••••• (set by the server)'), findsOneWidget);
+    expect(find.text('Set by the server'), findsWidgets);
+  });
+
+  testWidgets('a managed toggle is locked while the others stay live', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    api.settings = {
+      'llm_base_url': 'http://user/v1',
+      'llm_model': 'user-model',
+    };
+    api.managedSettings = {
+      'llm_chat': const ManagedSetting(secret: false, value: false),
+    };
+    await pumpSettings(tester, api);
+
+    final chat = tester.widget<SwitchListTile>(
+      find.widgetWithText(SwitchListTile, 'Notes chat'),
+    );
+    expect(chat.onChanged, isNull);
+    expect(chat.value, isFalse);
+    // Configured and unmanaged, so this one is still the user's to flip.
+    final labeling = tester.widget<SwitchListTile>(
+      find.widgetWithText(SwitchListTile, 'Automatic labeling'),
+    );
+    expect(labeling.onChanged, isNotNull);
+  });
+
+  testWidgets('with nothing managed, all LLM fields are editable', (
+    tester,
+  ) async {
     final api = FakeApi();
     await pumpSettings(tester, api);
+    expect(find.text('Managed by the server'), findsNothing);
 
     await tester.ensureVisible(find.text('AI provider'));
     await tester.tap(find.text('AI provider'));

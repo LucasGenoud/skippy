@@ -1,6 +1,7 @@
 //! LLM auto-labeling and connection probes.
 
 use crate::helpers::*;
+use sticky_notes_server::config::ManagedSettings;
 
 #[tokio::test]
 async fn auto_labeling_applies_only_existing_labels() {
@@ -286,4 +287,92 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     let markdown_prompt = calls.lock().unwrap()[1][0].content.clone();
     assert!(markdown_prompt.contains("Markdown note"));
     assert!(!markdown_prompt.contains("plain text only"));
+}
+
+/// A self-hoster's env-pinned keys must win over whatever the user's settings
+/// document says, and must do so on the server: the app's locked fields are
+/// presentation, the overlay is the enforcement.
+#[tokio::test]
+async fn managed_settings_override_the_users_llm_config() {
+    let (state, configs) = state_with_llm_configs(r#"["work"]"#).await;
+    let managed = ManagedSettings::from_lookup(|key| match key {
+        "LLM_BASE_URL" => Some("http://managed/v1".to_string()),
+        "LLM_API_KEY" => Some("sk-managed".to_string()),
+        _ => None,
+    });
+    let app = build_app(state.with_managed(managed));
+    let (token, _) = register(&app, "ada").await;
+    // The user's own document points somewhere else and carries no key.
+    configure_llm(&app, &token).await;
+    make_label(&app, &token, "work").await;
+
+    create_note(&app, &token, json!({"title": "Standup notes"})).await;
+    settle_labeling().await;
+
+    let configs = configs.lock().unwrap();
+    assert_eq!(configs.len(), 1);
+    assert_eq!(configs[0].base_url, "http://managed/v1");
+    assert_eq!(configs[0].api_key, "sk-managed");
+    // The unpinned key still comes from the user's document.
+    assert_eq!(configs[0].model, "test-model");
+}
+
+/// A managed boolean turns the feature off for everyone, whatever each user
+/// stored for themselves.
+#[tokio::test]
+async fn a_managed_toggle_disables_the_feature_for_the_user() {
+    let (state, configs) = state_with_llm_configs(r#"["work"]"#).await;
+    let managed =
+        ManagedSettings::from_lookup(
+            |key| {
+                if key == "LLM_LABELING" { Some("off".to_string()) } else { None }
+            },
+        );
+    let app = build_app(state.with_managed(managed));
+    let (token, _) = register(&app, "ada").await;
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&token),
+        Some(json!({
+            "llm_base_url": "http://fake/v1",
+            "llm_model": "test-model",
+            "llm_labeling": true,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let label_id = make_label(&app, &token, "work").await;
+
+    create_note(&app, &token, json!({"title": "Standup notes"})).await;
+    settle_labeling().await;
+
+    assert!(configs.lock().unwrap().is_empty(), "labeling ran despite being pinned off");
+    let note = &list_notes(&app, &token).await[0];
+    assert_eq!(note["label_ids"], json!([]), "label {label_id} was applied");
+}
+
+/// The endpoint the app locks its fields from: pinned keys are listed, and a
+/// secret's value is never among them.
+#[tokio::test]
+async fn managed_settings_endpoint_lists_keys_and_redacts_secrets() {
+    let managed = ManagedSettings::from_lookup(|key| match key {
+        "LLM_BASE_URL" => Some("http://managed/v1".to_string()),
+        "LLM_API_KEY" => Some("sk-managed".to_string()),
+        _ => None,
+    });
+    let app = build_app(state().await.with_managed(managed));
+    let (token, _) = register(&app, "ada").await;
+
+    let (status, body) = send(&app, "GET", "/api/managed-settings", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["llm_base_url"], json!({"secret": false, "value": "http://managed/v1"}));
+    assert_eq!(body["llm_api_key"], json!({"secret": true, "value": null}));
+    assert!(body.get("llm_model").is_none());
+    assert!(!body.to_string().contains("sk-managed"));
+
+    // Server infrastructure, not for anonymous callers.
+    let (status, _) = send(&app, "GET", "/api/managed-settings", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }

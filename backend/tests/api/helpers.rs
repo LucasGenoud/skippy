@@ -264,12 +264,17 @@ pub async fn upload(
 
 pub type LlmCalls = Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>;
 
+/// The connection details each call was made with, for asserting whose config
+/// won when the server pins some of the keys (see [`FakeLlm::configs`]).
+pub type LlmConfigs = Arc<std::sync::Mutex<Vec<LlmConfig>>>;
+
 /// Deterministic LLM: replays scripted replies in order (the last one
 /// repeats) and records every request, so tests can assert on call counts
 /// and prompts without a model server.
 pub struct FakeLlm {
     replies: std::sync::Mutex<Vec<String>>,
     calls: LlmCalls,
+    configs: LlmConfigs,
 }
 
 impl FakeLlm {
@@ -284,9 +289,16 @@ impl FakeLlm {
             Arc::new(Self {
                 replies: std::sync::Mutex::new(replies.iter().map(|r| r.to_string()).collect()),
                 calls: calls.clone(),
+                configs: Arc::default(),
             }),
             calls,
         )
+    }
+
+    /// A handle on the recorded configs, which outlives moving the fake into
+    /// an [`AppState`].
+    pub fn configs(&self) -> LlmConfigs {
+        self.configs.clone()
     }
 }
 
@@ -294,10 +306,11 @@ impl FakeLlm {
 impl Llm for FakeLlm {
     async fn complete(
         &self,
-        _cfg: &LlmConfig,
+        cfg: &LlmConfig,
         messages: Vec<ChatMessage>,
     ) -> anyhow::Result<String> {
         self.calls.lock().unwrap().push(messages);
+        self.configs.lock().unwrap().push(cfg.clone());
         let mut replies = self.replies.lock().unwrap();
         Ok(if replies.len() > 1 {
             replies.remove(0)
@@ -334,6 +347,18 @@ impl Llm for FailLlm {
     ) -> anyhow::Result<sticky_notes_server::llm::TokenStream> {
         anyhow::bail!("connection refused")
     }
+}
+
+/// Like [`state_with_llm`], but hands back the recorded connection details
+/// instead of the prompts: for asserting which config a call actually used.
+pub async fn state_with_llm_configs(reply: &str) -> (AppState, LlmConfigs) {
+    let (llm, _) = FakeLlm::new(reply);
+    let configs = llm.configs();
+    let state = state()
+        .await
+        .with_llm(llm)
+        .with_label_delay(std::time::Duration::from_millis(250));
+    (state, configs)
 }
 
 pub async fn state_with_llm(reply: &str) -> (AppState, LlmCalls) {

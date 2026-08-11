@@ -61,6 +61,10 @@ class FakeApi implements Api {
     serverVersion: 'test-server',
   );
 
+  /// Server-managed settings returned by [fetchManagedSettings]; empty means
+  /// nothing is env-pinned. Tests populate it to exercise field locking.
+  Map<String, ManagedSetting> managedSettings = {};
+
   /// Canned link-preview responses keyed by URL, returned by [unfurl]. Tests
   /// populate it; unknown URLs unfurl to null (no card).
   Map<String, LinkPreview> previews = {};
@@ -762,6 +766,10 @@ class FakeApi implements Api {
   @override
   Future<({bool running, int done, int total})> fetchReindexStatus() =>
       _run('fetchReindexStatus', () => reindexStatus);
+
+  @override
+  Future<Map<String, ManagedSetting>> fetchManagedSettings() =>
+      _run('fetchManagedSettings', () => managedSettings);
 
   @override
   Future<void> transcribeNote(String noteId) => _run('transcribe:$noteId', () {

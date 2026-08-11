@@ -62,7 +62,8 @@ pub async fn rewrite_note(
     }
 
     let settings = state.repo.settings_for_user(&user_id).await?;
-    let llm_settings = crate::assist::parse_llm_settings(settings.as_deref());
+    let effective = state.managed.overlay(settings.as_deref());
+    let llm_settings = crate::assist::parse_llm_settings_value(&effective);
     let Some(cfg) = llm_settings.config.filter(|_| llm_settings.writing) else {
         return Err(ApiError::Unavailable("AI note editing is not enabled"));
     };

@@ -11,6 +11,15 @@ services:
       EMBED_API_KEY: ${EMBED_API_KEY:-}
       STORAGE: disk
       ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
+      # Pin the AI provider for every account. Any of these overrides the
+      # user's own setting and locks the field in the app; leave one unset to
+      # keep it theirs. LLM_API_KEY is never sent to the frontend.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_LABELING: ${LLM_LABELING:-}
+      LLM_CHAT: ${LLM_CHAT:-}
+      LLM_WRITING: ${LLM_WRITING:-}
     volumes:
       - app_data:/data
     restart: unless-stopped

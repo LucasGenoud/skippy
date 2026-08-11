@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:skippy/api/api_client.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/theme.dart';
@@ -468,5 +469,70 @@ void main() {
 
     final today = DateTime.now().copyWith(hour: 9, minute: 30);
     expect(settings.reminderLabel(today), 'Today 09:30');
+  });
+
+  test('server-managed keys override, lock, and hide secrets', () async {
+    // The user's own doc carries a stale endpoint + key; the server pins its
+    // own base URL + model + a secret key, and forces chat off.
+    api.settings = {
+      'llm_base_url': 'http://user/v1',
+      'llm_api_key': 'sk-user',
+      'llm_model': 'user-model',
+    };
+    api.managedSettings = {
+      'llm_base_url': const ManagedSetting(
+        secret: false,
+        value: 'http://managed/v1',
+      ),
+      'llm_api_key': const ManagedSetting(secret: true),
+      'llm_model': const ManagedSetting(secret: false, value: 'managed-model'),
+      'llm_chat': const ManagedSetting(secret: false, value: false),
+    };
+    await settings.load();
+
+    // Managed values win over the user's document.
+    expect(settings.llmBaseUrl, 'http://managed/v1');
+    expect(settings.llmModel, 'managed-model');
+    // Secret is never held client-side, even though the user doc had one.
+    expect(settings.llmApiKey, '');
+    // Managed toggle reflected; the unmanaged one keeps its default.
+    expect(settings.llmChatEnabled, isFalse);
+    expect(settings.llmLabelingEnabled, isTrue);
+
+    // Locked keys report as managed; untouched ones don't.
+    expect(settings.isManaged('llm_base_url'), isTrue);
+    expect(settings.isManaged('llm_api_key'), isTrue);
+    expect(settings.isManaged('llm_labeling'), isFalse);
+  });
+
+  test('a managed key never overwrites the user\'s own stored value', () async {
+    api.settings = {
+      'llm_base_url': 'http://user/v1',
+      'llm_api_key': 'sk-user',
+      'llm_model': 'user-model',
+      'llm_chat': true,
+    };
+    api.managedSettings = {
+      'llm_base_url': const ManagedSetting(
+        secret: false,
+        value: 'http://managed/v1',
+      ),
+      'llm_api_key': const ManagedSetting(secret: true),
+      'llm_chat': const ManagedSetting(secret: false, value: false),
+    };
+    await settings.load();
+
+    // Saving any unrelated setting rewrites the whole document. The pinned
+    // keys must go back as the user had them, or un-pinning the env var later
+    // would hand them the server's config (or, for the key, nothing at all).
+    settings.setThemeMode(ThemeMode.dark);
+    await settleSave();
+
+    expect(api.settings['llm_base_url'], 'http://user/v1');
+    expect(api.settings['llm_api_key'], 'sk-user');
+    expect(api.settings['llm_chat'], isTrue);
+    // Unmanaged keys still persist what the store holds.
+    expect(api.settings['llm_model'], 'user-model');
+    expect(api.settings['theme'], 'dark');
   });
 }

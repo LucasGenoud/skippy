@@ -231,6 +231,24 @@ class SettingsStore extends ChangeNotifier {
   bool llmChatEnabled = true;
   bool llmWritingEnabled = false;
 
+  // Settings keys the self-hoster pinned via server env vars (backend
+  // `config.rs`). A present key is locked in the UI and its value is
+  // authoritative; secret keys carry no value. Fetched from
+  // /api/managed-settings, not persisted. See [_applyManaged].
+  Map<String, ManagedSetting> managed = {};
+
+  /// Is this settings-document key server-managed (and thus locked)?
+  bool isManaged(String key) => managed.containsKey(key);
+
+  /// What the user's own settings document held for each LLM key, snapshotted
+  /// before [_applyManaged] overlays the server's values on top. [toJson]
+  /// re-emits these for managed keys: the fields carry the server's values so
+  /// the UI can show what will actually be used, but a save from this device
+  /// must not overwrite the configuration the user chose for themselves. Without
+  /// it, an env-pinned key would quietly erase their own on the next save of any
+  /// unrelated setting, and only surface once the server stopped managing it.
+  Map<String, Object?> _ownLlmValues = {};
+
   bool get llmConfigured => llmBaseUrl.isNotEmpty && llmModel.isNotEmpty;
   bool get autoLabelingAvailable => llmConfigured && llmLabelingEnabled;
   // Chat retrieval runs on the server's embedder, so it additionally needs
@@ -312,6 +330,12 @@ class SettingsStore extends ChangeNotifier {
       imageOcrCapable,
       serverVersion,
     ],
+    // Managed values never reach [toJson] (see [_ownLlmValues]), so they need
+    // their own entry here or a change to what the server pins would not
+    // rebuild the settings UI.
+    'managed': {
+      for (final e in managed.entries) e.key: [e.value.secret, e.value.value],
+    },
   });
 
   Future<void> load() async {
@@ -330,6 +354,15 @@ class SettingsStore extends ChangeNotifier {
       if (_disposed) return;
       // Unreachable: leave capabilities as they were (default off).
     }
+    // Server-managed overrides are independent of the pending local save too.
+    try {
+      final nextManaged = await api.fetchManagedSettings();
+      if (_disposed) return;
+      managed = nextManaged;
+    } catch (_) {
+      if (_disposed) return;
+      // Unreachable: leave as-is (default: nothing managed).
+    }
     // Never clobber local edits that haven't reached the server yet.
     if (!_savePending) {
       try {
@@ -341,8 +374,35 @@ class SettingsStore extends ChangeNotifier {
         // Offline: defaults (or last applied values) stay in effect.
       }
     }
+    // Managed values win over whatever the user's document carried.
+    _applyManaged();
     loaded = true;
     if (before == null || _fingerprint() != before) notifyListeners();
+  }
+
+  /// Overlay the server-managed values onto the local fields, so the UI shows
+  /// (and the store reports as "configured") what the server will actually use.
+  /// Secret keys are blanked, the server never sends their value, and the
+  /// client must never hold it.
+  void _applyManaged() {
+    String? text(String key) {
+      final m = managed[key];
+      if (m == null) return null;
+      return m.secret ? '' : (m.value as String? ?? '');
+    }
+
+    bool? flag(String key) {
+      final m = managed[key];
+      if (m == null || m.value is! bool) return null;
+      return m.value as bool;
+    }
+
+    llmBaseUrl = text('llm_base_url') ?? llmBaseUrl;
+    llmApiKey = text('llm_api_key') ?? llmApiKey;
+    llmModel = text('llm_model') ?? llmModel;
+    llmLabelingEnabled = flag('llm_labeling') ?? llmLabelingEnabled;
+    llmChatEnabled = flag('llm_chat') ?? llmChatEnabled;
+    llmWritingEnabled = flag('llm_writing') ?? llmWritingEnabled;
   }
 
   void _applyJson(Map<String, dynamic> json) {
@@ -373,6 +433,17 @@ class SettingsStore extends ChangeNotifier {
     llmLabelingEnabled = json['llm_labeling'] != false;
     llmChatEnabled = json['llm_chat'] != false;
     llmWritingEnabled = json['llm_writing'] == true;
+    // Taken here rather than in [_applyManaged], which also runs on a load that
+    // skipped this method (a local save still in flight) and would then snapshot
+    // the previous overlay instead of the user's own values.
+    _ownLlmValues = {
+      'llm_base_url': llmBaseUrl,
+      'llm_api_key': llmApiKey,
+      'llm_model': llmModel,
+      'llm_labeling': llmLabelingEnabled,
+      'llm_chat': llmChatEnabled,
+      'llm_writing': llmWritingEnabled,
+    };
     notifyValues = {
       for (final key in kNotifyFieldKeys)
         key: ((json[key] as String?) ?? '').trim(),
@@ -418,6 +489,15 @@ class SettingsStore extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
+    ..._doc(),
+    // Managed keys belong to the server, which overlays them again on every
+    // read. Persist what the user configured instead, so un-pinning an env var
+    // hands them their own provider back rather than a copy of the server's.
+    for (final key in managed.keys)
+      if (_ownLlmValues.containsKey(key)) key: _ownLlmValues[key],
+  };
+
+  Map<String, dynamic> _doc() => {
     'theme': switch (themeMode) {
       ThemeMode.light => 'light',
       ThemeMode.dark => 'dark',

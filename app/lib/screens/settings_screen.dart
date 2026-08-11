@@ -10,6 +10,7 @@ import '../widgets/settings/embedding_section.dart';
 import '../widgets/settings/export_section.dart';
 import '../widgets/settings/grid_layout_section.dart';
 import '../widgets/settings/llm_section.dart';
+import '../widgets/settings/managed_note.dart';
 import '../widgets/settings/notify_section.dart';
 import '../widgets/settings/palette_section.dart';
 import '../widgets/settings/public_links_section.dart';
@@ -98,21 +99,25 @@ class SettingsScreen extends StatelessWidget {
               SwitchListTile(
                 secondary: const Icon(Icons.label_outline),
                 title: const Text('Automatic labeling'),
-                subtitle: Text(
-                  settings.llmConfigured
+                subtitle: ManagedToggleSubtitle(
+                  managed: settings.isManaged('llm_labeling'),
+                  text: settings.llmConfigured
                       ? 'Apply your existing labels to new and edited notes'
                       : 'Configure an AI provider first',
                 ),
                 value: settings.llmConfigured && settings.llmLabelingEnabled,
-                onChanged: settings.llmConfigured
+                onChanged:
+                    settings.llmConfigured &&
+                        !settings.isManaged('llm_labeling')
                     ? settings.setLlmLabelingEnabled
                     : null,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.forum_outlined),
                 title: const Text('Notes chat'),
-                subtitle: Text(
-                  !settings.semanticSearchCapable
+                subtitle: ManagedToggleSubtitle(
+                  managed: settings.isManaged('llm_chat'),
+                  text: !settings.semanticSearchCapable
                       ? 'Requires semantic search on this server'
                       : settings.llmConfigured
                       ? 'Ask questions about your notes'
@@ -123,20 +128,24 @@ class SettingsScreen extends StatelessWidget {
                     settings.semanticSearchCapable &&
                     settings.llmChatEnabled,
                 onChanged:
-                    settings.llmConfigured && settings.semanticSearchCapable
+                    settings.llmConfigured &&
+                        settings.semanticSearchCapable &&
+                        !settings.isManaged('llm_chat')
                     ? settings.setLlmChatEnabled
                     : null,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.auto_fix_high_outlined),
                 title: const Text('AI note editing'),
-                subtitle: Text(
-                  settings.llmConfigured
+                subtitle: ManagedToggleSubtitle(
+                  managed: settings.isManaged('llm_writing'),
+                  text: settings.llmConfigured
                       ? 'Add cleanup and grammar actions to each note menu'
                       : 'Configure an AI provider first',
                 ),
                 value: settings.llmConfigured && settings.llmWritingEnabled,
-                onChanged: settings.llmConfigured
+                onChanged:
+                    settings.llmConfigured && !settings.isManaged('llm_writing')
                     ? settings.setLlmWritingEnabled
                     : null,
               ),

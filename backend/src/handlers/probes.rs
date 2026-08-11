@@ -26,10 +26,16 @@ pub async fn llm_test(
     AuthUser(_user_id): AuthUser,
     Json(body): Json<LlmTestRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    // Server-managed keys win over the (possibly locked/blank) body fields, so
+    // "Test connection" works even when the endpoint, model, or key is pinned
+    // via env and never sent by the client.
+    let pick = |key: &str, body: &str| {
+        state.managed.text(key).map(str::to_string).unwrap_or_else(|| body.trim().to_string())
+    };
     let cfg = crate::llm::LlmConfig {
-        base_url: body.base_url.trim().to_string(),
-        api_key: body.api_key.trim().to_string(),
-        model: body.model.trim().to_string(),
+        base_url: pick("llm_base_url", &body.base_url),
+        api_key: pick("llm_api_key", &body.api_key),
+        model: pick("llm_model", &body.model),
     };
     if cfg.base_url.is_empty() || cfg.model.is_empty() {
         return Err(ApiError::BadRequest("base_url and model are required".to_string()));

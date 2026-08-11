@@ -127,8 +127,21 @@ deployment.
 | `UNFURL_ALLOW_PRIVATE` | off | Allow link previews for private/loopback hosts |
 | `TELEGRAM_API` | `https://api.telegram.org` | Telegram API base URL |
 
-LLM providers are configured per user in Settings. The server does not use
-LLM environment variables.
+LLM providers are configured per user in Settings. Setting any of these
+env vars overrides that user setting and locks the field in the app:
+
+```text
+LLM_BASE_URL
+LLM_API_KEY       # secret; never returned to the app
+LLM_MODEL
+LLM_LABELING      # true/false
+LLM_CHAT          # true/false
+LLM_WRITING       # true/false
+```
+
+Leave a variable unset to keep that field the user's own. The override is
+applied server-side on every read, so it holds regardless of what a client
+stores.
 
 ### Docker Compose environment variables
 
@@ -150,6 +163,12 @@ values come from the shell or `.env`.
 | server | `S3_ACCESS_KEY` | all; required host/.env value | S3 access key; must match Garage’s default access key. |
 | server | `S3_SECRET_KEY` | all; required host/.env value | S3 secret; must match Garage’s default secret. |
 | server | `ALLOW_PRIVATE_USER_ENDPOINTS` | host/.env; empty by default | Allows user-configured AI/notification URLs on private networks. |
+| server (optional) | `LLM_BASE_URL` | host/.env; empty by default | Server-managed LLM base URL; locks the field in the app. |
+| server (optional) | `LLM_API_KEY` | host/.env; empty by default | Server-managed LLM API key; never returned to the app. |
+| server (optional) | `LLM_MODEL` | host/.env; empty by default | Server-managed LLM model. |
+| server (optional) | `LLM_LABELING` | host/.env; empty by default | Forces automatic labeling on or off. |
+| server (optional) | `LLM_CHAT` | host/.env; empty by default | Forces notes chat on or off. |
+| server (optional) | `LLM_WRITING` | host/.env; empty by default | Forces AI note editing on or off. |
 | whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |
 | whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
 | whisper (GPU) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |
