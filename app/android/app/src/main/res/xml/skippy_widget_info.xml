@@ -18,6 +18,6 @@
     android:initialLayout="@layout/skippy_widget"
     android:previewLayout="@layout/skippy_widget"
     android:previewImage="@mipmap/ic_launcher"
-    android:configure="com.lucasgenoud.skippy.MainActivity"
+    android:configure="com.skippynotes.app.MainActivity"
     android:description="@string/widget_description"
     android:updatePeriodMillis="0" />

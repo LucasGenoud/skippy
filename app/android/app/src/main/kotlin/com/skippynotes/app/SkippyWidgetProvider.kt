@@ -1,4 +1,4 @@
-package com.lucasgenoud.skippy
+package com.skippynotes.app
 
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
@@ -27,7 +27,7 @@ import es.antonborri.home_widget.HomeWidgetLaunchIntent
 class SkippyWidgetProvider : AppWidgetProvider() {
 
     companion object {
-        const val ACTION_TOGGLE = "com.lucasgenoud.skippy.action.TOGGLE_ITEM"
+        const val ACTION_TOGGLE = "com.skippynotes.app.action.TOGGLE_ITEM"
         const val EXTRA_NOTE_ID = "noteId"
         const val EXTRA_ITEM_ID = "itemId"
         const val EXTRA_DONE = "done"

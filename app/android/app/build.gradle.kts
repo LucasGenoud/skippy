@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.lucasgenoud.skippy"
+    namespace = "com.skippynotes.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.lucasgenoud.skippy"
+        applicationId = "com.skippynotes.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // The `record` plugin (audio-note recording) requires Android 6.0+.

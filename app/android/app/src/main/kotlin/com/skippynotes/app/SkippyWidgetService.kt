@@ -1,4 +1,4 @@
-package com.lucasgenoud.skippy
+package com.skippynotes.app
 
 import android.appwidget.AppWidgetManager
 import android.content.Context
