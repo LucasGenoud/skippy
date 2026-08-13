@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../util/motion.dart';
@@ -7,18 +8,75 @@ import 'package:just_audio/just_audio.dart';
 
 import 'audio_waveform.dart';
 
+/// Whether this platform can play an audio attachment back. `just_audio` ships
+/// Android, iOS and macOS implementations but none for Windows or Linux, so
+/// those two get an explanation instead of a play button that dies on tap.
+/// Recording and transcription are unaffected — `record` covers every desktop.
+bool get audioPlaybackSupported =>
+    defaultTargetPlatform != TargetPlatform.windows &&
+    defaultTargetPlatform != TargetPlatform.linux;
+
 /// Compact inline player for an audio attachment on native platforms, backed by
 /// the `just_audio` plugin. Visually identical to the web player: a play/pause
 /// button, a seekable progress bar, and elapsed / total time.
-class AudioPlayerBar extends StatefulWidget {
+class AudioPlayerBar extends StatelessWidget {
   final String url;
   const AudioPlayerBar({super.key, required this.url});
 
   @override
-  State<AudioPlayerBar> createState() => _AudioPlayerBarState();
+  Widget build(BuildContext context) => audioPlaybackSupported
+      ? _NativeAudioPlayerBar(url: url)
+      : const _PlaybackUnavailable();
 }
 
-class _AudioPlayerBarState extends State<AudioPlayerBar> {
+/// Shown where the player would be on a platform without a playback engine.
+/// The note's audio is still recorded, stored and transcribed; only listening
+/// back in the app is missing, so this says that rather than reading as an
+/// error the user could act on.
+class _PlaybackUnavailable extends StatelessWidget {
+  const _PlaybackUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.onSurface.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(kRadius),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.music_off_outlined,
+            size: 18,
+            color: scheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Playback is not supported on this platform yet. The recording '
+              'is saved and plays on the phone, macOS and web apps.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NativeAudioPlayerBar extends StatefulWidget {
+  final String url;
+  const _NativeAudioPlayerBar({required this.url});
+
+  @override
+  State<_NativeAudioPlayerBar> createState() => _AudioPlayerBarState();
+}
+
+class _AudioPlayerBarState extends State<_NativeAudioPlayerBar> {
   final AudioPlayer _player = AudioPlayer();
   final List<StreamSubscription<dynamic>> _subs = [];
   bool _playing = false;

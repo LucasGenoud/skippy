@@ -1,8 +1,8 @@
 # Skippy
 
 Skippy is a cross-platform notes app with a Flutter client and a Rust/axum
-backend. It supports web, iOS, and Android, with SQLite persistence and
-optimistic, offline-capable edits.
+backend. It supports web, iOS, Android, macOS, and Windows, with SQLite
+persistence and optimistic, offline-capable edits.
 
 ## Features
 
@@ -202,6 +202,8 @@ Run the Flutter app:
 ```sh
 cd app
 flutter run -d chrome
+flutter run -d macos
+flutter run -d windows
 flutter run -d <ios-or-android-id>
 ```
 
@@ -237,6 +239,34 @@ Android currently uses the debug signing key in
 `app/android/app/build.gradle.kts`. Configure a private upload keystore before
 publishing to Google Play. iOS distribution requires macOS/Xcode signing with
 an Apple team and provisioning profile.
+
+## Desktop release builds
+
+```sh
+flutter build macos --release --dart-define=API_BASE=https://notes.example.com
+flutter build windows --release --dart-define=API_BASE=https://notes.example.com
+```
+
+`Skippy.app` is written to `app/build/macos/Build/Products/Release/`, and the
+Windows build to `app/build/windows/x64/runner/Release/`. Each has to be built
+on its own operating system.
+
+The macOS app runs sandboxed. `macos/Runner/*.entitlements` grant outgoing
+network access (the backend, map tiles, the configured LLM), the microphone for
+audio notes, and read/write on files the user picks in a dialog. Shipping it
+outside your own machines also needs Developer ID signing and notarization.
+
+Two things differ from mobile on the desktop:
+
+- Exports and attachment downloads open a save dialog rather than the share
+  sheet, since there is a filesystem to aim at.
+- Audio notes record and transcribe everywhere, but playback needs `just_audio`,
+  which has no Windows implementation. The Windows build shows a short note in
+  place of the player instead of a dead play button.
+
+The features that only exist on a phone stay switched off by platform checks:
+home-screen widgets, location reminders, the share-sheet intake, and the camera
+option when adding an image.
 
 ## User backups
 

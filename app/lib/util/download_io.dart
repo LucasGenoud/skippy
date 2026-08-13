@@ -1,24 +1,35 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Native (Android/iOS) downloads route through the system share sheet, that's
-/// where "Save Image", "Save to Files" and friends live. Mirrors the web
-/// build's [downloadTextFile]/[downloadUrl] API so callers never branch on
-/// platform. The bytes are written to a temp file first so the OS gets a real
-/// file URL with the right extension (which is what makes "Save Image" appear).
+/// Native downloads take one of two shapes, both mirroring the web build's
+/// [downloadTextFile]/[downloadBytesFile]/[downloadUrl] API so callers never
+/// branch on platform.
+///
+/// On a phone they route through the system share sheet, because that is where
+/// "Save Image" and "Save to Files" live and there is no folder for the user to
+/// aim at. On a desktop there is a real filesystem in front of them, so they
+/// get the ordinary save dialog every other desktop app shows; a share sheet
+/// there would be a detour on macOS and has no dependable file target at all on
+/// Windows.
+
+bool get _isDesktop =>
+    defaultTargetPlatform == TargetPlatform.macOS ||
+    defaultTargetPlatform == TargetPlatform.windows ||
+    defaultTargetPlatform == TargetPlatform.linux;
 
 void downloadTextFile(String filename, String content, String mime) {
   // Fire-and-forget: the export UI doesn't await the download on any platform.
-  _shareBytes(filename, Uint8List.fromList(utf8.encode(content)), mime);
+  _save(filename, Uint8List.fromList(utf8.encode(content)), mime);
 }
 
 Future<void> downloadBytesFile(String filename, Uint8List bytes, String mime) =>
-    _shareBytes(filename, bytes, mime);
+    _save(filename, bytes, mime);
 
 Future<void> downloadUrl(String url, String filename) async {
   final http.Response response;
@@ -32,13 +43,32 @@ Future<void> downloadUrl(String url, String filename) async {
     debugPrint('downloadUrl failed: HTTP ${response.statusCode}');
     return;
   }
-  await _shareBytes(
-    filename,
-    response.bodyBytes,
-    response.headers['content-type'],
-  );
+  await _save(filename, response.bodyBytes, response.headers['content-type']);
 }
 
+Future<void> _save(String filename, Uint8List bytes, String? mime) =>
+    _isDesktop
+    ? _saveToChosenFile(filename, bytes)
+    : _shareBytes(filename, bytes, mime);
+
+/// Desktop: ask where to put it, and let the picker write the bytes. A null
+/// path means the user dismissed the dialog, which is not an error.
+Future<void> _saveToChosenFile(String filename, Uint8List bytes) async {
+  final safe = _sanitize(filename);
+  try {
+    await FilePicker.saveFile(
+      dialogTitle: 'Save $safe',
+      fileName: safe,
+      bytes: bytes,
+      lockParentWindow: true,
+    );
+  } catch (e) {
+    debugPrint('save dialog failed for $filename: $e');
+  }
+}
+
+/// Mobile: the bytes are written to a temp file first so the OS gets a real
+/// file URL with the right extension, which is what makes "Save Image" appear.
 Future<void> _shareBytes(String filename, Uint8List bytes, String? mime) async {
   try {
     final safe = _sanitize(filename);

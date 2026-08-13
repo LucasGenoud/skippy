@@ -64,3 +64,10 @@ flutter_launcher_icons:
   ios: true
   remove_alpha_ios: true
   background_color_ios: "#FFFFFF"
+  macos:
+    generate: true
+    image_path: "launcher_assets/icon.png"
+  windows:
+    generate: true
+    image_path: "launcher_assets/icon.png"
+    icon_size: 256

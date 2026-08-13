@@ -4,7 +4,7 @@
 
 This file is the working map for agents modifying this repository. It applies to the whole tree unless a more specific `AGENTS.md` is added below it.
 
-The product is named Skippy in the UI and packages; the repository is named `sticky_notes`. It is a Flutter web/iOS/Android client backed by a Rust axum API with SQLite persistence. The defining implementation constraints are optimistic client interactions, offline-capable writes, participant-scoped data access, and optional self-hosted AI services.
+The product is named Skippy in the UI and packages; the repository is named `sticky_notes`. It is a Flutter web/iOS/Android/macOS/Windows client backed by a Rust axum API with SQLite persistence. The defining implementation constraints are optimistic client interactions, offline-capable writes, participant-scoped data access, and optional self-hosted AI services.
 
 Before changing code:
 
@@ -268,6 +268,8 @@ For an ordinary setting, update all `SettingsStore` default/load/save paths and 
 ### Add a platform-specific feature
 
 Use conditional exports with a neutral shared interface plus explicit web/native/stub files. The web build must never resolve `dart:io`; native builds must never require `dart:html`. Existing runtime config, download, connectivity, file-drop, audio, and share-intake modules are the patterns to follow.
+
+"Native" is not "mobile": the same io file also runs on macOS and Windows. Branch on `defaultTargetPlatform` inside it when a desktop wants different behavior (`download_io.dart` picks a save dialog over the share sheet) or when a plugin has no desktop implementation (`audio_player_io.dart` gates `just_audio`, which is missing on Windows and Linux). Phone-only features — home widgets, geofenced reminders, share intake, the camera source — stay behind their existing android/iOS checks, so a new desktop inherits them switched off. macOS is sandboxed: a capability that talks to the network, the microphone, or the filesystem needs the matching key in both `macos/Runner/*.entitlements`.
 
 ### Change notifications or attachments
 

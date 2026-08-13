@@ -7,6 +7,10 @@ import 'package:web/web.dart' as web;
 
 import 'audio_waveform.dart';
 
+/// Counterpart to the native flag: the browser always plays audio back, so the
+/// web build never shows the "not supported here" panel.
+bool get audioPlaybackSupported => true;
+
 /// Compact inline player for an audio attachment: a play/pause button, a
 /// seekable progress bar, and elapsed / total time. Backed by a detached
 /// `HTMLAudioElement` (all JS callbacks are synchronous).
