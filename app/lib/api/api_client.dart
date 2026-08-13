@@ -285,14 +285,14 @@ class ApiClient extends _ApiTransport implements Api {
   /// Resolution order: --dart-define=API_BASE (compile-time), then the URL the
   /// server injected into the page (PUBLIC_URL env var), then
   /// same-origin when the app is served by the Rust binary itself, then the
-  /// local dev default.
+  /// public Skippy service.
   static String defaultBaseUrl() {
     const fromEnv = String.fromEnvironment('API_BASE');
     if (fromEnv.isNotEmpty) return fromEnv;
     final injected = runtimeApiBase();
     if (injected != null && injected.isNotEmpty) return injected;
     if (kIsWeb && Uri.base.port == 8787) return Uri.base.origin;
-    return 'http://localhost:8787';
+    return 'https://skippy-notes.com';
   }
 
   /// [httpClient] and [webSocketFactory] are test seams (a stubbed or

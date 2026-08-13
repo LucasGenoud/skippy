@@ -26,6 +26,10 @@
 **/*.mobileprovision
 **/*.provisionprofile
 
+# Local app-signing material. Never commit certificate archives, keystores, or
+# signing properties used to publish Android releases.
+app/android/signing/
+
 # Local databases and backups.
 *.db*
 *.sqlite*

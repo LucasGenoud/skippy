@@ -201,13 +201,14 @@ Run the Flutter app:
 
 ```sh
 cd app
-flutter run -d chrome
-flutter run -d macos
-flutter run -d windows
-flutter run -d <ios-or-android-id>
+flutter run -d chrome --dart-define=API_BASE=http://localhost:8787
+flutter run -d macos --dart-define=API_BASE=http://localhost:8787
+flutter run -d windows --dart-define=API_BASE=http://localhost:8787
+flutter run -d <ios-or-android-id> --dart-define=API_BASE=http://localhost:8787
 ```
 
-The default backend is `http://localhost:8787`. On an Android emulator use
+Release builds default to `https://skippy-notes.com`. For local development,
+pass the `API_BASE` define shown above. On an Android emulator use
 `http://10.0.2.2:8787`; on a physical device use the host machine's LAN IP.
 The login screen can also save and switch between server URLs.
 
@@ -235,10 +236,20 @@ The Android App Bundle is written to
 `flutter build apk --release`. The iOS archive and IPA are written under
 `app/build/ios/`.
 
-Android currently uses the debug signing key in
-`app/android/app/build.gradle.kts`. Configure a private upload keystore before
-publishing to Google Play. iOS distribution requires macOS/Xcode signing with
-an Apple team and provisioning profile.
+Android release builds use a private upload keystore configured through the
+ignored `app/android/key.properties` file. Before building a Play Store
+release, create it with the following values (do not commit or share it):
+
+```text
+storePassword=<keystore password>
+keyPassword=<key password>
+keyAlias=skippy-upload
+storeFile=signing/skippy-upload.jks
+```
+
+Keep the corresponding keystore in the ignored `app/android/signing/`
+directory and back it up securely. iOS distribution requires macOS/Xcode
+signing with an Apple team and provisioning profile.
 
 ## Desktop release builds
 
