@@ -46,6 +46,10 @@ class WorkspaceSettingsScreen extends StatelessWidget {
     final isOwner = workspace.isOwnedBy(store.currentUserId);
 
     return Scaffold(
+      // A sheet of rows, like the app's own Settings page: it sits on the
+      // surface rather than on the canvas, which is reserved for screens whose
+      // content is cards.
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(workspace.name)),
       body: Center(
         child: ConstrainedBox(
@@ -197,9 +201,8 @@ class _StatisticsTile extends StatelessWidget {
         '${_count(stats.labelCount, 'label')}',
       ),
       trailing: const Icon(Icons.chevron_right),
-      onTap: () => Navigator.of(
-        context,
-      ).push(WorkspaceStatsScreen.route(workspaceId)),
+      onTap: () =>
+          Navigator.of(context).push(WorkspaceStatsScreen.route(workspaceId)),
     );
   }
 
@@ -368,10 +371,7 @@ class _DangerZone extends StatelessWidget {
     if (store.canDeleteWorkspace(workspace.id)) {
       return ListTile(
         leading: Icon(Icons.delete_outline, color: scheme.error),
-        title: Text(
-          'Delete workspace',
-          style: TextStyle(color: scheme.error),
-        ),
+        title: Text('Delete workspace', style: TextStyle(color: scheme.error)),
         subtitle: const Text(
           'Permanently removes its notes, labels, and board columns',
         ),

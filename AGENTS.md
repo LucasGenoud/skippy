@@ -135,6 +135,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 ### Flutter client
 
 - `app/lib/main.dart`: dependency wiring, authentication gate, user-scoped stores, theme binding.
+- `app/lib/theme.dart`: the whole colour system. Surfaces follow one depth model: the canvas (`surfaceDim`) is the ground, surfaces (`surface`) rise off it for cards, chrome, dialogs, menus and toasts, and troughs (`boardColumnColor`) recess into it. Neutrals are the accent's hue at a fixed low saturation, so changing the accent retints the app. The accent has two roles: `primary` for text and icons that need contrast on a surface, `primaryContainer` for the accent as a fill, at full strength, with `onPrimaryContainer` chosen for legibility on it. Change colours here, not in individual widgets.
 - `app/lib/api/api_client.dart`: `Api` abstraction and feature-level HTTP implementation. `api_transport.dart` owns shared URL, auth, timeout, decode, and WebSocket transport. UI/state code should depend on `Api`, not directly on HTTP.
 - `app/lib/models/note.dart`: notes, checklist items, labels, collaborators, versions, attachments, settings-related value types.
 - `app/lib/models/workspace.dart`: workspace and its roster.
@@ -168,6 +169,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
 - `app/lib/util/linkify.dart`, `highlight.dart`, `mime.dart`, `note_image.dart`: pure display/content helpers.
+- `app/lib/util/network_error.dart`: plain-language wording for requests that never reached the server. Paired with `ApiException.serverMessage`/`statusSummary`, these guarantee every failure the UI shows carries text, including empty bodies and proxy error pages.
 - `app/lib/util/motion.dart`, `snack.dart`, `label_style.dart`: shared UI conventions.
 - `app/test/fake_api.dart`: in-memory implementation of the full `Api` seam.
 - `app/test/notes_store_test.dart`, `settings_store_test.dart`: state and synchronization coverage.

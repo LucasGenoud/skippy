@@ -30,6 +30,10 @@ class SettingsScreen extends StatelessWidget {
     final now = DateTime.now();
 
     return Scaffold(
+      // Settings is a single sheet of rows, not cards on a canvas, so the
+      // whole page is the surface those rows are printed on. Leaving it on the
+      // canvas made it the one screen in the app where nothing sat on paper.
+      backgroundColor: scheme.surface,
       appBar: AppBar(title: const Text('Settings')),
       body: Center(
         child: ConstrainedBox(
