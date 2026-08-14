@@ -262,6 +262,45 @@ void main() {
     });
   });
 
+  group('sign-in failures always say something', () {
+    // The login banner has no other source of text. Every one of these used to
+    // be able to leave it blank or fill it with machine output.
+    test('a wrong server URL reports the status, not an empty body', () async {
+      SharedPreferences.setMockInitialValues({});
+      // A zero-length 404 is what a plain web server answers to /api/auth/login.
+      final auth = storeWith(MockClient((_) async => http.Response('', 404)));
+
+      expect(await auth.signIn('me@example.com', 'secret'), isFalse);
+
+      expect(auth.error, isNotNull);
+      expect(auth.error, isNotEmpty);
+      expect(auth.error, contains('404'));
+    });
+
+    test('an unreachable server names the host', () async {
+      SharedPreferences.setMockInitialValues({});
+      final auth = storeWith(
+        MockClient((_) => Future.error(Exception('Connection refused'))),
+      );
+
+      expect(await auth.signIn('me@example.com', 'secret'), isFalse);
+
+      expect(auth.error, contains('server.test'));
+    });
+
+    test('a rejected password keeps its own wording', () async {
+      SharedPreferences.setMockInitialValues({});
+      final auth = storeWith(
+        MockClient((_) async => http.Response('{"error":"unauthorized"}', 401)),
+      );
+
+      expect(await auth.signIn('me@example.com', 'secret'), isFalse);
+
+      expect(auth.error, 'Wrong email or password');
+      expect(auth.errorStatus, 401);
+    });
+  });
+
   group('sign out', () {
     test('an unreachable server does not hold the session open', () async {
       seedSession();

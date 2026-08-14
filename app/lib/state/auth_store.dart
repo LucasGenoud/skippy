@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/note.dart';
+import '../util/network_error.dart';
 import 'local_cache.dart';
 
 enum AuthStatus { restoring, signedOut, signedIn }
@@ -158,12 +159,14 @@ class AuthStore extends ChangeNotifier {
         // token for a later launch, but do not manufacture a null-user session.
         api.token = null;
         status = AuthStatus.signedOut;
-        error = "Can't restore the saved session while the server is offline";
+        error = "Can't restore the saved session: ${e.serverMessage}";
       }
-    } catch (_) {
+    } catch (e) {
       api.token = null;
       status = AuthStatus.signedOut;
-      error = "Can't restore the saved session while the server is offline";
+      error =
+          "Can't restore the saved session. "
+          '${describeConnectionFailure(e, api.baseUrl)}';
     }
     notifyListeners();
   }
@@ -257,9 +260,9 @@ class AuthStore extends ChangeNotifier {
         _ => e.serverMessage,
       };
       return false;
-    } catch (_) {
+    } catch (e) {
       if (!isCurrent()) return false;
-      error = "Can't reach the server, is it running?";
+      error = describeConnectionFailure(e, baseUrl);
       return false;
     } finally {
       if (generation == _authGeneration) {

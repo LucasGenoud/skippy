@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/screens/login_screen.dart';
 import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/theme.dart';
 import 'package:skippy/widgets/login_field.dart';
 
-Widget loginApp() => ChangeNotifierProvider(
-  create: (_) => AuthStore(api: ApiClient(baseUrl: 'http://unused')),
+/// [server] answers every request; the default never gets called, the tests
+/// that submit the form supply their own failure.
+Widget loginApp({http.Client? server}) => ChangeNotifierProvider(
+  create: (_) => AuthStore(
+    api: ApiClient(baseUrl: 'http://server.test', httpClient: server),
+  ),
   child: MaterialApp(
     theme: buildTheme(Brightness.light),
     home: const LoginScreen(),
@@ -146,6 +153,46 @@ void main() {
 
     expect(find.text('Enter your email'), findsOneWidget);
     expect(find.text('Enter your password'), findsOneWidget);
+  });
+
+  testWidgets('a failure with no server message still fills the banner', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    // Pointing the app at a plain web server: /api/auth/login is a zero-length
+    // 404, which used to paint the red banner with nothing written in it.
+    await tester.pumpWidget(
+      loginApp(server: MockClient((_) async => http.Response('', 404))),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.ancestor(of: find.text('Email'), matching: find.byType(TextField)),
+      'alice@example.test',
+    );
+    await tester.enterText(
+      find.ancestor(
+        of: find.text('Password'),
+        matching: find.byType(TextField),
+      ),
+      'secret1',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    // The banner is the icon plus one Text; that Text has to carry something
+    // an operator can act on.
+    final banner = find.ancestor(
+      of: find.byIcon(Icons.error_outline),
+      matching: find.byType(Container),
+    );
+    expect(banner, findsWidgets);
+    final message = tester.widget<Text>(
+      find.descendant(of: banner.first, matching: find.byType(Text)),
+    );
+    expect(message.data, isNotNull);
+    expect(message.data!.trim(), isNotEmpty);
+    expect(message.data, contains('404'));
   });
 
   testWidgets('typing clears the matching empty-field error', (tester) async {

@@ -22,15 +22,51 @@ class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
   /// Human-readable server error, if the body was our JSON error envelope.
+  ///
+  /// Never returns something there is no point showing. Every caller pipes
+  /// this straight into a banner or a snackbar, and not every response comes
+  /// from us: a wrong server URL lands on some other service's empty 404, and
+  /// a gateway in front of a self-hosted deployment answers with an HTML page.
+  /// Both used to render as an error box with nothing written in it, which is
+  /// worse than no error at all. Anything unusable falls back to
+  /// [statusSummary].
   String get serverMessage {
+    final body = message.trim();
     try {
-      final decoded = jsonDecode(message);
+      final decoded = jsonDecode(body);
       if (decoded is Map && decoded['error'] is String) {
-        return decoded['error'] as String;
+        final error = (decoded['error'] as String).trim();
+        if (error.isNotEmpty) return error;
       }
+      // It parsed as JSON but carried no message of its own; putting the raw
+      // document on screen would just show braces and quotes.
+      return statusSummary;
     } catch (_) {}
-    return message;
+    final usable =
+        body.isNotEmpty && body.length <= 200 && !body.startsWith('<');
+    return usable ? body : statusSummary;
   }
+
+  /// What the status code means in the app's own words, for the failures that
+  /// arrive with no message of their own. The number stays in the text: on a
+  /// self-hosted server it is the one detail worth relaying to whoever runs it.
+  String get statusSummary => switch (statusCode) {
+    400 => 'The server rejected the request (400).',
+    401 => 'Not signed in, or the session has expired (401).',
+    403 => "You don't have access to that (403).",
+    404 || 405 =>
+      "That address didn't answer like a Skippy server "
+          '($statusCode). Check the server URL.',
+    408 => 'The server gave up waiting for the request (408).',
+    409 => 'That conflicts with something already saved (409).',
+    413 => 'That is larger than this server accepts (413).',
+    429 => 'Too many requests — wait a moment and try again (429).',
+    502 || 503 || 504 =>
+      'The server is unavailable right now ($statusCode). It may be '
+          'restarting, or behind a proxy that cannot reach it.',
+    _ when statusCode >= 500 => 'The server ran into an error ($statusCode).',
+    _ => 'The server refused the request ($statusCode).',
+  };
 
   @override
   String toString() => 'ApiException($statusCode): $message';
