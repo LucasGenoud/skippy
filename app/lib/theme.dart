@@ -64,22 +64,33 @@ Color hairlineColor(ColorScheme scheme) =>
 
 /// The fill behind a board column: the trough of the depth model at the top of
 /// this file. Derived from the canvas rather than fixed, so it keeps the
-/// accent's tint and stays one step below whatever the canvas currently is.
+/// accent's tint and moves with it.
+///
+/// A trough is a step *away* from the canvas in whichever direction has room,
+/// which is not the same direction in both themes. In light it goes down, into
+/// the greys. In dark there is nowhere below to go: the canvas is already near
+/// black, where every colour has almost the same luminance, and a column a
+/// shade darker than the canvas came out at 1.08:1 — less separation than the
+/// cards get, which is exactly what it looked like. So a dark column rises
+/// instead, and the cards inside it rise further, the way every dark board
+/// reads anyway.
 Color boardColumnColor(ColorScheme scheme) {
   final canvas = HSLColor.fromColor(scheme.surfaceDim);
+  final step = scheme.brightness == Brightness.light ? -0.075 : 0.045;
   return canvas
-      .withLightness((canvas.lightness - 0.04).clamp(0.0, 1.0))
+      .withLightness((canvas.lightness + step).clamp(0.0, 1.0))
       .toColor();
 }
 
 /// The edge of a board column. Quieter than [hairlineColor] would be here: the
 /// fill already carries the shape, so the border only has to keep the corner
-/// crisp instead of drawing the column a second time. It steps away from the
-/// trough in whichever direction has room left — down in light, up in dark,
-/// where the trough is already close to black.
+/// crisp instead of drawing the column a second time. It continues in the same
+/// direction the trough travelled, and in dark stops short of the card fill:
+/// a rim brighter than the cards inside it turns the column into an outline
+/// drawn over the board.
 Color boardColumnBorderColor(ColorScheme scheme) {
   final trough = HSLColor.fromColor(boardColumnColor(scheme));
-  final step = scheme.brightness == Brightness.light ? -0.05 : 0.06;
+  final step = scheme.brightness == Brightness.light ? -0.05 : 0.028;
   return trough
       .withLightness((trough.lightness + step).clamp(0.0, 1.0))
       .toColor();
@@ -135,8 +146,14 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
 
   // The canvas: the floor of the depth model above. Everything else is placed
   // relative to it.
-  final canvas = neutral(light ? 0.925 : 0.070);
-  final surface = light ? Colors.white : neutral(0.125);
+  //
+  // Separation is bought by moving what sits *on* the canvas, not by darkening
+  // the canvas itself: a light background heavy enough to make white cards pop
+  // on its own reads as dirty paper, and a dark one deep enough to do the same
+  // reads as a hole. So the light canvas stays a pale warm grey and its
+  // troughs go deep, while the dark canvas stays put and its cards rise.
+  final canvas = neutral(light ? 0.940 : 0.070);
+  final surface = light ? Colors.white : neutral(0.155);
 
   // M3 derives `primary` by dropping the seed to tone 40 (tone 80 in dark) so
   // that accent-coloured *text* clears 4.5:1 on a surface. For a yellow seed
@@ -163,12 +180,12 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     onSecondaryContainer: seeded.onSurface,
     surface: surface,
     surfaceDim: canvas,
-    surfaceBright: light ? Colors.white : neutral(0.250),
+    surfaceBright: light ? Colors.white : neutral(0.258),
     surfaceContainerLowest: light ? Colors.white : neutral(0.045),
-    surfaceContainerLow: neutral(light ? 0.970 : 0.150),
-    surfaceContainer: neutral(light ? 0.947 : 0.175),
-    surfaceContainerHigh: neutral(light ? 0.920 : 0.210),
-    surfaceContainerHighest: neutral(light ? 0.885 : 0.250),
+    surfaceContainerLow: neutral(light ? 0.975 : 0.185),
+    surfaceContainer: neutral(light ? 0.955 : 0.210),
+    surfaceContainerHigh: neutral(light ? 0.930 : 0.238),
+    surfaceContainerHighest: neutral(light ? 0.898 : 0.258),
   );
   final base = ThemeData(
     useMaterial3: true,

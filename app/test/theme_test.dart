@@ -40,23 +40,39 @@ void main() {
       }
     });
 
-    test('troughs recess below the canvas, and keep an edge', () {
-      for (final brightness in Brightness.values) {
-        final theme = buildTheme(brightness);
-        final scheme = theme.colorScheme;
-        final trough = boardColumnColor(scheme);
-        expect(
-          trough.computeLuminance(),
-          lessThan(scheme.surfaceDim.computeLuminance()),
-          reason: brightness.name,
-        );
-        // A column border that collapsed to pure black was the first attempt
-        // at this in dark mode.
-        expect(
-          boardColumnBorderColor(scheme),
-          isNot(const Color(0xFF000000)),
-          reason: brightness.name,
-        );
+    // A board column has to read from across the room as a region cards are
+    // dropped into. Which *way* it steps off the canvas is a detail of the
+    // theme, since near black there is no room to go darker; that it steps far
+    // enough, and that cards still lift out of it, is the rule.
+    test('troughs step clear of the canvas, and cards clear of them', () {
+      for (final entry in seeds.entries) {
+        for (final brightness in Brightness.values) {
+          final theme = buildTheme(brightness, seed: entry.value);
+          final scheme = theme.colorScheme;
+          final trough = boardColumnColor(scheme);
+          final where = '${entry.key} / ${brightness.name}';
+          expect(
+            contrast(trough, scheme.surfaceDim),
+            greaterThan(1.1),
+            reason: 'column vs canvas, $where',
+          );
+          expect(
+            contrast(scheme.surface, trough),
+            greaterThan(1.1),
+            reason: 'card vs column, $where',
+          );
+          final border = boardColumnBorderColor(scheme);
+          // A border that collapsed to pure black, and later one brighter than
+          // the cards inside the column, were both earlier attempts at this.
+          expect(border, isNot(const Color(0xFF000000)), reason: where);
+          if (brightness == Brightness.dark) {
+            expect(
+              border.computeLuminance(),
+              lessThan(scheme.surface.computeLuminance()),
+              reason: 'border must not outshine the cards, $where',
+            );
+          }
+        }
       }
     });
   });
