@@ -20,6 +20,26 @@ class PopCheckbox extends StatefulWidget {
     required this.sideColor,
   });
 
+  /// The density every one of these is pinned to, so a checklist's boxes are
+  /// the same size wherever they are built.
+  static const VisualDensity _density = VisualDensity.compact;
+
+  /// The square one of these occupies: a [Checkbox]'s tap target at
+  /// [_density]. Layout that reserves a slot for a checkbox that isn't there
+  /// yet (the checklist composer's "+") asks for this rather than assuming
+  /// the mobile size — a desktop tap target shrink-wraps 8px smaller, and a
+  /// slot that ignored that sat its checkbox out of line with the rows above.
+  static double sizeOf(BuildContext context) {
+    final theme = Theme.of(context);
+    final tapTarget =
+        theme.checkboxTheme.materialTapTargetSize ?? theme.materialTapTargetSize;
+    final base = switch (tapTarget) {
+      MaterialTapTargetSize.padded => kMinInteractiveDimension,
+      MaterialTapTargetSize.shrinkWrap => kMinInteractiveDimension - 8.0,
+    };
+    return base + _density.baseSizeAdjustment.dx;
+  }
+
   @override
   State<PopCheckbox> createState() => _PopCheckboxState();
 }
@@ -109,7 +129,7 @@ class _PopCheckboxState extends State<PopCheckbox>
           child: Checkbox(
             value: widget.value,
             onChanged: widget.onChanged == null ? null : _handleChanged,
-            visualDensity: VisualDensity.compact,
+            visualDensity: PopCheckbox._density,
             side: BorderSide(color: widget.sideColor, width: 1.5),
           ),
         ),

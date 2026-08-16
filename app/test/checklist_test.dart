@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/note.dart';
@@ -49,6 +50,11 @@ void main() {
         ),
       )
       .singleWhere((field) => field.focusNode.hasFocus);
+
+  /// What a field shows: its text minus the zero-width marker an empty row
+  /// parks so that backspace in it is something the platform reports.
+  String written(EditableText field) =>
+      field.controller.text.replaceAll('\u200b', '');
 
   /// What the platform reports for one backspace: the field's text minus its
   /// last character, caret at the end.
@@ -260,12 +266,78 @@ void main() {
       expect(itemsOf('n1'), ['M']);
 
       // Nothing written, nothing left behind: no blank row in the note, and
-      // the composer keeps the caret for another go.
+      // the composer keeps the caret for another go. It holds nothing but the
+      // marker that keeps the *next* backspace reportable.
       backspace(tester);
       await tester.pumpAndSettle();
       expect(itemsOf('n1'), isEmpty);
       expect(find.widgetWithText(TextField, 'List item'), findsOneWidget);
-      expect(focusedField(tester).controller.text, isEmpty);
+      expect(written(focusedField(tester)), isEmpty);
+      await flushTimers(tester);
+    });
+
+    // An empty line is where backspace means "go back up", and the composer is
+    // a line like any other to whoever is typing in it. It keeps its place:
+    // there is no item under it to remove.
+    testWidgets('backspace in an empty composer walks back up the list', (
+      tester,
+    ) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Milk'),
+          ChecklistItem(id: 'i2', text: 'Eggs'),
+        ],
+      );
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pumpAndSettle();
+
+      backspace(tester);
+      await tester.pumpAndSettle();
+
+      final caret = focusedField(tester);
+      expect(written(caret), 'Eggs');
+      expect(caret.controller.selection.isCollapsed, isTrue);
+      expect(caret.controller.selection.baseOffset, 4);
+      expect(itemsOf('n1'), ['Milk', 'Eggs']);
+      expect(find.widgetWithText(TextField, 'List item'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a hardware backspace in the empty composer does the same', (
+      tester,
+    ) async {
+      await openChecklist(
+        tester,
+        items: const [ChecklistItem(id: 'i1', text: 'Milk')],
+      );
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pumpAndSettle();
+
+      final caret = focusedField(tester);
+      expect(written(caret), 'Milk');
+      expect(caret.controller.selection.baseOffset, 4);
+      expect(itemsOf('n1'), ['Milk']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('backspace with nothing above it leaves the composer alone', (
+      tester,
+    ) async {
+      await openChecklist(tester);
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      backspace(tester);
+      await tester.pumpAndSettle();
+
+      expect(written(focusedField(tester)), isEmpty);
+      expect(find.widgetWithText(TextField, 'List item'), findsOneWidget);
+      expect(itemsOf('n1'), isEmpty);
       await flushTimers(tester);
     });
 
@@ -443,5 +515,41 @@ void main() {
       expect(find.text('1 checked item'), findsOneWidget);
       await flushTimers(tester);
     });
+
+    // The composer reserves a fixed-width slot for the "+" that gives way to
+    // a checkbox, so the swap can't nudge the field beside it. A Checkbox's
+    // tap target shrink-wraps 8px narrower on desktop than on mobile, and a
+    // slot that assumed the mobile size sat every item written into the
+    // composer 4px right of the rows above it.
+    testWidgets(
+      'a new item lines up with the rows above it',
+      (tester) async {
+        await openChecklist(
+          tester,
+          items: [ChecklistItem(id: 'i1', text: 'Milk')],
+        );
+        await tester.tap(find.widgetWithText(TextField, 'List item'));
+        await tester.pump();
+        tester.testTextInput.enterText('Eggs');
+        await tester.pumpAndSettle();
+
+        // Tree order: the existing row, then the composer writing the new one.
+        final boxes = find.byType(Checkbox);
+        expect(boxes, findsNWidgets(2));
+        final above = tester.getRect(boxes.first);
+        final written = tester.getRect(boxes.at(1));
+        expect(written.left, moreOrLessEquals(above.left));
+        expect(written.width, moreOrLessEquals(above.width));
+        expect(written.top - above.top, moreOrLessEquals(_rowHeight));
+        await flushTimers(tester);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.macOS,
+      }),
+    );
   });
 }
+
+/// A one-line checklist row, as [AnimatedChecklist] lays it out.
+const double _rowHeight = 48;

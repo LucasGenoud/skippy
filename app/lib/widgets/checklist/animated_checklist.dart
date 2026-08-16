@@ -158,6 +158,15 @@ class _RowHandles {
       final value = controller.value;
       if (value.text != _current.text) _previous = _current;
       _current = value;
+      // The marker is zero-width, so a tap at the very start of an empty row
+      // can drop the caret in front of it, where backspace would again have
+      // nothing to delete. Keep the caret on its far side.
+      if (value.text != _kEmptyRowMarker) return;
+      if (value.selection.isCollapsed && value.selection.baseOffset == 0) {
+        controller.selection = const TextSelection.collapsed(
+          offset: _kEmptyRowMarker.length,
+        );
+      }
     });
   }
 
@@ -277,6 +286,20 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     _syncItems();
     _refreshOrder();
     _composer.focusNode.addListener(_onComposerFocusChange);
+    // Backspace in an empty composer steps back up to the line above, the same
+    // as in any other empty row. Hardware keyboards get here; where the
+    // keypress never surfaces as a key event, the empty-row marker catches it
+    // as an edit instead (see [_composerChanged]).
+    _composer.focusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.backspace &&
+          _composer.text.isEmpty &&
+          !widget.readOnly &&
+          _focusRowAboveComposer()) {
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _popup.show();
@@ -423,10 +446,34 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   void _onComposerFocusChange() {
     if (!mounted) return;
-    // Leaving the composer settles whatever it was writing: the row it made
-    // becomes an ordinary row of the list.
-    if (!_composer.focusNode.hasFocus) _commitComposing();
+    if (_composer.focusNode.hasFocus) {
+      // An empty composer needs the marker as much as an empty row does: it
+      // is what makes the next backspace something a soft keyboard reports.
+      _armEmptyMarker(_composer);
+    } else {
+      _clearEmptyMarker(_composer);
+      // Leaving the composer settles whatever it was writing: the row it made
+      // becomes an ordinary row of the list.
+      _commitComposing();
+    }
     _onAnyFocusChange();
+  }
+
+  /// Walks the caret from the composer to the end of the last item, for a
+  /// backspace with nothing left to delete. Nothing is removed on the way:
+  /// unlike a row, the composer holds no item of its own, and it stays where
+  /// it is for the next thing to be written. Answers whether there was a line
+  /// above to go to — with none, the keypress is not ours to take.
+  bool _focusRowAboveComposer() {
+    final target = _uncheckedOrder.lastOrNull;
+    if (target == null || widget.readOnly) return false;
+    _pendingFocusId = target;
+    // Hand focus over inside the keypress itself, so a soft keyboard stays up;
+    // the handoff then places the caret at the end of that line. Same reasoning
+    // as [_focusNeighborThenRemove].
+    _handles[target]?.focusNode.requestFocus();
+    setState(() {});
+    return true;
   }
 
   void _onAnyFocusChange() {
@@ -588,18 +635,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   _RowHandles _createHandles(String itemId) {
     final handles = _RowHandles(_byId[itemId]?.text ?? '');
-    handles.controller.addListener(() {
-      // The marker is zero-width, so a tap at the very start of an empty row
-      // can drop the caret in front of it, where backspace would again have
-      // nothing to delete. Keep the caret on its far side.
-      if (handles.controller.text != _kEmptyRowMarker) return;
-      final selection = handles.controller.selection;
-      if (selection.isCollapsed && selection.baseOffset == 0) {
-        handles.controller.selection = const TextSelection.collapsed(
-          offset: _kEmptyRowMarker.length,
-        );
-      }
-    });
     handles.focusNode.addListener(() {
       if (handles.focusNode.hasFocus) {
         _armEmptyMarker(handles);
@@ -674,6 +709,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   void _composerChanged(String value) {
     final text = _withoutMarker(value);
     final composingId = _composingId;
+    final wasArmed = _isEmptyRowBackspace(_composer);
+    _composer.emptyBackspaceArmed = false;
     _composer.typedSinceFocus = true;
     _popupRevision.value++;
     if (text.isEmpty) {
@@ -686,10 +723,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         );
         return;
       }
+      // Backspace on a composer that was already empty. There is nothing here
+      // to delete, so the caret goes back up to the line above instead.
+      if (composingId == null) {
+        if (wasArmed && _focusRowAboveComposer()) return;
+        _armEmptyMarker(_composer);
+        return;
+      }
       // Everything typed so far has been deleted: the half-written row goes
       // with it rather than leaving a blank line in the note. The composer
-      // itself stays put, with the caret in it.
+      // itself stays put, with the caret in it, and re-arms so the next
+      // backspace is the one that steps up.
       _discardComposing();
+      _armEmptyMarker(_composer);
       return;
     }
     _composer.unacknowledged = text;
@@ -840,9 +886,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   Widget _composerLeading(ChecklistItem? composing, ColorScheme scheme) {
     return SizedBox.square(
-      // A fixed slot, so the swap can't nudge the text field beside it.
+      // A fixed slot, so the swap can't nudge the text field beside it. It is
+      // exactly a checkbox wide: the "+" stands in for the checkbox this row
+      // is about to have, so the two must sit where every row above has one.
       key: const Key('checklist-composer-leading'),
-      dimension: 40,
+      dimension: PopCheckbox.sizeOf(context),
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: composing == null ? 0.0 : 1.0),
         duration: _swapDuration,
