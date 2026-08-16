@@ -304,25 +304,30 @@ void main() {
       await flushTimers(tester);
     });
 
-    testWidgets('a hardware backspace in the empty composer does the same', (
-      tester,
-    ) async {
-      await openChecklist(
-        tester,
-        items: const [ChecklistItem(id: 'i1', text: 'Milk')],
-      );
-      await tester.tap(find.widgetWithText(TextField, 'List item'));
-      await tester.pumpAndSettle();
+    // The desktop path: a real key event, which the row takes before the
+    // field ever sees it. Soft keyboards and the browser go the other way,
+    // through the marker, and land in the same place.
+    testWidgets(
+      'a hardware backspace in the empty composer does the same',
+      (tester) async {
+        await openChecklist(
+          tester,
+          items: const [ChecklistItem(id: 'i1', text: 'Milk')],
+        );
+        await tester.tap(find.widgetWithText(TextField, 'List item'));
+        await tester.pumpAndSettle();
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
-      await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pumpAndSettle();
 
-      final caret = focusedField(tester);
-      expect(written(caret), 'Milk');
-      expect(caret.controller.selection.baseOffset, 4);
-      expect(itemsOf('n1'), ['Milk']);
-      await flushTimers(tester);
-    });
+        final caret = focusedField(tester);
+        expect(written(caret), 'Milk');
+        expect(caret.controller.selection.baseOffset, 4);
+        expect(itemsOf('n1'), ['Milk']);
+        await flushTimers(tester);
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
 
     testWidgets('backspace with nothing above it leaves the composer alone', (
       tester,
