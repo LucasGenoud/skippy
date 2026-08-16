@@ -941,7 +941,7 @@ class _UserAvatarMenu extends StatelessWidget {
 
 /// A small connectivity/sync indicator overlaid on the avatar: offline (no
 /// server), syncing (unsynced local edits in flight, animated), or synced
-/// (all changes saved). Ringed with the bar colour so it reads over the avatar.
+/// (all changes saved). A bare glyph, no plate behind it.
 class _SyncBadge extends StatefulWidget {
   final SyncStatus status;
   const _SyncBadge({required this.status});
@@ -1013,16 +1013,22 @@ class _SyncBadgeState extends State<_SyncBadge>
     };
     return Tooltip(
       message: tip,
-      child: Container(
-        padding: const EdgeInsets.all(1.5),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          // Ring in the bar's colour so the badge separates from the avatar.
-          color: scheme.surface,
-        ),
-        child: RotationTransition(
-          turns: _spin,
-          child: Icon(icon, size: 13, color: color),
+      child: RotationTransition(
+        turns: _spin,
+        child: Icon(
+          icon,
+          size: 13,
+          color: color,
+          // The glyph sits over the corner of the avatar and the bar at once.
+          // A disc behind it would read as a sticker on the avatar, so it
+          // carries its own soft shadow instead: enough to hold its edge
+          // against the avatar's fill, invisible against the bar.
+          shadows: [
+            Shadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 2,
+            ),
+          ],
         ),
       ),
     );
