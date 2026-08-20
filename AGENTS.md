@@ -124,7 +124,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/assist.rs`: effective LLM settings, prompts, assistant routing, and structured-output parsing.
 - `backend/src/llm.rs`: OpenAI-compatible completion and streaming client.
 - `backend/src/notify.rs`: reminder scheduler (notes and checklist items) and
-  ntfy/Telegram connectors.
+  the ntfy/Telegram/SMTP connectors.
 - `backend/src/unfurl.rs`: outbound URL validation, SSRF protections, fetching, and metadata parsing.
 - `backend/src/ws.rs`: per-user event fan-out hub.
 - `backend/tests/api/main.rs`: modular API integration test entry point.
@@ -227,6 +227,8 @@ Managed settings are described by the backend configuration registry. A field ca
 
 Every notification connector key in `kNotifyChannels` must match a backend connector identifier. Preserve all channel-specific fields when serializing settings, even if their section is collapsed or temporarily disabled.
 
+Connector keys are managed keys too: the SMTP server is in `MANAGED_KEYS`, so a deployment can pin its mail account and leave each user only `smtp_to`. Any read site that resolves a notification channel must therefore go through `ManagedSettings::overlay`/`overlay_onto` rather than reading the stored document straight, the reminder sweep and the `/api/notify/test` probe both do. On the client, `_ownManagedValues` in `SettingsStore` covers the notify keys for the same reason it covers the LLM ones: a save from a device that sees a pinned value must not persist the server's copy over the user's own.
+
 ### Semantic search and chat
 
 Embeddings come from an external OpenAI-compatible API (`EMBED_URL`), never from a model loaded in-process, keep it that way, since an in-process model dominates the server's memory. The vector width is probed at startup rather than hardcoded, and `{model}:{dims}` is the index signature: change either and `SqliteVectorIndex::connect` drops all workspace collections so startup reindexing re-embeds. sqlite-vec uses one virtual table per workspace and one vector per note. Search/chat select the caller's accessible workspace collections and must still recheck every hit through the repository, especially for direct shares into an otherwise inaccessible workspace. Search is optional; route behavior, `/api/capabilities`, settings visibility, and tests must agree when it is unavailable.
@@ -283,7 +285,7 @@ Use conditional exports with a neutral shared interface plus explicit web/native
 
 ### Change notifications or attachments
 
-A notification connector touches the backend `Connector` model, connector builder and probe/scheduler behavior, frontend channel registry/settings serialization, settings UI, and deterministic tests.
+A notification connector touches the backend `Connector` model, connector builder and probe/scheduler behavior, frontend channel registry/settings serialization, settings UI, and deterministic tests. A connector reaching a service over something other than HTTP still owes the private-endpoint policy: `outbound::ensure_allowed_host` is the non-HTTP counterpart of `resolve_http_url`, and it deliberately promises less (a policy gate, not a pinned resolver), because an SMTP server's certificate is issued for its hostname.
 
 An attachment change usually touches upload handlers, metadata persistence, both `FileStore` implementations, URL signing/serving, client URL resolution, editor/card rendering, cleanup, and tests for authorization and ranges.
 

@@ -56,11 +56,14 @@ pub async fn llm_test(
 pub async fn notify_test(
     State(state): State<AppState>,
     AuthUser(_user_id): AuthUser,
-    Json(body): Json<serde_json::Value>,
+    Json(mut body): Json<serde_json::Value>,
 ) -> ApiResult<Json<serde_json::Value>> {
     if !body.is_object() {
         return Err(ApiError::BadRequest("expected a JSON object".to_string()));
     }
+    // Server-managed keys win over the (locked, and for secrets blank) body
+    // fields, so "Send test" exercises what a real reminder would use.
+    state.managed.overlay_onto(&mut body);
     if !state.notifiers.iter().any(|c| c.configured(&body)) {
         return Err(ApiError::BadRequest(
             "configure at least one notification channel".to_string(),

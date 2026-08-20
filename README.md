@@ -10,7 +10,8 @@ persistence and optimistic, offline-capable edits.
 - Grid, list, and kanban board views with drag-to-reorder
 - Workspaces, labels, stages, archive, trash, time and location reminders,
   search, and exports
-- Reminders on a whole note or on a single checklist item
+- Reminders on a whole note or on a single checklist item, pushed through ntfy,
+  Telegram, or email
 - Sharing, public read-only links, live sync, and version history
 - Optional self-hosted Whisper transcription, Tesseract image text recognition,
   and OpenAI-compatible embeddings
@@ -139,7 +140,7 @@ deployment.
 | `S3_SECRET_KEY` | unset | Required when storage is `s3` |
 | `S3_REGION` | `garage` | S3 signing region |
 | `S3_BUCKET_PREFIX` | `sticky-notes-` | Prefix for per-user buckets |
-| `ALLOW_PRIVATE_USER_ENDPOINTS` | off | Allow user-configured AI/notification URLs on private networks |
+| `ALLOW_PRIVATE_USER_ENDPOINTS` | off | Allow user-configured AI/notification endpoints (including a LAN mail server) on private networks |
 | `UNFURL_ALLOW_PRIVATE` | off | Allow link previews for private/loopback hosts |
 | `TELEGRAM_API` | `https://api.telegram.org` | Telegram API base URL |
 
@@ -153,6 +154,18 @@ LLM_MODEL
 LLM_LABELING      # true/false
 LLM_CHAT          # true/false
 LLM_WRITING       # true/false
+```
+
+Email reminders work the same way. A deployment with its own mail server pins
+it once, and each user then only fills in the address to send to:
+
+```text
+SMTP_HOST
+SMTP_PORT         # optional; defaults to 465, 587, or 25 to match SMTP_SECURITY
+SMTP_SECURITY     # tls (default), starttls, or none
+SMTP_USERNAME
+SMTP_PASSWORD     # secret; never returned to the app
+SMTP_FROM         # defaults to SMTP_USERNAME
 ```
 
 Leave a variable unset to keep that field the user's own. The override is
@@ -185,6 +198,12 @@ values come from the shell or `.env`.
 | server (optional) | `LLM_LABELING` | host/.env; empty by default | Forces automatic labeling on or off. |
 | server (optional) | `LLM_CHAT` | host/.env; empty by default | Forces notes chat on or off. |
 | server (optional) | `LLM_WRITING` | host/.env; empty by default | Forces AI note editing on or off. |
+| server (optional) | `SMTP_HOST` | host/.env; empty by default | Server-managed mail server for email reminders; locks the field in the app. |
+| server (optional) | `SMTP_PORT` | host/.env; empty by default | Mail server port; blank follows `SMTP_SECURITY`. |
+| server (optional) | `SMTP_SECURITY` | host/.env; `tls` by default | `tls`, `starttls`, or `none`. |
+| server (optional) | `SMTP_USERNAME` | host/.env; empty by default | Mail account to authenticate as. |
+| server (optional) | `SMTP_PASSWORD` | host/.env; empty by default | Mail account password; never returned to the app. |
+| server (optional) | `SMTP_FROM` | host/.env; empty by default | Address reminders are sent from. |
 | whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |
 | whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
 | whisper (GPU) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |

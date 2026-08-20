@@ -18,7 +18,7 @@ class NotifyConfigTile extends StatelessWidget {
     final settings = context.watch<SettingsStore>();
     final channels = settings.configuredNotifyChannels;
     final summary = channels.isEmpty
-        ? 'Not configured, get reminders via ${[for (final c in kNotifyChannels) c.label].join(' or ')}'
+        ? 'Not configured, get reminders via ${_orList([for (final c in kNotifyChannels) c.label])}'
         : channels.join(' + ');
     return ListTile(
       leading: const Icon(Icons.send_to_mobile_outlined),
@@ -29,6 +29,15 @@ class NotifyConfigTile extends StatelessWidget {
     );
   }
 }
+
+/// "a or b", "a, b, or c": the channel list reads as a sentence however many
+/// connectors the registry grows to.
+String _orList(List<String> items) => switch (items.length) {
+  0 => '',
+  1 => items.first,
+  2 => '${items.first} or ${items.last}',
+  _ => '${items.sublist(0, items.length - 1).join(', ')}, or ${items.last}',
+};
 
 /// Channel editor rendered entirely from [kNotifyChannels], with a delivery
 /// probe. Testing uses the current field values (not the saved settings), so
@@ -54,6 +63,9 @@ class _NotifyConfigDialog extends StatefulWidget {
 
 class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
   late final Map<String, TextEditingController> _fields;
+
+  /// Dropdown fields keep their value here rather than in a controller.
+  final Map<String, String> _choices = {};
   bool _testing = false;
   ({bool ok, String? error})? _testResult;
 
@@ -62,9 +74,22 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
     super.initState();
     final values = context.read<SettingsStore>().notifyValues;
     _fields = {
-      for (final key in kNotifyFieldKeys)
-        key: TextEditingController(text: values[key] ?? ''),
+      for (final channel in kNotifyChannels)
+        for (final field in channel.fields)
+          if (!field.isChoice)
+            field.key: TextEditingController(text: values[field.key] ?? ''),
     };
+    for (final channel in kNotifyChannels) {
+      for (final field in channel.fields) {
+        if (!field.isChoice) continue;
+        final stored = (values[field.key] ?? '').trim();
+        // A blank value means the connector's own default, which is the first
+        // choice, so the dropdown says what will actually happen.
+        _choices[field.key] = field.options.any((o) => o.value == stored)
+            ? stored
+            : field.options.first.value;
+      }
+    }
   }
 
   @override
@@ -77,6 +102,7 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
 
   Map<String, String> get _values => {
     for (final entry in _fields.entries) entry.key: entry.value.text.trim(),
+    ..._choices,
   };
 
   bool get _anyConfigured =>
@@ -99,6 +125,57 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
   void _save() {
     context.read<SettingsStore>().setNotifyValues(_values);
     Navigator.of(context).pop();
+  }
+
+  /// One field, locked when the server pins it. A deployment can supply its
+  /// own mail server, leaving the user only their address to fill in, so this
+  /// mirrors the AI-provider dialog: disabled, with a lock and a line saying
+  /// where the value came from.
+  Widget _field(NotifyField field) {
+    final managed = context.read<SettingsStore>().isManaged(field.key);
+    final label = field.mandatory ? field.label : '${field.label} (optional)';
+    final helper = managed ? 'Set by the server' : field.helper;
+    final lock = managed ? const Icon(Icons.lock_outline, size: 18) : null;
+    if (field.isChoice) {
+      return DropdownButtonFormField<String>(
+        key: ValueKey('notify-field-${field.key}'),
+        initialValue: _choices[field.key],
+        decoration: InputDecoration(
+          labelText: field.label,
+          helperText: helper,
+          suffixIcon: lock,
+        ),
+        items: [
+          for (final option in field.options)
+            DropdownMenuItem(value: option.value, child: Text(option.label)),
+        ],
+        onChanged: managed
+            ? null
+            : (value) => setState(() {
+                if (value != null) _choices[field.key] = value;
+              }),
+      );
+    }
+    return TextField(
+      key: ValueKey('notify-field-${field.key}'),
+      controller: _fields[field.key],
+      enabled: !managed,
+      // A managed secret is never sent to the client, so there is nothing to
+      // obscure and nothing to show but a masked placeholder.
+      obscureText: field.obscure && !managed,
+      keyboardType: field.numeric ? TextInputType.number : null,
+      // Re-evaluate the probe button's enabled state.
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: managed && field.obscure
+            ? '•••••• (set by the server)'
+            : field.hint,
+        helperText: helper,
+        helperMaxLines: 2,
+        suffixIcon: lock,
+      ),
+    );
   }
 
   @override
@@ -135,20 +212,7 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
                     ),
                     for (final field in channel.fields) ...[
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: _fields[field.key],
-                        obscureText: field.obscure,
-                        // Re-evaluate the probe button's enabled state.
-                        onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(
-                          labelText: field.mandatory
-                              ? field.label
-                              : '${field.label} (optional)',
-                          hintText: field.hint,
-                          helperText: field.helper,
-                          helperMaxLines: 2,
-                        ),
-                      ),
+                      _field(field),
                     ],
                   ],
                 ],

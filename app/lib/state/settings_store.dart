@@ -240,14 +240,16 @@ class SettingsStore extends ChangeNotifier {
   /// Is this settings-document key server-managed (and thus locked)?
   bool isManaged(String key) => managed.containsKey(key);
 
-  /// What the user's own settings document held for each LLM key, snapshotted
-  /// before [_applyManaged] overlays the server's values on top. [toJson]
-  /// re-emits these for managed keys: the fields carry the server's values so
-  /// the UI can show what will actually be used, but a save from this device
-  /// must not overwrite the configuration the user chose for themselves. Without
-  /// it, an env-pinned key would quietly erase their own on the next save of any
-  /// unrelated setting, and only surface once the server stopped managing it.
-  Map<String, Object?> _ownLlmValues = {};
+  /// What the user's own settings document held for each manageable key,
+  /// snapshotted before [_applyManaged] overlays the server's values on top.
+  /// [toJson] re-emits these for managed keys: the fields carry the server's
+  /// values so the UI can show what will actually be used, but a save from this
+  /// device must not overwrite the configuration the user chose for themselves.
+  /// Without it, an env-pinned key would quietly erase their own on the next
+  /// save of any unrelated setting, and only surface once the server stopped
+  /// managing it. Covers the notification keys as well as the LLM ones: a
+  /// deployment can pin its mail server the same way it pins a provider.
+  Map<String, Object?> _ownManagedValues = {};
 
   bool get llmConfigured => llmBaseUrl.isNotEmpty && llmModel.isNotEmpty;
   bool get autoLabelingAvailable => llmConfigured && llmLabelingEnabled;
@@ -330,7 +332,7 @@ class SettingsStore extends ChangeNotifier {
       imageOcrCapable,
       serverVersion,
     ],
-    // Managed values never reach [toJson] (see [_ownLlmValues]), so they need
+    // Managed values never reach [toJson] (see [_ownManagedValues]), so they need
     // their own entry here or a change to what the server pins would not
     // rebuild the settings UI.
     'managed': {
@@ -403,6 +405,12 @@ class SettingsStore extends ChangeNotifier {
     llmLabelingEnabled = flag('llm_labeling') ?? llmLabelingEnabled;
     llmChatEnabled = flag('llm_chat') ?? llmChatEnabled;
     llmWritingEnabled = flag('llm_writing') ?? llmWritingEnabled;
+    // Notification keys are managed the same way (a deployment's own SMTP
+    // server), so the dialog shows what will really be used and
+    // [notifyConfigured] counts a channel the server completes.
+    for (final key in kNotifyFieldKeys) {
+      if (text(key) case final String value) notifyValues[key] = value;
+    }
   }
 
   void _applyJson(Map<String, dynamic> json) {
@@ -436,17 +444,18 @@ class SettingsStore extends ChangeNotifier {
     // Taken here rather than in [_applyManaged], which also runs on a load that
     // skipped this method (a local save still in flight) and would then snapshot
     // the previous overlay instead of the user's own values.
-    _ownLlmValues = {
+    notifyValues = {
+      for (final key in kNotifyFieldKeys)
+        key: ((json[key] as String?) ?? '').trim(),
+    };
+    _ownManagedValues = {
       'llm_base_url': llmBaseUrl,
       'llm_api_key': llmApiKey,
       'llm_model': llmModel,
       'llm_labeling': llmLabelingEnabled,
       'llm_chat': llmChatEnabled,
       'llm_writing': llmWritingEnabled,
-    };
-    notifyValues = {
-      for (final key in kNotifyFieldKeys)
-        key: ((json[key] as String?) ?? '').trim(),
+      for (final key in kNotifyFieldKeys) key: notifyValues[key],
     };
     reminderNotificationsEnabled = json['reminder_notifications'] != false;
     deviceNotificationsEnabled = json['device_notifications'] == true;
@@ -494,7 +503,7 @@ class SettingsStore extends ChangeNotifier {
     // read. Persist what the user configured instead, so un-pinning an env var
     // hands them their own provider back rather than a copy of the server's.
     for (final key in managed.keys)
-      if (_ownLlmValues.containsKey(key)) key: _ownLlmValues[key],
+      if (_ownManagedValues.containsKey(key)) key: _ownManagedValues[key],
   };
 
   Map<String, dynamic> _doc() => {

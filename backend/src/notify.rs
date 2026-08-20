@@ -1,5 +1,5 @@
-//! Reminder notifications, delivered through pluggable connectors (ntfy and
-//! Telegram out of the box). Like the LLM integration (and unlike
+//! Reminder notifications, delivered through pluggable connectors (ntfy,
+//! Telegram, and email out of the box). Like the LLM integration (and unlike
 //! search/transcription) this is per-user configuration, not server wiring:
 //! each user puts their channel details in their settings document, and the
 //! reminder scheduler reads them when a note's `reminder_at` comes due. A
@@ -16,6 +16,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Months, Utc};
+use lettre::address::Address;
+use lettre::message::Mailbox;
+use lettre::message::header::ContentType;
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde_json::Value;
 
 use crate::AppState;
@@ -165,6 +170,9 @@ pub fn default_connectors() -> Vec<Arc<dyn Connector>> {
     vec![
         Arc::new(NtfyConnector),
         Arc::new(TelegramConnector::new(client)),
+        Arc::new(SmtpConnector::new(
+            crate::outbound::allow_private_user_endpoints(),
+        )),
     ]
 }
 
@@ -443,7 +451,11 @@ async fn deliver_to_participants(state: &AppState, note_id: &str, notification: 
                 continue;
             }
         };
-        let settings = settings_value(settings.as_deref());
+        // Overlaid, not read raw: a connector key the operator pinned through
+        // the environment (an SMTP server, say) has to reach the sweep, or it
+        // would apply everywhere in the app except where reminders are
+        // actually delivered.
+        let settings = state.managed.overlay(settings.as_deref());
         if !notifications_enabled(&settings) {
             continue;
         }
@@ -547,6 +559,175 @@ pub fn spawn_reminder_scheduler(state: AppState) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// Email (SMTP)
+
+/// How the connection to the mail server is protected. The wire values are
+/// shared with the client's channel registry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmtpSecurity {
+    /// Implicit TLS, the whole session encrypted from the first byte (465).
+    Tls,
+    /// Plain connection upgraded with STARTTLS (587).
+    StartTls,
+    /// No encryption. For a relay reached over a trusted network only.
+    None,
+}
+
+impl SmtpSecurity {
+    /// Anything unrecognized reads as TLS: an unknown value must never
+    /// downgrade a connection that was meant to be encrypted.
+    pub fn from_setting(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "starttls" => Self::StartTls,
+            "none" => Self::None,
+            _ => Self::Tls,
+        }
+    }
+
+    pub fn default_port(self) -> u16 {
+        match self {
+            Self::Tls => 465,
+            Self::StartTls => 587,
+            Self::None => 25,
+        }
+    }
+}
+
+/// An SMTP configuration resolved out of a settings document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub security: SmtpSecurity,
+    pub username: String,
+    pub password: String,
+    /// Envelope sender. Defaults to the username when that is an address,
+    /// which is what most providers expect anyway.
+    pub from: String,
+    pub to: String,
+}
+
+/// Read the SMTP keys out of a settings document, or `None` when the channel
+/// is not fully configured. Pure, so the defaulting rules (port from the
+/// security mode, sender from the username) are testable on their own.
+pub fn parse_smtp_settings(settings: &Value) -> Option<SmtpConfig> {
+    let host = text(settings, "smtp_host");
+    let to = text(settings, "smtp_to");
+    let username = text(settings, "smtp_username");
+    let from = match text(settings, "smtp_from") {
+        empty if empty.is_empty() => username.clone(),
+        from => from,
+    };
+    if host.is_empty() || to.is_empty() || from.is_empty() {
+        return None;
+    }
+    let security = SmtpSecurity::from_setting(&text(settings, "smtp_security"));
+    // A blank or nonsense port falls back to the mode's standard one rather
+    // than failing: the field is optional in the UI for exactly that reason.
+    let port = text(settings, "smtp_port")
+        .parse::<u16>()
+        .ok()
+        .filter(|port| *port > 0)
+        .unwrap_or_else(|| security.default_port());
+    Some(SmtpConfig {
+        host,
+        port,
+        security,
+        username,
+        password: text(settings, "smtp_password"),
+        from,
+        to,
+    })
+}
+
+/// Emails a reminder through the user's (or the operator's) SMTP server.
+///
+/// Keys: `smtp_host`, `smtp_port`, `smtp_security` (`tls`/`starttls`/`none`),
+/// `smtp_username`, `smtp_password`, `smtp_from`, `smtp_to`. Every one of them
+/// can be pinned by the operator through [`crate::config::MANAGED_KEYS`], so a
+/// deployment with a house mail server leaves each user only their own address
+/// to fill in, while a user on a server that pins nothing can bring their own.
+pub struct SmtpConnector {
+    /// Whether a mail server on a private address is allowed. Passed in rather
+    /// than read from the environment on each send so tests can point the
+    /// connector at a loopback fixture without touching process-wide state.
+    allow_private: bool,
+}
+
+impl SmtpConnector {
+    pub fn new(allow_private: bool) -> Self {
+        Self { allow_private }
+    }
+}
+
+/// Parse one configured address, naming the field so a typo is actionable.
+fn mailbox(field: &str, address: &str, name: Option<&str>) -> anyhow::Result<Mailbox> {
+    let parsed: Address = address
+        .parse()
+        .map_err(|_| anyhow::anyhow!("{field} is not a valid email address: {address}"))?;
+    Ok(Mailbox::new(name.map(str::to_string), parsed))
+}
+
+#[async_trait]
+impl Connector for SmtpConnector {
+    fn name(&self) -> &'static str {
+        "email"
+    }
+
+    fn configured(&self, settings: &Value) -> bool {
+        parse_smtp_settings(settings).is_some()
+    }
+
+    async fn send(&self, settings: &Value, notification: &Notification) -> anyhow::Result<()> {
+        let config = parse_smtp_settings(settings)
+            .ok_or_else(|| anyhow::anyhow!("email needs a server, a sender, and a recipient"))?;
+        crate::outbound::ensure_allowed_host(&config.host, config.port, self.allow_private).await?;
+
+        let subject = match notification.title.trim() {
+            "" => "Reminder".to_string(),
+            title => title.to_string(),
+        };
+        // An empty body would arrive as a blank email; the subject is the
+        // reminder, so it becomes the text too.
+        let body = match notification.body.trim() {
+            "" => subject.clone(),
+            body => body.to_string(),
+        };
+        let message = Message::builder()
+            .from(mailbox("smtp_from", &config.from, Some("Skippy"))?)
+            .to(mailbox("smtp_to", &config.to, None)?)
+            .subject(subject)
+            .header(ContentType::TEXT_PLAIN)
+            .body(body)?;
+
+        let mut builder = match config.security {
+            SmtpSecurity::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(&config.host)?,
+            SmtpSecurity::StartTls => {
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.host)?
+            }
+            // Unencrypted, so only reachable at all on a deployment that has
+            // opted into private endpoints or is talking to a public relay on
+            // port 25 by choice.
+            SmtpSecurity::None => {
+                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&config.host)
+            }
+        }
+        .port(config.port)
+        .timeout(Some(Duration::from_secs(20)));
+        if !config.username.is_empty() {
+            builder = builder.credentials(Credentials::new(
+                config.username.clone(),
+                config.password.clone(),
+            ));
+        }
+        // Built per send: the configuration belongs to the user whose reminder
+        // this is, so there is no one transport to keep around.
+        builder.build().send(message).await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -583,6 +764,133 @@ mod tests {
         // Garbage documents read as unconfigured, not as errors.
         let s = settings_value(Some("not json"));
         assert!(!ntfy.configured(&s));
+    }
+
+    #[test]
+    fn email_is_configured_by_a_server_a_sender_and_a_recipient() {
+        let email = &connectors()[2];
+        assert_eq!(email.name(), "email");
+
+        // A server alone delivers to nobody.
+        let s = settings_value(Some(r#"{"smtp_host":"mail.example.test"}"#));
+        assert!(!email.configured(&s));
+
+        // A recipient still needs someone to send as; the username counts.
+        let s = settings_value(Some(
+            r#"{"smtp_host":"mail.example.test","smtp_to":"ada@example.test"}"#,
+        ));
+        assert!(!email.configured(&s));
+        let s = settings_value(Some(
+            r#"{"smtp_host":"mail.example.test","smtp_to":"ada@example.test",
+                "smtp_username":"skippy@example.test"}"#,
+        ));
+        assert!(email.configured(&s));
+    }
+
+    #[test]
+    fn smtp_settings_fill_in_the_port_and_the_sender() {
+        let parse = |json: &str| parse_smtp_settings(&settings_value(Some(json))).unwrap();
+
+        // Implicit TLS is the default, and so is its port.
+        let c = parse(
+            r#"{"smtp_host":" mail.example.test ","smtp_to":"ada@example.test",
+                "smtp_username":"skippy@example.test","smtp_password":"pw"}"#,
+        );
+        assert_eq!(c.host, "mail.example.test");
+        assert_eq!(c.security, SmtpSecurity::Tls);
+        assert_eq!(c.port, 465);
+        // No explicit sender: the account being authenticated as is the one
+        // the provider will accept mail from anyway.
+        assert_eq!(c.from, "skippy@example.test");
+        assert_eq!(c.password, "pw");
+
+        // Each mode brings its own standard port, and an explicit one wins.
+        let with = |security: &str, port: &str| {
+            parse(&format!(
+                r#"{{"smtp_host":"h","smtp_to":"a@b.test","smtp_from":"c@d.test",
+                     "smtp_security":"{security}","smtp_port":"{port}"}}"#
+            ))
+        };
+        assert_eq!(with("starttls", "").port, 587);
+        assert_eq!(with("none", "").port, 25);
+        assert_eq!(with("starttls", "2525").port, 2525);
+        assert_eq!(with("STARTTLS", "").security, SmtpSecurity::StartTls);
+        // An explicit sender wins over the username, and a port that is not a
+        // port falls back rather than failing a delivery later.
+        let c = with("tls", "not-a-port");
+        assert_eq!(c.from, "c@d.test");
+        assert_eq!(c.port, 465);
+        // An unrecognized mode must never quietly drop encryption.
+        assert_eq!(with("plaintext-please", "").security, SmtpSecurity::Tls);
+    }
+
+    #[tokio::test]
+    async fn email_reports_a_bad_address_instead_of_sending() {
+        let email = SmtpConnector::new(true);
+        let settings = settings_value(Some(
+            r#"{"smtp_host":"mail.example.test","smtp_to":"not-an-address",
+                "smtp_from":"skippy@example.test"}"#,
+        ));
+        let error = email
+            .send(
+                &settings,
+                &Notification {
+                    title: "t".into(),
+                    body: "b".into(),
+                },
+            )
+            .await
+            .expect_err("invalid recipient");
+        let message = format!("{error:#}");
+        assert!(message.contains("smtp_to"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn email_over_tls_builds_a_client_and_fails_by_returning() {
+        // Guards the branch the fixture-backed tests cannot reach: building
+        // the TLS transport. rustls panics rather than erroring when its
+        // crypto provider is ambiguous (two providers enabled in one
+        // dependency graph), which would surface at 3am inside a sweep. A
+        // closed port gets us through construction and no further.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        for security in ["tls", "starttls"] {
+            let settings = settings_value(Some(&format!(
+                r#"{{"smtp_host":"127.0.0.1","smtp_port":"{port}","smtp_security":"{security}",
+                     "smtp_to":"ada@example.test","smtp_from":"skippy@example.test"}}"#
+            )));
+            let result = SmtpConnector::new(true)
+                .send(
+                    &settings,
+                    &Notification {
+                        title: "t".into(),
+                        body: "b".into(),
+                    },
+                )
+                .await;
+            assert!(result.is_err(), "{security} reached a closed port");
+        }
+    }
+
+    #[tokio::test]
+    async fn email_refuses_a_private_mail_server_unless_allowed() {
+        let settings = settings_value(Some(
+            r#"{"smtp_host":"localhost","smtp_security":"none","smtp_to":"ada@example.test",
+                "smtp_from":"skippy@example.test"}"#,
+        ));
+        let notification = Notification {
+            title: "t".into(),
+            body: "b".into(),
+        };
+        let error = SmtpConnector::new(false)
+            .send(&settings, &notification)
+            .await
+            .expect_err("private host");
+        assert!(
+            format!("{error:#}").contains("private service endpoints"),
+            "{error:#}"
+        );
     }
 
     #[test]

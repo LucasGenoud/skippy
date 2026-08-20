@@ -6,8 +6,17 @@
 /// enabled checks pick it up automatically.
 library;
 
-/// One text field a channel needs. [key] is the settings-JSON key, shared
-/// verbatim with the backend connector.
+/// One fixed choice for a [NotifyField] rendered as a dropdown.
+class NotifyChoice {
+  /// Stored verbatim in the settings document and read by the connector.
+  final String value;
+  final String label;
+
+  const NotifyChoice(this.value, this.label);
+}
+
+/// One field a channel needs. [key] is the settings-JSON key, shared verbatim
+/// with the backend connector.
 class NotifyField {
   final String key;
   final String label;
@@ -20,6 +29,20 @@ class NotifyField {
   /// Whether the channel counts as configured without it.
   final bool mandatory;
 
+  /// Another field that satisfies this one when it is blank, mirroring a
+  /// connector's own fallback (an empty SMTP sender means "the account you
+  /// authenticate as"). Without it the UI would call a working configuration
+  /// incomplete and refuse to send a test the server would have accepted.
+  final String? filledBy;
+
+  /// Fixed choices, rendered as a dropdown instead of a text field. The first
+  /// one is what a blank value means, which is also what the connector
+  /// assumes.
+  final List<NotifyChoice> options;
+
+  /// Digits only (a port).
+  final bool numeric;
+
   const NotifyField({
     required this.key,
     required this.label,
@@ -27,7 +50,20 @@ class NotifyField {
     this.helper,
     this.obscure = false,
     this.mandatory = true,
+    this.filledBy,
+    this.options = const [],
+    this.numeric = false,
   });
+
+  bool get isChoice => options.isNotEmpty;
+
+  /// Whether [values] satisfies this field, following [filledBy].
+  bool satisfiedBy(Map<String, String> values) {
+    if (!mandatory) return true;
+    if ((values[key] ?? '').trim().isNotEmpty) return true;
+    final fallback = filledBy;
+    return fallback != null && (values[fallback] ?? '').trim().isNotEmpty;
+  }
 }
 
 class NotifyChannelSpec {
@@ -48,10 +84,10 @@ class NotifyChannelSpec {
     required this.fields,
   });
 
-  /// Configured = every mandatory field has a value.
-  bool configuredIn(Map<String, String> values) => fields
-      .where((f) => f.mandatory)
-      .every((f) => (values[f.key] ?? '').trim().isNotEmpty);
+  /// Configured = every mandatory field has a value, or something that
+  /// stands in for it.
+  bool configuredIn(Map<String, String> values) =>
+      fields.every((field) => field.satisfiedBy(values));
 }
 
 const List<NotifyChannelSpec> kNotifyChannels = [
@@ -91,6 +127,62 @@ const List<NotifyChannelSpec> kNotifyChannels = [
         key: 'telegram_chat_id',
         label: 'Chat ID',
         helper: 'Your numeric id (ask @userinfobot) or a @channelname',
+      ),
+    ],
+  ),
+  NotifyChannelSpec(
+    key: 'email',
+    label: 'Email',
+    blurb:
+        'Send reminders through an SMTP account. Your server may already '
+        'provide one, in which case only the address below is yours to fill in.',
+    fields: [
+      NotifyField(
+        key: 'smtp_host',
+        label: 'SMTP server',
+        hint: 'smtp.example.com',
+      ),
+      NotifyField(
+        key: 'smtp_security',
+        label: 'Security',
+        mandatory: false,
+        options: [
+          NotifyChoice('tls', 'TLS (port 465)'),
+          NotifyChoice('starttls', 'STARTTLS (port 587)'),
+          NotifyChoice('none', 'None (port 25)'),
+        ],
+      ),
+      NotifyField(
+        key: 'smtp_port',
+        label: 'Port',
+        helper: 'Leave empty to use the standard port for the security above',
+        mandatory: false,
+        numeric: true,
+      ),
+      NotifyField(
+        key: 'smtp_username',
+        label: 'Username',
+        helper: 'Usually the full email address',
+        mandatory: false,
+      ),
+      NotifyField(
+        key: 'smtp_password',
+        label: 'Password',
+        obscure: true,
+        mandatory: false,
+      ),
+      NotifyField(
+        key: 'smtp_from',
+        label: 'From address',
+        hint: 'skippy@example.com',
+        helper: 'Defaults to the username',
+        filledBy: 'smtp_username',
+      ),
+      NotifyField(
+        key: 'smtp_to',
+        label: 'Send to',
+        hint: 'you@example.com',
+        helper: 'Where your reminders arrive',
       ),
     ],
   ),

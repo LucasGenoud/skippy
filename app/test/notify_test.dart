@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/notify_channels.dart';
 import 'package:skippy/screens/settings_screen.dart';
 import 'package:skippy/state/notes_store.dart';
@@ -188,6 +189,88 @@ void main() {
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
+    });
+
+    /// Open the channel dialog from the settings screen.
+    Future<void> openDialog(WidgetTester tester) async {
+      await tester.pumpWidget(harness());
+      await tester.scrollUntilVisible(find.text('Notification channels'), 200);
+      await tester.ensureVisible(find.text('Notification channels'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Notification channels'));
+      await tester.pumpAndSettle();
+    }
+
+    Finder field(String key) => find.byKey(ValueKey('notify-field-$key'));
+
+    /// The dialog scrolls its own field list, so reaching a field near the
+    /// bottom means scrolling that list rather than the settings page.
+    Future<void> scrollDialogTo(WidgetTester tester, Finder target) async {
+      await tester.scrollUntilVisible(
+        target,
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byType(SingleChildScrollView),
+              matching: find.byType(Scrollable),
+            )
+            .last,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('email is configured with a server and an address', (
+      tester,
+    ) async {
+      await openDialog(tester);
+      await scrollDialogTo(tester, field('smtp_to'));
+
+      await tester.enterText(field('smtp_host'), 'smtp.example.com');
+      await tester.enterText(field('smtp_username'), 'bot@example.com');
+      await tester.enterText(field('smtp_to'), 'ada@example.com');
+      await tester.pump();
+
+      // The security dropdown starts on what a blank value means, and the
+      // port is left to follow whatever it is set to.
+      await scrollDialogTo(tester, field('smtp_security'));
+      await tester.tap(field('smtp_security'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('STARTTLS (port 587)').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(settings.notifyValues['smtp_host'], 'smtp.example.com');
+      expect(settings.notifyValues['smtp_security'], 'starttls');
+      expect(settings.notifyValues['smtp_port'], '');
+      // No sender was given, so the username stands in and the channel is
+      // complete, exactly as the connector reads it.
+      expect(settings.configuredNotifyChannels, ['Email']);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    testWidgets('a server-pinned mail server locks its fields', (tester) async {
+      api.managedSettings = {
+        'smtp_host': const ManagedSetting(secret: false, value: 'mail.host'),
+        'smtp_password': const ManagedSetting(secret: true),
+      };
+      await settings.load();
+      await openDialog(tester);
+      await scrollDialogTo(tester, field('smtp_password'));
+
+      // Pinned fields carry the server's value and cannot be edited; the
+      // secret shows a placeholder because its value never reaches the client.
+      expect(
+        tester.widget<TextField>(field('smtp_host')).controller?.text,
+        'mail.host',
+      );
+      expect(tester.widget<TextField>(field('smtp_host')).enabled, isFalse);
+      expect(tester.widget<TextField>(field('smtp_password')).enabled, isFalse);
+      expect(find.text('•••••• (set by the server)'), findsOneWidget);
+      // The user's own field is still theirs to fill in.
+      expect(tester.widget<TextField>(field('smtp_to')).enabled, isTrue);
+      await tester.pump(const Duration(milliseconds: 700));
     });
   });
 }

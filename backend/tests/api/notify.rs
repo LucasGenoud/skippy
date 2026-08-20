@@ -3,7 +3,8 @@
 use crate::helpers::*;
 
 use async_trait::async_trait;
-use sticky_notes_server::notify::{self, Connector, Notification};
+use sticky_notes_server::config::ManagedSettings;
+use sticky_notes_server::notify::{self, Connector, Notification, SmtpConnector};
 
 /// Everything the fake connectors delivered: (channel, destination, title, body).
 type SentLog = Arc<std::sync::Mutex<Vec<(String, String, String, String)>>>;
@@ -553,4 +554,212 @@ async fn item_reminders_skip_future_trashed_and_finished_items() {
     assert_eq!(status, StatusCode::OK);
     notify::sweep_due_item_reminders(&state).await;
     assert_eq!(log.lock().unwrap().len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Email
+
+/// A one-shot SMTP server that speaks just enough of the protocol to accept a
+/// single message. Deterministic and local, the same shape as the unfurl and
+/// S3 fixtures: the connector is exercised over a real socket instead of being
+/// mocked out at the trait.
+///
+/// Returns the port it is listening on and a handle yielding the transcript
+/// (every command line, plus the message body between DATA and its ".").
+async fn fake_smtp_server() -> (u16, tokio::task::JoinHandle<Vec<String>>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let handle = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let (read, mut write) = stream.into_split();
+        let mut lines = BufReader::new(read).lines();
+        let mut transcript = Vec::new();
+        write.write_all(b"220 fake ESMTP\r\n").await.unwrap();
+        let mut in_data = false;
+        while let Ok(Some(line)) = lines.next_line().await {
+            if in_data {
+                if line == "." {
+                    in_data = false;
+                    write.write_all(b"250 queued\r\n").await.unwrap();
+                    continue;
+                }
+                transcript.push(line);
+                continue;
+            }
+            transcript.push(line.clone());
+            let upper = line.to_ascii_uppercase();
+            let reply: &[u8] = if upper.starts_with("EHLO") {
+                // AUTH is advertised so the credentialed path is exercised too.
+                b"250-fake greets you\r\n250 AUTH PLAIN LOGIN\r\n"
+            } else if upper.starts_with("AUTH") {
+                b"235 authenticated\r\n"
+            } else if upper.starts_with("DATA") {
+                in_data = true;
+                b"354 go ahead\r\n"
+            } else if upper.starts_with("QUIT") {
+                write.write_all(b"221 bye\r\n").await.unwrap();
+                break;
+            } else {
+                b"250 ok\r\n"
+            };
+            write.write_all(reply).await.unwrap();
+        }
+        transcript
+    });
+    (port, handle)
+}
+
+/// State whose only connector is a real [`SmtpConnector`] pointed at a
+/// loopback fixture (which the private-endpoint policy would otherwise
+/// refuse).
+async fn state_with_email() -> AppState {
+    state()
+        .await
+        .with_notifiers(vec![Arc::new(SmtpConnector::new(true))])
+}
+
+fn smtp_settings(port: u16) -> Value {
+    json!({
+        "smtp_host": "127.0.0.1",
+        "smtp_port": port.to_string(),
+        "smtp_security": "none",
+        "smtp_username": "skippy@example.test",
+        "smtp_password": "hunter22",
+        "smtp_to": "ada@example.test",
+    })
+}
+
+#[tokio::test]
+async fn a_due_reminder_arrives_as_email() {
+    let (port, server) = fake_smtp_server().await;
+    let state = state_with_email().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, smtp_settings(port)).await;
+
+    create_note(
+        &app,
+        &ada,
+        json!({
+            "title": "Water plants",
+            "content": "the ficus too",
+            "reminder_at": "2020-01-05T10:00:00Z",
+        }),
+    )
+    .await;
+
+    notify::sweep_due_reminders(&state).await;
+    let transcript = server.await.unwrap().join("\n");
+
+    // The envelope: authenticated as the configured account, addressed to the
+    // one the user asked for. No explicit sender was set, so the username is
+    // who it comes from.
+    assert!(transcript.contains("AUTH "), "{transcript}");
+    assert!(
+        transcript.contains("MAIL FROM:<skippy@example.test>"),
+        "{transcript}"
+    );
+    assert!(
+        transcript.contains("RCPT TO:<ada@example.test>"),
+        "{transcript}"
+    );
+    // The reminder itself: the note's title as the subject, its content as the
+    // body, exactly what the other channels send.
+    assert!(transcript.contains("Subject: Water plants"), "{transcript}");
+    assert!(transcript.contains("the ficus too"), "{transcript}");
+    assert!(
+        transcript.contains("From: Skippy <skippy@example.test>"),
+        "{transcript}"
+    );
+}
+
+#[tokio::test]
+async fn an_item_reminder_emails_the_item_over_its_note() {
+    let (port, server) = fake_smtp_server().await;
+    let state = state_with_email().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, smtp_settings(port)).await;
+    note_with_due_item(&app, &ada, "2020-01-05T10:00:00Z").await;
+
+    notify::sweep_due_item_reminders(&state).await;
+    let transcript = server.await.unwrap().join("\n");
+
+    assert!(transcript.contains("Subject: Milk"), "{transcript}");
+    assert!(transcript.contains("Groceries"), "{transcript}");
+}
+
+#[tokio::test]
+async fn a_server_managed_mail_server_reaches_the_sweep() {
+    // The gap this closes: the sweep used to read the stored settings document
+    // straight, so an operator-pinned channel would apply everywhere in the
+    // app except where reminders are actually delivered.
+    let (port, server) = fake_smtp_server().await;
+    let managed = ManagedSettings::from_lookup(|key| match key {
+        "SMTP_HOST" => Some("127.0.0.1".to_string()),
+        "SMTP_PORT" => Some(port.to_string()),
+        "SMTP_SECURITY" => Some("none".to_string()),
+        "SMTP_FROM" => Some("skippy@example.test".to_string()),
+        _ => None,
+    });
+    let state = state_with_email().await.with_managed(managed);
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    // The user configures nothing but their own address; everything else is
+    // the deployment's.
+    put_settings(&app, &ada, json!({"smtp_to": "ada@example.test"})).await;
+
+    create_note(
+        &app,
+        &ada,
+        json!({"title": "Renew passport", "reminder_at": "2020-01-05T10:00:00Z"}),
+    )
+    .await;
+
+    notify::sweep_due_reminders(&state).await;
+    let transcript = server.await.unwrap().join("\n");
+    assert!(
+        transcript.contains("RCPT TO:<ada@example.test>"),
+        "{transcript}"
+    );
+    assert!(
+        transcript.contains("Subject: Renew passport"),
+        "{transcript}"
+    );
+    // Nothing was authenticated: the pinned server names no credentials.
+    assert!(!transcript.contains("AUTH "), "{transcript}");
+}
+
+#[tokio::test]
+async fn the_probe_sends_through_the_managed_mail_server() {
+    let (port, server) = fake_smtp_server().await;
+    let managed = ManagedSettings::from_lookup(|key| match key {
+        "SMTP_HOST" => Some("127.0.0.1".to_string()),
+        "SMTP_PORT" => Some(port.to_string()),
+        "SMTP_SECURITY" => Some("none".to_string()),
+        "SMTP_FROM" => Some("skippy@example.test".to_string()),
+        _ => None,
+    });
+    let app = build_app(state_with_email().await.with_managed(managed));
+    let (ada, _) = register(&app, "ada").await;
+
+    // The client sends only what it holds: the locked fields are blank on its
+    // side, so without the overlay this would be "configure a channel first".
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/notify/test",
+        Some(&ada),
+        Some(json!({"smtp_to": "ada@example.test"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ok"], json!(true), "{body}");
+    let transcript = server.await.unwrap().join("\n");
+    assert!(
+        transcript.contains("RCPT TO:<ada@example.test>"),
+        "{transcript}"
+    );
 }

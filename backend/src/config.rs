@@ -39,6 +39,16 @@ pub const MANAGED_KEYS: &[ManagedKey] = &[
     ManagedKey { env: "LLM_LABELING", key: "llm_labeling", secret: false, kind: Kind::Bool },
     ManagedKey { env: "LLM_CHAT", key: "llm_chat", secret: false, kind: Kind::Bool },
     ManagedKey { env: "LLM_WRITING", key: "llm_writing", secret: false, kind: Kind::Bool },
+    // The mail server belongs to whoever runs the deployment, so pinning it
+    // leaves each user only `smtp_to` (their own address) to fill in. Nothing
+    // here is required: a server that pins none of it still lets a user bring
+    // their own SMTP details.
+    ManagedKey { env: "SMTP_HOST", key: "smtp_host", secret: false, kind: Kind::Text },
+    ManagedKey { env: "SMTP_PORT", key: "smtp_port", secret: false, kind: Kind::Text },
+    ManagedKey { env: "SMTP_SECURITY", key: "smtp_security", secret: false, kind: Kind::Text },
+    ManagedKey { env: "SMTP_USERNAME", key: "smtp_username", secret: false, kind: Kind::Text },
+    ManagedKey { env: "SMTP_PASSWORD", key: "smtp_password", secret: true, kind: Kind::Text },
+    ManagedKey { env: "SMTP_FROM", key: "smtp_from", secret: false, kind: Kind::Text },
 ];
 
 /// A resolved managed value plus whether it should be hidden from the frontend.
@@ -121,12 +131,21 @@ impl ManagedSettings {
             .and_then(|s| serde_json::from_str::<Value>(s).ok())
             .filter(Value::is_object)
             .unwrap_or_else(|| Value::Object(Default::default()));
-        // Safe: we just guaranteed `doc` is an object.
-        let map = doc.as_object_mut().expect("object");
+        self.overlay_onto(&mut doc);
+        doc
+    }
+
+    /// Overlay the managed keys onto a settings-shaped document already in
+    /// hand, for the read sites that start from a request body rather than
+    /// from the stored document (the notification probe). A non-object is left
+    /// alone: its caller rejects it separately.
+    pub fn overlay_onto(&self, doc: &mut Value) {
+        let Some(map) = doc.as_object_mut() else {
+            return;
+        };
         for (key, entry) in &self.values {
             map.insert(key.clone(), entry.value.clone());
         }
-        doc
     }
 
     /// Frontend-facing descriptor: which keys are managed, with secret values

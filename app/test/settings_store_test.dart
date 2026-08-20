@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/models/notify_channels.dart';
 import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/theme.dart';
 
@@ -534,5 +535,79 @@ void main() {
     // Unmanaged keys still persist what the store holds.
     expect(api.settings['llm_model'], 'user-model');
     expect(api.settings['theme'], 'dark');
+  });
+
+  test('a server-managed mail server completes the email channel', () async {
+    // The deployment runs the mail server; the user supplies only their own
+    // address. Nothing else about email is theirs to fill in.
+    api.settings = {'smtp_to': 'ada@example.test'};
+    api.managedSettings = {
+      'smtp_host': const ManagedSetting(secret: false, value: 'mail.host'),
+      'smtp_security': const ManagedSetting(secret: false, value: 'starttls'),
+      'smtp_from': const ManagedSetting(secret: false, value: 'bot@host'),
+      'smtp_password': const ManagedSetting(secret: true),
+    };
+    await settings.load();
+
+    // The dialog shows what will actually be used…
+    expect(settings.notifyValues['smtp_host'], 'mail.host');
+    expect(settings.notifyValues['smtp_security'], 'starttls');
+    // …except the secret, which the server never sends and the client must
+    // never hold.
+    expect(settings.notifyValues['smtp_password'], '');
+    expect(settings.isManaged('smtp_host'), isTrue);
+    expect(settings.isManaged('smtp_to'), isFalse);
+
+    // The channel counts as configured even though the user set one field.
+    expect(settings.notifyConfigured, isTrue);
+    expect(settings.configuredNotifyChannels, ['Email']);
+  });
+
+  test('pinning a mail server does not erase the user\'s own', () async {
+    api.settings = {
+      'smtp_host': 'mail.mine',
+      'smtp_password': 'my-password',
+      'smtp_to': 'ada@example.test',
+    };
+    api.managedSettings = {
+      'smtp_host': const ManagedSetting(secret: false, value: 'mail.host'),
+      'smtp_password': const ManagedSetting(secret: true),
+    };
+    await settings.load();
+
+    settings.setThemeMode(ThemeMode.dark);
+    await settleSave();
+
+    // Same rule as the LLM keys: un-pinning the env var later has to hand the
+    // user their own mail server back, not a copy of the server's.
+    expect(api.settings['smtp_host'], 'mail.mine');
+    expect(api.settings['smtp_password'], 'my-password');
+    expect(api.settings['smtp_to'], 'ada@example.test');
+  });
+
+  test('the email channel needs a sender, or a username to stand in', () {
+    final email = kNotifyChannels.firstWhere((c) => c.key == 'email');
+    expect(
+      email.configuredIn({'smtp_host': 'h', 'smtp_to': 'a@b.test'}),
+      isFalse,
+    );
+    // The connector falls back to the account it authenticates as, and the
+    // UI has to agree or it would refuse to send a test the server accepts.
+    expect(
+      email.configuredIn({
+        'smtp_host': 'h',
+        'smtp_to': 'a@b.test',
+        'smtp_username': 'bot@b.test',
+      }),
+      isTrue,
+    );
+    expect(
+      email.configuredIn({
+        'smtp_host': 'h',
+        'smtp_to': 'a@b.test',
+        'smtp_from': 'bot@b.test',
+      }),
+      isTrue,
+    );
   });
 }

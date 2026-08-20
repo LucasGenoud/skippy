@@ -39,6 +39,41 @@ pub(crate) fn allow_private_user_endpoints() -> bool {
     )
 }
 
+/// Apply the private-endpoint policy to a bare host/port pair, for protocols
+/// that are not HTTP (SMTP). Resolution here is a **policy gate**, not the
+/// pinned-resolver guarantee [`resolve_http_url`] gives: the caller's own
+/// client resolves the name again when it connects, because an SMTP server's
+/// TLS certificate is issued for its hostname, not for an address. That is a
+/// deliberate, narrower promise, the host comes from the operator's or the
+/// user's own configuration rather than from note content.
+pub(crate) async fn ensure_allowed_host(
+    host: &str,
+    port: u16,
+    allow_private: bool,
+) -> anyhow::Result<()> {
+    let host = host.trim().to_ascii_lowercase();
+    if host.is_empty() {
+        bail!("mail server has no host");
+    }
+    if allow_private {
+        return Ok(());
+    }
+    if host == "localhost" || host.ends_with(".localhost") {
+        bail!("private service endpoints are disabled by the server");
+    }
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .with_context(|| format!("could not resolve mail server host {host}"))?
+        .collect();
+    if addrs.is_empty() {
+        bail!("mail server host did not resolve");
+    }
+    if addrs.iter().any(|addr| ip_is_blocked(addr.ip())) {
+        bail!("private service endpoints are disabled by the server");
+    }
+    Ok(())
+}
+
 pub(crate) async fn resolve_http_url(
     raw: &str,
     allow_private: bool,

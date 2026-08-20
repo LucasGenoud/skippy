@@ -10,7 +10,8 @@ A reminder on an individual checklist item, not only on the note that holds it.
 out into a note of its own.
 
 Delivery must reach both transports the note-level reminder already uses: the
-server sweep (ntfy/Telegram) and the device's own local alarm scheduler.
+server sweep (ntfy, Telegram, and email) and the device's own local alarm
+scheduler.
 
 ## Where the reminder lives
 
