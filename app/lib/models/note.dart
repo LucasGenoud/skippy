@@ -46,37 +46,63 @@ enum NoteRewriteMode {
   const NoteRewriteMode(this.wire);
 }
 
+/// Deepest a checklist row may be nested, so three levels in all: task,
+/// subtask, sub-subtask. Mirrors the backend's `MAX_ITEM_DEPTH`.
+const int kMaxItemDepth = 2;
+
 class ChecklistItem {
   final String id;
   final String text;
   final bool done;
 
+  /// Nesting level, 0 for a top-level task. The list stays flat and carries
+  /// its shape here rather than nesting: rows are ordered, reordered, dragged,
+  /// versioned and given reminders as one sequence, and a tree would have to
+  /// rewrite all of that.
+  final int depth;
+
   const ChecklistItem({
     required this.id,
     required this.text,
     this.done = false,
+    this.depth = 0,
   });
 
-  ChecklistItem copyWith({String? text, bool? done}) =>
-      ChecklistItem(id: id, text: text ?? this.text, done: done ?? this.done);
+  ChecklistItem copyWith({String? text, bool? done, int? depth}) =>
+      ChecklistItem(
+        id: id,
+        text: text ?? this.text,
+        done: done ?? this.done,
+        depth: depth ?? this.depth,
+      );
 
   factory ChecklistItem.fromJson(Map<String, dynamic> json) => ChecklistItem(
     id: json['id'] as String,
     text: json['text'] as String? ?? '',
     done: json['done'] as bool? ?? false,
+    // Absent for a row written before subtasks existed, which is what it was.
+    depth: (json['depth'] as num?)?.toInt().clamp(0, kMaxItemDepth) ?? 0,
   );
 
-  Map<String, dynamic> toJson() => {'id': id, 'text': text, 'done': done};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'text': text,
+    'done': done,
+    // Omitted at the top level, matching the server: a flat checklist reads
+    // on the wire and in the cache exactly as it always has.
+    if (depth > 0) 'depth': depth,
+  };
 
   @override
   bool operator ==(Object other) =>
       other is ChecklistItem &&
       other.id == id &&
       other.text == text &&
-      other.done == done;
+      other.done == done &&
+      other.depth == depth;
 
   @override
-  int get hashCode => Object.hash(id, text, done);
+  int get hashCode => Object.hash(id, text, done, depth);
 }
 
 /// A reminder on one checklist item.

@@ -786,3 +786,102 @@ async fn item_reminders_are_shared_note_state_and_survive_create() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn checklist_nesting_is_kept_in_a_drawable_shape() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+
+    // A create carrying an impossible shape is corrected, not rejected: the
+    // rows are the user's, only the indentation is ours to fix.
+    let note = create_note(
+        &app,
+        &token,
+        json!({
+            "kind": "checklist",
+            "items": [
+                {"id": "a", "text": "Trip", "done": false, "depth": 2},
+                {"id": "b", "text": "Pack", "done": false, "depth": 1},
+                {"id": "c", "text": "Socks", "done": false, "depth": 3},
+            ],
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap();
+    // A top-level row carries no depth at all, so a flat checklist looks on
+    // the wire exactly as it did before subtasks existed.
+    assert_eq!(note["items"][0].get("depth"), None);
+    assert_eq!(note["items"][1]["depth"], 1);
+    assert_eq!(note["items"][2]["depth"], 2);
+
+    // An item written before subtasks existed carries no depth at all and
+    // reads as top-level.
+    let (status, updated) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"items": [
+            {"id": "a", "text": "Trip", "done": false},
+            {"id": "c", "text": "Socks", "done": false, "depth": 2},
+        ]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["items"][0].get("depth"), None);
+    // Its parent went away, so the subtask comes up to the level that still
+    // has one rather than being dropped.
+    assert_eq!(updated["items"][1]["depth"], 1);
+}
+
+#[tokio::test]
+async fn restoring_a_version_lands_a_drawable_checklist() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(
+        &app,
+        &token,
+        json!({
+            "kind": "checklist",
+            "items": [
+                {"id": "a", "text": "Trip", "done": false},
+                {"id": "b", "text": "Pack", "done": false, "depth": 1},
+            ],
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap();
+
+    // Drop the parent, which is the edit the version will roll back.
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"items": [{"id": "b", "text": "Pack", "done": false, "depth": 1}]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, versions) = send(
+        &app,
+        "GET",
+        &format!("/api/notes/{id}/versions"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let version_id = versions[0]["id"].as_str().unwrap();
+    let (status, restored) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/versions/{version_id}/restore"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{restored}");
+    assert_eq!(restored["items"][0].get("depth"), None);
+    assert_eq!(restored["items"][1]["depth"], 1);
+}

@@ -952,16 +952,19 @@ mod tests {
                 id: "1".into(),
                 text: "milk".into(),
                 done: false,
+                depth: 0,
             },
             ChecklistItem {
                 id: "2".into(),
                 text: "bread".into(),
                 done: true,
+                depth: 0,
             },
             ChecklistItem {
                 id: "3".into(),
                 text: "eggs".into(),
                 done: false,
+                depth: 0,
             },
         ];
         let n = reminder_notification(&record("", "", items));

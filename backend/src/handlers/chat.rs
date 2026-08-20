@@ -432,6 +432,9 @@ where
                         id: new_id(),
                         text: text.clone(),
                         done: false,
+                        // The assistant writes a flat list; nesting is the
+                        // reader's to add.
+                        depth: 0,
                     })
                     .collect();
                 (content, structs)
@@ -502,6 +505,7 @@ where
                         id: new_id(),
                         text: text.clone(),
                         done: false,
+                        depth: 0,
                     });
                 }
                 added = items.len();

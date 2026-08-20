@@ -1527,7 +1527,14 @@ class _ChecklistRow extends StatelessWidget {
     final controlBandHeight = lineHeight > 18 ? lineHeight : 18.0;
     return Padding(
       key: ValueKey('checklist-card-row-${item.id}'),
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: EdgeInsets.only(
+        top: 2,
+        bottom: 2,
+        // Nesting shows on the card too, at a smaller step than the editor's:
+        // the preview is a few lines wide and three full indents would leave
+        // a subtask with nowhere to put its text.
+        left: item.depth * 12,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

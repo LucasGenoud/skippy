@@ -505,8 +505,8 @@ mod tests {
             title: "Groceries".into(),
             content: String::new(),
             items: vec![
-                ChecklistItem { id: "i1".into(), text: "bread".into(), done: true },
-                ChecklistItem { id: "i2".into(), text: "milk".into(), done: false },
+                ChecklistItem { id: "i1".into(), text: "bread".into(), done: true, depth: 0 },
+                ChecklistItem { id: "i2".into(), text: "milk".into(), done: false, depth: 0 },
             ],
             color: "default".into(),
             pinned: false,

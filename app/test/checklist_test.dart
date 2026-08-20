@@ -8,6 +8,7 @@ import 'package:skippy/state/link_preview_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/widgets/checklist/animated_checklist.dart';
+import 'package:skippy/widgets/checklist/pop_checkbox.dart';
 import 'package:skippy/widgets/screen_width.dart';
 
 import 'fake_api.dart';
@@ -74,6 +75,12 @@ void main() {
       ),
     );
   }
+
+  /// The list as "depth:text", so a test reads like the outline it checks.
+  List<String> shapeOf(String noteId) => [
+    for (final item in store.noteById(noteId)!.items)
+      '${item.depth}:${item.done ? '*' : ''}${item.text}',
+  ];
 
   List<String> itemsOf(String noteId) => [
     for (final item in store.noteById(noteId)!.items) item.text,
@@ -261,6 +268,212 @@ void main() {
       store.setChecklistItemDone('n1', 'i1', true);
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.alarm_on), findsNothing);
+      await flushTimers(tester);
+    });
+  });
+
+  group('subtasks', () {
+    const trip = [
+      ChecklistItem(id: 'i1', text: 'Trip'),
+      ChecklistItem(id: 'i2', text: 'Pack'),
+      ChecklistItem(id: 'i3', text: 'Water'),
+    ];
+
+    Future<void> focusRow(WidgetTester tester, String text) async {
+      await tester.tap(find.widgetWithText(TextField, text));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> pressTab(WidgetTester tester, {bool shift = false}) async {
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Tab nests a row under the one above it', (tester) async {
+      await openChecklist(tester, items: trip);
+      await focusRow(tester, 'Pack');
+      await pressTab(tester);
+      expect(shapeOf('n1'), ['0:Trip', '1:Pack', '0:Water']);
+
+      // Shift+Tab brings it back out.
+      await pressTab(tester, shift: true);
+      expect(shapeOf('n1'), ['0:Trip', '0:Pack', '0:Water']);
+
+      // The first row has nothing to nest under, and Tab must not hand the
+      // caret to the next row instead.
+      await focusRow(tester, 'Trip');
+      await pressTab(tester);
+      expect(shapeOf('n1'), ['0:Trip', '0:Pack', '0:Water']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('the row moves right as it is nested', (tester) async {
+      await openChecklist(tester, items: trip);
+      final before = tester.getTopLeft(find.widgetWithText(TextField, 'Pack'));
+      await focusRow(tester, 'Pack');
+      await pressTab(tester);
+      final after = tester.getTopLeft(find.widgetWithText(TextField, 'Pack'));
+      expect(after.dx, greaterThan(before.dx));
+      await flushTimers(tester);
+    });
+
+    testWidgets('dragging the handle sideways nests the row', (tester) async {
+      await openChecklist(tester, items: trip);
+      // The second row's handle: sideways is the other kind of move.
+      final handle = find.byIcon(Icons.drag_indicator).at(1);
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      for (var step = 0; step < 6; step++) {
+        await gesture.moveBy(const Offset(8, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(shapeOf('n1'), ['0:Trip', '1:Pack', '0:Water']);
+      await flushTimers(tester);
+    });
+
+    /// The checkbox belonging to the row holding [text].
+    Finder checkboxFor(String text) => find.descendant(
+      of: find
+          .ancestor(
+            of: find.widgetWithText(TextField, text),
+            matching: find.byType(Row),
+          )
+          .first,
+      matching: find.byType(PopCheckbox),
+    );
+
+    testWidgets('dragging a task carries its subtasks', (tester) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Trip'),
+          ChecklistItem(id: 'i2', text: 'Pack', depth: 1),
+          ChecklistItem(id: 'i3', text: 'Water'),
+        ],
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Drag the task past the row below it. Its subtask is not left behind
+      // for normalization to adopt to whatever now sits above it.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.drag_indicator).first),
+      );
+      for (var step = 0; step < 8; step++) {
+        await gesture.moveBy(const Offset(0, 20));
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(shapeOf('n1'), ['0:Water', '0:Trip', '1:Pack']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('checking a task takes its subtasks down with it', (
+      tester,
+    ) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Trip'),
+          ChecklistItem(id: 'i2', text: 'Pack', depth: 1),
+          ChecklistItem(id: 'i3', text: 'Socks', depth: 2),
+          ChecklistItem(id: 'i4', text: 'Water'),
+        ],
+      );
+
+      // A subtask ticked off under an open task stays where it is: nothing
+      // is filed away until the task itself is done.
+      await tester.tap(checkboxFor('Socks'));
+      await tester.pumpAndSettle();
+      expect(shapeOf('n1'), ['0:Trip', '1:Pack', '2:*Socks', '0:Water']);
+      expect(find.textContaining('checked item'), findsNothing);
+
+      // Closing the task closes everything under it, and the whole subtree
+      // goes down to the checked section together.
+      await tester.tap(checkboxFor('Trip'));
+      await tester.pumpAndSettle();
+      expect(shapeOf('n1'), ['0:*Trip', '1:*Pack', '2:*Socks', '0:Water']);
+      expect(find.text('3 checked items'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('removing a task keeps its subtasks, one level up', (
+      tester,
+    ) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Trip'),
+          ChecklistItem(id: 'i2', text: 'Pack', depth: 1),
+          ChecklistItem(id: 'i3', text: 'Socks', depth: 2),
+        ],
+      );
+      // One tap, no confirmation: it must not take a subtree with it.
+      await tester.tap(
+        find
+            .descendant(
+              of: find
+                  .ancestor(
+                    of: find.widgetWithText(TextField, 'Trip'),
+                    matching: find.byType(Row),
+                  )
+                  .first,
+              matching: find.widgetWithIcon(IconButton, Icons.close),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      expect(shapeOf('n1'), ['0:Pack', '1:Socks']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('backspace unindents an empty row before removing it', (
+      tester,
+    ) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Trip'),
+          ChecklistItem(id: 'i2', text: 'Pack', depth: 1),
+        ],
+      );
+      await focusRow(tester, 'Pack');
+      for (var left = 3; left >= 0; left--) {
+        backspace(tester);
+        await tester.pumpAndSettle();
+      }
+      expect(shapeOf('n1'), ['0:Trip', '1:']);
+
+      // The row is empty and nested: the next backspace brings it out…
+      backspace(tester);
+      await tester.pumpAndSettle();
+      expect(shapeOf('n1'), ['0:Trip', '0:']);
+      // …and only then does it go.
+      backspace(tester);
+      await tester.pumpAndSettle();
+      expect(shapeOf('n1'), ['0:Trip']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('Enter continues the list at the same level', (tester) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Trip'),
+          ChecklistItem(id: 'i2', text: 'Pack', depth: 1),
+        ],
+      );
+      await focusRow(tester, 'Pack');
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pumpAndSettle();
+      // A sibling of the row it came from, not a subtask of it.
+      expect(shapeOf('n1'), ['0:Trip', '1:Pack', '1:']);
       await flushTimers(tester);
     });
   });

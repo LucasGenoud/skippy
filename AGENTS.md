@@ -50,6 +50,7 @@ Format touched Dart files with `dart format`. Format touched Rust files with `ca
 - `state/note_collection.dart`: sorting, filtering, searching, and view selection.
 - `state/board_layout.dart`: grouping notes into board columns.
 - `state/note_conversion.dart`: conversion between text, markdown, and checklist content.
+- `state/checklist_tree.dart`: the pure rules for nested checklists (which rows form a subtree, what a check cascades to, what may be indented).
 - `state/pending_operation.dart`: persisted optimistic operation types and JSON encoding.
 
 The WebSocket is a change nudge, not a stream of note patches. Multiple notifications are debounced and lead to a refetch. Last-write-wins remains the collaboration model.
@@ -210,6 +211,8 @@ Note content edits drive version capture, semantic reindexing, automatic labelin
 Each note has one embedding in the collection owned by its workspace. Sharing and roster changes do not rewrite embeddings; authorization is rechecked against the relational repository over vector candidates. A note move relocates its vector between workspace collections and must notify the workspace it left, not only the one it joined. Workspace deletion drops its collection and deletes attachment blobs. Version grouping uses an edit-session window, so tests should control timestamps rather than assume every keystroke becomes a version.
 
 Relational deletion and external cleanup are one logical operation but cannot be one storage transaction. The SQLite transaction must enqueue idempotent `cleanup_jobs` for attachment blobs and note/workspace vectors before it commits; request-triggered and periodic drains may then retry safely across crashes. Do not return to fire-and-forget deletion that can permanently orphan external state.
+
+A checklist is a flat list whose rows carry a `depth` (0-2, so three levels). It is deliberately not a nested structure: rows are ordered, reordered, dragged, versioned, and given reminders as one sequence, and every one of those would have to be rewritten for a tree. The shape is an invariant rather than a convention: `normalize_item_depths` runs on create, update, and version restore, so no row is ever deeper than one level below the row above it, and a row that loses its parent comes up a level rather than being dropped. `depth` is omitted from the wire when it is 0, so a flat checklist serializes exactly as it did before subtasks existed. The client mirrors the same rules in `state/checklist_tree.dart`, plus the ones the server has no opinion about: checking a task cascades to its subtasks, removing a row promotes them, and only a finished *task* moves to the checked section.
 
 Checklist history is recorded on a transition to checked, shared with participants in that note, and capped at 500 records per note.
 

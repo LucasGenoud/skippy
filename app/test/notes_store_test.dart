@@ -460,6 +460,37 @@ void main() {
       expect(api.log.where((l) => l.startsWith('patchNote')).length, patches);
     });
 
+    test('closes a task and everything nested under it', () async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: const [
+          ChecklistItem(id: 'trip', text: 'Trip'),
+          ChecklistItem(id: 'pack', text: 'Pack', depth: 1),
+          ChecklistItem(id: 'socks', text: 'Socks', depth: 2),
+          ChecklistItem(id: 'water', text: 'Water'),
+        ],
+      );
+      await store.load();
+
+      store.setChecklistItemDone('n1', 'trip', true);
+      await settle();
+      expect(
+        [for (final item in api.notes['n1']!.items) item.done],
+        [true, true, true, false],
+      );
+
+      // A subtask never finishes the task holding it, and reopening the task
+      // reopens what it closed.
+      store.setChecklistItemDone('n1', 'trip', false);
+      store.setChecklistItemDone('n1', 'pack', true);
+      await settle();
+      expect(
+        [for (final item in api.notes['n1']!.items) item.done],
+        [false, true, true, false],
+      );
+    });
+
     test('ignores an unknown note or item', () async {
       api.notes['n1'] = serverNote(
         'n1',

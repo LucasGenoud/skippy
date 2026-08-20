@@ -9,6 +9,7 @@ import '../models/note.dart';
 import '../models/workspace.dart';
 import '../util/backup.dart';
 import '../util/connectivity.dart';
+import 'checklist_tree.dart';
 import 'local_cache.dart';
 import 'note_collection.dart';
 import 'note_conversion.dart';
@@ -1164,16 +1165,22 @@ class NotesStore extends ChangeNotifier {
   }) {
     final note = noteById(id);
     if (note == null) return;
+    // Same rule the server applies on write: a row cannot be nested deeper
+    // than the one above it allows, so a local edit never shows a shape the
+    // next refetch would correct underneath the user.
+    final normalized = items == null ? null : normalizeDepths(items);
     final updated = note.copyWith(
       kind: kind,
       title: title,
       content: content,
-      items: items,
+      items: normalized,
       // An item reminder lives only as long as its unchecked item does. The
       // server prunes in the same write, so this is the local half of one
       // rule: ticking something off silently cancels its alarm instead of
       // leaving it armed until the next refetch.
-      itemReminders: items == null ? null : _prunedItemReminders(note, items),
+      itemReminders: normalized == null
+          ? null
+          : _prunedItemReminders(note, normalized),
       updatedAt: DateTime.now(),
     );
     if (urgent) {
@@ -1255,10 +1262,9 @@ class NotesStore extends ChangeNotifier {
     if (note == null) return;
     final current = _itemById(noteId, itemId);
     if (current == null || current.done == done) return;
-    final items = [
-      for (final item in note.items)
-        item.id == itemId ? item.copyWith(done: done) : item,
-    ];
+    // Closing a task closes what is nested under it, and reopening it
+    // reopens them: a task is not half-done because its parts are.
+    final items = setDoneCascading(note.items, itemId, done);
     // Keep the local suggestion dictionary warm; the server records it too.
     if (done) rememberCheckedText(noteId, current.text);
     updateNoteContent(noteId, items: items);

@@ -154,11 +154,51 @@ pub const TRANSCRIPT_PENDING: &str = "pending";
 pub const TRANSCRIPT_DONE: &str = "done";
 pub const TRANSCRIPT_FAILED: &str = "failed";
 
+/// How deeply a checklist item may be nested. Depth 0 is a top-level task, so
+/// this allows three levels: task, subtask, sub-subtask. A cap rather than an
+/// open tree because a checklist is read at a glance; past three levels the
+/// indentation costs more width than the structure is worth on a phone.
+pub const MAX_ITEM_DEPTH: u8 = 2;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChecklistItem {
     pub id: String,
     pub text: String,
     pub done: bool,
+    /// Nesting level, 0 for a top-level task. The list stays a flat array and
+    /// carries its shape in this field rather than nesting the JSON: ordering,
+    /// version snapshots, reordering, and the per-item reminder table are all
+    /// keyed off a flat sequence, and a tree would rewrite every one of them.
+    ///
+    /// Defaulted so an item written before subtasks existed reads as
+    /// top-level, which is exactly what it was, and omitted when it is 0 so a
+    /// flat checklist, still the overwhelmingly common one, goes over the wire
+    /// exactly as it did before subtasks existed.
+    #[serde(default, skip_serializing_if = "is_top_level")]
+    pub depth: u8,
+}
+
+fn is_top_level(depth: &u8) -> bool {
+    *depth == 0
+}
+
+/// Force a checklist into a shape that can actually be drawn: the first item
+/// is top-level, no item is deeper than [`MAX_ITEM_DEPTH`], and none is more
+/// than one level deeper than the item above it.
+///
+/// An item deeper than its predecessor allows is pulled up to the deepest
+/// level that still has a parent, rather than dropped: a client that reorders
+/// a subtask out from under its task means to keep the row, not to lose it.
+pub fn normalize_item_depths(items: &mut [ChecklistItem]) {
+    let mut previous: Option<u8> = None;
+    for item in items.iter_mut() {
+        let ceiling = match previous {
+            None => 0,
+            Some(previous) => (previous + 1).min(MAX_ITEM_DEPTH),
+        };
+        item.depth = item.depth.min(ceiling);
+        previous = Some(item.depth);
+    }
 }
 
 /// A reminder on one checklist item. Stored in its own table rather than
@@ -747,4 +787,68 @@ pub struct StagePayload {
 #[derive(Debug, Deserialize)]
 pub struct AddCollaborator {
     pub email: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn items(depths: &[u8]) -> Vec<ChecklistItem> {
+        depths
+            .iter()
+            .enumerate()
+            .map(|(index, depth)| ChecklistItem {
+                id: index.to_string(),
+                text: String::new(),
+                done: false,
+                depth: *depth,
+            })
+            .collect()
+    }
+
+    fn depths(items: &[ChecklistItem]) -> Vec<u8> {
+        items.iter().map(|item| item.depth).collect()
+    }
+
+    #[test]
+    fn item_depths_are_normalized_to_a_drawable_shape() {
+        // Already valid lists are left exactly as they are.
+        let mut list = items(&[0, 1, 2, 1, 0]);
+        normalize_item_depths(&mut list);
+        assert_eq!(depths(&list), vec![0, 1, 2, 1, 0]);
+
+        // The first row is always top-level, whatever it claims.
+        let mut list = items(&[2, 2]);
+        normalize_item_depths(&mut list);
+        assert_eq!(depths(&list), vec![0, 1]);
+
+        // A row cannot be more than one level deeper than the one above it,
+        // so a jump is pulled up to the deepest level that still has a parent
+        // rather than dropped.
+        let mut list = items(&[0, 2]);
+        normalize_item_depths(&mut list);
+        assert_eq!(depths(&list), vec![0, 1]);
+
+        // Three levels, and no more.
+        let mut list = items(&[0, 1, 2, 3, 4]);
+        normalize_item_depths(&mut list);
+        assert_eq!(depths(&list), vec![0, 1, 2, MAX_ITEM_DEPTH, MAX_ITEM_DEPTH]);
+
+        // Coming back up is unconstrained: any shallower depth is a valid
+        // place to land.
+        let mut list = items(&[0, 1, 2, 0]);
+        normalize_item_depths(&mut list);
+        assert_eq!(depths(&list), vec![0, 1, 2, 0]);
+
+        let mut empty: Vec<ChecklistItem> = vec![];
+        normalize_item_depths(&mut empty);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn an_item_written_before_subtasks_reads_as_top_level() {
+        let item: ChecklistItem =
+            serde_json::from_str(r#"{"id":"a","text":"Milk","done":false}"#).unwrap();
+        assert_eq!(item.depth, 0);
+    }
 }

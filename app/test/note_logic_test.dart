@@ -101,6 +101,38 @@ void main() {
     expect(markdown.content, '- [x] Milk\n- [ ] Bread\n- [ ] Apples');
   });
 
+  test('note conversion carries nesting through the text', () {
+    var nextId = 0;
+    final list = note('n').copyWith(
+      kind: NoteKind.checklist,
+      items: const [
+        ChecklistItem(id: 'i1', text: 'Trip'),
+        ChecklistItem(id: 'i2', text: 'Pack', depth: 1),
+        ChecklistItem(id: 'i3', text: 'Socks', depth: 2, done: true),
+      ],
+    );
+
+    // Indented markdown, which is how a nested list is written anywhere else.
+    final markdown = convertNoteKind(
+      list,
+      NoteKind.markdown,
+      newItemId: () => throw StateError('not needed'),
+    );
+    expect(markdown.content, '- [ ] Trip\n  - [ ] Pack\n    - [x] Socks');
+
+    // And back: the indentation is read as the nesting it was written from.
+    final again = convertNoteKind(
+      markdown,
+      NoteKind.checklist,
+      newItemId: () => 'item-${nextId++}',
+    );
+    expect(
+      [for (final item in again.items) '${item.depth}:${item.text}'],
+      ['0:Trip', '1:Pack', '2:Socks'],
+    );
+    expect(again.items.last.done, isTrue);
+  });
+
   test('note conversion leaves no item reminder without an item', () {
     final list = note('n').copyWith(
       kind: NoteKind.checklist,

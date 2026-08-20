@@ -87,6 +87,8 @@ pub async fn rewrite_note(
                 id: original.id.clone(),
                 text,
                 done: original.done,
+                // A rewrite changes wording, never structure.
+                depth: original.depth,
             })
             .collect()
     });

@@ -113,6 +113,10 @@ pub async fn restore_note_version(
         record.title = version.title;
         record.content = version.content;
         record.items = version.items;
+        // A snapshot taken before subtasks existed reads as a flat list, and
+        // one taken after is normalized already; this keeps a hand-edited or
+        // future snapshot from restoring an undrawable shape.
+        normalize_item_depths(&mut record.items);
         record.last_editor_id = Some(user_id.clone());
         record.updated_at = now();
         state.repo.update_note(&record).await?;

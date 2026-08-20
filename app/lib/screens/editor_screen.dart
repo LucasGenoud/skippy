@@ -13,6 +13,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../state/checklist_tree.dart';
 import '../state/editor_history.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
@@ -487,10 +488,21 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   String _addItem(String text) {
-    final item = ChecklistItem(id: _uuid.v4(), text: text.trim());
+    // A new row at the end continues the list where it left off: writing
+    // under a subtask keeps writing subtasks, rather than jumping back out to
+    // the top level after every line.
+    final item = ChecklistItem(
+      id: _uuid.v4(),
+      text: text.trim(),
+      depth: _items.isEmpty ? 0 : _items.last.depth,
+    );
     _setItems([..._items, item]);
     return item.id;
   }
+
+  /// Nest a row, or bring it back out, with whatever is under it.
+  void _indentItem(String itemId, int delta) =>
+      _setItems(shiftDepth(_items, itemId, delta));
 
   void _updateItemText(String itemId, String text) {
     _setItems([
@@ -507,7 +519,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _removeItem(String itemId) {
-    _setItems([..._items]..removeWhere((i) => i.id == itemId));
+    // Subtasks are promoted rather than deleted: the remove button is one tap
+    // with nothing behind it, and taking a whole subtree with it would be a
+    // bad surprise.
+    _setItems(removeItem(_items, itemId));
   }
 
   /// Set, change, or remove the reminder on one checklist row.
@@ -542,7 +557,13 @@ class _EditorScreenState extends State<EditorScreen> {
   String _insertItemAfter(String afterId) {
     final items = [..._items];
     final index = items.indexWhere((i) => i.id == afterId);
-    final item = ChecklistItem(id: _uuid.v4(), text: '');
+    // Enter continues at the same level: the new row is a sibling of the one
+    // it came from, not a subtask of it.
+    final item = ChecklistItem(
+      id: _uuid.v4(),
+      text: '',
+      depth: index < 0 ? 0 : items[index].depth,
+    );
     items.insert(index < 0 ? items.length : index + 1, item);
     _setItems(items);
     return item.id;
@@ -1446,6 +1467,7 @@ class _EditorScreenState extends State<EditorScreen> {
         onReorderItems: _setItems,
         reminders: _note?.itemReminders ?? const {},
         onSetReminder: trashed ? null : _editItemReminder,
+        onIndentItem: trashed ? null : _indentItem,
       );
     }
     if (_kind == NoteKind.markdown && _previewMarkdown) {

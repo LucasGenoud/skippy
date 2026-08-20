@@ -123,7 +123,11 @@ String _toMarkdown(
     if (title.isNotEmpty) buf.writeln('## $title\n');
     if (n.isChecklist) {
       for (final i in n.items) {
-        buf.writeln('- [${i.done ? 'x' : ' '}] ${i.text}');
+        // Two spaces a level, the usual markdown nesting, so an exported
+        // list reads as the outline it was.
+        buf.writeln(
+          '${' ' * (i.depth * 2)}- [${i.done ? 'x' : ' '}] ${i.text}',
+        );
       }
       buf.writeln();
     } else if (n.content.trim().isNotEmpty) {
@@ -149,7 +153,7 @@ String noteToPlainText(Note note, {List<String> labels = const []}) {
   if (title.isNotEmpty) buf.writeln('$title\n');
   if (note.isChecklist) {
     for (final i in note.items) {
-      buf.writeln('[${i.done ? 'x' : ' '}] ${i.text}');
+      buf.writeln('${' ' * (i.depth * 2)}[${i.done ? 'x' : ' '}] ${i.text}');
     }
     buf.writeln();
   } else if (note.content.trim().isNotEmpty) {

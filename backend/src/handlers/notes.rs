@@ -246,7 +246,13 @@ pub async fn create_note_for_user(
         kind,
         title: body.title,
         content: body.content,
-        items: body.items.unwrap_or_default(),
+        items: {
+            // A checklist arrives as a flat list carrying its own nesting, so
+            // the shape is checked at the door: see `normalize_item_depths`.
+            let mut items = body.items.unwrap_or_default();
+            normalize_item_depths(&mut items);
+            items
+        },
         color: body.color.unwrap_or_else(|| "default".to_string()),
         pinned: body.pinned.unwrap_or(false),
         archived: body.archived.unwrap_or(false),
@@ -416,6 +422,9 @@ pub async fn apply_note_update(
     }
 
     body.apply_to(&mut record);
+    // Applies to every write, not just one carrying items: an edit that
+    // changes the kind can leave rows behind that no longer have a parent.
+    normalize_item_depths(&mut record.items);
     if moving_to.is_some() {
         // The stage foreign key includes workspace_id, so ownership transfer
         // returns the note to Unassigned before the row is updated.

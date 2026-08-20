@@ -1,4 +1,5 @@
 import '../models/note.dart';
+import 'checklist_tree.dart';
 
 /// Title a duplicate carries, so the copy is never mistaken for the original
 /// in the grid, in search results, or on a home-screen widget. The marker
@@ -51,14 +52,25 @@ Note convertNoteKind(
   return note.copyWith(kind: target);
 }
 
+/// Spaces one nesting level is written with, the usual markdown convention
+/// for a nested list, so a converted note reads as a nested list anywhere else
+/// too.
+const int _indentWidth = 2;
+
 List<ChecklistItem> _itemsFromText(
   String content,
   String Function() newItemId,
 ) {
   final items = <ChecklistItem>[];
   for (final rawLine in content.split('\n')) {
+    if (rawLine.trim().isEmpty) continue;
+    // Leading whitespace is the nesting, before it is trimmed away: a tab
+    // counts as one level, spaces as one per [_indentWidth] of them.
+    final indent = RegExp(r'^[ \t]*').firstMatch(rawLine)!.group(0)!;
+    final tabs = indent.split('\t').length - 1;
+    final spaces = indent.replaceAll('\t', '').length;
+    final depth = tabs + spaces ~/ _indentWidth;
     var line = rawLine.trim();
-    if (line.isEmpty) continue;
 
     var done = false;
     final task = RegExp(r'^[-*+]\s+\[( |x|X)\]\s*').firstMatch(line);
@@ -69,13 +81,22 @@ List<ChecklistItem> _itemsFromText(
       line = line.replaceFirst(RegExp(r'^[-*+]\s+'), '');
     }
     if (line.isEmpty) continue;
-    items.add(ChecklistItem(id: newItemId(), text: line, done: done));
+    items.add(
+      ChecklistItem(
+        id: newItemId(),
+        text: line,
+        done: done,
+        depth: depth > kMaxItemDepth ? kMaxItemDepth : depth,
+      ),
+    );
   }
-  return items;
+  // Text can indent anything by any amount; a checklist cannot.
+  return normalizeDepths(items);
 }
 
 String _textFromItems(List<ChecklistItem> items, {required bool markdown}) => [
   for (final item in items)
     if (item.text.trim().isNotEmpty)
-      markdown ? '- [${item.done ? 'x' : ' '}] ${item.text}' : item.text,
+      '${' ' * (item.depth * _indentWidth)}'
+          '${markdown ? '- [${item.done ? 'x' : ' '}] ' : ''}${item.text}',
 ].join('\n');

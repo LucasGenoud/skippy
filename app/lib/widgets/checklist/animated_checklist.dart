@@ -11,6 +11,7 @@ import '../../util/platform.dart';
 import '../all_done_burst.dart';
 import '../reminder_chip.dart';
 import '../measure_size.dart';
+import '../../state/checklist_tree.dart';
 import 'checklist_suggestions.dart';
 import 'pop_checkbox.dart';
 
@@ -55,6 +56,11 @@ class AnimatedChecklist extends StatefulWidget {
   /// a note that does not exist yet.
   final void Function(String itemId)? onSetReminder;
 
+  /// Moves a row one nesting level in ([delta] 1) or out ([delta] -1), with
+  /// whatever is nested under it. The caller applies `shiftDepth`; the widget
+  /// only decides when it was asked for.
+  final void Function(String itemId, int delta)? onIndentItem;
+
   const AnimatedChecklist({
     super.key,
     required this.items,
@@ -66,6 +72,7 @@ class AnimatedChecklist extends StatefulWidget {
     required this.onReorderItems,
     this.onInsertAfter,
     this.onSetReminder,
+    this.onIndentItem,
     this.reminders = const {},
     this.readOnly = false,
     this.autofocusNew = false,
@@ -75,6 +82,11 @@ class AnimatedChecklist extends StatefulWidget {
   @override
   State<AnimatedChecklist> createState() => _AnimatedChecklistState();
 }
+
+/// How far one nesting level moves a row to the right. Wide enough to read at
+/// a glance on a phone, narrow enough that three levels still leave a
+/// sensible amount of the row for its text.
+const double _kIndentStep = 24;
 
 /// The composer (the last, always-present row) and the collapsed-section
 /// header are laid out alongside the items, so they need ids of their own.
@@ -258,6 +270,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   Map<String, ChecklistItem> _byId = const {};
   List<ChecklistItem> _checked = const [];
 
+  /// Ids in [_checked], for asking "is this row down in the checked section"
+  /// without scanning the list per row.
+  Set<String> _finished = const {};
+
   /// Built rows, kept across our own rebuilds. A row is a TextField with its
   /// own focus, gesture and ink machinery plus an animated checkbox, while a
   /// drag step, a caret move or a store refresh changes where rows sit, not
@@ -278,8 +294,15 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   String? _composingId;
 
   String? _draggingId;
+
+  /// [_draggingId] and the rows nested under it, which travel with it.
+  List<String> _draggingBlock = const [];
   String? _pendingFocusId;
   double _dragY = 0;
+
+  /// Sideways travel since the indent drag began, and the depth it began at.
+  double _indentDx = 0;
+  int _indentStartDepth = 0;
   bool _snapFrame = true;
 
   /// Checked items fold away behind their header until asked for: a list that
@@ -393,10 +416,14 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   void _syncItems() {
     _byId = {for (final item in widget.items) item.id: item};
+    // Only finished *tasks* go down to the checked section, subtasks and all.
+    // A subtask ticked off under a task that is still open stays where it is,
+    // struck through, so it never loses the thing it belongs to.
     _checked = [
-      for (final item in widget.items)
-        if (item.done) item,
+      for (var i = 0; i < widget.items.length; i++)
+        if (isFinished(widget.items, i)) widget.items[i],
     ];
+    _finished = {for (final item in _checked) item.id};
   }
 
   void _invalidateRows() {
@@ -410,7 +437,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   void _refreshOrder({bool keepLocalOrder = false}) {
     final ids = [
       for (final item in widget.items)
-        if (!item.done && item.id != _composingId) item.id,
+        if (!_finished.contains(item.id) && item.id != _composingId) item.id,
     ];
     if (!keepLocalOrder) {
       _uncheckedOrder = ids;
@@ -627,11 +654,25 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     // Hardware keyboards get here first; where the keypress never surfaces as
     // a key event, the empty-row marker catches it as an edit instead.
     handles.focusNode.onKeyEvent = (node, event) {
-      if (event is KeyDownEvent &&
-          event.logicalKey == LogicalKeyboardKey.backspace &&
-          handles.text.isEmpty &&
-          !widget.readOnly) {
-        _focusNeighborThenRemove(item.id);
+      if (event is! KeyDownEvent || widget.readOnly) {
+        return KeyEventResult.ignored;
+      }
+      // Tab nests the row under the one above it, Shift+Tab brings it back
+      // out, which is what Tab does in every outliner. It costs the field
+      // nothing: a checklist row has no tab stop worth reaching.
+      if (event.logicalKey == LogicalKeyboardKey.tab &&
+          widget.onIndentItem != null) {
+        final delta = HardwareKeyboard.instance.isShiftPressed ? -1 : 1;
+        if (canShiftDepth(widget.items, item.id, delta)) {
+          widget.onIndentItem!(item.id, delta);
+        }
+        // Handled either way: a refused indent must not hand the caret to
+        // the next row instead.
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.backspace &&
+          handles.text.isEmpty) {
+        _emptyRowBackspace(item.id);
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
@@ -683,6 +724,26 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   }
 
   /// An edit reported by the row holding [item].
+  /// Backspace on a row that is already empty.
+  ///
+  /// A nested row comes out one level first: the row is still there to press
+  /// again, and a subtask is never lost to a keypress that meant to unindent
+  /// it. At the top level the row goes, as it always has. Shared by the two
+  /// ways an empty backspace reaches us, a real key event and the empty-row
+  /// marker read back as an edit, so they cannot disagree.
+  void _emptyRowBackspace(String itemId) {
+    final item = _byId[itemId];
+    if (item != null && item.depth > 0 && widget.onIndentItem != null) {
+      widget.onIndentItem!(itemId, -1);
+      // Re-arm, so the row goes on the very next press rather than costing
+      // one keystroke to notice it is empty all over again.
+      final handles = _handles[itemId];
+      if (handles != null) _armEmptyMarker(handles);
+      return;
+    }
+    _focusNeighborThenRemove(itemId);
+  }
+
   void _itemTextChanged(ChecklistItem item, _RowHandles handles, String value) {
     final text = _withoutMarker(value);
     final wasArmed = _isEmptyRowBackspace(handles);
@@ -697,7 +758,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       // all. The row's own text has to be empty too, so the keystroke that
       // merely emptied it can never also remove it.
       if (wasArmed && (handles.unacknowledged ?? item.text).isEmpty) {
-        _focusNeighborThenRemove(item.id);
+        _emptyRowBackspace(item.id);
         return;
       }
       // Emptied by this keystroke, not by the one before it: re-arm so the
@@ -962,11 +1023,55 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   }
 
   // -------------------------------------------------------------------
+  // Dragging the handle sideways: nesting
+
+  void _indentDragStart(ChecklistItem item) {
+    _indentDx = 0;
+    _indentStartDepth = item.depth;
+  }
+
+  /// Sideways travel indents or outdents, one level per [_kIndentStep], and
+  /// the row follows the finger rather than waiting for the release. Measured
+  /// from where the gesture started, so overshooting and coming back lands
+  /// where the finger says it should.
+  void _indentDragUpdate(ChecklistItem item, double dx) {
+    _indentDx += dx;
+    final wanted = _indentStartDepth + (_indentDx / _kIndentStep).round();
+    final current = _byId[item.id]?.depth ?? item.depth;
+    if (wanted == current) return;
+    final delta = wanted > current ? 1 : -1;
+    if (!canShiftDepth(widget.items, item.id, delta)) return;
+    // One level per step, so a fast drag cannot skip a level it was not
+    // allowed to cross.
+    widget.onIndentItem!(item.id, delta);
+    HapticFeedback.selectionClick();
+  }
+
+  // -------------------------------------------------------------------
   // Drag to reorder (handle-initiated, unchecked rows only)
+
+  /// The rows that travel with a drag: the one grabbed, plus whatever is
+  /// nested under it. A task moves with its subtasks or it is not a task.
+  List<String> _blockFor(String id) {
+    final start = _uncheckedOrder.indexOf(id);
+    if (start < 0) return [id];
+    final depth = _byId[id]?.depth ?? 0;
+    final block = [id];
+    for (var i = start + 1; i < _uncheckedOrder.length; i++) {
+      final next = _byId[_uncheckedOrder[i]];
+      if (next == null || next.depth <= depth) break;
+      block.add(next.id);
+    }
+    return block;
+  }
+
+  double _blockHeight() =>
+      _draggingBlock.fold<double>(0, (acc, id) => acc + _rowHeight(id));
 
   void _dragStart(String id, double startTop) {
     setState(() {
       _draggingId = id;
+      _draggingBlock = _blockFor(id);
       _dragY = startTop;
     });
   }
@@ -974,17 +1079,19 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   void _dragUpdate(double dy) {
     final draggingId = _draggingId;
     if (draggingId == null) return;
+    final blockHeight = _blockHeight();
     final maxY =
         _uncheckedOrder.fold<double>(0, (acc, id) => acc + _rowHeight(id)) -
-        _rowHeight(draggingId);
+        blockHeight;
     _dragY = (_dragY + dy).clamp(0.0, maxY < 0 ? 0.0 : maxY);
 
-    // Find the insertion index for the dragged row's center.
+    // Find the insertion index for the block's leading row, measuring against
+    // the rows it is not carrying.
     final center = _dragY + _rowHeight(draggingId) / 2;
     var acc = 0.0;
     var index = 0;
     for (final id in _uncheckedOrder) {
-      if (id == draggingId) continue;
+      if (_draggingBlock.contains(id)) continue;
       if (center > acc + _rowHeight(id) / 2) {
         index++;
         acc += _rowHeight(id);
@@ -992,18 +1099,25 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         break;
       }
     }
-    final from = _uncheckedOrder.indexOf(draggingId);
+    final rest = [
+      for (final id in _uncheckedOrder)
+        if (!_draggingBlock.contains(id)) id,
+    ];
     setState(() {
-      if (from != index) {
-        _uncheckedOrder.removeAt(from);
-        _uncheckedOrder.insert(index, draggingId);
-      }
+      _uncheckedOrder = [
+        ...rest.sublist(0, index.clamp(0, rest.length)),
+        ..._draggingBlock,
+        ...rest.sublist(index.clamp(0, rest.length)),
+      ];
     });
   }
 
   void _dragEnd() {
     if (_draggingId == null) return;
-    setState(() => _draggingId = null);
+    setState(() {
+      _draggingId = null;
+      _draggingBlock = const [];
+    });
     // The row being written is not in [_uncheckedOrder], but it is still part
     // of the list and must not be dropped from it.
     final composing = _composingId == null ? null : _byId[_composingId];
@@ -1241,120 +1355,163 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       onExit: (_) {
         if (_hovered.value == item.id) _hovered.value = null;
       },
-      child: onRowState(
-        // Every row keeps the exact same height and widget shape whether
-        // hovered or not: controls fade in with Opacity instead of being
-        // added to the tree, so hovering never shifts the layout.
-        ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: _minimumRowHeight),
-          child: Row(
-            // Every control belongs to the first text line: each one is
-            // centred in a band of that line's height (see [_RowMetrics]), so
-            // a multiline field grows downward without pulling its checkbox
-            // into the vertical centre of the whole item.
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              onRowState(
-                MouseRegion(
-                  cursor: SystemMouseCursors.grab,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onVerticalDragStart: (_) {
-                      final layout = _layout();
-                      _dragStart(item.id, layout.tops[item.id] ?? 0);
-                    },
-                    onVerticalDragUpdate: (details) =>
-                        _dragUpdate(details.delta.dy),
-                    onVerticalDragEnd: (_) => _dragEnd(),
-                    onVerticalDragCancel: _dragEnd,
-                    child: SizedBox(
-                      width: 24,
-                      height: _rowMetrics.bandHeight,
-                      child: Icon(
-                        Icons.drag_indicator,
-                        size: 20,
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+      // Nesting is drawn by moving the whole row, highlight included, so a
+      // subtask reads as sitting under its task rather than beside it.
+      // Animated because indenting is a deliberate act with a gesture behind
+      // it: the row should be seen to move, not to have moved.
+      child: AnimatedPadding(
+        duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+        curve: Motion.standard,
+        padding: EdgeInsets.only(left: item.depth * _kIndentStep),
+        child: onRowState(
+          // Every row keeps the exact same height and widget shape whether
+          // hovered or not: controls fade in with Opacity instead of being
+          // added to the tree, so hovering never shifts the layout.
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: _minimumRowHeight),
+            child: Row(
+              // Every control belongs to the first text line: each one is
+              // centred in a band of that line's height (see [_RowMetrics]), so
+              // a multiline field grows downward without pulling its checkbox
+              // into the vertical centre of the whole item.
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                onRowState(
+                  MouseRegion(
+                    cursor: SystemMouseCursors.grab,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      // Two recognizers rather than one pan, so the gesture
+                      // arena picks the axis. A pan would lose a plain
+                      // vertical drag to the scroll view above it, taking the
+                      // handle's reorder with it.
+                      onVerticalDragStart: (_) {
+                        final layout = _layout();
+                        _dragStart(item.id, layout.tops[item.id] ?? 0);
+                      },
+                      onVerticalDragUpdate: (details) =>
+                          _dragUpdate(details.delta.dy),
+                      onVerticalDragEnd: (_) => _dragEnd(),
+                      onVerticalDragCancel: _dragEnd,
+                      // Sideways on the same handle is the other kind of
+                      // move: in and out of the row above it.
+                      onHorizontalDragStart: (_) => _indentDragStart(item),
+                      onHorizontalDragUpdate: (details) =>
+                          _indentDragUpdate(item, details.delta.dx),
+                      onHorizontalDragEnd: (_) => _indentDx = 0,
+                      onHorizontalDragCancel: () => _indentDx = 0,
+                      child: SizedBox(
+                        width: 24,
+                        height: _rowMetrics.bandHeight,
+                        child: Icon(
+                          Icons.drag_indicator,
+                          size: 20,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                (hovered, focused, child) => AnimatedOpacity(
-                  opacity: !item.done && showsControls(hovered, focused)
-                      ? 1
-                      : 0,
-                  duration: _controlFade,
-                  curve: Motion.standard,
-                  child: IgnorePointer(
-                    ignoring: item.done || widget.readOnly,
-                    child: child,
+                  (hovered, focused, child) => AnimatedOpacity(
+                    opacity: !item.done && showsControls(hovered, focused)
+                        ? 1
+                        : 0,
+                    duration: _controlFade,
+                    curve: Motion.standard,
+                    child: IgnorePointer(
+                      ignoring: item.done || widget.readOnly,
+                      child: child,
+                    ),
                   ),
                 ),
-              ),
-              _firstLineBand(
-                PopCheckbox(
-                  value: item.done,
-                  onChanged: widget.readOnly
-                      ? null
-                      : (_) => _handleToggle(item),
-                  sideColor: scheme.onSurfaceVariant,
+                _firstLineBand(
+                  PopCheckbox(
+                    value: item.done,
+                    onChanged: widget.readOnly
+                        ? null
+                        : (_) => _handleToggle(item),
+                    sideColor: scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              _rowField(
-                handles: handles,
-                style: textStyle,
-                below: reminder == null
-                    ? null
-                    : ReminderChip(
-                        at: reminder.at,
-                        repeat: reminder.repeat,
-                        // The chip is the row's "edit this reminder": having
-                        // set one, that is what the bell beside it would do
-                        // anyway, and the chip is the bigger target.
-                        onTap: canRemind
-                            ? () => widget.onSetReminder!(item.id)
-                            : null,
+                _rowField(
+                  handles: handles,
+                  style: textStyle,
+                  below: reminder == null
+                      ? null
+                      : ReminderChip(
+                          at: reminder.at,
+                          repeat: reminder.repeat,
+                          // The chip is the row's "edit this reminder": having
+                          // set one, that is what the bell beside it would do
+                          // anyway, and the chip is the bigger target.
+                          onTap: canRemind
+                              ? () => widget.onSetReminder!(item.id)
+                              : null,
+                        ),
+                  onChanged: (value) => _itemTextChanged(item, handles, value),
+                  onSubmitted: () {
+                    // Enter continues the list: a new row right below this one.
+                    // Give the keyboard an already-mounted target inside the
+                    // submit callback, before creating the row that will
+                    // ultimately own the caret.
+                    _composer.focusNode.requestFocus();
+                    if (widget.onInsertAfter != null && !item.done) {
+                      _pendingFocusId = widget.onInsertAfter!(item.id);
+                      setState(() {});
+                    }
+                  },
+                ),
+                if (canRemind)
+                  onRowState(
+                    _firstLineBand(
+                      IconButton(
+                        icon: Icon(
+                          reminder == null ? Icons.alarm_add : Icons.alarm_on,
+                          size: 18,
+                        ),
+                        color: reminder == null
+                            ? scheme.onSurfaceVariant
+                            : scheme.primary,
+                        tooltip: reminder == null
+                            ? 'Remind me about this item'
+                            : 'Edit reminder',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
+                        ),
+                        onPressed: () => widget.onSetReminder!(item.id),
                       ),
-                onChanged: (value) => _itemTextChanged(item, handles, value),
-                onSubmitted: () {
-                  // Enter continues the list: a new row right below this one.
-                  // Give the keyboard an already-mounted target inside the
-                  // submit callback, before creating the row that will
-                  // ultimately own the caret.
-                  _composer.focusNode.requestFocus();
-                  if (widget.onInsertAfter != null && !item.done) {
-                    _pendingFocusId = widget.onInsertAfter!(item.id);
-                    setState(() {});
-                  }
-                },
-              ),
-              if (canRemind)
+                    ),
+                    (hovered, focused, child) {
+                      // A row that already carries one keeps its bell lit: the
+                      // state has to be visible without hunting for it, the way
+                      // the chip below the text is.
+                      final show =
+                          reminder != null || showsControls(hovered, focused);
+                      return AnimatedOpacity(
+                        opacity: show ? 1 : 0,
+                        duration: _controlFade,
+                        curve: Motion.standard,
+                        child: IgnorePointer(ignoring: !show, child: child),
+                      );
+                    },
+                  ),
                 onRowState(
                   _firstLineBand(
                     IconButton(
-                      icon: Icon(
-                        reminder == null ? Icons.alarm_add : Icons.alarm_on,
-                        size: 18,
-                      ),
-                      color: reminder == null
-                          ? scheme.onSurfaceVariant
-                          : scheme.primary,
-                      tooltip: reminder == null
-                          ? 'Remind me about this item'
-                          : 'Edit reminder',
+                      icon: const Icon(Icons.close, size: 18),
+                      color: scheme.onSurfaceVariant,
+                      tooltip: 'Remove item',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints.tightFor(
                         width: 40,
                         height: 40,
                       ),
-                      onPressed: () => widget.onSetReminder!(item.id),
+                      onPressed: () => widget.onRemove(item.id),
                     ),
                   ),
                   (hovered, focused, child) {
-                    // A row that already carries one keeps its bell lit: the
-                    // state has to be visible without hunting for it, the way
-                    // the chip below the text is.
-                    final show =
-                        reminder != null || showsControls(hovered, focused);
+                    final show = showsControls(hovered, focused);
                     return AnimatedOpacity(
                       opacity: show ? 1 : 0,
                       duration: _controlFade,
@@ -1363,61 +1520,38 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                     );
                   },
                 ),
-              onRowState(
-                _firstLineBand(
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    color: scheme.onSurfaceVariant,
-                    tooltip: 'Remove item',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 40,
-                      height: 40,
-                    ),
-                    onPressed: () => widget.onRemove(item.id),
+              ],
+            ),
+          ),
+          // Animated, so the pointer crossing a row washes its highlight in and
+          // out rather than flicking it, and picking a row up fades its lift in
+          // under the finger.
+          (hovered, focused, child) => AnimatedContainer(
+            key: ValueKey('checklist-row-background-${item.id}'),
+            duration: _controlFade,
+            curve: Motion.standard,
+            decoration: BoxDecoration(
+              color: dragging
+                  ? scheme.surfaceContainerHigh
+                  : matches
+                  ? scheme.tertiaryContainer.withValues(alpha: 0.55)
+                  : focused && !widget.readOnly
+                  ? scheme.primary.withValues(alpha: 0.035)
+                  : hovered && !widget.readOnly
+                  ? scheme.onSurface.withValues(alpha: 0.04)
+                  : null,
+              borderRadius: BorderRadius.circular(kRadius),
+              boxShadow: [
+                if (dragging)
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                ),
-                (hovered, focused, child) {
-                  final show = showsControls(hovered, focused);
-                  return AnimatedOpacity(
-                    opacity: show ? 1 : 0,
-                    duration: _controlFade,
-                    curve: Motion.standard,
-                    child: IgnorePointer(ignoring: !show, child: child),
-                  );
-                },
-              ),
-            ],
+              ],
+            ),
+            child: child,
           ),
-        ),
-        // Animated, so the pointer crossing a row washes its highlight in and
-        // out rather than flicking it, and picking a row up fades its lift in
-        // under the finger.
-        (hovered, focused, child) => AnimatedContainer(
-          key: ValueKey('checklist-row-background-${item.id}'),
-          duration: _controlFade,
-          curve: Motion.standard,
-          decoration: BoxDecoration(
-            color: dragging
-                ? scheme.surfaceContainerHigh
-                : matches
-                ? scheme.tertiaryContainer.withValues(alpha: 0.55)
-                : focused && !widget.readOnly
-                ? scheme.primary.withValues(alpha: 0.035)
-                : hovered && !widget.readOnly
-                ? scheme.onSurface.withValues(alpha: 0.04)
-                : null,
-            borderRadius: BorderRadius.circular(kRadius),
-            boxShadow: [
-              if (dragging)
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-            ],
-          ),
-          child: child,
         ),
       ),
     );
@@ -1450,61 +1584,70 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final textStyle =
         Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
     final composing = _composingId == null ? null : _byId[_composingId];
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: _minimumRowHeight),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Aligned with the drag-handle column above.
-          const SizedBox(width: 24),
-          // The first keystroke turns the invitation into a real row, and its
-          // "+" gives way to a checkbox in place: see [_swapProgress].
-          _firstLineBand(_composerLeading(composing, scheme)),
-          _rowField(
-            handles: _composer,
-            style: textStyle,
-            hintText: 'List item',
-            textCapitalization: TextCapitalization.sentences,
-            onChanged: _composerChanged,
-            // Enter starts the next item, leaving this one on the list.
-            onSubmitted: _commitComposing,
-          ),
-          ValueListenableBuilder<String?>(
-            valueListenable: _focusedId,
-            builder: (context, focusedId, _) {
-              final show = focusedId == _kComposerId;
-              return AnimatedOpacity(
-                opacity: show ? 1 : 0,
-                duration: _controlFade,
-                curve: Motion.standard,
-                child: IgnorePointer(
-                  ignoring: !show,
-                  // An empty composer has no item to remove yet, so its
-                  // button gives the same clear exit as a row's: relinquish
-                  // focus so the soft keyboard closes.
-                  child: _firstLineBand(
-                    IconButton(
-                      key: const Key('checklist-new-row-close'),
-                      icon: const Icon(Icons.close, size: 18),
-                      color: scheme.onSurfaceVariant,
-                      tooltip: composing == null
-                          ? 'Close keyboard'
-                          : 'Remove item',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 40,
-                        height: 40,
+    // The composer stands where the row it is writing will stand: at the
+    // depth of what it is continuing, so a nested list goes on being nested.
+    final depth =
+        composing?.depth ?? (_byId.isEmpty ? 0 : widget.items.last.depth);
+    return AnimatedPadding(
+      duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+      curve: Motion.standard,
+      padding: EdgeInsets.only(left: depth * _kIndentStep),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: _minimumRowHeight),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Aligned with the drag-handle column above.
+            const SizedBox(width: 24),
+            // The first keystroke turns the invitation into a real row, and its
+            // "+" gives way to a checkbox in place: see [_swapProgress].
+            _firstLineBand(_composerLeading(composing, scheme)),
+            _rowField(
+              handles: _composer,
+              style: textStyle,
+              hintText: 'List item',
+              textCapitalization: TextCapitalization.sentences,
+              onChanged: _composerChanged,
+              // Enter starts the next item, leaving this one on the list.
+              onSubmitted: _commitComposing,
+            ),
+            ValueListenableBuilder<String?>(
+              valueListenable: _focusedId,
+              builder: (context, focusedId, _) {
+                final show = focusedId == _kComposerId;
+                return AnimatedOpacity(
+                  opacity: show ? 1 : 0,
+                  duration: _controlFade,
+                  curve: Motion.standard,
+                  child: IgnorePointer(
+                    ignoring: !show,
+                    // An empty composer has no item to remove yet, so its
+                    // button gives the same clear exit as a row's: relinquish
+                    // focus so the soft keyboard closes.
+                    child: _firstLineBand(
+                      IconButton(
+                        key: const Key('checklist-new-row-close'),
+                        icon: const Icon(Icons.close, size: 18),
+                        color: scheme.onSurfaceVariant,
+                        tooltip: composing == null
+                            ? 'Close keyboard'
+                            : 'Remove item',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
+                        ),
+                        onPressed: composing == null
+                            ? _composer.focusNode.unfocus
+                            : _discardComposing,
                       ),
-                      onPressed: composing == null
-                          ? _composer.focusNode.unfocus
-                          : _discardComposing,
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-        ],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1601,7 +1744,14 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         ? Duration.zero
         : Motion.base;
     Widget positioned(String id, Widget child) {
-      final dragging = id == _draggingId;
+      final blockIndex = _draggingBlock.indexOf(id);
+      final dragging = blockIndex >= 0;
+      // Rows carried along sit under the one being dragged, at the distance
+      // they already were.
+      var draggedTop = _dragY;
+      for (var i = 0; i < blockIndex; i++) {
+        draggedTop += _rowHeight(_draggingBlock[i]);
+      }
       Widget positionedChild = MeasureSize(
         onChange: (size) => _measuredRow(id, size.height),
         child: child,
@@ -1622,7 +1772,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         curve: Motion.standard,
         left: 0,
         right: 0,
-        top: dragging ? _dragY : (layout.tops[id] ?? 0),
+        top: dragging ? draggedTop : (layout.tops[id] ?? 0),
         child: positionedChild,
       );
     }

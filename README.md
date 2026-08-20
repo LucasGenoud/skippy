@@ -12,6 +12,7 @@ persistence and optimistic, offline-capable edits.
   search, and exports
 - Reminders on a whole note or on a single checklist item, pushed through ntfy,
   Telegram, or email
+- Checklists with subtasks, up to three levels deep
 - Sharing, public read-only links, live sync, and version history
 - Optional self-hosted Whisper transcription, Tesseract image text recognition,
   and OpenAI-compatible embeddings
@@ -56,6 +57,15 @@ reminders require notification and background-location permission; saved
 coordinates are user settings and are never exposed to note collaborators. Map
 tiles come from OpenStreetMap and are only fetched while the place editor is
 open.
+
+A checklist row can be nested under the one above it, three levels in all:
+task, subtask, sub-subtask. Tab and Shift+Tab move a row in and out on a
+keyboard, and dragging its handle sideways does the same on a phone; a row
+carries whatever is nested under it, whether it is being indented, dragged, or
+ticked off. Checking a task checks everything under it and files the whole
+group away together, while a subtask ticked off under a task still in progress
+stays where it is, struck through, so it never loses what it belonged to.
+Removing a row promotes its subtasks rather than deleting them.
 
 A checklist row can carry a reminder of its own, set from the bell beside it,
 with the same one-shot or repeating options a note reminder has. Ticking the row
