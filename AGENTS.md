@@ -160,6 +160,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
 - `app/lib/widgets/note_card.dart`: card rendering for all note types.
+- `app/lib/widgets/swipe_to_archive.dart`: the touch-only swipe that archives a card from the grid.
 - `app/lib/widgets/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions.
 - `app/lib/widgets/quick_add_bar.dart`: inline text, checklist, and markdown drafts plus image-note creation.
 - `app/lib/widgets/editor/`: extracted editor attachment, text-field, and bottom-bar pieces.

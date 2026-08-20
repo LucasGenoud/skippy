@@ -34,6 +34,12 @@ persistence and optimistic, offline-capable edits.
   </tr>
 </table>
 
+On Android and iOS, a card is archived by swiping it sideways in the grid,
+either way. The panel revealed behind it warms to the accent as the card passes
+the point where letting go acts, and the notification that follows carries an
+Undo. The same swipe in the archive puts a note back. Board cards keep the
+gesture for paging between columns.
+
 On Android and iOS, adding an image offers the camera alongside the photo
 library, so a receipt or a whiteboard goes straight from the lens onto a note.
 Uploaded images are read for text when an OCR service is configured, so that

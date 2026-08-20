@@ -1227,6 +1227,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 selected: _selectedNoteIds.contains(note.id),
                 onSelectionChanged: (selected) =>
                     _toggleNoteSelection(note.id, selected),
+                // The grid scrolls vertically and nothing else here wants a
+                // sideways drag, so the phone gets swipe-to-archive. The card
+                // itself declines in the trash.
+                swipeToArchive: true,
               ),
             ),
           ),

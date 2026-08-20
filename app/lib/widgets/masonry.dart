@@ -46,6 +46,21 @@ enum MasonryReorderDecision { keep, restore }
 typedef MasonryReorderCallback =
     MasonryReorderDecision Function(MasonryReorder reorder);
 
+/// Asks the enclosing [AnimatedMasonry] to paint one tile above the others.
+///
+/// Tiles are absolutely positioned siblings in a Stack, so a card that moves
+/// out of its own slot under a finger — a swipe — slides *under* whichever
+/// neighbour the packer happened to place after it, and over the ones it
+/// placed before: the same gesture would look different in each column. A tile
+/// dispatches this while it is off its slot, and again with [raised] false
+/// once it has settled back.
+class MasonryRaiseTileNotification extends Notification {
+  final String noteId;
+  final bool raised;
+
+  const MasonryRaiseTileNotification(this.noteId, {required this.raised});
+}
+
 /// A masonry grid where every layout change animates.
 ///
 /// Tiles are absolutely positioned in a Stack; their heights are measured
@@ -166,6 +181,9 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   String? _draggingId;
   List<String>? _dragStartOrder;
 
+  /// The tile that asked to paint last; see [MasonryRaiseTileNotification].
+  String? _raisedId;
+
   // Tile widgets, kept between our own rebuilds. A note card is expensive to
   // build (markdown, linkified spans, image resolution, an OpenContainer
   // each), while a reorder changes where cards go, not what they are, so the
@@ -256,6 +274,9 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     }
     final live = ids.toSet();
     _heights.removeWhere((id, _) => !live.contains(id));
+    // The usual way a raised tile ends is the note leaving the view, which is
+    // exactly what it was swiped off the grid for.
+    if (_raisedId != null && !live.contains(_raisedId)) _raisedId = null;
     // Cards the parent would now build differently, plus any whose note has
     // gone away. A note that merely changed is dropped by [_tileFor] itself.
     // No key means the parent hasn't told us what its builder reads, so assume
@@ -646,34 +667,58 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
             }
           });
         }
-        return SizedBox(
-          height: layout.totalHeight,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // First, so tiles gliding out of the way pass over it.
-              if (layout.incomingSlot case final Rect slot)
-                Positioned.fromRect(rect: slot, child: const _IncomingSlot()),
-              for (var i = 0; i < _orderIds.length; i++)
-                if (notesById[_orderIds[i]] case final Note note)
-                  AnimatedPositioned(
-                    key: ValueKey(note.id),
-                    duration: snap ? Duration.zero : _moveDuration,
-                    curve: Motion.standard,
-                    left: layout.slots[note.id]!.x,
-                    top: layout.slots[note.id]!.y,
-                    width: layout.columnWidth,
-                    child: MeasureSize(
-                      onChange: (size) =>
-                          _onHeightMeasured(note.id, size.height),
-                      child: _TileEntrance(
-                        animation: _entranceController,
-                        index: i,
-                        child: RepaintBoundary(child: _buildTile(note, layout)),
-                      ),
-                    ),
-                  ),
-            ],
+        // Painting order, which is the order of this list, is the packed
+        // order — except for a raised tile, which goes last. Every tile is
+        // keyed, so moving one to the end of the list moves what it paints
+        // over, not the element it is built from.
+        final tiles = <Widget>[];
+        Widget? raised;
+        for (var i = 0; i < _orderIds.length; i++) {
+          if (notesById[_orderIds[i]] case final Note note) {
+            final tile = AnimatedPositioned(
+              key: ValueKey(note.id),
+              duration: snap ? Duration.zero : _moveDuration,
+              curve: Motion.standard,
+              left: layout.slots[note.id]!.x,
+              top: layout.slots[note.id]!.y,
+              width: layout.columnWidth,
+              child: MeasureSize(
+                onChange: (size) => _onHeightMeasured(note.id, size.height),
+                child: _TileEntrance(
+                  animation: _entranceController,
+                  index: i,
+                  child: RepaintBoundary(child: _buildTile(note, layout)),
+                ),
+              ),
+            );
+            if (note.id == _raisedId) {
+              raised = tile;
+            } else {
+              tiles.add(tile);
+            }
+          }
+        }
+        if (raised != null) tiles.add(raised);
+
+        return NotificationListener<MasonryRaiseTileNotification>(
+          onNotification: (notification) {
+            final next = notification.raised
+                ? notification.noteId
+                : (_raisedId == notification.noteId ? null : _raisedId);
+            if (next != _raisedId) setState(() => _raisedId = next);
+            return true;
+          },
+          child: SizedBox(
+            height: layout.totalHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // First, so tiles gliding out of the way pass over it.
+                if (layout.incomingSlot case final Rect slot)
+                  Positioned.fromRect(rect: slot, child: const _IncomingSlot()),
+                ...tiles,
+              ],
+            ),
           ),
         );
       },

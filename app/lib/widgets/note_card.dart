@@ -20,9 +20,11 @@ import 'workspace_menu.dart';
 import 'labels_sheet.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
+import 'masonry.dart';
 import 'pick_image.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
+import 'swipe_to_archive.dart';
 import 'transcribing_indicator.dart';
 import '../util/highlight.dart';
 import '../util/keyboard.dart';
@@ -49,6 +51,14 @@ class NoteTile extends StatefulWidget {
   /// Board cards retain the column picker when opened in the editor.
   final bool openedFromBoard;
 
+  /// Whether a horizontal swipe on this card archives it (touch only, see
+  /// [SwipeToArchive]).
+  ///
+  /// Off by default because it is not the card's decision: the board pages
+  /// between columns with the same gesture on a phone, and a card in the trash
+  /// has nothing to archive.
+  final bool swipeToArchive;
+
   const NoteTile({
     super.key,
     required this.note,
@@ -57,6 +67,7 @@ class NoteTile extends StatefulWidget {
     this.selected = false,
     this.onSelectionChanged,
     this.openedFromBoard = false,
+    this.swipeToArchive = false,
   });
 
   @override
@@ -436,7 +447,7 @@ class _NoteTileState extends State<NoteTile> {
       ),
     );
 
-    return MouseRegion(
+    final tile = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Stack(
@@ -450,6 +461,25 @@ class _NoteTileState extends State<NoteTile> {
           ),
         ],
       ),
+    );
+
+    return SwipeToArchive(
+      // A mouse drag on a card lifts it for a reorder from the first pixel
+      // (see AnimatedMasonry), so the swipe would eat that gesture. Selecting
+      // is a mode of its own: while it is on, a card's tap toggles it and a
+      // stray sideways drag must not archive anything.
+      enabled:
+          widget.swipeToArchive &&
+          isTouchPrimaryPlatform &&
+          !note.trashed &&
+          !widget.selectionMode,
+      archived: note.archived,
+      onArchive: _archive,
+      onActive: (active) => MasonryRaiseTileNotification(
+        note.id,
+        raised: active,
+      ).dispatch(context),
+      child: tile,
     );
   }
 }
