@@ -12,7 +12,7 @@ use sqlx::{Row, SqlitePool};
 
 use super::RepoResult;
 use super::sqlite::MY_WORKSPACES;
-use crate::models::{Attachment, NoteRecord, NoteView, UserPublic};
+use crate::models::{Attachment, ItemReminder, NoteRecord, NoteView, UserPublic};
 
 pub(super) async fn build_note_views(
     pool: &SqlitePool,
@@ -101,6 +101,27 @@ pub(super) async fn build_note_views(
             });
     }
 
+    // Item reminders are note state, not workspace state, so unlike labels
+    // they are visible to a direct collaborator too.
+    let mut item_reminders_by_note: HashMap<String, Vec<ItemReminder>> = HashMap::new();
+    for row in sqlx::query(
+        "SELECT note_id, item_id, reminder_at, reminder_repeat FROM note_item_reminders
+         WHERE note_id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(&note_ids)
+    .fetch_all(pool)
+    .await?
+    {
+        item_reminders_by_note
+            .entry(row.get("note_id"))
+            .or_default()
+            .push(ItemReminder {
+                item_id: row.get("item_id"),
+                reminder_at: row.get("reminder_at"),
+                reminder_repeat: row.get("reminder_repeat"),
+            });
+    }
+
     let workspace_owners: HashMap<String, UserPublic> = sqlx::query(
         "SELECT w.id AS workspace_id, u.id, u.name FROM workspaces w
          JOIN users u ON u.id = w.owner_id
@@ -139,6 +160,21 @@ pub(super) async fn build_note_views(
                         record.id
                     )
                 })?;
+            // Item order, not id order: the list reads top to bottom, and a
+            // reminder for a row the note no longer holds is not shown at all
+            // (the storage layer prunes those, this only refuses to guess).
+            let mut item_reminders = item_reminders_by_note
+                .get(&record.id)
+                .cloned()
+                .unwrap_or_default();
+            let item_order: HashMap<&str, usize> = record
+                .items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (item.id.as_str(), index))
+                .collect();
+            item_reminders.retain(|reminder| item_order.contains_key(reminder.item_id.as_str()));
+            item_reminders.sort_by_key(|reminder| item_order[reminder.item_id.as_str()]);
             Ok(NoteView {
                 label_ids: labels_by_note.get(&record.id).cloned().unwrap_or_default(),
                 owner,
@@ -147,6 +183,7 @@ pub(super) async fn build_note_views(
                     .get(&record.id)
                     .cloned()
                     .unwrap_or_default(),
+                item_reminders,
                 note: record.fields(),
             })
         })

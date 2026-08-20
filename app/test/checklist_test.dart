@@ -32,6 +32,12 @@ Widget harness(NotesStore store, Widget child) => MultiProvider(
 Future<void> flushTimers(WidgetTester tester) async =>
     tester.pump(const Duration(milliseconds: 700));
 
+/// Let the store's serial queue reach the fake API and come back.
+Future<void> settleQueue(WidgetTester tester) async {
+  await flushTimers(tester);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late FakeApi api;
   late NotesStore store;
@@ -82,6 +88,182 @@ void main() {
     await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
     await tester.pumpAndSettle();
   }
+
+  group('item reminders', () {
+    const milk = ChecklistItem(id: 'i1', text: 'Milk');
+    const bread = ChecklistItem(id: 'i2', text: 'Bread', done: true);
+
+    Finder bellFor(String text) => find.descendant(
+      of: find.ancestor(
+        of: find.widgetWithText(TextField, text),
+        matching: find.byType(Row),
+      ),
+      matching: find.byIcon(Icons.alarm_add),
+    );
+
+    Future<List<String>> showRows(
+      WidgetTester tester, {
+      Map<String, ItemReminder> reminders = const {},
+      bool offered = true,
+      bool readOnly = false,
+    }) async {
+      final tapped = <String>[];
+      await tester.pumpWidget(
+        harness(
+          store,
+          AnimatedChecklist(
+            items: const [milk, bread],
+            reminders: reminders,
+            readOnly: readOnly,
+            suggestionsFor: (_, _) => const [],
+            onToggle: (_) {},
+            onItemTextChanged: (_, _) {},
+            onRemove: (_) {},
+            onAdd: (_) => 'new',
+            onReorderItems: (_) {},
+            onSetReminder: offered ? tapped.add : null,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return tapped;
+    }
+
+    testWidgets('are offered on unchecked rows only', (tester) async {
+      final tapped = await showRows(tester);
+      expect(bellFor('Milk'), findsOneWidget);
+      // A checked row cannot carry one, so it is not invited to: the rule is
+      // the server's, and the UI should not offer a 400.
+      expect(bellFor('Bread'), findsNothing);
+
+      await tester.tap(bellFor('Milk'));
+      await tester.pumpAndSettle();
+      expect(tapped, ['i1']);
+    });
+
+    testWidgets('leave no trace where they are not on offer', (tester) async {
+      await showRows(tester, offered: false);
+      expect(find.byIcon(Icons.alarm_add), findsNothing);
+      await showRows(tester, readOnly: true);
+      expect(find.byIcon(Icons.alarm_add), findsNothing);
+    });
+
+    testWidgets('show as a chip under the row, which reopens the picker', (
+      tester,
+    ) async {
+      final tapped = await showRows(
+        tester,
+        reminders: {
+          'i1': ItemReminder(
+            itemId: 'i1',
+            at: DateTime(2030, 1, 2, 9, 30),
+            repeat: ReminderRepeat.weekly,
+          ),
+        },
+      );
+      expect(find.textContaining('Every week'), findsOneWidget);
+      // A row that carries one keeps its bell lit rather than hiding it until
+      // hover, and the bell reads as set.
+      expect(find.byIcon(Icons.alarm_on), findsOneWidget);
+      expect(bellFor('Milk'), findsNothing);
+
+      await tester.tap(find.textContaining('Every week'));
+      await tester.pumpAndSettle();
+      expect(tapped, ['i1']);
+    });
+
+    testWidgets('fit a phone row beside every other control', (tester) async {
+      // Five controls now share a row: handle, box, field, bell, remove. A
+      // narrow screen is where that stops fitting, and the chip under the
+      // text is what grows the row instead of squeezing it.
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        harness(
+          store,
+          AnimatedChecklist(
+            items: const [
+              ChecklistItem(
+                id: 'i1',
+                text: 'Ring the plumber about the upstairs radiator',
+              ),
+            ],
+            reminders: {
+              'i1': ItemReminder(
+                itemId: 'i1',
+                at: DateTime(2030, 1, 2, 9, 30),
+                repeat: ReminderRepeat.monthly,
+              ),
+            },
+            suggestionsFor: (_, _) => const [],
+            onToggle: (_) {},
+            onItemTextChanged: (_, _) {},
+            onRemove: (_) {},
+            onAdd: (_) => 'new',
+            onReorderItems: (_) {},
+            onSetReminder: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byIcon(Icons.alarm_on), findsOneWidget);
+    });
+
+    testWidgets("are set and removed through the editor's picker", (
+      tester,
+    ) async {
+      // The whole path a person takes: bell -> quick option -> stored, then
+      // chip -> remove -> gone.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await openChecklist(tester, items: const [milk]);
+
+      await tester.tap(find.byIcon(Icons.alarm_add));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('reminder-preset-tomorrow-morning')),
+      );
+      await tester.pumpAndSettle();
+
+      final stored = store.noteById('n1')!.reminderForItem('i1');
+      expect(stored, isNotNull);
+      expect(stored!.at.hour, 9);
+      expect(find.byIcon(Icons.alarm_on), findsOneWidget);
+      await settleQueue(tester);
+      expect(api.notes['n1']!.reminderForItem('i1'), isNotNull);
+
+      // The chip reopens it, and removing leaves the row bare again.
+      await tester.tap(find.byIcon(Icons.alarm_on));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('remove-reminder')));
+      await tester.pumpAndSettle();
+      expect(store.noteById('n1')!.itemReminders, isEmpty);
+      expect(find.byIcon(Icons.alarm_add), findsOneWidget);
+      await settleQueue(tester);
+      expect(api.notes['n1']!.itemReminders, isEmpty);
+    });
+
+    testWidgets('appear in the editor as soon as the store has one', (
+      tester,
+    ) async {
+      await openChecklist(tester, items: const [milk]);
+      expect(find.byIcon(Icons.alarm_add), findsOneWidget);
+      expect(find.byIcon(Icons.alarm_on), findsNothing);
+
+      store.setItemReminder('n1', 'i1', DateTime(2030, 1, 2, 9, 30));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.alarm_on), findsOneWidget);
+
+      // Ticking the row off takes the chip with it, without a round trip.
+      store.setChecklistItemDone('n1', 'i1', true);
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.alarm_on), findsNothing);
+      await flushTimers(tester);
+    });
+  });
 
   group('deleting text', () {
     testWidgets('backspacing the last character empties the row, keeps it', (

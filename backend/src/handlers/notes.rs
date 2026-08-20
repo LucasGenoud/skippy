@@ -49,6 +49,25 @@ fn validate_reminder_repeat(value: Option<&str>) -> ApiResult<()> {
     Ok(())
 }
 
+/// Check one item reminder against the note it is meant for. An unchecked item
+/// of that note must exist to carry it: the reminder's whole meaning is "this
+/// row, still to do".
+fn validate_item_reminder(record: &NoteRecord, reminder: &ItemReminder) -> ApiResult<()> {
+    validate_reminder(&Some(reminder.reminder_at.clone()))?;
+    validate_reminder_repeat(reminder.reminder_repeat.as_deref())?;
+    let item = record
+        .items
+        .iter()
+        .find(|item| item.id == reminder.item_id)
+        .ok_or(ApiError::NotFound)?;
+    if item.done {
+        return Err(ApiError::BadRequest(
+            "a checked item cannot carry a reminder".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_update(record: &NoteRecord, is_owner: bool, body: &UpdateNote) -> ApiResult<()> {
     if body.trashed.is_some() && !is_owner {
         return Err(ApiError::Forbidden(
@@ -260,6 +279,13 @@ pub async fn create_note_for_user(
         }
         return Err(error.into());
     }
+    // Reminders for the items this note was created with. A create is one
+    // request, so an offline-composed checklist and a restored backup arrive
+    // whole rather than as a note followed by a write per reminder.
+    for reminder in body.item_reminders.into_iter().flatten() {
+        validate_item_reminder(&record, &reminder)?;
+        state.repo.set_item_reminder(&record.id, &reminder).await?;
+    }
     let pre_checked: Vec<String> = record
         .items
         .iter()
@@ -443,6 +469,48 @@ pub async fn apply_note_update(
         .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(view)
+}
+
+/// Set or clear the reminder on one checklist item.
+///
+/// A sub-resource rather than a field on the note patch, so two devices
+/// working on two rows of the same list never overwrite each other, and so a
+/// client that knows nothing about item reminders cannot clear them all by
+/// sending a stale `items` array. Like the note-level reminder, it is shared
+/// state: any participant may set one.
+pub async fn set_item_reminder(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((id, item_id)): Path<(String, String)>,
+    Json(body): Json<SetItemReminder>,
+) -> ApiResult<Json<NoteView>> {
+    let record = require_participant(&state, &id, &user_id).await?;
+    match body.reminder_at.filter(|value| !value.trim().is_empty()) {
+        Some(reminder_at) => {
+            let reminder = ItemReminder {
+                item_id,
+                reminder_at,
+                reminder_repeat: body.reminder_repeat,
+            };
+            validate_item_reminder(&record, &reminder)?;
+            state.repo.set_item_reminder(&id, &reminder).await?;
+        }
+        // Clearing is a delete and stays idempotent even for an item that is
+        // already gone, so an offline client can always tidy up after itself.
+        None => state.repo.clear_item_reminder(&id, &item_id).await?,
+    }
+    // Deliberately no `updated_at` bump and no content pipeline: an alarm
+    // moving is not an edit of the note, and the note should not read as
+    // "Edited just now" because of it. Participants are still nudged so their
+    // devices re-arm.
+    state.notify_note(&id).await;
+    let mut view = state
+        .repo
+        .note_view(&id, &user_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    state.sign_view(&mut view);
+    Ok(Json(view))
 }
 
 pub async fn delete_note(

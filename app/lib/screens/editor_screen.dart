@@ -510,6 +510,34 @@ class _EditorScreenState extends State<EditorScreen> {
     _setItems([..._items]..removeWhere((i) => i.id == itemId));
   }
 
+  /// Set, change, or remove the reminder on one checklist row.
+  ///
+  /// Deliberately time-only: the location branch is keyed per note in the
+  /// settings document and capped by the platform's geofence budget, so it
+  /// stays a note-level idea.
+  Future<void> _editItemReminder(String itemId) async {
+    if (_reminderPickerOpen) return;
+    _reminderPickerOpen = true;
+    try {
+      // A row can only exist once the note does, so there is nothing to
+      // materialize here the way the note-level reminder has to.
+      final noteId = _noteId;
+      if (noteId == null) return;
+      final current = _store.noteById(noteId)?.reminderForItem(itemId);
+      final selection = await ReminderPicker.show(
+        context,
+        current: current?.at,
+        currentRepeat: current?.repeat,
+        use24hTime: _settings.use24hTime,
+      );
+      if (!mounted || selection == null) return;
+      _store.setItemReminder(noteId, itemId, selection.at, selection.repeat);
+      setState(() {});
+    } finally {
+      _reminderPickerOpen = false;
+    }
+  }
+
   /// Enter in a row: continue the list with an empty row right below it.
   String _insertItemAfter(String afterId) {
     final items = [..._items];
@@ -1416,6 +1444,8 @@ class _EditorScreenState extends State<EditorScreen> {
         onAdd: _addItem,
         onInsertAfter: _insertItemAfter,
         onReorderItems: _setItems,
+        reminders: _note?.itemReminders ?? const {},
+        onSetReminder: trashed ? null : _editItemReminder,
       );
     }
     if (_kind == NoteKind.markdown && _previewMarkdown) {

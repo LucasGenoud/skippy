@@ -10,6 +10,7 @@ persistence and optimistic, offline-capable edits.
 - Grid, list, and kanban board views with drag-to-reorder
 - Workspaces, labels, stages, archive, trash, time and location reminders,
   search, and exports
+- Reminders on a whole note or on a single checklist item
 - Sharing, public read-only links, live sync, and version history
 - Optional self-hosted Whisper transcription, Tesseract image text recognition,
   and OpenAI-compatible embeddings
@@ -54,6 +55,15 @@ reminders require notification and background-location permission; saved
 coordinates are user settings and are never exposed to note collaborators. Map
 tiles come from OpenStreetMap and are only fetched while the place editor is
 open.
+
+A checklist row can carry a reminder of its own, set from the bell beside it,
+with the same one-shot or repeating options a note reminder has. Ticking the row
+off cancels its reminder, and so does deleting the row: an alarm outlives
+neither. Item reminders are shared with everyone who can see the note, are
+written one row at a time so two devices editing the same list never overwrite
+each other, and reach both the server's push channels and the device's own
+alarms. Setting one is not an edit: it does not change the note's "Edited"
+stamp, capture a version, or re-run automatic labeling.
 
 The app is deliberately out of scope for drawings, calendar sync, and
 CRDT-style collaboration. Collaboration uses last-write-wins at note level.
@@ -321,7 +331,8 @@ defaults; S3-compatible storage is also supported.
 Authenticated JSON endpoints live under `/api`. The main groups are:
 
 - `/auth`, `/workspaces`, `/notes`, `/labels`, and `/stages`
-- `/notes/{id}/versions`, `/notes/{id}/attachments`, and sharing endpoints
+- `/notes/{id}/versions`, `/notes/{id}/attachments`,
+  `/notes/{id}/item-reminders/{item_id}`, and sharing endpoints
 - `/search`, `/chat`, `/settings`, `/unfurl`, and `/ws`
 - `/health` and `/capabilities` for service status
 

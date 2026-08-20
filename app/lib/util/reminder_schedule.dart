@@ -24,11 +24,21 @@ const String _payloadPrefix = 'skippy-reminder:';
 /// Note ids are UUIDs, so this never occurs in one.
 const String _payloadSeparator = '|';
 
+/// Separates the note id from the checklist item id, for a reminder set on one
+/// row rather than on the whole note. Absent for a note reminder, so a payload
+/// written before item reminders existed still reads correctly and the alarms
+/// armed by an older build survive the upgrade.
+const String _payloadItemSeparator = '#';
+
 /// One reminder armed with the OS notification scheduler.
 class ScheduledReminder {
-  /// Stable per-note id, derived from [noteId] via [reminderNotificationId].
+  /// Stable id, derived from the note (and item) via [reminderNotificationId].
   final int id;
   final String noteId;
+
+  /// The checklist item this reminder belongs to, or null for the note's own
+  /// reminder.
+  final String? itemId;
 
   /// When it fires, in UTC. Converted to a device-local zoned time at the
   /// platform boundary: scheduling must respect DST, so the offset can't be
@@ -43,6 +53,7 @@ class ScheduledReminder {
     required this.dueUtc,
     required this.title,
     required this.body,
+    this.itemId,
   });
 
   /// Round-trips the note id and the exact due time through the OS, so a
@@ -50,8 +61,9 @@ class ScheduledReminder {
   /// back what is actually pending, so there is no local bookkeeping to drift
   /// out of sync.
   String get payload =>
-      '$_payloadPrefix$noteId$_payloadSeparator'
-      '${dueUtc.millisecondsSinceEpoch}';
+      '$_payloadPrefix$noteId'
+      '${itemId == null ? '' : '$_payloadItemSeparator$itemId'}'
+      '$_payloadSeparator${dueUtc.millisecondsSinceEpoch}';
 
   /// The note a delivered notification refers to, for tap handling. Returns
   /// null for anything that isn't one of our reminder payloads.
@@ -59,7 +71,11 @@ class ScheduledReminder {
     if (payload == null || !payload.startsWith(_payloadPrefix)) return null;
     final rest = payload.substring(_payloadPrefix.length);
     final cut = rest.indexOf(_payloadSeparator);
-    final id = cut < 0 ? rest : rest.substring(0, cut);
+    var id = cut < 0 ? rest : rest.substring(0, cut);
+    // An item reminder still points at the note holding the item: tapping one
+    // opens the list, there is nowhere else to go.
+    final item = id.indexOf(_payloadItemSeparator);
+    if (item >= 0) id = id.substring(0, item);
     return id.isEmpty ? null : id;
   }
 
@@ -89,9 +105,12 @@ typedef PendingReminder = ({
 /// the note id (rather than handing out counters) means any pass, including
 /// the first one after a cold start, can cancel or replace a note's alarm
 /// without remembering what it assigned last time.
-int reminderNotificationId(String noteId) {
+int reminderNotificationId(String noteId, {String? itemId}) {
+  // Hashing the same string the payload carries keeps a note reminder's id
+  // exactly what it has always been, so upgrading re-arms nothing.
+  final key = itemId == null ? noteId : '$noteId$_payloadItemSeparator$itemId';
   var hash = 0x811c9dc5;
-  for (final unit in noteId.codeUnits) {
+  for (final unit in key.codeUnits) {
     hash ^= unit;
     // FNV prime, kept inside 32 bits (JS numbers have no int32 wraparound).
     hash = (hash * 0x01000193) & 0xFFFFFFFF;
@@ -107,7 +126,21 @@ String _capBody(String body) {
   return '${String.fromCharCodes(runes.take(kNotificationBodyChars))}…';
 }
 
-/// Title and body for a due reminder, mirroring the backend's
+/// Title and body for a due checklist-item reminder, mirroring the backend's
+/// `item_reminder_notification`: the item's own text over the note holding it
+/// ("Milk" / "Groceries"). The item leads because the item is the thing to do.
+({String title, String body}) itemReminderText(Note note, String itemId) {
+  final text = note.items
+      .where((item) => item.id == itemId)
+      .map((item) => item.text.trim())
+      .firstOrNull;
+  return (
+    title: text == null || text.isEmpty ? 'Reminder' : _capBody(text),
+    body: note.title.trim(),
+  );
+}
+
+/// Title and body for a due note reminder, mirroring the backend's
 /// `reminder_notification` so the same reminder reads identically whichever
 /// transport delivers it: the note's title over its content, or over a
 /// checklist's still-pending items.
@@ -128,9 +161,15 @@ String _capBody(String body) {
 /// The reminders this device should have armed, soonest first.
 ///
 /// Matches the drawer's Reminders view (`NoteView.reminders`): any non-trashed
-/// note with a reminder, archived included. Reminders already due are skipped:
-/// the server's sweep owns those, and re-announcing a long-past reminder the
+/// note with a reminder, archived included, plus one alarm for each of its
+/// checklist items that carries one. Reminders already due are skipped: the
+/// server's sweep owns those, and re-announcing a long-past reminder the
 /// moment the app syncs is noise rather than a reminder.
+///
+/// Note and item reminders compete for the same [kMaxScheduledReminders]
+/// slots, soonest first. A list with dozens of dated rows can therefore crowd
+/// out a note reminder set years away, which is the right priority: the near
+/// alarm is the one a person is relying on.
 List<ScheduledReminder> plannedReminders(
   Iterable<Note> notes, {
   required DateTime now,
@@ -138,20 +177,41 @@ List<ScheduledReminder> plannedReminders(
   final nowUtc = now.toUtc();
   final planned = <ScheduledReminder>[];
   for (final note in notes) {
-    final due = note.reminderAt;
-    if (due == null || note.trashed) continue;
-    final dueUtc = due.toUtc();
-    if (!dueUtc.isAfter(nowUtc)) continue;
-    final text = reminderText(note);
-    planned.add(
-      ScheduledReminder(
-        id: reminderNotificationId(note.id),
-        noteId: note.id,
-        dueUtc: dueUtc,
-        title: text.title,
-        body: text.body,
-      ),
-    );
+    if (note.trashed) continue;
+    final due = note.reminderAt?.toUtc();
+    if (due != null && due.isAfter(nowUtc)) {
+      final text = reminderText(note);
+      planned.add(
+        ScheduledReminder(
+          id: reminderNotificationId(note.id),
+          noteId: note.id,
+          dueUtc: due,
+          title: text.title,
+          body: text.body,
+        ),
+      );
+    }
+    for (final item in note.items) {
+      // Checked rows carry no reminder; both the server and the store drop it
+      // as the box is ticked, so this only refuses to arm one that is still
+      // in flight.
+      if (item.done) continue;
+      final reminder = note.itemReminders[item.id];
+      if (reminder == null) continue;
+      final itemDue = reminder.at.toUtc();
+      if (!itemDue.isAfter(nowUtc)) continue;
+      final text = itemReminderText(note, item.id);
+      planned.add(
+        ScheduledReminder(
+          id: reminderNotificationId(note.id, itemId: item.id),
+          noteId: note.id,
+          itemId: item.id,
+          dueUtc: itemDue,
+          title: text.title,
+          body: text.body,
+        ),
+      );
+    }
   }
   planned.sort((a, b) => a.dueUtc.compareTo(b.dueUtc));
   if (planned.length > kMaxScheduledReminders) {

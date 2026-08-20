@@ -27,7 +27,7 @@ pub use events::ws_handler;
 pub use labels::{create_label, delete_label, list_labels, update_label};
 pub use notes::{
     apply_note_update, create_note, create_note_for_user, delete_note, get_note, list_notes,
-    purge_old_trash, purge_trash, reorder_notes, update_note,
+    purge_old_trash, purge_trash, reorder_notes, set_item_reminder, update_note,
 };
 pub use probes::{llm_test, notify_test};
 pub use search::{reindex_search, reindex_status, search_stats, semantic_search};

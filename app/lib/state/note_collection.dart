@@ -120,7 +120,9 @@ NoteSections selectNotes({
   );
 
   if (selection.view == NoteView.reminders) {
-    visible.sort((a, b) => a.reminderAt!.compareTo(b.reminderAt!));
+    // Soonest first, of either kind: a note whose only alarm sits on one of
+    // its checklist items belongs among the rest, not after them.
+    visible.sort((a, b) => a.nextReminderAt!.compareTo(b.nextReminderAt!));
     return NoteSections(const [], visible);
   }
 
@@ -206,7 +208,7 @@ bool _isInView(
     // reaches selectNotes. Matching `notes` keeps the switch total and any
     // caller that does pass it here sensible.
     NoteView.board => !note.archived && !note.trashed,
-    NoteView.reminders => note.reminderAt != null && !note.trashed,
+    NoteView.reminders => note.hasReminder && !note.trashed,
     NoteView.archive => note.archived && !note.trashed,
     // Collaborators cannot trash notes. If an owner trashes a shared note,
     // it disappears for collaborators instead of entering their trash.

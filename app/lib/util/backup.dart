@@ -137,6 +137,12 @@ class BackupNote {
   final double stagePosition;
   final DateTime? reminderAt;
   final ReminderRepeat? reminderRepeat;
+
+  /// Reminders on individual checklist items. [ItemReminder] is reused rather
+  /// than mirrored the way [BackupChecklistItem] mirrors a checklist row: it
+  /// holds a date and a cadence and no free text, so there is nothing here to
+  /// bound that parsing does not already reject.
+  final List<ItemReminder> itemReminders;
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<String> labelIds;
@@ -157,6 +163,7 @@ class BackupNote {
     this.stagePosition = 0,
     required this.reminderAt,
     this.reminderRepeat,
+    this.itemReminders = const [],
     required this.createdAt,
     required this.updatedAt,
     required this.labelIds,
@@ -275,6 +282,9 @@ Future<Uint8List> createBackupArchive({
         'stage_position': note.stagePosition,
         'reminder_at': note.reminderAt?.toUtc().toIso8601String(),
         'reminder_repeat': note.reminderRepeat?.wire,
+        'item_reminders': [
+          for (final reminder in note.orderedItemReminders) reminder.toJson(),
+        ],
         'created_at': note.createdAt.toUtc().toIso8601String(),
         'updated_at': note.updatedAt.toUtc().toIso8601String(),
         'label_ids': note.labelIds.toList(),
@@ -536,6 +546,11 @@ BackupWorkspace _parseWorkspaceContents(
       throw const FormatException('Backup contains an unknown note type');
     }
     final rawItems = _list(note['items'], 'items');
+    // Absent in a backup written before item reminders existed, which must
+    // still restore rather than fail validation.
+    final rawItemReminders = note['item_reminders'] == null
+        ? const []
+        : _list(note['item_reminders'], 'item_reminders');
     final rawLabelIds = _list(note['label_ids'], 'label_ids');
     final rawAttachments = _list(note['attachments'], 'attachments');
 
@@ -592,6 +607,10 @@ BackupWorkspace _parseWorkspaceContents(
         reminderRepeat: ReminderRepeat.fromWire(
           _optionalString(note['reminder_repeat'], max: 32),
         ),
+        itemReminders: [
+          for (final rawReminder in rawItemReminders)
+            ?ItemReminder.fromJson(_map(rawReminder, 'item reminder')),
+        ],
         createdAt: _requiredDate(note['created_at']),
         updatedAt: _requiredDate(note['updated_at']),
         labelIds: [

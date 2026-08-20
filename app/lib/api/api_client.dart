@@ -130,6 +130,18 @@ abstract class Api {
   Future<void> createNote(Note note, {bool preserveTimestamps = false});
   Future<void> patchNote(String id, Map<String, dynamic> fields);
 
+  /// Set (or, with a null [at], clear) the reminder on one checklist item.
+  ///
+  /// A sub-resource rather than a field on [patchNote], so two devices working
+  /// on two rows of the same list never overwrite each other, and so a note
+  /// patch carrying a stale `items` array cannot take the reminders with it.
+  Future<void> setItemReminder(
+    String noteId,
+    String itemId, {
+    DateTime? at,
+    ReminderRepeat? repeat,
+  });
+
   /// Ask the user's enabled AI provider to rewrite a note, returning the
   /// server-updated note so the local store can replace its current copy.
   Future<Note> rewriteNote(String id, NoteRewriteMode mode);
@@ -544,6 +556,10 @@ class ApiClient extends _ApiTransport implements Api {
             'reminder_at': note.reminderAt!.toUtc().toIso8601String(),
           if (note.reminderRepeat != null)
             'reminder_repeat': note.reminderRepeat!.wire,
+          // A checklist composed offline arrives with its item alarms in the
+          // same request; there is no note yet to hang a sub-resource off.
+          if (note.itemReminders.isNotEmpty)
+            'item_reminders': Note.itemRemindersToJson(note.itemReminders),
           // A note composed inside a label view is already filed when it
           // reaches the server; the draft never had a chance to PATCH them.
           'label_ids': note.labelIds.toList(),
@@ -568,6 +584,25 @@ class ApiClient extends _ApiTransport implements Api {
         _uri('/notes/$id'),
         headers: _headers(),
         body: jsonEncode(fields),
+      ),
+    );
+  }
+
+  @override
+  Future<void> setItemReminder(
+    String noteId,
+    String itemId, {
+    DateTime? at,
+    ReminderRepeat? repeat,
+  }) async {
+    _decode(
+      await _client.put(
+        _uri('/notes/$noteId/item-reminders/${Uri.encodeComponent(itemId)}'),
+        headers: _headers(),
+        body: jsonEncode({
+          'reminder_at': at?.toUtc().toIso8601String(),
+          'reminder_repeat': at == null ? null : repeat?.wire,
+        }),
       ),
     );
   }

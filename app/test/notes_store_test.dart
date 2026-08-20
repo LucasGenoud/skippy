@@ -26,6 +26,7 @@ Note serverNote(
   Set<String> labelIds = const {},
   UserRef? owner,
   DateTime? reminderAt,
+  Map<String, ItemReminder> itemReminders = const {},
   String workspaceId = '',
   List<UserRef> collaborators = const [],
 }) {
@@ -41,6 +42,7 @@ Note serverNote(
     trashed: trashed,
     position: position,
     reminderAt: reminderAt,
+    itemReminders: itemReminders,
     workspaceId: workspaceId,
     createdAt: createdAt ?? now,
     updatedAt: updatedAt ?? now,
@@ -472,6 +474,134 @@ void main() {
 
       expect(store.noteById('n1')!.items.single.done, isFalse);
     });
+  });
+
+  group('item reminders', () {
+    Future<void> loadList() async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        title: 'Groceries',
+        items: const [
+          ChecklistItem(id: 'milk', text: 'Milk'),
+          ChecklistItem(id: 'bread', text: 'Bread'),
+        ],
+      );
+      await store.load();
+    }
+
+    test('are optimistic and sync as their own operation', () async {
+      await loadList();
+      final when = DateTime(2030, 1, 2, 9, 30);
+
+      store.setItemReminder('n1', 'milk', when, ReminderRepeat.weekly);
+      final local = store.noteById('n1')!.reminderForItem('milk')!;
+      expect(local.at, when);
+      expect(local.repeat, ReminderRepeat.weekly);
+      // Not an edit: the note does not start reading as just edited, and no
+      // content patch is queued for it.
+      expect(store.noteById('n1')!.updatedAt, api.notes['n1']!.updatedAt);
+
+      await settle();
+      final synced = api.notes['n1']!.reminderForItem('milk')!;
+      expect(synced.at.toUtc(), when.toUtc());
+      expect(synced.repeat, ReminderRepeat.weekly);
+      expect(api.log, contains('setItemReminder:n1:milk'));
+      expect(api.log.where((l) => l.startsWith('patchNote')), isEmpty);
+
+      // Clearing removes exactly that one.
+      store.setItemReminder('n1', 'bread', DateTime(2030, 2, 1));
+      store.setItemReminder('n1', 'milk', null);
+      await settle();
+      expect(api.notes['n1']!.itemReminders.keys, ['bread']);
+      expect(store.noteById('n1')!.reminderForItem('milk'), isNull);
+    });
+
+    test('cannot be set on a checked or missing row', () async {
+      await loadList();
+      store.setChecklistItemDone('n1', 'milk', true);
+      store.setItemReminder('n1', 'milk', DateTime(2030));
+      store.setItemReminder('n1', 'ghost', DateTime(2030));
+      await settle();
+      expect(store.noteById('n1')!.itemReminders, isEmpty);
+      expect(api.log.where((l) => l.startsWith('setItemReminder')), isEmpty);
+    });
+
+    test('are cancelled locally the moment their item is', () async {
+      await loadList();
+      store.setItemReminder('n1', 'milk', DateTime(2030));
+      store.setItemReminder('n1', 'bread', DateTime(2030));
+      await settle();
+
+      // Ticking one off drops its alarm without waiting for the server, so
+      // the device scheduler stops planning it on the next pass.
+      store.setChecklistItemDone('n1', 'milk', true);
+      expect(store.noteById('n1')!.itemReminders.keys, ['bread']);
+      await settle();
+      expect(api.notes['n1']!.itemReminders.keys, ['bread']);
+
+      // So does removing the row entirely.
+      store.updateNoteContent('n1', items: [store.noteById('n1')!.items.first]);
+      await settle();
+      expect(store.noteById('n1')!.itemReminders, isEmpty);
+      expect(api.notes['n1']!.itemReminders, isEmpty);
+    });
+
+    test('make a wordless draft durable, riding along in its create', () async {
+      // A blank row keeps the draft local (there is nothing to save yet); a
+      // reminder on it is a scheduled alarm the user asked for, so the note
+      // has to become real, and the reminder travels in the create rather
+      // than as a second write against a note the server has never seen.
+      final draft = store.createDraft(kind: NoteKind.checklist);
+      store.updateNoteContent(
+        draft.id,
+        items: const [ChecklistItem(id: 'milk', text: '')],
+      );
+      await settle();
+      expect(api.notes[draft.id], isNull);
+
+      store.setItemReminder(draft.id, 'milk', DateTime(2030, 5, 1));
+      await settle();
+
+      expect(api.notes[draft.id]!.reminderForItem('milk'), isNotNull);
+      expect(api.log.where((l) => l.startsWith('createNote')).length, 1);
+      expect(api.log.where((l) => l.startsWith('setItemReminder')), isEmpty);
+    });
+
+    test(
+      'put their note in the Reminders view, ordered by the soonest',
+      () async {
+        api.notes['later'] = serverNote(
+          'later',
+          title: 'later',
+          reminderAt: DateTime(2030, 6, 1),
+        );
+        api.notes['item-only'] = serverNote(
+          'item-only',
+          kind: NoteKind.checklist,
+          items: const [ChecklistItem(id: 'milk', text: 'Milk')],
+          itemReminders: {
+            'milk': ItemReminder(itemId: 'milk', at: DateTime(2030, 1, 1)),
+          },
+        );
+        api.notes['plain'] = serverNote('plain', title: 'plain');
+        await store.load();
+
+        expect(
+          [
+            for (final n in store.notesFor(ViewSelection.reminders, '').others)
+              n.id,
+          ],
+          ['item-only', 'later'],
+        );
+        // And it answers `has:reminder` the same way.
+        expect([
+          for (final n
+              in store.notesFor(ViewSelection.notes, 'has:reminder').others)
+            n.id,
+        ], containsAll(['item-only', 'later']));
+      },
+    );
   });
 
   group('checklist history & suggestions', () {

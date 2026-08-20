@@ -22,7 +22,15 @@ void main() {
         title: 'Packing',
         items: const [
           ChecklistItem(id: 'item-old', text: 'Passport', done: true),
+          ChecklistItem(id: 'item-visa', text: 'Visa'),
         ],
+        itemReminders: {
+          'item-visa': ItemReminder(
+            itemId: 'item-visa',
+            at: DateTime.utc(2027, 3, 4),
+            repeat: ReminderRepeat.monthly,
+          ),
+        },
         color: 'teal',
         pinned: true,
         archived: true,
@@ -86,15 +94,27 @@ void main() {
       expect(travel.stages.single.position, 24);
       expect(travel.notes.single.title, 'Packing');
       expect(travel.notes.single.kind, NoteKind.checklist);
-      expect(travel.notes.single.items.single.id, 'item-old');
-      expect(travel.notes.single.items.single.text, 'Passport');
-      expect(travel.notes.single.items.single.done, isTrue);
+      expect(travel.notes.single.items.first.id, 'item-old');
+      expect(travel.notes.single.items.first.text, 'Passport');
+      expect(travel.notes.single.items.first.done, isTrue);
+      expect(travel.notes.single.items.last.id, 'item-visa');
       expect(travel.notes.single.archived, isTrue);
       expect(travel.notes.single.trashed, isTrue);
       expect(travel.notes.single.position, 42);
       expect(travel.notes.single.stageId, 'stage-old');
       expect(travel.notes.single.stagePosition, 84);
       expect(travel.notes.single.labelIds, ['label-old']);
+      expect(travel.notes.single.itemReminders.single.itemId, 'item-visa');
+      // Parsed like every other reminder the app reads: the same instant,
+      // in this device's zone.
+      expect(
+        travel.notes.single.itemReminders.single.at.toUtc(),
+        DateTime.utc(2027, 3, 4),
+      );
+      expect(
+        travel.notes.single.itemReminders.single.repeat,
+        ReminderRepeat.monthly,
+      );
       expect(travel.notes.single.attachments.single.filename, '../ticket.pdf');
       expect(travel.notes.single.attachments.single.bytes, [1, 2, 3]);
       expect(

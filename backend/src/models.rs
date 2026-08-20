@@ -161,6 +161,30 @@ pub struct ChecklistItem {
     pub done: bool,
 }
 
+/// A reminder on one checklist item. Stored in its own table rather than
+/// inside the note's `items` blob: see the note on `note_item_reminders` in
+/// the schema for why. `fired_at` is deliberately absent, it is server-owned
+/// delivery bookkeeping and never crosses the wire.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ItemReminder {
+    pub item_id: String,
+    pub reminder_at: String,
+    /// `daily`, `weekly`, `monthly`, `yearly`, or absent for one-shot. Same
+    /// cadences as a note reminder.
+    #[serde(default)]
+    pub reminder_repeat: Option<String>,
+}
+
+/// One due item reminder, carried with the note holding it so the sweep can
+/// render it and find its participants without a second lookup.
+#[derive(Debug, Clone)]
+pub struct DueItemReminder {
+    pub note: NoteRecord,
+    pub item_id: String,
+    pub reminder_at: String,
+    pub reminder_repeat: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Attachment {
     pub id: String,
@@ -250,6 +274,10 @@ pub struct NoteView {
     pub owner: UserPublic,
     pub collaborators: Vec<UserPublic>,
     pub attachments: Vec<Attachment>,
+    /// Reminders on individual checklist items, in item order. Read-only
+    /// here: they are written one at a time through their own sub-resource so
+    /// two devices editing two items never clobber each other.
+    pub item_reminders: Vec<ItemReminder>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -522,6 +550,11 @@ pub struct CreateNote {
     pub reminder_at: Option<String>,
     #[serde(default)]
     pub reminder_repeat: Option<String>,
+    /// Reminders for the checklist items created with the note. Accepted on
+    /// create so an offline-composed checklist, or a restored backup, arrives
+    /// complete instead of needing one follow-up write per item.
+    #[serde(default)]
+    pub item_reminders: Option<Vec<ItemReminder>>,
     #[serde(default)]
     pub label_ids: Option<Vec<String>>,
     /// Board stage to file the note in. Absent or null means unassigned; a
@@ -656,6 +689,18 @@ mod double_option {
     {
         Option::<String>::deserialize(d).map(Some)
     }
+}
+
+/// Body of `PUT /api/notes/{id}/item-reminders/{item_id}`. A null or absent
+/// `reminder_at` clears the item's reminder, which is why this is a plain
+/// Option rather than the nested one `UpdateNote` uses: the whole resource is
+/// being written, so there is no "leave it alone" case to express.
+#[derive(Debug, Deserialize, Default)]
+pub struct SetItemReminder {
+    #[serde(default)]
+    pub reminder_at: Option<String>,
+    #[serde(default)]
+    pub reminder_repeat: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

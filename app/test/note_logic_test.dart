@@ -101,6 +101,31 @@ void main() {
     expect(markdown.content, '- [x] Milk\n- [ ] Bread\n- [ ] Apples');
   });
 
+  test('note conversion leaves no item reminder without an item', () {
+    final list = note('n').copyWith(
+      kind: NoteKind.checklist,
+      items: const [ChecklistItem(id: 'i1', text: 'Milk')],
+      itemReminders: {'i1': ItemReminder(itemId: 'i1', at: DateTime(2030))},
+    );
+
+    // The rows become prose, so their alarms have nothing left to point at.
+    final text = convertNoteKind(
+      list,
+      NoteKind.text,
+      newItemId: () => throw StateError('not needed'),
+    );
+    expect(text.itemReminders, isEmpty);
+
+    // And rows minted back out of that text are new rows.
+    var nextId = 0;
+    final again = convertNoteKind(
+      text,
+      NoteKind.checklist,
+      newItemId: () => 'item-${nextId++}',
+    );
+    expect(again.itemReminders, isEmpty);
+  });
+
   test('pending operations keep the persisted wire format stable', () {
     const operation = PendingOp(
       PendingOpKind.patch,

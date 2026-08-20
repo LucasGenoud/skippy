@@ -90,6 +90,25 @@ CREATE TABLE IF NOT EXISTS notes (
     )
 ) STRICT;
 
+-- A reminder on one checklist item, kept out of the note's `items` blob on
+-- purpose. `items` is opaque, client-written content: a reminder living in it
+-- would count as a content edit, would put the server-owned `fired_at` within
+-- reach of any client, would be wiped wholesale by an offline client patching
+-- a stale items array, and could not be swept by an indexed query. The row
+-- exists only while its item exists and is unchecked; `update_note` prunes it
+-- in the same transaction that writes the items.
+CREATE TABLE IF NOT EXISTS note_item_reminders (
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL CHECK (trim(item_id) <> ''),
+    reminder_at TEXT NOT NULL,
+    reminder_repeat TEXT CHECK (
+        reminder_repeat IS NULL OR
+        reminder_repeat IN ('daily', 'weekly', 'monthly', 'yearly')
+    ),
+    fired_at TEXT,
+    PRIMARY KEY (note_id, item_id)
+) WITHOUT ROWID, STRICT;
+
 CREATE TABLE IF NOT EXISTS note_versions (
     id TEXT PRIMARY KEY,
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
@@ -198,6 +217,8 @@ CREATE INDEX IF NOT EXISTS idx_notes_trash_purge
     ON notes(trashed_at) WHERE trashed = 1;
 CREATE INDEX IF NOT EXISTS idx_notes_reminders
     ON notes(reminder_at) WHERE trashed = 0 AND reminder_fired_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_item_reminders_due
+    ON note_item_reminders(reminder_at) WHERE fired_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_notes_stage
     ON notes(stage_id) WHERE stage_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_shares_user ON note_shares(user_id);

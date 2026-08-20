@@ -75,7 +75,18 @@ String _toJson(
           'title': n.title,
           'content': n.content,
           'items': [
-            for (final i in n.items) {'text': i.text, 'done': i.done},
+            for (final i in n.items)
+              {
+                'text': i.text,
+                'done': i.done,
+                // Inline rather than a parallel list keyed by item id: this
+                // export drops the ids, so a reminder has to travel with the
+                // row it belongs to or lose its referent.
+                if (n.reminderForItem(i.id) case final reminder?) ...{
+                  'reminder_at': reminder.at.toUtc().toIso8601String(),
+                  'reminder_repeat': reminder.repeat?.wire,
+                },
+              },
           ],
           'color': n.color,
           'pinned': n.pinned,

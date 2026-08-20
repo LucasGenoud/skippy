@@ -319,8 +319,49 @@ class FakeApi implements Api {
         stagePosition: (fields['stage_position'] as num?)?.toDouble(),
         updatedAt: DateTime.now(),
       );
+      // The server prunes an item reminder in the same write that removes or
+      // checks off its item; the fake has to, or store tests would see a
+      // reminder the real backend would already have dropped.
+      notes[id] = notes[id]!.copyWith(
+        itemReminders: _pruneItemReminders(notes[id]!),
+      );
     });
   }
+
+  /// Item reminders survive only for items that still exist and are unchecked.
+  Map<String, ItemReminder> _pruneItemReminders(Note note) => {
+    for (final item in note.items)
+      if (!item.done && note.itemReminders[item.id] != null)
+        item.id: note.itemReminders[item.id]!,
+  };
+
+  @override
+  Future<void> setItemReminder(
+    String noteId,
+    String itemId, {
+    DateTime? at,
+    ReminderRepeat? repeat,
+  }) => _run('setItemReminder:$noteId:$itemId', () {
+    final existing = notes[noteId];
+    if (existing == null) throw ApiException(404, '{"error":"not found"}');
+    final reminders = Map<String, ItemReminder>.from(existing.itemReminders);
+    if (at == null) {
+      // Clearing stays idempotent, even for an item that is already gone.
+      reminders.remove(itemId);
+    } else {
+      final item = existing.items.where((i) => i.id == itemId).firstOrNull;
+      if (item == null) throw ApiException(404, '{"error":"not found"}');
+      if (item.done) {
+        throw ApiException(
+          400,
+          '{"error":"a checked item cannot carry a reminder"}',
+        );
+      }
+      reminders[itemId] = ItemReminder(itemId: itemId, at: at, repeat: repeat);
+    }
+    // Deliberately no updatedAt bump: an alarm moving is not an edit.
+    notes[noteId] = existing.copyWith(itemReminders: reminders);
+  });
 
   /// A stage the server would refuse, unknown, or from another workspace,
   /// is dropped rather than honoured, so client tests meet the same rule the

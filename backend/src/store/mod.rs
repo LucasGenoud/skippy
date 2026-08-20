@@ -7,6 +7,8 @@ mod sqlite_schema;
 mod sqlite_sharing;
 mod sqlite_views;
 
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 
 use crate::models::*;
@@ -192,6 +194,42 @@ pub trait NoteRepository: Send + Sync {
         reminder_at: &str,
         next_reminder_at: &str,
         advanced_at: &str,
+    ) -> RepoResult<bool>;
+
+    // -- checklist item reminders --------------------------------------------
+    /// A note's item reminders. Ordered by item id so a view is stable.
+    async fn item_reminders(&self, note_id: &str) -> RepoResult<Vec<ItemReminder>>;
+    /// Item reminders for several notes at once, keyed by note id. Used to
+    /// decorate note views without one query per note.
+    async fn item_reminders_for_notes(
+        &self,
+        note_ids: &[String],
+    ) -> RepoResult<HashMap<String, Vec<ItemReminder>>>;
+    /// Create or replace one item's reminder. Rescheduling clears the fired
+    /// mark, so the new time is delivered like any other new alarm.
+    async fn set_item_reminder(&self, note_id: &str, reminder: &ItemReminder) -> RepoResult<()>;
+    /// Remove one item's reminder. Idempotent.
+    async fn clear_item_reminder(&self, note_id: &str, item_id: &str) -> RepoResult<()>;
+    /// Item reminders due at or before `now` that have not fired, each with
+    /// the note holding it. Trashed notes are skipped, matching the note-level
+    /// sweep.
+    async fn due_item_reminders(&self, now: &str) -> RepoResult<Vec<DueItemReminder>>;
+    /// Atomically claim a one-shot item reminder for delivery, the item-level
+    /// counterpart of [`NoteRepository::mark_reminder_fired`].
+    async fn mark_item_reminder_fired(
+        &self,
+        note_id: &str,
+        item_id: &str,
+        reminder_at: &str,
+        fired_at: &str,
+    ) -> RepoResult<bool>;
+    /// Atomically advance a recurring item reminder to its next occurrence.
+    async fn advance_recurring_item_reminder(
+        &self,
+        note_id: &str,
+        item_id: &str,
+        reminder_at: &str,
+        next_reminder_at: &str,
     ) -> RepoResult<bool>;
 
     // -- version history ----------------------------------------------------

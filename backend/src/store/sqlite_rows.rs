@@ -1,6 +1,6 @@
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::models::{NoteRecord, NoteVersion, ShareLink, User, Workspace};
+use crate::models::{ItemReminder, NoteRecord, NoteVersion, ShareLink, User, Workspace};
 
 pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let items_json: String = row.get("items");
@@ -59,6 +59,16 @@ pub(super) fn workspace_from_row(row: &SqliteRow) -> Workspace {
         board_enabled: row.get::<i64, _>("board_enabled") != 0,
         is_default: row.get::<i64, _>("is_default") != 0,
         created_at: row.get("created_at"),
+    }
+}
+
+/// Decodes an item-reminder row. Callers that join it onto `notes` alias the
+/// columns, since `notes` carries `reminder_at`/`reminder_repeat` of its own.
+pub(super) fn item_reminder_from_row(row: &SqliteRow) -> ItemReminder {
+    ItemReminder {
+        item_id: row.get("item_id"),
+        reminder_at: row.get("reminder_at"),
+        reminder_repeat: row.get("reminder_repeat"),
     }
 }
 

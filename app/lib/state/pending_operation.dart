@@ -16,6 +16,7 @@ enum PendingOpKind {
   workspaceDelete('workspaceDelete'),
   leaveWorkspace('leaveWorkspace'),
   removeCollaborator('removeCollaborator'),
+  itemReminder('itemReminder'),
   deleteAttachment('deleteAttachment'),
   transcribe('transcribe'),
   unknown('unknown');

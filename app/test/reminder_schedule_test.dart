@@ -11,6 +11,7 @@ void main() {
     String title = '',
     String content = '',
     List<ChecklistItem> items = const [],
+    Map<String, ItemReminder> itemReminders = const {},
     DateTime? reminderAt,
     bool trashed = false,
     bool archived = false,
@@ -19,6 +20,7 @@ void main() {
     title: title,
     content: content,
     items: items,
+    itemReminders: itemReminders,
     reminderAt: reminderAt,
     trashed: trashed,
     archived: archived,
@@ -114,11 +116,10 @@ void main() {
         ),
       ], now: now);
 
-      expect([for (final r in planned) r.noteId], [
-        'sooner',
-        'archived',
-        'later',
-      ]);
+      expect(
+        [for (final r in planned) r.noteId],
+        ['sooner', 'archived', 'later'],
+      );
     });
 
     test('keeps the soonest when over the platform cap', () {
@@ -248,6 +249,202 @@ void main() {
         now: now.add(kFiredReminderGrace + const Duration(minutes: 1)),
       );
       expect(diff.cancel, [justDue.id]);
+    });
+  });
+
+  group('checklist item reminders', () {
+    final soon = DateTime.utc(2026, 7, 1, 18);
+    Note groceries({
+      Map<String, ItemReminder> reminders = const {},
+      List<ChecklistItem>? items,
+      DateTime? reminderAt,
+    }) => Note(
+      id: 'list',
+      title: 'Groceries',
+      kind: NoteKind.checklist,
+      items:
+          items ??
+          const [
+            ChecklistItem(id: 'milk', text: 'Milk'),
+            ChecklistItem(id: 'bread', text: 'Bread'),
+          ],
+      itemReminders: reminders,
+      reminderAt: reminderAt,
+      createdAt: created,
+      updatedAt: created,
+    );
+
+    test('read as the item over the note, mirroring the backend', () {
+      final note = groceries();
+      expect(itemReminderText(note, 'milk').title, 'Milk');
+      expect(itemReminderText(note, 'milk').body, 'Groceries');
+      // An item that went away, or has no text, still says something.
+      expect(itemReminderText(note, 'gone').title, 'Reminder');
+      expect(
+        itemReminderText(
+          groceries(
+            items: const [ChecklistItem(id: 'milk', text: '  ')],
+          ),
+          'milk',
+        ).title,
+        'Reminder',
+      );
+
+      final long = 'x' * (kNotificationBodyChars + 50);
+      final capped = itemReminderText(
+        groceries(
+          items: [ChecklistItem(id: 'milk', text: long)],
+        ),
+        'milk',
+      ).title;
+      expect(capped.runes.length, kNotificationBodyChars + 1);
+    });
+
+    test("are armed alongside the note's own, soonest first", () {
+      final planned = plannedReminders([
+        groceries(
+          reminderAt: now.add(const Duration(days: 2)),
+          reminders: {
+            'milk': ItemReminder(itemId: 'milk', at: soon),
+            'bread': ItemReminder(
+              itemId: 'bread',
+              at: now.add(const Duration(days: 3)),
+            ),
+          },
+        ),
+      ], now: now);
+
+      expect([for (final r in planned) r.itemId], ['milk', null, 'bread']);
+      expect(planned.first.title, 'Milk');
+      expect(planned.first.body, 'Groceries');
+      expect(planned[1].title, 'Groceries');
+    });
+
+    test('skip checked, missing, and past-due rows', () {
+      final planned = plannedReminders([
+        groceries(
+          items: const [
+            ChecklistItem(id: 'milk', text: 'Milk', done: true),
+            ChecklistItem(id: 'bread', text: 'Bread'),
+            ChecklistItem(id: 'jam', text: 'Jam'),
+          ],
+          reminders: {
+            // Ticked off: cancelled everywhere else, so never armed here.
+            'milk': ItemReminder(itemId: 'milk', at: soon),
+            // Already due: the server's sweep owns it.
+            'bread': ItemReminder(
+              itemId: 'bread',
+              at: now.subtract(const Duration(hours: 1)),
+            ),
+            // No such row any more.
+            'gone': ItemReminder(itemId: 'gone', at: soon),
+            'jam': ItemReminder(itemId: 'jam', at: soon),
+          },
+        ),
+      ], now: now);
+
+      expect([for (final r in planned) r.itemId], ['jam']);
+    });
+
+    test(
+      'carry the item in their payload and id, leaving note alarms alone',
+      () {
+        final planned = plannedReminders([
+          groceries(
+            reminderAt: soon,
+            reminders: {'milk': ItemReminder(itemId: 'milk', at: soon)},
+          ),
+        ], now: now);
+        final noteAlarm = planned.firstWhere((r) => r.itemId == null);
+        final itemAlarm = planned.firstWhere((r) => r.itemId == 'milk');
+
+        // A note reminder's id is what it always was, so upgrading re-arms
+        // nothing that was already armed by an older build.
+        expect(noteAlarm.id, reminderNotificationId('list'));
+        expect(itemAlarm.id, isNot(noteAlarm.id));
+        expect(itemAlarm.id, reminderNotificationId('list', itemId: 'milk'));
+
+        // Both point at the note: tapping either opens the list.
+        expect(ScheduledReminder.noteIdFromPayload(itemAlarm.payload), 'list');
+        expect(ScheduledReminder.dueFromPayload(itemAlarm.payload), soon);
+        expect(itemAlarm.payload, contains('list#milk'));
+        // The old two-part payload still parses, so alarms armed before item
+        // reminders existed are recognized rather than cancelled as strangers.
+        expect(
+          ScheduledReminder.noteIdFromPayload('skippy-reminder:list|123'),
+          'list',
+        );
+      },
+    );
+
+    test('a moved item reminder re-arms without disturbing its neighbours', () {
+      final before = plannedReminders([
+        groceries(
+          reminders: {
+            'milk': ItemReminder(itemId: 'milk', at: soon),
+            'bread': ItemReminder(
+              itemId: 'bread',
+              at: now.add(const Duration(days: 3)),
+            ),
+          },
+        ),
+      ], now: now);
+
+      final after = plannedReminders([
+        groceries(
+          reminders: {
+            'milk': ItemReminder(
+              itemId: 'milk',
+              at: soon.add(const Duration(hours: 2)),
+            ),
+            'bread': ItemReminder(
+              itemId: 'bread',
+              at: now.add(const Duration(days: 3)),
+            ),
+          },
+        ),
+      ], now: now);
+
+      final diff = diffReminders(
+        desired: after,
+        pending: [for (final r in before) armed(r)],
+        now: now,
+      );
+      expect(diff.schedule.single.itemId, 'milk');
+      expect(diff.cancel, isEmpty);
+    });
+
+    test('clearing one cancels exactly that alarm', () {
+      final before = plannedReminders([
+        groceries(
+          reminders: {
+            'milk': ItemReminder(itemId: 'milk', at: soon),
+            'bread': ItemReminder(
+              itemId: 'bread',
+              at: now.add(const Duration(days: 3)),
+            ),
+          },
+        ),
+      ], now: now);
+
+      final after = plannedReminders([
+        groceries(
+          reminders: {
+            'bread': ItemReminder(
+              itemId: 'bread',
+              at: now.add(const Duration(days: 3)),
+            ),
+          },
+        ),
+      ], now: now);
+
+      final diff = diffReminders(
+        desired: after,
+        pending: [for (final r in before) armed(r)],
+        now: now,
+      );
+      expect(diff.schedule, isEmpty);
+      expect(diff.cancel, [reminderNotificationId('list', itemId: 'milk')]);
     });
   });
 }

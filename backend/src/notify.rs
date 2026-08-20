@@ -51,12 +51,39 @@ pub fn reminder_notification(record: &NoteRecord) -> Notification {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let total = body.chars().count();
-    let mut body: String = body.chars().take(NOTIFICATION_BODY_CHARS).collect();
-    if total > NOTIFICATION_BODY_CHARS {
-        body.push('…');
+    Notification {
+        title,
+        body: cap_body(&body),
     }
-    Notification { title, body }
+}
+
+/// Render a due checklist-item reminder: the item's own text over the note
+/// holding it. The item leads because the item is the thing to do; the note
+/// title is context ("Milk" / "Groceries") and is omitted when there is none.
+pub fn item_reminder_notification(record: &NoteRecord, item_id: &str) -> Notification {
+    let text = record
+        .items
+        .iter()
+        .find(|item| item.id == item_id)
+        .map(|item| item.text.trim())
+        .unwrap_or_default();
+    let title = match text {
+        "" => "Reminder".to_string(),
+        text => cap_body(text),
+    };
+    Notification {
+        title,
+        body: record.title.trim().to_string(),
+    }
+}
+
+fn cap_body(body: &str) -> String {
+    let total = body.chars().count();
+    let mut capped: String = body.chars().take(NOTIFICATION_BODY_CHARS).collect();
+    if total > NOTIFICATION_BODY_CHARS {
+        capped.push('…');
+    }
+    capped
 }
 
 /// Calculate the first future occurrence of a recurring reminder. Recurrence
@@ -393,30 +420,117 @@ pub async fn sweep_due_reminders(state: &AppState) {
         if recurring {
             state.notify_note(&note.id).await;
         }
-        let notification = reminder_notification(&note);
-        let participants = match state.repo.participant_ids(&note.id).await {
-            Ok(participants) => participants,
+        deliver_to_participants(state, &note.id, &reminder_notification(&note)).await;
+    }
+}
+
+/// Push one rendered notification to every participant of a note who has a
+/// channel configured and notifications switched on. Shared by both sweeps, so
+/// a note reminder and an item reminder reach exactly the same audience.
+async fn deliver_to_participants(state: &AppState, note_id: &str, notification: &Notification) {
+    let participants = match state.repo.participant_ids(note_id).await {
+        Ok(participants) => participants,
+        Err(error) => {
+            state.report_background_failure("reminder_participants", &format!("{error:?}"));
+            return;
+        }
+    };
+    for user_id in participants {
+        let settings = match state.repo.settings_for_user(&user_id).await {
+            Ok(settings) => settings,
             Err(error) => {
-                state.report_background_failure("reminder_participants", &format!("{error:?}"));
+                state.report_background_failure("reminder_settings", &format!("{error:?}"));
                 continue;
             }
         };
-        for user_id in participants {
-            let settings = match state.repo.settings_for_user(&user_id).await {
-                Ok(settings) => settings,
-                Err(error) => {
-                    state.report_background_failure("reminder_settings", &format!("{error:?}"));
+        let settings = settings_value(settings.as_deref());
+        if !notifications_enabled(&settings) {
+            continue;
+        }
+        for error in send_configured(&state.notifiers, &settings, notification).await {
+            state.report_background_failure("reminder_delivery", &error);
+        }
+    }
+}
+
+/// One scheduler pass over checklist-item reminders. Mirrors
+/// [`sweep_due_reminders`], including claiming before delivery so a broken
+/// channel cannot wedge the sweep into resending forever.
+pub async fn sweep_due_item_reminders(state: &AppState) {
+    let now_utc = chrono::Utc::now();
+    let now = now_utc.to_rfc3339();
+    let due = match state.repo.due_item_reminders(&now).await {
+        Ok(due) => due,
+        Err(e) => {
+            state.report_background_failure("item_reminder_sweep", &format!("{e:?}"));
+            return;
+        }
+    };
+    for entry in due {
+        // An item reminder belongs to an item that exists and is unchecked.
+        // `update_note` prunes the rest inside the write that breaks the rule;
+        // this is the self-healing path for a row that got past it (a
+        // database touched by an older build, say), and it deletes rather
+        // than delivers.
+        let live = entry
+            .note
+            .items
+            .iter()
+            .any(|item| item.id == entry.item_id && !item.done);
+        if !live {
+            if let Err(error) = state
+                .repo
+                .clear_item_reminder(&entry.note.id, &entry.item_id)
+                .await
+            {
+                state.report_background_failure("item_reminder_prune", &format!("{error:?}"));
+            }
+            continue;
+        }
+        let recurring = entry.reminder_repeat.is_some();
+        let claimed = match entry.reminder_repeat.as_deref() {
+            Some(repeat) => {
+                let Some(next) = next_recurring_reminder(&entry.reminder_at, repeat, now_utc)
+                else {
                     continue;
-                }
-            };
-            let settings = settings_value(settings.as_deref());
-            if !notifications_enabled(&settings) {
+                };
+                state
+                    .repo
+                    .advance_recurring_item_reminder(
+                        &entry.note.id,
+                        &entry.item_id,
+                        &entry.reminder_at,
+                        &next,
+                    )
+                    .await
+            }
+            None => {
+                state
+                    .repo
+                    .mark_item_reminder_fired(
+                        &entry.note.id,
+                        &entry.item_id,
+                        &entry.reminder_at,
+                        &now,
+                    )
+                    .await
+            }
+        };
+        match claimed {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(error) => {
+                state.report_background_failure("item_reminder_claim", &format!("{error:?}"));
                 continue;
             }
-            for error in send_configured(&state.notifiers, &settings, &notification).await {
-                state.report_background_failure("reminder_delivery", &error);
-            }
+        };
+        // The advance moved a due time the clients can see, so they have to
+        // re-arm; the note-level sweep nudges for the same reason.
+        if recurring {
+            state.notify_note(&entry.note.id).await;
         }
+        let notification = item_reminder_notification(&entry.note, &entry.item_id);
+        deliver_to_participants(state, &entry.note.id, &notification).await;
     }
 }
 
@@ -427,6 +541,7 @@ pub fn spawn_reminder_scheduler(state: AppState) {
     tokio::spawn(async move {
         loop {
             sweep_due_reminders(&state).await;
+            sweep_due_item_reminders(&state).await;
             tokio::time::sleep(Duration::from_secs(REMINDER_SWEEP_SECS)).await;
         }
     });

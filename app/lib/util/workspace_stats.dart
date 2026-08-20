@@ -173,7 +173,7 @@ WorkspaceStats computeWorkspaceStats({
       activeNotes++;
     }
     if (note.pinned) pinned++;
-    if (note.reminderAt != null) withReminders++;
+    if (note.hasReminder) withReminders++;
 
     kindCounts.update(note.kind, (n) => n + 1, ifAbsent: () => 1);
 

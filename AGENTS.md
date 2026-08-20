@@ -123,7 +123,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/ocr.rs`: image text recognition interface, HTTP implementation, reply parsing, and which image types are worth reading.
 - `backend/src/assist.rs`: effective LLM settings, prompts, assistant routing, and structured-output parsing.
 - `backend/src/llm.rs`: OpenAI-compatible completion and streaming client.
-- `backend/src/notify.rs`: reminder scheduler and ntfy/Telegram connectors.
+- `backend/src/notify.rs`: reminder scheduler (notes and checklist items) and
+  ntfy/Telegram connectors.
 - `backend/src/unfurl.rs`: outbound URL validation, SSRF protections, fetching, and metadata parsing.
 - `backend/src/ws.rs`: per-user event fan-out hub.
 - `backend/tests/api/main.rs`: modular API integration test entry point.
@@ -160,6 +161,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
 - `app/lib/widgets/note_card.dart`: card rendering for all note types.
+- `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card
+  for a note's reminder and by the checklist editor for a row's.
 - `app/lib/widgets/swipe_to_archive.dart`: the touch-only swipe that archives a card from the grid.
 - `app/lib/widgets/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions.
 - `app/lib/widgets/quick_add_bar.dart`: inline text, checklist, and markdown drafts plus image-note creation.
@@ -209,6 +212,10 @@ Each note has one embedding in the collection owned by its workspace. Sharing an
 Relational deletion and external cleanup are one logical operation but cannot be one storage transaction. The SQLite transaction must enqueue idempotent `cleanup_jobs` for attachment blobs and note/workspace vectors before it commits; request-triggered and periodic drains may then retry safely across crashes. Do not return to fire-and-forget deletion that can permanently orphan external state.
 
 Checklist history is recorded on a transition to checked, shared with participants in that note, and capped at 500 records per note.
+
+A checklist item can carry a reminder of its own, stored in `note_item_reminders` rather than inside the note's `items` JSON. That separation is load-bearing: `items` is opaque client-written content, so a reminder living in it would be classified as a content edit (versioning, reindexing, auto-labeling, collaborator notification), would put the server-owned `fired_at` within a client's reach, would be wiped wholesale by an offline client patching a stale items array, and could not be swept by an indexed query. The invariant is that a row exists only for an item that is present and unchecked; `SqliteRepository::update_note` prunes in the same transaction that writes `items`, which is what keeps version restores and chat writes honest without each remembering to. The endpoint refuses a reminder on a missing or checked item, and `sweep_due_item_reminders` deletes rather than delivers a row that got past both. Item reminders are written one at a time through `PUT /api/notes/{id}/item-reminders/{item_id}` and are read-only on `NoteView`; a note PATCH must never write them. `POST /api/notes` accepts them so offline creation and backup restore arrive in one request. Setting one deliberately does not bump `updated_at` or run any content pipeline, but does notify participants so their devices re-arm.
+
+On the client, item reminders live on `Note.itemReminders`, never on `ChecklistItem`, for the same reason: items travel in content patches, version snapshots, and the editor's undo stack, and a reminder belongs in none of those. `plannedReminders` arms one alarm per note reminder and per item reminder, competing for the same 64 slots; a note alarm's notification id is unchanged, and an item's payload carries `noteId#itemId` so an alarm armed by an older build still parses.
 
 Client-generated UUIDs allow offline creation. Empty drafts remain local until meaningful text or a file exists. The server rejects reused note ids with 409 Conflict, so preserve the serial queue's create-before-update ordering.
 

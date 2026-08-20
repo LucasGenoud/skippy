@@ -23,6 +23,9 @@ Note convertNoteKind(
       kind: target,
       content: '',
       items: _itemsFromText(note.content, newItemId),
+      // Rows minted from text are new rows, so nothing that was scheduled
+      // before the conversion has anything left to point at.
+      itemReminders: const {},
     );
   }
 
@@ -34,7 +37,14 @@ Note convertNoteKind(
     final content = note.content.trim().isEmpty
         ? itemText
         : '${note.content}\n$itemText';
-    return note.copyWith(kind: target, content: content, items: []);
+    // The rows become prose; their reminders go with them, which is what the
+    // server does with the same patch.
+    return note.copyWith(
+      kind: target,
+      content: content,
+      items: [],
+      itemReminders: const {},
+    );
   }
 
   // Text and markdown share the same content representation.

@@ -81,6 +81,16 @@ class PendingOperationExecutor {
         return api.removeWorkspaceMember(op.id!, op.data['userId'] as String);
       case PendingOpKind.removeCollaborator:
         return api.removeCollaborator(op.id!, op.data['userId'] as String);
+      case PendingOpKind.itemReminder:
+        final at = op.data['at'] as String?;
+        return api.setItemReminder(
+          op.id!,
+          op.data['itemId'] as String,
+          // A null time is the clear, which is why the whole resource is
+          // written rather than patched.
+          at: at == null ? null : DateTime.parse(at),
+          repeat: ReminderRepeat.fromWire(op.data['repeat'] as String?),
+        );
       case PendingOpKind.deleteAttachment:
         return api.deleteAttachment(op.id!);
       case PendingOpKind.transcribe:

@@ -383,7 +383,7 @@ bool _matchesState(Note note, String value) => switch (value) {
 };
 
 bool _matchesHas(Note note, String value) => switch (value) {
-  'reminder' => note.reminderAt != null,
+  'reminder' => note.hasReminder,
   'attachment' => note.attachments.isNotEmpty,
   'image' => note.attachments.any((a) => a.isImage),
   'audio' => note.attachments.any((a) => a.isAudio),

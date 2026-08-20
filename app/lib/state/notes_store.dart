@@ -249,8 +249,7 @@ class NotesStore extends ChangeNotifier {
 
   /// Notes in the open workspace, whatever their view, used by the pickers
   /// and counts that must agree with what the grid shows.
-  List<Note> get notesInActiveWorkspace =>
-      notesInWorkspace(_activeWorkspaceId);
+  List<Note> get notesInActiveWorkspace => notesInWorkspace(_activeWorkspaceId);
 
   /// Notes filed in [workspaceId], whatever their view, trash included.
   List<Note> notesInWorkspace(String? workspaceId) {
@@ -308,7 +307,7 @@ class NotesStore extends ChangeNotifier {
   /// whether an alarm fires. Consumed by `ReminderScheduler`.
   List<Note> get notesWithReminders => [
     for (final note in _notes)
-      if (note.reminderAt != null) note,
+      if (note.hasReminder) note,
   ];
 
   /// Notes that may be put on the home screen.
@@ -541,20 +540,24 @@ class NotesStore extends ChangeNotifier {
 
         for (final backupNote in backupWorkspace.notes) {
           final noteId = _uuid.v4();
+          // An item with no id of its own gets a fresh one, so its reminder
+          // has to follow it rather than the id it was archived under.
+          final itemIdMap = <String, String>{};
+          final restoredItems = [
+            for (final item in backupNote.items)
+              ChecklistItem(
+                id: itemIdMap[item.id] = item.id.isEmpty ? _uuid.v4() : item.id,
+                text: item.text,
+                done: item.done,
+              ),
+          ];
           final note = Note(
             id: noteId,
             workspaceId: targetWorkspaceId,
             kind: backupNote.kind,
             title: backupNote.title,
             content: backupNote.content,
-            items: [
-              for (final item in backupNote.items)
-                ChecklistItem(
-                  id: item.id.isEmpty ? _uuid.v4() : item.id,
-                  text: item.text,
-                  done: item.done,
-                ),
-            ],
+            items: restoredItems,
             color: backupNote.color,
             pinned: backupNote.pinned,
             archived: backupNote.archived,
@@ -566,6 +569,16 @@ class NotesStore extends ChangeNotifier {
             stagePosition: backupNote.stagePosition,
             reminderAt: backupNote.reminderAt?.toLocal(),
             reminderRepeat: backupNote.reminderRepeat,
+            itemReminders: {
+              for (final reminder in backupNote.itemReminders)
+                if (itemIdMap[reminder.itemId] case final String id)
+                  if (restoredItems.any((item) => item.id == id && !item.done))
+                    id: ItemReminder(
+                      itemId: id,
+                      at: reminder.at.toLocal(),
+                      repeat: reminder.repeat,
+                    ),
+            },
             createdAt: backupNote.createdAt,
             updatedAt: backupNote.updatedAt,
             labelIds: {
@@ -1156,6 +1169,11 @@ class NotesStore extends ChangeNotifier {
       title: title,
       content: content,
       items: items,
+      // An item reminder lives only as long as its unchecked item does. The
+      // server prunes in the same write, so this is the local half of one
+      // rule: ticking something off silently cancels its alarm instead of
+      // leaving it armed until the next refetch.
+      itemReminders: items == null ? null : _prunedItemReminders(note, items),
       updatedAt: DateTime.now(),
     );
     if (urgent) {
@@ -1387,6 +1405,67 @@ class NotesStore extends ChangeNotifier {
     if (at != null && _drafts.contains(id)) {
       _materializeIfNeeded(id);
     }
+  }
+
+  /// Set (or, with a null [at], clear) the reminder on one checklist item.
+  ///
+  /// Optimistic like every other mutation, and queued as its own operation
+  /// rather than folded into the note's content patch: the server keeps item
+  /// reminders in a sub-resource so two devices editing two rows of the same
+  /// list cannot overwrite each other.
+  void setItemReminder(
+    String noteId,
+    String itemId,
+    DateTime? at, [
+    ReminderRepeat? repeat,
+  ]) {
+    final note = noteById(noteId);
+    if (note == null) return;
+    final item = _itemById(noteId, itemId);
+    // The rule the server enforces: only an item that is there and unchecked
+    // can carry one. Clearing stays allowed either way, so a row that just
+    // went away can still be tidied up.
+    if (at != null && (item == null || item.done)) return;
+    final reminders = Map<String, ItemReminder>.from(note.itemReminders);
+    if (at == null) {
+      if (reminders.remove(itemId) == null) return;
+    } else {
+      reminders[itemId] = ItemReminder(itemId: itemId, at: at, repeat: repeat);
+    }
+    // Deliberately no updatedAt bump: an alarm moving is not an edit, and the
+    // note should not start reading as "Edited just now" because of it.
+    _replace(note.copyWith(itemReminders: reminders));
+    // A draft has no server row yet; its reminders ride along in the create,
+    // which reads the note fresh when it runs.
+    if (_drafts.contains(noteId)) {
+      _materializeIfNeeded(noteId);
+      return;
+    }
+    _enqueue(
+      PendingOp(
+        PendingOpKind.itemReminder,
+        id: noteId,
+        data: {
+          'itemId': itemId,
+          'at': at?.toUtc().toIso8601String(),
+          'repeat': at == null ? null : repeat?.wire,
+        },
+      ),
+    );
+  }
+
+  /// [note]'s item reminders, keeping only the ones whose item survives
+  /// [items] unchecked.
+  static Map<String, ItemReminder> _prunedItemReminders(
+    Note note,
+    List<ChecklistItem> items,
+  ) {
+    if (note.itemReminders.isEmpty) return note.itemReminders;
+    return {
+      for (final item in items)
+        if (!item.done && note.itemReminders[item.id] != null)
+          item.id: note.itemReminders[item.id]!,
+    };
   }
 
   bool canTrash(String id) => noteById(id)?.isOwnedBy(currentUserId) ?? false;

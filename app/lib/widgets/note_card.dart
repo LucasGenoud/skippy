@@ -22,6 +22,7 @@ import 'link_preview.dart';
 import 'linked_text.dart';
 import 'masonry.dart';
 import 'pick_image.dart';
+import 'reminder_chip.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
 import 'swipe_to_archive.dart';
@@ -747,8 +748,8 @@ class _NoteCardContent extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (note.reminderAt != null)
-                  _ReminderChip(
-                    reminderAt: note.reminderAt!,
+                  ReminderChip(
+                    at: note.reminderAt!,
                     repeat: note.reminderRepeat,
                   ),
                 if (locationReminderLabel != null)
@@ -1630,49 +1631,6 @@ class _ImageStrip extends StatelessWidget {
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReminderChip extends StatelessWidget {
-  final DateTime reminderAt;
-  final ReminderRepeat? repeat;
-  const _ReminderChip({required this.reminderAt, this.repeat});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final past = reminderAt.isBefore(DateTime.now());
-    // select: re-render only when the formatted label itself changes (date
-    // or clock format edits), not on every settings notification.
-    final when = context.select<SettingsStore, String>(
-      (s) => s.reminderLabel(reminderAt),
-    );
-    final label = '$when${repeat == null ? '' : ' · ${repeat!.label}'}';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(kRadius),
-        color: scheme.onSurface.withValues(alpha: 0.08),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.alarm, size: 13, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                decoration: past ? TextDecoration.lineThrough : null,
-              ),
-            ),
-          ),
         ],
       ),
     );

@@ -520,3 +520,269 @@ async fn markdown_kind_roundtrips_and_bad_kinds_reject() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// Helper: a checklist note with two unchecked items, returning (id, item ids).
+async fn checklist_note(app: &Router, token: &str) -> (String, String, String) {
+    let note = create_note(
+        app,
+        token,
+        json!({
+            "kind": "checklist",
+            "title": "Groceries",
+            "items": [
+                {"id": "item-milk", "text": "Milk", "done": false},
+                {"id": "item-bread", "text": "Bread", "done": false},
+            ],
+        }),
+    )
+    .await;
+    (
+        note["id"].as_str().unwrap().to_string(),
+        "item-milk".to_string(),
+        "item-bread".to_string(),
+    )
+}
+
+#[tokio::test]
+async fn item_reminders_are_set_cleared_and_validated_per_item() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let (id, milk, bread) = checklist_note(&app, &token).await;
+
+    let (status, view) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/{milk}"),
+        Some(&token),
+        Some(json!({"reminder_at": "2026-08-21T09:00:00+00:00"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(
+        view["item_reminders"],
+        json!([{
+            "item_id": "item-milk",
+            "reminder_at": "2026-08-21T09:00:00+00:00",
+            "reminder_repeat": null,
+        }])
+    );
+    // Not an edit: the note keeps its own reminder field and its timestamp.
+    assert_eq!(view["reminder_at"], Value::Null);
+
+    // A second item is independent of the first.
+    let (status, view) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/{bread}"),
+        Some(&token),
+        Some(json!({
+            "reminder_at": "2026-08-22T09:00:00+00:00",
+            "reminder_repeat": "weekly",
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["item_reminders"].as_array().unwrap().len(), 2);
+    // Ordered like the list reads, not by id.
+    assert_eq!(view["item_reminders"][0]["item_id"], "item-milk");
+    assert_eq!(view["item_reminders"][1]["reminder_repeat"], "weekly");
+
+    // Null clears one without touching the other.
+    let (status, view) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/{milk}"),
+        Some(&token),
+        Some(json!({"reminder_at": null})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["item_reminders"].as_array().unwrap().len(), 1);
+    assert_eq!(view["item_reminders"][0]["item_id"], "item-bread");
+
+    // Validation mirrors the note-level reminder's.
+    for body in [
+        json!({"reminder_at": "tomorrow-ish"}),
+        json!({"reminder_at": "2026-08-21T09:00:00+00:00", "reminder_repeat": "hourly"}),
+    ] {
+        let (status, _) = send(
+            &app,
+            "PUT",
+            &format!("/api/notes/{id}/item-reminders/{milk}"),
+            Some(&token),
+            Some(body),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // An item the note does not have cannot carry one.
+    let (status, _) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/item-ghost"),
+        Some(&token),
+        Some(json!({"reminder_at": "2026-08-21T09:00:00+00:00"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // Clearing one, though, stays idempotent: a stale client may tidy up.
+    let (status, _) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/item-ghost"),
+        Some(&token),
+        Some(json!({"reminder_at": null})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn checking_or_removing_an_item_takes_its_reminder_with_it() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let (id, milk, bread) = checklist_note(&app, &token).await;
+    for item in [&milk, &bread] {
+        let (status, _) = send(
+            &app,
+            "PUT",
+            &format!("/api/notes/{id}/item-reminders/{item}"),
+            Some(&token),
+            Some(json!({"reminder_at": "2026-08-21T09:00:00+00:00"})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // Checking an item off cancels its reminder: the list is done with it.
+    let (status, view) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"items": [
+            {"id": "item-milk", "text": "Milk", "done": true},
+            {"id": "item-bread", "text": "Bread", "done": false},
+        ]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["item_reminders"].as_array().unwrap().len(), 1);
+    assert_eq!(view["item_reminders"][0]["item_id"], "item-bread");
+
+    // And it cannot be set again while the item stays checked.
+    let (status, _) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/{milk}"),
+        Some(&token),
+        Some(json!({"reminder_at": "2026-08-21T09:00:00+00:00"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Deleting the row takes the reminder too.
+    let (status, view) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"items": [{"id": "item-milk", "text": "Milk", "done": true}]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["item_reminders"], json!([]));
+
+    // Unchecking it does not bring the old reminder back from the dead.
+    let (status, view) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"items": [{"id": "item-milk", "text": "Milk", "done": false}]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["item_reminders"], json!([]));
+}
+
+#[tokio::test]
+async fn item_reminders_are_shared_note_state_and_survive_create() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+    let (carol, _) = register(&app, "carol").await;
+
+    // Created in one request, the way an offline compose or a restore arrives.
+    let note = create_note(
+        &app,
+        &ada,
+        json!({
+            "kind": "checklist",
+            "items": [{"id": "item-milk", "text": "Milk", "done": false}],
+            "item_reminders": [
+                {"item_id": "item-milk", "reminder_at": "2026-08-21T09:00:00+00:00"},
+            ],
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap();
+    assert_eq!(note["item_reminders"][0]["item_id"], "item-milk");
+
+    // A create naming an item that isn't there is refused outright.
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&ada),
+        Some(json!({
+            "kind": "checklist",
+            "items": [{"id": "a", "text": "A", "done": false}],
+            "item_reminders": [
+                {"item_id": "b", "reminder_at": "2026-08-21T09:00:00+00:00"},
+            ],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // A collaborator sees it and may change it: reminders are shared state,
+    // unlike labels, which stay behind with the workspace.
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/collaborators"),
+        Some(&ada),
+        Some(json!({"email": test_email("bob")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, view) = send(&app, "GET", &format!("/api/notes/{id}"), Some(&bob), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["item_reminders"][0]["item_id"], "item-milk");
+    let (status, view) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/item-milk"),
+        Some(&bob),
+        Some(json!({"reminder_at": "2026-09-01T09:00:00+00:00"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        view["item_reminders"][0]["reminder_at"],
+        "2026-09-01T09:00:00+00:00"
+    );
+
+    // A stranger learns nothing, not even that the note exists.
+    let (status, _) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/item-milk"),
+        Some(&carol),
+        Some(json!({"reminder_at": "2026-09-01T09:00:00+00:00"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

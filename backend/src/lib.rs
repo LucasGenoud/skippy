@@ -27,7 +27,7 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::http::HeaderValue;
 use axum::middleware;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::files::FileStore;
@@ -228,6 +228,10 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
             get(handlers::get_note)
                 .patch(handlers::update_note)
                 .delete(handlers::delete_note),
+        )
+        .route(
+            "/notes/{id}/item-reminders/{item_id}",
+            put(handlers::set_item_reminder),
         )
         .route("/notes/{id}/versions", get(handlers::list_note_versions))
         .route(

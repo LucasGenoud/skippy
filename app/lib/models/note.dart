@@ -79,6 +79,51 @@ class ChecklistItem {
   int get hashCode => Object.hash(id, text, done);
 }
 
+/// A reminder on one checklist item.
+///
+/// Deliberately not a field on [ChecklistItem]: items are content, and content
+/// travels in note patches, version snapshots, and the editor's undo stack. A
+/// reminder is none of those, it is a server sub-resource written one item at
+/// a time, so keeping it beside the items instead of inside them is what stops
+/// an undo (or a stale offline patch) from silently unscheduling an alarm.
+class ItemReminder {
+  final String itemId;
+  final DateTime at;
+
+  /// Null is a one-shot reminder; a cadence advances to the next occurrence
+  /// once it is delivered, exactly like [Note.reminderRepeat].
+  final ReminderRepeat? repeat;
+
+  const ItemReminder({required this.itemId, required this.at, this.repeat});
+
+  static ItemReminder? fromJson(Map<String, dynamic> json) {
+    final itemId = (json['item_id'] as String?)?.trim() ?? '';
+    final at = DateTime.tryParse(json['reminder_at'] as String? ?? '');
+    if (itemId.isEmpty || at == null) return null;
+    return ItemReminder(
+      itemId: itemId,
+      at: at.toLocal(),
+      repeat: ReminderRepeat.fromWire(json['reminder_repeat'] as String?),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'item_id': itemId,
+    'reminder_at': at.toUtc().toIso8601String(),
+    'reminder_repeat': repeat?.wire,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ItemReminder &&
+      other.itemId == itemId &&
+      other.at == at &&
+      other.repeat == repeat;
+
+  @override
+  int get hashCode => Object.hash(itemId, at, repeat);
+}
+
 class UserRef {
   final String id;
   final String name;
@@ -174,6 +219,10 @@ class Note {
   /// once the server delivers the current one.
   final ReminderRepeat? reminderRepeat;
 
+  /// Reminders on individual checklist items, keyed by item id. Empty for
+  /// every other kind of note.
+  final Map<String, ItemReminder> itemReminders;
+
   /// Audio-note transcription state: `none` (not an audio note or no clip yet),
   /// `pending` (Whisper running), `done`, or `failed`. Server-owned.
   final String transcriptStatus;
@@ -200,6 +249,7 @@ class Note {
     this.stagePosition = 0,
     this.reminderAt,
     this.reminderRepeat,
+    this.itemReminders = const {},
     this.transcriptStatus = 'none',
     required this.createdAt,
     required this.updatedAt,
@@ -237,8 +287,7 @@ class Note {
   ///
   /// Workspace sharing is store-level state and is added by
   /// `NotesStore.canAutoDiscard`.
-  bool get canAutoDiscard =>
-      isEmpty && reminderAt == null && collaborators.isEmpty;
+  bool get canAutoDiscard => isEmpty && !hasReminder && collaborators.isEmpty;
 
   bool get isShared => collaborators.isNotEmpty;
 
@@ -263,6 +312,7 @@ class Note {
     double? stagePosition,
     Object? reminderAt = _unset,
     Object? reminderRepeat = _unset,
+    Map<String, ItemReminder>? itemReminders,
     String? transcriptStatus,
     DateTime? updatedAt,
     Set<String>? labelIds,
@@ -289,6 +339,7 @@ class Note {
       reminderRepeat: reminderRepeat == _unset
           ? this.reminderRepeat
           : reminderRepeat as ReminderRepeat?,
+      itemReminders: itemReminders ?? this.itemReminders,
       transcriptStatus: transcriptStatus ?? this.transcriptStatus,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -327,6 +378,7 @@ class Note {
       reminderRepeat: ReminderRepeat.fromWire(
         json['reminder_repeat'] as String?,
       ),
+      itemReminders: itemRemindersFromJson(json['item_reminders'] as List?),
       transcriptStatus: json['transcript_status'] as String? ?? 'none',
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ??
@@ -368,6 +420,7 @@ class Note {
     'stage_position': stagePosition,
     'reminder_at': reminderAt?.toUtc().toIso8601String(),
     'reminder_repeat': reminderRepeat?.wire,
+    'item_reminders': itemRemindersToJson(itemReminders),
     'transcript_status': transcriptStatus,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
@@ -380,6 +433,49 @@ class Note {
   static List<Map<String, dynamic>> itemsToJson(List<ChecklistItem> items) => [
     for (final i in items) i.toJson(),
   ];
+
+  /// This item's reminder, or null. Checked items never carry one: the server
+  /// drops the reminder as the item is ticked off, and the client mirrors that
+  /// so the device alarm goes away without waiting for a round trip.
+  ItemReminder? reminderForItem(String itemId) => itemReminders[itemId];
+
+  /// Whether anything about this note is scheduled: its own reminder, or one
+  /// of its items'. What the Reminders view and `has:reminder` ask.
+  bool get hasReminder => reminderAt != null || itemReminders.isNotEmpty;
+
+  /// The soonest reminder attached to this note, of either kind. Orders the
+  /// Reminders view, where a note with only item reminders belongs among the
+  /// others rather than at the end.
+  DateTime? get nextReminderAt {
+    DateTime? soonest = reminderAt;
+    for (final reminder in itemReminders.values) {
+      if (soonest == null || reminder.at.isBefore(soonest)) {
+        soonest = reminder.at;
+      }
+    }
+    return soonest;
+  }
+
+  /// Item reminders in list order, which is how the wire carries them and how
+  /// a reader expects to see them.
+  List<ItemReminder> get orderedItemReminders => [
+    for (final item in items)
+      if (itemReminders[item.id] != null) itemReminders[item.id]!,
+  ];
+
+  static Map<String, ItemReminder> itemRemindersFromJson(List? json) {
+    final parsed = <String, ItemReminder>{};
+    for (final entry in json ?? const []) {
+      if (entry is! Map) continue;
+      final reminder = ItemReminder.fromJson(entry.cast<String, dynamic>());
+      if (reminder != null) parsed[reminder.itemId] = reminder;
+    }
+    return parsed;
+  }
+
+  static List<Map<String, dynamic>> itemRemindersToJson(
+    Map<String, ItemReminder> reminders,
+  ) => [for (final reminder in reminders.values) reminder.toJson()];
 }
 
 /// A past state of a note's content from its edit history. Only content is

@@ -382,3 +382,175 @@ async fn notify_test_endpoint_sends_and_validates() {
         "{body}"
     );
 }
+
+/// A checklist note whose first item is due, so the item sweep has something
+/// to find. Returns the note id.
+async fn note_with_due_item(app: &Router, token: &str, due: &str) -> String {
+    let note = create_note(
+        app,
+        token,
+        json!({
+            "kind": "checklist",
+            "title": "Groceries",
+            "items": [
+                {"id": "item-milk", "text": "Milk", "done": false},
+                {"id": "item-bread", "text": "Bread", "done": false},
+            ],
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap().to_string();
+    let (status, _) = send(
+        app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/item-milk"),
+        Some(token),
+        Some(json!({"reminder_at": due})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    id
+}
+
+#[tokio::test]
+async fn due_item_reminders_name_the_item_and_fire_once() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/ada"})).await;
+    put_settings(&app, &bob, json!({"telegram_chat_id": "4242"})).await;
+    let id = note_with_due_item(&app, &ada, "2020-01-05T10:00:00Z").await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/collaborators"),
+        Some(&ada),
+        Some(json!({"email": "bob@example.test"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    notify::sweep_due_item_reminders(&state).await;
+    {
+        let mut sent = log.lock().unwrap();
+        sent.sort();
+        // The item leads, the note is context: "Milk" / "Groceries".
+        assert_eq!(
+            *sent,
+            vec![
+                (
+                    "ntfy".to_string(),
+                    "https://ntfy.sh/ada".to_string(),
+                    "Milk".to_string(),
+                    "Groceries".to_string()
+                ),
+                (
+                    "telegram".to_string(),
+                    "4242".to_string(),
+                    "Milk".to_string(),
+                    "Groceries".to_string()
+                ),
+            ]
+        );
+    }
+
+    // Claimed means claimed.
+    notify::sweep_due_item_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 2);
+    // And the note's own sweep has nothing to say about it.
+    notify::sweep_due_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn recurring_item_reminders_advance_instead_of_firing_twice() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
+    let note = create_note(
+        &app,
+        &ada,
+        json!({
+            "kind": "checklist",
+            "title": "Chores",
+            "items": [{"id": "bins", "text": "Take the bins out", "done": false}],
+        }),
+    )
+    .await;
+    let id = note["id"].as_str().unwrap();
+    let (status, _) = send(
+        &app,
+        "PUT",
+        &format!("/api/notes/{id}/item-reminders/bins"),
+        Some(&ada),
+        Some(json!({"reminder_at": "2020-01-05T10:00:00Z", "reminder_repeat": "weekly"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    notify::sweep_due_item_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+
+    let (status, view) = send(&app, "GET", &format!("/api/notes/{id}"), Some(&ada), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let reminder = &view["item_reminders"][0];
+    assert_eq!(reminder["reminder_repeat"], "weekly");
+    let next =
+        chrono::DateTime::parse_from_rfc3339(reminder["reminder_at"].as_str().unwrap()).unwrap();
+    assert!(next > chrono::Utc::now(), "{reminder}");
+
+    notify::sweep_due_item_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn item_reminders_skip_future_trashed_and_finished_items() {
+    let (state, log) = state_with_notifiers().await;
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    put_settings(&app, &ada, json!({"ntfy_url": "https://ntfy.sh/a"})).await;
+
+    // Not due yet.
+    note_with_due_item(&app, &ada, "2999-01-01T10:00:00Z").await;
+    // Due, but in the trash.
+    let trashed = note_with_due_item(&app, &ada, "2020-01-05T10:00:00Z").await;
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{trashed}"),
+        Some(&ada),
+        Some(json!({"trashed": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    // Due, but the item was ticked off before it came round.
+    let done = note_with_due_item(&app, &ada, "2020-01-05T10:00:00Z").await;
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{done}"),
+        Some(&ada),
+        Some(json!({"items": [{"id": "item-milk", "text": "Milk", "done": true}]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    notify::sweep_due_item_reminders(&state).await;
+    assert_eq!(*log.lock().unwrap(), vec![]);
+
+    // Restoring the trashed note lets its item reminder come due again: it was
+    // never claimed, only skipped.
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{trashed}"),
+        Some(&ada),
+        Some(json!({"trashed": false})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    notify::sweep_due_item_reminders(&state).await;
+    assert_eq!(log.lock().unwrap().len(), 1);
+}

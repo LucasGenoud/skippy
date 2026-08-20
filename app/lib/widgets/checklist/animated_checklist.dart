@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +9,7 @@ import '../../theme.dart';
 import '../../util/motion.dart';
 import '../../util/platform.dart';
 import '../all_done_burst.dart';
+import '../reminder_chip.dart';
 import '../measure_size.dart';
 import 'checklist_suggestions.dart';
 import 'pop_checkbox.dart';
@@ -27,6 +29,10 @@ import 'pop_checkbox.dart';
 ///   fed by the user's checked-item history, with the matched prefix bolded.
 class AnimatedChecklist extends StatefulWidget {
   final List<ChecklistItem> items;
+
+  /// Reminders on individual rows, keyed by item id. A checked row never has
+  /// one: the store and the server both drop it as the box is ticked.
+  final Map<String, ItemReminder> reminders;
   final bool readOnly;
   final bool autofocusNew;
   final String highlightQuery;
@@ -44,6 +50,11 @@ class AnimatedChecklist extends StatefulWidget {
   /// returns the new item's id so it can be focused.
   final String Function(String afterItemId)? onInsertAfter;
 
+  /// Opens the reminder picker for one row. Null leaves the affordance out
+  /// entirely, which is what the quick-add composer wants: its rows belong to
+  /// a note that does not exist yet.
+  final void Function(String itemId)? onSetReminder;
+
   const AnimatedChecklist({
     super.key,
     required this.items,
@@ -54,6 +65,8 @@ class AnimatedChecklist extends StatefulWidget {
     required this.onAdd,
     required this.onReorderItems,
     this.onInsertAfter,
+    this.onSetReminder,
+    this.reminders = const {},
     this.readOnly = false,
     this.autofocusNew = false,
     this.highlightQuery = '',
@@ -341,7 +354,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     // The only other things a row reads at build time. Its callbacks are read
     // when they fire, so a fresh closure from the parent doesn't stale a row.
     if (oldWidget.readOnly != widget.readOnly ||
-        oldWidget.highlightQuery != widget.highlightQuery) {
+        oldWidget.highlightQuery != widget.highlightQuery ||
+        !mapEquals(oldWidget.reminders, widget.reminders)) {
       _invalidateRows();
     }
     final ids = {for (final item in widget.items) item.id};
@@ -1132,43 +1146,56 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     TextCapitalization textCapitalization = TextCapitalization.none,
     required ValueChanged<String> onChanged,
     required VoidCallback onSubmitted,
+    Widget? below,
   }) {
-    return Expanded(
-      child: CompositedTransformTarget(
-        link: handles.link,
-        child: TextField(
-          controller: handles.controller,
-          focusNode: handles.focusNode,
-          readOnly: widget.readOnly,
-          enabled: !widget.readOnly,
-          minLines: 1,
-          maxLines: null,
-          textInputAction: TextInputAction.next,
-          textCapitalization: textCapitalization,
-          inputFormatters: [_stripMarker],
-          style: style,
-          decoration: InputDecoration(
-            hintText: hintText,
-            border: InputBorder.none,
-            isDense: true,
-            // The row's own text padding positions the first line, so the
-            // decorator must not also shift it: on desktop the ambient
-            // density is compact, and InputDecorator spends half of that
-            // adjustment off the top padding, lifting the text ~4px clear of
-            // the controls beside it.
-            visualDensity: VisualDensity.standard,
-            contentPadding: EdgeInsets.symmetric(
-              vertical: _rowMetrics.textPadding,
-            ),
+    final field = CompositedTransformTarget(
+      link: handles.link,
+      child: TextField(
+        controller: handles.controller,
+        focusNode: handles.focusNode,
+        readOnly: widget.readOnly,
+        enabled: !widget.readOnly,
+        minLines: 1,
+        maxLines: null,
+        textInputAction: TextInputAction.next,
+        textCapitalization: textCapitalization,
+        inputFormatters: [_stripMarker],
+        style: style,
+        decoration: InputDecoration(
+          hintText: hintText,
+          border: InputBorder.none,
+          isDense: true,
+          // The row's own text padding positions the first line, so the
+          // decorator must not also shift it: on desktop the ambient
+          // density is compact, and InputDecorator spends half of that
+          // adjustment off the top padding, lifting the text ~4px clear of
+          // the controls beside it.
+          visualDensity: VisualDensity.standard,
+          contentPadding: EdgeInsets.symmetric(
+            vertical: _rowMetrics.textPadding,
           ),
-          onChanged: onChanged,
-          // TextField's default "next" completion asks the focus scope for a
-          // widget that does not exist until the insert rebuild. Keep the
-          // current text-input connection alive; onSubmitted performs the
-          // deliberate handoff instead.
-          onEditingComplete: () {},
-          onSubmitted: (_) => onSubmitted(),
         ),
+        onChanged: onChanged,
+        // TextField's default "next" completion asks the focus scope for a
+        // widget that does not exist until the insert rebuild. Keep the
+        // current text-input connection alive; onSubmitted performs the
+        // deliberate handoff instead.
+        onEditingComplete: () {},
+        onSubmitted: (_) => onSubmitted(),
+      ),
+    );
+    if (below == null) return Expanded(child: field);
+    // The chip hangs under the text rather than beside it: a row is already
+    // five controls wide on a phone, and row heights are measured, so growing
+    // one costs nothing but the space it takes.
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          field,
+          Padding(padding: const EdgeInsets.only(bottom: 8), child: below),
+        ],
       ),
     );
   }
@@ -1183,6 +1210,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         );
     final query = widget.highlightQuery.trim().toLowerCase();
     final matches = query.isNotEmpty && item.text.toLowerCase().contains(query);
+    final reminder = widget.reminders[item.id];
+    // A checked row cannot carry a reminder, so it is not offered one either:
+    // the rule is the server's, and the UI should not invite a 400.
+    final canRemind =
+        widget.onSetReminder != null && !widget.readOnly && !item.done;
     // Touch has no hover: keep affordances visible. Desktop reveals them on
     // hover/focus, keeping the list visually calm.
     bool showsControls(bool hovered, bool focused) =>
@@ -1270,6 +1302,18 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               _rowField(
                 handles: handles,
                 style: textStyle,
+                below: reminder == null
+                    ? null
+                    : ReminderChip(
+                        at: reminder.at,
+                        repeat: reminder.repeat,
+                        // The chip is the row's "edit this reminder": having
+                        // set one, that is what the bell beside it would do
+                        // anyway, and the chip is the bigger target.
+                        onTap: canRemind
+                            ? () => widget.onSetReminder!(item.id)
+                            : null,
+                      ),
                 onChanged: (value) => _itemTextChanged(item, handles, value),
                 onSubmitted: () {
                   // Enter continues the list: a new row right below this one.
@@ -1283,6 +1327,42 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   }
                 },
               ),
+              if (canRemind)
+                onRowState(
+                  _firstLineBand(
+                    IconButton(
+                      icon: Icon(
+                        reminder == null ? Icons.alarm_add : Icons.alarm_on,
+                        size: 18,
+                      ),
+                      color: reminder == null
+                          ? scheme.onSurfaceVariant
+                          : scheme.primary,
+                      tooltip: reminder == null
+                          ? 'Remind me about this item'
+                          : 'Edit reminder',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      onPressed: () => widget.onSetReminder!(item.id),
+                    ),
+                  ),
+                  (hovered, focused, child) {
+                    // A row that already carries one keeps its bell lit: the
+                    // state has to be visible without hunting for it, the way
+                    // the chip below the text is.
+                    final show =
+                        reminder != null || showsControls(hovered, focused);
+                    return AnimatedOpacity(
+                      opacity: show ? 1 : 0,
+                      duration: _controlFade,
+                      curve: Motion.standard,
+                      child: IgnorePointer(ignoring: !show, child: child),
+                    );
+                  },
+                ),
               onRowState(
                 _firstLineBand(
                   IconButton(
