@@ -58,13 +58,14 @@ int rootIndexOf(List<ChecklistItem> items, int index) {
 
 /// Whether the row at [index] belongs in the collapsed "checked" section.
 ///
-/// Only whole subtrees go down there: the question is whether the *task* is
-/// done, not the row. A subtask ticked off under a task that is still open
-/// stays where it is, struck through, so it never loses the thing it belongs
-/// to. Since checking a task checks everything under it, a done top-level row
+/// Only whole subtrees go down there: the row has to be done *and* so does the
+/// task holding it. A subtask ticked off under a task that is still open stays
+/// where it is, struck through, so it never loses the thing it belongs to, and
+/// a row that is not done cannot be filed away at all, whatever is above it in
+/// the list. Since checking a task checks everything under it, a done task
 /// always takes its whole subtree along.
 bool isFinished(List<ChecklistItem> items, int index) =>
-    items[rootIndexOf(items, index)].done;
+    items[index].done && items[rootIndexOf(items, index)].done;
 
 /// Set a row's checkbox, carrying its subtasks with it.
 ///
@@ -86,6 +87,48 @@ List<ChecklistItem> setDoneCascading(
   ];
 }
 
+/// The row shown directly above [index], which is not always the one before
+/// it in the list: a finished task and its subtasks are drawn down in the
+/// checked section, so for a row still in play they are not there at all.
+/// Null when the row is the first of its section.
+int? viewPredecessor(List<ChecklistItem> items, int index) {
+  final finished = isFinished(items, index);
+  for (var i = index - 1; i >= 0; i--) {
+    if (isFinished(items, i) == finished) return i;
+  }
+  return null;
+}
+
+/// The deepest [index] may sit, judged by what is drawn above it rather than
+/// by what precedes it in the list.
+///
+/// This is the interactive counterpart of [maxDepthAt], which stays the
+/// storage rule. Indenting is something a person does to what they can see:
+/// nesting a row under a task that has been checked off and filed away would
+/// take the row down there with it, which is not what dragging a row sideways
+/// asks for.
+int maxDepthInView(List<ChecklistItem> items, int index) {
+  final above = viewPredecessor(items, index);
+  if (above == null) return 0;
+  final ceiling = items[above].depth + 1;
+  return ceiling > kMaxItemDepth ? kMaxItemDepth : ceiling;
+}
+
+/// [items] with the subtree at [index] lifted over any finished rows that sit
+/// between it and the row it is drawn under.
+///
+/// Invisible on screen, since those rows are drawn elsewhere: it only makes
+/// the list agree with the picture, so that indenting the row nests it under
+/// the task it appears to follow instead of the one that was checked off.
+List<ChecklistItem> _closeGapAbove(List<ChecklistItem> items, int index) {
+  final above = viewPredecessor(items, index);
+  if (above == null || above == index - 1) return items;
+  final end = subtreeEnd(items, index);
+  final block = items.sublist(index, end);
+  final rest = [...items]..removeRange(index, end);
+  return [...rest.sublist(0, above + 1), ...block, ...rest.sublist(above + 1)];
+}
+
 /// How far the deepest row of a subtree sits below its root.
 int _subtreeSpan(List<ChecklistItem> items, int index) {
   final end = subtreeEnd(items, index);
@@ -97,14 +140,18 @@ int _subtreeSpan(List<ChecklistItem> items, int index) {
 }
 
 /// Whether the row can move one level in [delta]'s direction, subtasks and
-/// all. Indenting is refused when it would push a subtask past the last level
-/// rather than silently flattening two rows onto one.
+/// all.
+///
+/// Judged against the row above it *on screen*: the first row of what is
+/// still to do cannot be indented, however many finished tasks sit above it
+/// in the list. Indenting is also refused when it would push a subtask past
+/// the last level, rather than silently flattening two rows onto one.
 bool canShiftDepth(List<ChecklistItem> items, String itemId, int delta) {
   final index = items.indexWhere((item) => item.id == itemId);
   if (index < 0 || delta == 0) return false;
   final item = items[index];
   final target = item.depth + delta;
-  if (target < 0 || target > maxDepthAt(items, index)) return false;
+  if (target < 0 || target > maxDepthInView(items, index)) return false;
   return target + _subtreeSpan(items, index) <= kMaxItemDepth;
 }
 
@@ -116,14 +163,20 @@ List<ChecklistItem> shiftDepth(
   int delta,
 ) {
   if (!canShiftDepth(items, itemId, delta)) return items;
-  final index = items.indexWhere((item) => item.id == itemId);
-  final end = subtreeEnd(items, index);
+  // Close the gap first, so the row ends up nested under the task it is drawn
+  // under rather than under a finished one that only precedes it in the list.
+  final closed = _closeGapAbove(
+    items,
+    items.indexWhere((item) => item.id == itemId),
+  );
+  final index = closed.indexWhere((item) => item.id == itemId);
+  final end = subtreeEnd(closed, index);
   return [
-    for (var i = 0; i < items.length; i++)
+    for (var i = 0; i < closed.length; i++)
       if (i >= index && i < end)
-        items[i].copyWith(depth: items[i].depth + delta)
+        closed[i].copyWith(depth: closed[i].depth + delta)
       else
-        items[i],
+        closed[i],
   ];
 }
 

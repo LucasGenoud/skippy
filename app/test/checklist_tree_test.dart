@@ -7,7 +7,9 @@ List<ChecklistItem> list(List<String> rows) => [
   for (var i = 0; i < rows.length; i++)
     ChecklistItem(
       id: 'i$i',
-      text: rows[i].split(':').last,
+      // The "*" marks a checked row and is not part of its text, so a shape
+      // written here reads back through [shape] unchanged.
+      text: rows[i].split(':').last.replaceFirst('*', ''),
       depth: int.parse(rows[i].split(':').first),
       done: rows[i].contains('*'),
     ),
@@ -67,6 +69,13 @@ void main() {
         '1:*Pack',
         '2:*Socks',
       ]);
+    });
+
+    test('an unfinished row is never filed away', () {
+      // Whatever put it there, a row still to do belongs where it can be
+      // seen: it is done and its task is done, or it stays in the list.
+      final stray = list(['0:*Trip', '1:Pack']);
+      expect(isFinished(stray, 1), isFalse);
     });
 
     test('only whole tasks move to the checked section', () {
@@ -136,6 +145,41 @@ void main() {
         '0:Water',
       ]);
       expect(shape(removeItem(trip, 'nope')), shape(trip));
+    });
+  });
+
+  group('indenting past what is filed away', () {
+    test('a row cannot be nested under a task that is done', () {
+      // Checking the task above sends it to the checked section, so on
+      // screen there is nothing left for this row to nest under. Indenting
+      // it used to make it a subtask of the finished task and take it down
+      // there too.
+      final rows = list(['0:*Trip', '0:Water']);
+      expect(canShiftDepth(rows, 'i1', 1), isFalse);
+      expect(shape(shiftDepth(rows, 'i1', 1)), ['0:*Trip', '0:Water']);
+    });
+
+    test('it nests under the row it is actually shown under', () {
+      // The finished task sits between them in the array but not on screen,
+      // so this indents under "Shop", where the user sees it.
+      final rows = list(['0:Shop', '0:*Trip', '0:Water']);
+      expect(canShiftDepth(rows, 'i2', 1), isTrue);
+      // The row moves up past what was filed away, which changes nothing on
+      // screen and everything about who its parent is.
+      expect(shape(shiftDepth(rows, 'i2', 1)), [
+        '0:Shop',
+        '1:Water',
+        '0:*Trip',
+      ]);
+    });
+
+    test('a finished row still indents inside the checked section', () {
+      final rows = list(['0:*Trip', '0:*Pack', '0:Water']);
+      expect(shape(shiftDepth(rows, 'i1', 1)), [
+        '0:*Trip',
+        '1:*Pack',
+        '0:Water',
+      ]);
     });
   });
 

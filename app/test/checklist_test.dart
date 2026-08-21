@@ -374,6 +374,61 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('a row cannot be nested under a task just checked off', (
+      tester,
+    ) async {
+      // Reported: check a row, drag the one below it sideways, and it became
+      // a subtask of the checked row and vanished into the checked section.
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Trip'),
+          ChecklistItem(id: 'i2', text: 'Water'),
+        ],
+      );
+      await tester.tap(checkboxFor('Trip'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 checked item'), findsOneWidget);
+
+      // "Water" is now the top row of what is still to do, so there is
+      // nothing on screen for it to nest under.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.drag_indicator).first),
+      );
+      for (var step = 0; step < 6; step++) {
+        await gesture.moveBy(const Offset(10, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(shapeOf('n1'), ['0:*Trip', '0:Water']);
+      // Still where it was, not filed away with the finished task.
+      expect(find.widgetWithText(TextField, 'Water'), findsOneWidget);
+      expect(find.text('1 checked item'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('it nests under the row it is drawn under', (tester) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Shop'),
+          ChecklistItem(id: 'i2', text: 'Trip'),
+          ChecklistItem(id: 'i3', text: 'Water'),
+        ],
+      );
+      await tester.tap(checkboxFor('Trip'));
+      await tester.pumpAndSettle();
+
+      // With "Trip" filed away, "Water" is drawn under "Shop", so that is
+      // what it nests into.
+      await focusRow(tester, 'Water');
+      await pressTab(tester);
+      expect(shapeOf('n1'), ['0:Shop', '1:Water', '0:*Trip']);
+      await flushTimers(tester);
+    });
+
     testWidgets('checking a task takes its subtasks down with it', (
       tester,
     ) async {
@@ -636,13 +691,28 @@ void main() {
       await flushTimers(tester);
     });
 
-    testWidgets('new items request sentence capitalization', (tester) async {
-      await openChecklist(tester);
-
-      final composer = tester.widget<TextField>(
-        find.widgetWithText(TextField, 'List item'),
+    testWidgets('every row requests sentence capitalization', (tester) async {
+      // Reported: only the first item of a list came out capitalized. The
+      // composer asked for it; the rows Enter creates did not, so everything
+      // typed after the first line started lowercase.
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Milk'),
+          ChecklistItem(id: 'i2', text: 'Bread'),
+        ],
       );
-      expect(composer.textCapitalization, TextCapitalization.sentences);
+
+      final fields = tester.widgetList<TextField>(
+        find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(fields, isNotEmpty);
+      for (final field in fields) {
+        expect(field.textCapitalization, TextCapitalization.sentences);
+      }
     });
 
     testWidgets('deleting everything takes the half-written row with it', (

@@ -1257,7 +1257,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     required _RowHandles handles,
     required TextStyle style,
     String? hintText,
-    TextCapitalization textCapitalization = TextCapitalization.none,
     required ValueChanged<String> onChanged,
     required VoidCallback onSubmitted,
     Widget? below,
@@ -1272,7 +1271,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         minLines: 1,
         maxLines: null,
         textInputAction: TextInputAction.next,
-        textCapitalization: textCapitalization,
+        // Every row is a line a person writes, so it starts a sentence and
+        // the keyboard capitalizes its first letter. The composer used to be
+        // the only row that asked, which is why the first item on a list came
+        // out capitalized and every row started with Enter did not.
+        textCapitalization: TextCapitalization.sentences,
         inputFormatters: [_stripMarker],
         style: style,
         decoration: InputDecoration(
@@ -1606,7 +1609,6 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
               handles: _composer,
               style: textStyle,
               hintText: 'List item',
-              textCapitalization: TextCapitalization.sentences,
               onChanged: _composerChanged,
               // Enter starts the next item, leaving this one on the list.
               onSubmitted: _commitComposing,
