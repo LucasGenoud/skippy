@@ -249,6 +249,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
           TextFormField(
             controller: _name,
             autofocus: widget.location == null,
+            textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
               labelText: 'Name',
               hintText: 'Home, Work, School…',

@@ -568,6 +568,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
                       controller: _titleController,
                       focusNode: _titleFocus,
                       maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
                       textInputAction: TextInputAction.next,
                       contentInsertionConfiguration: PasteFileArea.insertionOf(
                         context,
@@ -642,6 +643,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       focusNode: _contentFocus,
       maxLines: null,
       minLines: 2,
+      textCapitalization: TextCapitalization.sentences,
       contentInsertionConfiguration: PasteFileArea.insertionOf(context),
       style: _kind == NoteKind.markdown
           ? Theme.of(context).textTheme.bodyLarge?.copyWith(

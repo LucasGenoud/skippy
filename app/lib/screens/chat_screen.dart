@@ -242,6 +242,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           focusNode: _inputFocus,
                           minLines: 1,
                           maxLines: 4,
+                          textCapitalization: TextCapitalization.sentences,
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
                           decoration: InputDecoration(
@@ -447,7 +448,11 @@ class _Bubble extends StatelessWidget {
               ? CrossAxisAlignment.end
               : CrossAxisAlignment.start,
           children: [
-            _reveal(context, visible: turn.sources.isNotEmpty, child: sourcesChips),
+            _reveal(
+              context,
+              visible: turn.sources.isNotEmpty,
+              child: sourcesChips,
+            ),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
               child: bubble,
@@ -481,7 +486,11 @@ class _Bubble extends StatelessWidget {
 
   /// Grows and fades a bubble-local extra (source chips, the created-note
   /// chip) in when it first appears, instead of popping the bubble's layout.
-  Widget _reveal(BuildContext context, {required bool visible, required Widget child}) {
+  Widget _reveal(
+    BuildContext context, {
+    required bool visible,
+    required Widget child,
+  }) {
     return AnimatedSize(
       duration: Motion.base,
       curve: Motion.standard,

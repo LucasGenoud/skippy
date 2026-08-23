@@ -87,6 +87,9 @@ class HighlightedTextField extends StatelessWidget {
       maxLines: null,
       minLines: 6,
       autofocus: autofocus,
+      // The body of a note is prose. Flutter's default (`none`) actively
+      // turns the keyboard's own capitalization off.
+      textCapitalization: TextCapitalization.sentences,
       // An image committed by the keyboard (Gboard's clipboard panel) attaches
       // to the note instead of being refused; null outside a PasteFileArea.
       contentInsertionConfiguration: PasteFileArea.insertionOf(context),

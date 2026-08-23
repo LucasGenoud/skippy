@@ -744,6 +744,12 @@ void main() {
     // An empty line is where backspace means "go back up", and the composer is
     // a line like any other to whoever is typing in it. It keeps its place:
     // there is no item under it to remove.
+    //
+    // On a soft keyboard this needs the composer to have been written in
+    // first. A field the caret has only just landed in carries no marker, on
+    // purpose: the marker is what stops iOS reading the row as the start of a
+    // sentence, and every new item would be typed in lower case for it. The
+    // keypress is still reported the moment there is something to delete.
     testWidgets('backspace in an empty composer walks back up the list', (
       tester,
     ) async {
@@ -755,6 +761,13 @@ void main() {
         ],
       );
       await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pumpAndSettle();
+
+      // Write a character and take it away again: the composer is empty once
+      // more, and now armed.
+      await tester.enterText(find.widgetWithText(TextField, 'List item'), 'x');
+      await tester.pumpAndSettle();
+      backspace(tester);
       await tester.pumpAndSettle();
 
       backspace(tester);

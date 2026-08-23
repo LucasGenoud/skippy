@@ -1254,6 +1254,12 @@ class _EditorScreenState extends State<EditorScreen> {
                                     readOnly: trashed,
                                     enabled: !trashed,
                                     maxLines: null,
+                                    // Flutter defaults to `none`, which tells
+                                    // the keyboard to stop capitalizing. A
+                                    // title is a line someone writes, so ask
+                                    // for what the platform would do anyway.
+                                    textCapitalization:
+                                        TextCapitalization.sentences,
                                     textInputAction: TextInputAction.next,
                                     contentInsertionConfiguration:
                                         PasteFileArea.insertionOf(context),

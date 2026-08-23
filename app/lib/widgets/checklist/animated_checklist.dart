@@ -488,9 +488,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   void _onComposerFocusChange() {
     if (!mounted) return;
     if (_composer.focusNode.hasFocus) {
-      // An empty composer needs the marker as much as an empty row does: it
-      // is what makes the next backspace something a soft keyboard reports.
-      _armEmptyMarker(_composer);
+      // Deliberately no marker here. Parking one in a field that has just
+      // been focused is what stops iOS capitalizing the first letter: the
+      // caret is no longer at the start of the text, so UIKit sees no
+      // sentence beginning. The marker goes in once the composer has been
+      // written in and emptied again, which is the case it exists for.
     } else {
       _clearEmptyMarker(_composer);
       // Leaving the composer settles whatever it was writing: the row it made
@@ -692,7 +694,8 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final handles = _RowHandles(_byId[itemId]?.text ?? '');
     handles.focusNode.addListener(() {
       if (handles.focusNode.hasFocus) {
-        _armEmptyMarker(handles);
+        // No marker on focus: an empty row the caret has just landed in is
+        // the start of an input, and the keyboard has to be able to see that.
         handles.typedSinceFocus = false;
       } else {
         _clearEmptyMarker(handles);

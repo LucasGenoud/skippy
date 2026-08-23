@@ -286,6 +286,7 @@ class _WorkspaceNameDialogState extends State<WorkspaceNameDialog> {
         controller: _controller,
         autofocus: true,
         maxLength: 60,
+        textCapitalization: TextCapitalization.sentences,
         decoration: const InputDecoration(
           hintText: 'Workspace name',
           prefixIcon: Icon(Icons.workspaces_outlined),

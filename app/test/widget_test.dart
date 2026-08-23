@@ -1207,6 +1207,37 @@ void main() {
   });
 
   group('EditorScreen', () {
+    testWidgets('a note is written with the keyboard capitalizing it', (
+      tester,
+    ) async {
+      // Flutter's default is TextCapitalization.none, which is not "leave it
+      // to the platform": it tells the keyboard to stop capitalizing. Every
+      // field a note is written in has to ask for the ordinary behaviour, or
+      // titles and bodies start lowercase on iOS.
+      api.notes['n1'] = serverNote('n1', title: 'Existing', content: 'body');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+
+      final title = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Existing'),
+      );
+      expect(title.textCapitalization, TextCapitalization.sentences);
+      final body = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'body'),
+      );
+      expect(body.textCapitalization, TextCapitalization.sentences);
+
+      // The find bar is a search box, and searching is not writing: it keeps
+      // the keyboard's hands off.
+      await tester.tap(find.byIcon(Icons.search));
+      await tester.pumpAndSettle();
+      final find_ = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Find in note'),
+      );
+      expect(find_.textCapitalization, TextCapitalization.none);
+    });
+
     testWidgets(
       'full-screen editor separates the content from both mobile action bars',
       (tester) async {
@@ -2084,9 +2115,23 @@ void main() {
         await tester.pump();
 
         // Soft keyboards (and the browser's text input) report nothing at all
-        // when backspace lands in a field that is already empty, so a focused
-        // empty row holds a zero-width space for the keypress to delete,
-        // which reaches us as an ordinary edit down to the empty string.
+        // when backspace lands in a field that is already empty, so an empty
+        // row holds a zero-width space for the keypress to delete, which
+        // reaches us as an ordinary edit down to the empty string.
+        //
+        // It is parked once the row has been written in and emptied again,
+        // not on focus: a marker sitting in a row the caret has just landed
+        // in is what stops iOS capitalizing the first letter typed into it.
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'x',
+            selection: TextSelection.collapsed(offset: 1),
+          ),
+        );
+        await tester.pumpAndSettle();
+        tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        await tester.pumpAndSettle();
+
         final focused = tester
             .widgetList<EditableText>(find.byType(EditableText))
             .singleWhere((field) => field.focusNode.hasFocus);
@@ -2138,6 +2183,18 @@ void main() {
           ),
         );
         expect(milk().focusNode.hasFocus, isFalse);
+
+        // Arm the marker the way a person does: write in the row, then take
+        // it back out. It is deliberately not parked on focus (see above).
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'x',
+            selection: TextSelection.collapsed(offset: 1),
+          ),
+        );
+        await tester.pumpAndSettle();
+        tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        await tester.pumpAndSettle();
 
         tester.testTextInput.updateEditingValue(TextEditingValue.empty);
         // No frame is pumped here on purpose. A browser only keeps the
