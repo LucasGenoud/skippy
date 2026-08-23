@@ -220,3 +220,39 @@ List<ChecklistItem> moveSubtree(
     ...rest.sublist(target),
   ]);
 }
+
+/// Reopen [itemId] and bring it back to where it is being written, instead of
+/// to the place it was checked off in.
+///
+/// Re-adding an item from the history popup is writing it again: it belongs
+/// under the row it was written under ([after]), or at the end of the list
+/// where the composer sits when there is none, rather than pages up wherever
+/// it happened to be ticked off weeks ago. It lands at the depth that
+/// position continues, the same rule a freshly typed row follows, and
+/// whatever was nested under it comes back with it, keeping its own shape.
+List<ChecklistItem> reopenWhereWritten(
+  List<ChecklistItem> items,
+  String itemId, {
+  String? after,
+}) {
+  final index = items.indexWhere((item) => item.id == itemId);
+  if (index < 0) return items;
+  final reopened = setDoneCascading(items, itemId, false);
+  final end = subtreeEnd(reopened, index);
+  final block = reopened.sublist(index, end);
+  final rest = [...reopened]..removeRange(index, end);
+  // Under the whole of [after], subtasks included: a row written under a task
+  // goes after that task, not between it and its parts.
+  final anchor = after == null ? -1 : rest.indexWhere((i) => i.id == after);
+  final to = anchor < 0 ? rest.length : subtreeEnd(rest, anchor);
+  final depth = anchor >= 0
+      ? rest[anchor].depth
+      : (rest.isEmpty ? 0 : rest.last.depth);
+  final shift = depth - block.first.depth;
+  return normalizeDepths([
+    ...rest.sublist(0, to),
+    for (final item in block)
+      item.copyWith(depth: (item.depth + shift).clamp(0, kMaxItemDepth)),
+    ...rest.sublist(to),
+  ]);
+}

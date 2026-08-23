@@ -2437,6 +2437,42 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('a re-added item lands where it was written', (tester) async {
+      api.history = {
+        'n1': ['Milk'],
+      };
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        items: const [
+          ChecklistItem(id: 'a', text: 'Milk', done: true),
+          ChecklistItem(id: 'b', text: 'Bread'),
+          ChecklistItem(id: 'c', text: 'Eggs'),
+        ],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Write it again at the bottom of the list, and pick it out of history.
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('checklist-suggestions')),
+          matching: find.text('Milk'),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // It comes back to the row it was written on, not to the place it was
+      // checked off in, which on a long list is nowhere near the caret.
+      final items = store.noteById('n1')!.items;
+      expect(items.map((i) => i.text), ['Bread', 'Eggs', 'Milk']);
+      expect(items.last.done, isFalse);
+      await flushTimers(tester);
+    });
+
     testWidgets('undo and redo walk the editor history', (tester) async {
       api.notes['n1'] = serverNote('n1', title: 'T', content: 'hello');
       await store.load();

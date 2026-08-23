@@ -1189,8 +1189,16 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     if (rowId == _kComposerId) {
       final composingId = _composingId;
       if (checkedTwin != null) {
-        _discardComposing();
-        widget.onToggle(checkedTwin.id);
+        // Re-adding an item is writing it again, so it comes back to where it
+        // is being written, the composer's own place at the end of the list,
+        // rather than to wherever on a long list it was ticked off. The
+        // half-written row it replaces goes in the same push, so the list
+        // rearranges once.
+        _releaseComposer();
+        final without = composingId == null
+            ? widget.items
+            : removeItem(widget.items, composingId);
+        widget.onReorderItems(reopenWhereWritten(without, checkedTwin.id));
       } else if (composingId != null) {
         _composer.controller.text = text;
         _composer.unacknowledged = text;
@@ -1205,7 +1213,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     }
     final handles = _handles[rowId];
     if (checkedTwin != null) {
-      widget.onToggle(checkedTwin.id);
+      // Written in this row, so it comes back directly under it, subtasks and
+      // all, instead of returning to the place it was checked off in.
+      widget.onReorderItems(
+        reopenWhereWritten(widget.items, checkedTwin.id, after: rowId),
+      );
       // The row the user was typing in keeps what it had before.
       final original = _byId[rowId]?.text ?? '';
       if (handles != null) {

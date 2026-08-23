@@ -183,6 +183,58 @@ void main() {
     });
   });
 
+  group('re-adding from history', () {
+    test('comes back where it is written, not where it was checked off', () {
+      final rows = list(['0:*Milk', '0:Bread', '0:Eggs']);
+      // Typed in the composer, so it lands at the end of the list, which is
+      // where the composer draws.
+      expect(shape(reopenWhereWritten(rows, 'i0')), [
+        '0:Bread',
+        '0:Eggs',
+        '0:Milk',
+      ]);
+      // Typed in a row, so it lands directly under that row.
+      expect(shape(reopenWhereWritten(rows, 'i0', after: 'i1')), [
+        '0:Bread',
+        '0:Milk',
+        '0:Eggs',
+      ]);
+      // Nothing to reopen leaves the list alone.
+      expect(shape(reopenWhereWritten(rows, 'gone')), shape(rows));
+    });
+
+    test('brings its subtasks along and takes the depth it lands at', () {
+      final trip = list(['0:*Pack', '1:*Socks', '1:*Book', '0:Trip', '1:Van']);
+      // The whole subtree reopens and moves as one block, and the row it is
+      // written under sets its level: a row written under a subtask is
+      // another subtask.
+      expect(shape(reopenWhereWritten(trip, 'i0', after: 'i4')), [
+        '0:Trip',
+        '1:Van',
+        '1:Pack',
+        '2:Socks',
+        '2:Book',
+      ]);
+      // Under a task, after everything that task holds.
+      expect(shape(reopenWhereWritten(trip, 'i0', after: 'i3')), [
+        '0:Trip',
+        '1:Van',
+        '0:Pack',
+        '1:Socks',
+        '1:Book',
+      ]);
+    });
+
+    test('a subtask ticked off in place comes back out to the composer', () {
+      final rows = list(['0:Trip', '1:*Socks', '1:Book']);
+      expect(shape(reopenWhereWritten(rows, 'i1')), [
+        '0:Trip',
+        '1:Book',
+        '1:Socks',
+      ]);
+    });
+  });
+
   group('moving', () {
     test('takes the subtree and lands somewhere drawable', () {
       final trip = list(['0:Trip', '1:Pack', '2:Socks', '0:Water']);
