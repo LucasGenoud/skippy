@@ -214,7 +214,7 @@ void main() {
                     context,
                     current: null,
                     use24hTime: true,
-                    locationSupported: true,
+                    locationMonitored: true,
                     savedLocations: const [
                       SavedLocation(
                         id: 'home',
@@ -234,7 +234,7 @@ void main() {
 
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('At a saved location'));
+      await tester.tap(find.text('At a place'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('When I leave'));
       await tester.pumpAndSettle();
@@ -266,7 +266,7 @@ void main() {
                     context,
                     current: null,
                     use24hTime: true,
-                    locationSupported: true,
+                    locationMonitored: true,
                     savedLocations: const [
                       SavedLocation(
                         id: 'home',
@@ -286,7 +286,7 @@ void main() {
 
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('At a saved location'));
+      await tester.tap(find.text('At a place'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Every time'));
       await tester.pumpAndSettle();
@@ -301,6 +301,152 @@ void main() {
 
       expect(result?.locationRepeats, isTrue);
       expect(result?.locationTrigger, LocationReminderTrigger.arrive);
+    });
+  });
+
+  group('desktop ReminderPicker', () {
+    const desktopSize = Size(1280, 900);
+    final now = DateTime(2026, 7, 28, 14, 23);
+    const home = SavedLocation(
+      id: 'home',
+      name: 'Home',
+      latitude: 46.948,
+      longitude: 7.4474,
+    );
+
+    /// Opens the picker and hands back the box its result lands in.
+    Future<List<ReminderSelection?>> pumpPicker(
+      WidgetTester tester, {
+      DateTime? current,
+      LocationReminder? currentLocation,
+      List<SavedLocation> savedLocations = const [],
+      bool locationMonitored = false,
+    }) async {
+      tester.view.physicalSize = desktopSize;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final results = <ReminderSelection?>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => FilledButton(
+                onPressed: () async {
+                  results.add(
+                    await ReminderPicker.show(
+                      context,
+                      current: current,
+                      currentLocation: currentLocation,
+                      savedLocations: savedLocations,
+                      locationMonitored: locationMonitored,
+                      use24hTime: true,
+                      clock: () => now,
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      return results;
+    }
+
+    testWidgets('sets a reminder from one surface, not a chain of dialogs', (
+      tester,
+    ) async {
+      // A wide layout used to walk through a kind sheet, a date dialog, a time
+      // dialog and a repeat sheet to say "tomorrow morning".
+      final results = await pumpPicker(tester);
+
+      expect(find.text('Set reminder'), findsOneWidget);
+      expect(find.text('Quick add'), findsOneWidget);
+      expect(find.byType(DatePickerDialog), findsNothing);
+      expect(find.byType(TimePickerDialog), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('reminder-repeat')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Every week').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('reminder-preset-tomorrow-morning')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(results.single?.at, DateTime(2026, 7, 29, 9));
+      expect(results.single?.repeat, ReminderRepeat.weekly);
+      expect(find.byType(Dialog), findsNothing);
+    });
+
+    testWidgets('picks a custom date on a calendar, in place', (tester) async {
+      await pumpPicker(tester);
+      await tester.tap(find.byKey(const ValueKey('custom-reminder-toggle')));
+      await tester.pumpAndSettle();
+
+      // The calendar is part of the sheet, not another route on top of it.
+      expect(find.byType(CalendarDatePicker), findsOneWidget);
+      expect(find.byType(DatePickerDialog), findsNothing);
+      expect(find.byType(CupertinoDatePicker), findsNothing);
+      expect(find.text('At 14:23'), findsOneWidget);
+    });
+
+    testWidgets('a place can be set where nothing watches for it', (
+      tester,
+    ) async {
+      // The reminder lives in the account's settings, so a desktop sets one
+      // and the phone is what fires it.
+      final results = await pumpPicker(tester, savedLocations: const [home]);
+
+      await tester.tap(find.text('At a place'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Watched for by Skippy on your phone'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('When I leave'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('save-location-reminder')));
+      await tester.pumpAndSettle();
+
+      expect(results.single?.locationId, 'home');
+      expect(results.single?.locationTrigger, LocationReminderTrigger.leave);
+      expect(find.byType(Dialog), findsNothing);
+    });
+
+    testWidgets('editing a place reminder opens on the place it has', (
+      tester,
+    ) async {
+      await pumpPicker(
+        tester,
+        savedLocations: const [home],
+        currentLocation: const LocationReminder(
+          noteId: 'n1',
+          locationId: 'home',
+          trigger: LocationReminderTrigger.leave,
+          repeats: true,
+        ),
+        locationMonitored: true,
+      );
+
+      // Straight onto the place pane, showing what the note already has.
+      expect(find.text('Currently every time you leave at Home'), findsOne);
+      expect(find.byKey(const ValueKey('save-location-reminder')), findsOne);
+      expect(find.byKey(const ValueKey('remove-reminder')), findsOne);
+      expect(
+        find.text('Stays on the note and reminds you on every visit.'),
+        findsOneWidget,
+      );
+      // Nothing about a phone: this device is the one watching.
+      expect(
+        find.textContaining('Watched for by Skippy on your phone'),
+        findsNothing,
+      );
     });
   });
 }

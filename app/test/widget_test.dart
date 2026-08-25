@@ -2555,25 +2555,40 @@ void main() {
         ),
       );
 
+      // The clock is reached from inside the one reminder surface: quick
+      // options, then the custom date and time.
+      Future<void> openTheClock() async {
+        await tester.tap(find.byIcon(Icons.notification_add_outlined));
+        await tester.pumpAndSettle();
+        const toggle = ValueKey('custom-reminder-toggle');
+        await tester.ensureVisible(find.byKey(toggle));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(toggle));
+        await tester.pumpAndSettle();
+        const clock = ValueKey('custom-reminder-time');
+        await tester.ensureVisible(find.byKey(clock));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(clock));
+        await tester.pumpAndSettle();
+      }
+
       // 24h setting: the dial shows no AM/PM period selector, regardless of
       // the ambient MediaQuery (which defaults to 12h in tests).
-      await tester.tap(find.byIcon(Icons.notification_add_outlined));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('OK')); // date picker
-      await tester.pumpAndSettle();
+      await openTheClock();
       expect(find.text('Remind me at'), findsOneWidget);
       expect(find.text('AM'), findsNothing);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
 
       // Flipping to 12h brings the AM/PM selector back.
       settings.setUse24hTime(false);
-      await tester.tap(find.byIcon(Icons.notification_add_outlined));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
-      await tester.pumpAndSettle();
+      await openTheClock();
       expect(find.text('AM'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       await flushTimers(tester);
     });

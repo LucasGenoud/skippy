@@ -32,6 +32,7 @@ import '../util/keyboard.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/location_geofences.dart';
+import '../util/location_reminder_grants.dart';
 import '../util/note_image.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
@@ -93,23 +94,13 @@ class _NoteTileState extends State<NoteTile> {
         currentRepeat: note.reminderRepeat,
         currentLocation: settings.locationReminderForNote(note.id),
         savedLocations: settings.savedLocations,
-        locationSupported: LocationGeofences.supported,
+        locationMonitored: LocationGeofences.supported,
         use24hTime: settings.use24hTime,
       );
       if (!mounted || selection == null) return;
       if (selection.locationId != null) {
-        final granted = await LocationGeofences.instance
-            .requestReminderPermissions();
-        if (!mounted) return;
-        if (!granted) {
-          showAppSnack(
-            'Allow notifications and “all the time” location access so this '
-            'reminder can fire while Skippy is closed.',
-            icon: Icons.location_disabled_outlined,
-            kind: SnackKind.warning,
-          );
-          return;
-        }
+        final granted = await ensureLocationReminderGrants();
+        if (!mounted || !granted) return;
         if (!settings.setLocationReminder(
           note.id,
           selection.locationId!,

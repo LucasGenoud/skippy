@@ -321,8 +321,14 @@ Two things differ from mobile on the desktop:
   place of the player instead of a dead play button.
 
 The features that only exist on a phone stay switched off by platform checks:
-home-screen widgets, location reminders, the share-sheet intake, and the camera
-option when adding an image.
+home-screen widgets, the share-sheet intake, and the camera option when adding
+an image.
+
+Location reminders are the exception that is only half a phone feature. Only a
+phone can watch a geofence, but the saved places and the reminders pinned to
+them live in the account's settings document, so any platform can set one and
+the phone arms it on its next sync. The reminder picker says as much wherever
+the device itself is not the one watching.
 
 ## User backups
 

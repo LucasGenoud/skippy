@@ -52,7 +52,7 @@ class ReminderPreset {
   });
 }
 
-/// Builds the phone quick actions independently from the UI so their date
+/// Builds the quick actions independently from the UI so their date
 /// arithmetic remains easy to test.
 List<ReminderPreset> reminderPresets(DateTime now) {
   final daysUntilNextMonday = DateTime.monday - now.weekday;
@@ -96,10 +96,13 @@ List<ReminderPreset> reminderPresets(DateTime now) {
 
 /// A single entry point for reminder editing.
 ///
-/// Phones get one stable bottom sheet containing presets and an inline
-/// date/time wheel. Wide layouts retain the familiar Material date and time
-/// dialogs. Callers should await this method before allowing another picker to
-/// open, which prevents rapid duplicate taps from stacking routes.
+/// One surface, everywhere: everything a reminder can be — the quick
+/// presets, a custom date and time, how it repeats, a saved place, and
+/// removing it — lives on the one sheet, and the only difference between a
+/// phone and a desktop is the box it arrives in (a bottom sheet against a
+/// dialog) and the control the custom date is picked with (a wheel against a
+/// calendar). Callers should await this method before allowing another picker
+/// to open, which prevents rapid duplicate taps from stacking routes.
 class ReminderPicker {
   const ReminderPicker._();
 
@@ -109,340 +112,97 @@ class ReminderPicker {
     ReminderRepeat? currentRepeat,
     LocationReminder? currentLocation,
     List<SavedLocation> savedLocations = const [],
-    bool locationSupported = false,
+
+    /// Whether *this* device is the one that watches for saved places. It no
+    /// longer decides whether a place can be chosen — the reminder lives in
+    /// the account's settings and the phone arms it on its next sync, so a
+    /// desktop sets one perfectly well — only whether the sheet has to say
+    /// where the reminder will actually arrive.
+    bool locationMonitored = false,
     required bool use24hTime,
     DateTime Function()? clock,
-  }) async {
+  }) {
     final now = (clock ?? DateTime.now)();
-    final offersLocation =
-        locationSupported &&
-        (savedLocations.isNotEmpty || currentLocation != null);
-    if (offersLocation) {
-      final kind = await _pickKind(
-        context,
-        hasExisting: current != null || currentLocation != null,
-        locationsAvailable: savedLocations.isNotEmpty,
-      );
-      if (!context.mounted || kind == null) return null;
-      if (kind == 'remove') return const ReminderSelection.clear();
-      if (kind == 'location') {
-        return _showLocation(
-          context,
-          locations: savedLocations,
-          current: currentLocation,
-        );
-      }
-    }
-    if (isNarrowScreen(context)) {
+    final narrow = isNarrowScreen(context);
+    Widget sheet(BuildContext context) => _ReminderSheet(
+      current: current,
+      currentRepeat: currentRepeat,
+      currentLocation: currentLocation,
+      savedLocations: savedLocations,
+      locationMonitored: locationMonitored,
+      now: now,
+      use24hTime: use24hTime,
+      inDialog: !narrow,
+    );
+    final scheme = Theme.of(context).colorScheme;
+    if (narrow) {
       return showModalBottomSheet<ReminderSelection>(
         context: context,
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        backgroundColor: scheme.surfaceContainer,
         showDragHandle: true,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (context) => _MobileReminderSheet(
-          current: current,
-          currentRepeat: currentRepeat,
-          now: now,
-          use24hTime: use24hTime,
-        ),
+        builder: sheet,
       );
     }
-    return _showDesktop(
-      context,
-      current: current,
-      currentRepeat: currentRepeat,
-      now: now,
-      use24hTime: use24hTime,
-      skipExistingChoice: offersLocation,
-    );
-  }
-
-  static Future<String?> _pickKind(
-    BuildContext context, {
-    required bool hasExisting,
-    required bool locationsAvailable,
-  }) => showAdaptiveSelectionSurface<String>(
-    context,
-    builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.schedule_outlined),
-            title: const Text('At a time'),
-            subtitle: const Text('Choose a date and time'),
-            onTap: () => Navigator.pop(context, 'time'),
+    return showDialog<ReminderSelection>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: scheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 460,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
           ),
-          ListTile(
-            leading: const Icon(Icons.location_on_outlined),
-            title: const Text('At a saved location'),
-            subtitle: Text(
-              locationsAvailable
-                  ? 'When you arrive or leave'
-                  : 'Add a place in Settings first',
-            ),
-            enabled: locationsAvailable,
-            onTap: locationsAvailable
-                ? () => Navigator.pop(context, 'location')
-                : null,
-          ),
-          if (hasExisting)
-            ListTile(
-              leading: const Icon(Icons.alarm_off),
-              title: const Text('Remove reminder'),
-              onTap: () => Navigator.pop(context, 'remove'),
-            ),
-        ],
-      ),
-    ),
-  );
-
-  static Future<ReminderSelection?> _showLocation(
-    BuildContext context, {
-    required List<SavedLocation> locations,
-    required LocationReminder? current,
-  }) => showAdaptiveSelectionSurface<ReminderSelection>(
-    context,
-    isScrollControlled: true,
-    builder: (context) =>
-        _LocationReminderSheet(locations: locations, current: current),
-  );
-
-  static Future<ReminderSelection?> _showDesktop(
-    BuildContext context, {
-    required DateTime? current,
-    required ReminderRepeat? currentRepeat,
-    required DateTime now,
-    required bool use24hTime,
-    bool skipExistingChoice = false,
-  }) async {
-    if (current != null && !skipExistingChoice) {
-      final action = await showAdaptiveSelectionSurface<String>(
-        context,
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Change reminder'),
-                onTap: () => Navigator.pop(context, 'change'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.alarm_off),
-                title: const Text('Remove reminder'),
-                onTap: () => Navigator.pop(context, 'remove'),
-              ),
-            ],
-          ),
+          child: sheet(context),
         ),
-      );
-      if (!context.mounted) return null;
-      if (action == 'remove') return const ReminderSelection.clear();
-      if (action != 'change') return null;
-    }
-
-    final initial = current ?? now;
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: now.subtract(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 365 * 5)),
-      helpText: 'Remind me on',
-    );
-    if (date == null || !context.mounted) return null;
-    await Motion.waitForOverlayDismissal(context);
-    if (!context.mounted) return null;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-      helpText: 'Remind me at',
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(
-          context,
-        ).copyWith(alwaysUse24HourFormat: use24hTime),
-        child: child!,
       ),
-    );
-    if (time == null) return null;
-    if (!context.mounted) return null;
-    final repeat = await _pickDesktopRepeat(context, currentRepeat);
-    if (repeat == null) return null;
-    return ReminderSelection.set(
-      DateTime(date.year, date.month, date.day, time.hour, time.minute),
-      repeat: repeat.repeat,
     );
   }
-
-  static Future<_RepeatChoice?> _pickDesktopRepeat(
-    BuildContext context,
-    ReminderRepeat? current,
-  ) => showAdaptiveSelectionSurface<_RepeatChoice>(
-    context,
-    builder: (context) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.looks_one_outlined),
-            title: const Text('Does not repeat'),
-            trailing: current == null ? const Icon(Icons.check) : null,
-            onTap: () => Navigator.pop(context, const _RepeatChoice(null)),
-          ),
-          for (final repeat in ReminderRepeat.values)
-            ListTile(
-              leading: const Icon(Icons.repeat),
-              title: Text(repeat.label),
-              trailing: current == repeat ? const Icon(Icons.check) : null,
-              onTap: () => Navigator.pop(context, _RepeatChoice(repeat)),
-            ),
-        ],
-      ),
-    ),
-  );
 }
 
-class _LocationReminderSheet extends StatefulWidget {
-  final List<SavedLocation> locations;
-  final LocationReminder? current;
+/// Which half of the sheet is showing. A reminder is one or the other: a note
+/// reminded at a place is not also reminded at a time.
+enum _ReminderKind { time, place }
 
-  const _LocationReminderSheet({required this.locations, this.current});
-
-  @override
-  State<_LocationReminderSheet> createState() => _LocationReminderSheetState();
-}
-
-class _LocationReminderSheetState extends State<_LocationReminderSheet> {
-  late String _locationId;
-  late LocationReminderTrigger _trigger;
-  late bool _repeats;
-
-  @override
-  void initState() {
-    super.initState();
-    final currentId = widget.current?.locationId;
-    _locationId = widget.locations.any((location) => location.id == currentId)
-        ? currentId!
-        : widget.locations.first.id;
-    _trigger = widget.current?.trigger ?? LocationReminderTrigger.arrive;
-    _repeats = widget.current?.repeats ?? false;
-  }
-
-  @override
-  Widget build(BuildContext context) => SafeArea(
-    child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Location reminder',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 16),
-          SegmentedButton<LocationReminderTrigger>(
-            segments: [
-              for (final trigger in LocationReminderTrigger.values)
-                ButtonSegment(value: trigger, label: Text(trigger.label)),
-            ],
-            selected: {_trigger},
-            showSelectedIcon: false,
-            onSelectionChanged: (value) =>
-                setState(() => _trigger = value.first),
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<bool>(
-            key: const ValueKey('location-reminder-repeats'),
-            segments: const [
-              ButtonSegment(
-                value: false,
-                icon: Icon(Icons.looks_one_outlined),
-                label: Text('Once'),
-              ),
-              ButtonSegment(
-                value: true,
-                icon: Icon(Icons.repeat),
-                label: Text('Every time'),
-              ),
-            ],
-            selected: {_repeats},
-            showSelectedIcon: false,
-            onSelectionChanged: (value) =>
-                setState(() => _repeats = value.first),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _repeats
-                ? 'Stays on the note and reminds you on every visit.'
-                : 'Comes off the note once it has reminded you.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          RadioGroup<String>(
-            groupValue: _locationId,
-            onChanged: (value) {
-              if (value != null) setState(() => _locationId = value);
-            },
-            child: Column(
-              children: [
-                for (final location in widget.locations)
-                  RadioListTile<String>(
-                    value: location.id,
-                    title: Text(location.name),
-                    subtitle: Text('${location.radiusMeters.round()} m radius'),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            key: const ValueKey('save-location-reminder'),
-            onPressed: () => Navigator.of(context).pop(
-              ReminderSelection.location(
-                _locationId,
-                _trigger,
-                locationRepeats: _repeats,
-              ),
-            ),
-            icon: const Icon(Icons.location_on_outlined),
-            label: const Text('Save location reminder'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _RepeatChoice {
-  final ReminderRepeat? repeat;
-  const _RepeatChoice(this.repeat);
-}
-
-class _MobileReminderSheet extends StatefulWidget {
+class _ReminderSheet extends StatefulWidget {
   final DateTime? current;
   final ReminderRepeat? currentRepeat;
+  final LocationReminder? currentLocation;
+  final List<SavedLocation> savedLocations;
+  final bool locationMonitored;
   final DateTime now;
   final bool use24hTime;
 
-  const _MobileReminderSheet({
+  /// Whether this is the wide layout's dialog rather than the phone's bottom
+  /// sheet: no drag handle above it to pad around, and room for a calendar.
+  final bool inDialog;
+
+  const _ReminderSheet({
     required this.current,
     required this.currentRepeat,
+    required this.currentLocation,
+    required this.savedLocations,
+    required this.locationMonitored,
     required this.now,
     required this.use24hTime,
+    required this.inDialog,
   });
 
   @override
-  State<_MobileReminderSheet> createState() => _MobileReminderSheetState();
+  State<_ReminderSheet> createState() => _ReminderSheetState();
 }
 
-class _MobileReminderSheetState extends State<_MobileReminderSheet> {
+class _ReminderSheetState extends State<_ReminderSheet> {
+  late _ReminderKind _kind;
   late DateTime _customValue;
   late ReminderRepeat? _repeat;
   bool _showCustom = false;
+
+  String? _locationId;
+  late LocationReminderTrigger _trigger;
+  late bool _locationRepeats;
 
   @override
   void initState() {
@@ -452,9 +212,28 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
         ? candidate
         : widget.now;
     _repeat = widget.currentRepeat;
+    final currentId = widget.currentLocation?.locationId;
+    _locationId = widget.savedLocations.any((l) => l.id == currentId)
+        ? currentId
+        : widget.savedLocations.firstOrNull?.id;
+    _trigger =
+        widget.currentLocation?.trigger ?? LocationReminderTrigger.arrive;
+    _locationRepeats = widget.currentLocation?.repeats ?? false;
+    // Opens on whichever kind the note already has, so editing a reminder
+    // starts on the thing being edited.
+    _kind = widget.currentLocation != null && _offersPlace
+        ? _ReminderKind.place
+        : _ReminderKind.time;
   }
 
-  String _whenLabel(BuildContext context, DateTime value) {
+  /// A place can be chosen when the caller knows of any: the quick-add
+  /// composer has no note to hang one on and passes none.
+  bool get _offersPlace => widget.savedLocations.isNotEmpty;
+
+  bool get _hasExisting =>
+      widget.current != null || widget.currentLocation != null;
+
+  String _whenLabel(DateTime value) {
     final localizations = MaterialLocalizations.of(context);
     final date = localizations.formatMediumDate(value);
     final time = localizations.formatTimeOfDay(
@@ -464,9 +243,93 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
     return '$date, $time';
   }
 
-  void _select(DateTime value) {
+  String _timeLabel(DateTime value) =>
+      MaterialLocalizations.of(context).formatTimeOfDay(
+        TimeOfDay.fromDateTime(value),
+        alwaysUse24HourFormat: widget.use24hTime,
+      );
+
+  /// What the note is reminded of right now, for the line under the title.
+  String? get _currentLabel {
+    final location = widget.currentLocation;
+    if (location != null) {
+      final name = widget.savedLocations
+          .where((l) => l.id == location.locationId)
+          .map((l) => l.name)
+          .firstOrNull;
+      // The chip's own wording ("When I arrive"), turned around to describe
+      // the note rather than speak for the reader, and lowercased so it
+      // continues the sentence it is now the tail of.
+      final what = location.label
+          .replaceFirst(' I ', ' you ')
+          .replaceRange(0, 1, location.label[0].toLowerCase());
+      return name == null ? 'Currently $what' : 'Currently $what at $name';
+    }
+    final at = widget.current;
+    return at == null ? null : 'Currently ${_whenLabel(at)}';
+  }
+
+  void _selectTime(DateTime value) {
     Navigator.of(context).pop(ReminderSelection.set(value, repeat: _repeat));
   }
+
+  void _selectPlace() {
+    final id = _locationId;
+    if (id == null) return;
+    Navigator.of(context).pop(
+      ReminderSelection.location(
+        id,
+        _trigger,
+        locationRepeats: _locationRepeats,
+      ),
+    );
+  }
+
+  Future<void> _pickCustomTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_customValue),
+      helpText: 'Remind me at',
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(alwaysUse24HourFormat: widget.use24hTime),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _customValue = DateTime(
+        _customValue.year,
+        _customValue.month,
+        _customValue.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
+
+  Widget _kindSwitch() => Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: SegmentedButton<_ReminderKind>(
+      key: const ValueKey('reminder-kind'),
+      segments: const [
+        ButtonSegment(
+          value: _ReminderKind.time,
+          icon: Icon(Icons.schedule_outlined),
+          label: Text('At a time'),
+        ),
+        ButtonSegment(
+          value: _ReminderKind.place,
+          icon: Icon(Icons.location_on_outlined),
+          label: Text('At a place'),
+        ),
+      ],
+      selected: {_kind},
+      showSelectedIcon: false,
+      onSelectionChanged: (value) => setState(() => _kind = value.first),
+    ),
+  );
 
   Widget _repeatControl() => DropdownButtonFormField<ReminderRepeat?>(
     key: const ValueKey('reminder-repeat'),
@@ -487,6 +350,67 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
     onChanged: (value) => setState(() => _repeat = value),
   );
 
+  /// The date and time in full. A phone spins a wheel; a wide layout has the
+  /// room for a calendar, which is also what a desktop user expects to click
+  /// a date in — and it keeps the whole reminder on one surface instead of
+  /// sending them through a stack of modal date and time dialogs.
+  Widget _customPicker(ThemeData theme, ColorScheme scheme) {
+    if (!widget.inDialog) {
+      return SizedBox(
+        height: 216,
+        child: CupertinoTheme(
+          data: CupertinoTheme.of(context).copyWith(
+            primaryColor: scheme.primary,
+            brightness: theme.brightness,
+          ),
+          child: CupertinoDatePicker(
+            key: const ValueKey('custom-reminder-picker'),
+            mode: CupertinoDatePickerMode.dateAndTime,
+            initialDateTime: _customValue,
+            minimumDate: widget.now,
+            maximumDate: widget.now.add(const Duration(days: 365 * 5)),
+            use24hFormat: widget.use24hTime,
+            onDateTimeChanged: (value) => _customValue = value,
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Above the calendar, not below it: the calendar is tall enough to
+        // push whatever follows it out of a short window, and the time is
+        // half of what is being chosen here.
+        OutlinedButton.icon(
+          key: const ValueKey('custom-reminder-time'),
+          onPressed: _pickCustomTime,
+          icon: const Icon(Icons.schedule_outlined),
+          label: Text('At ${_timeLabel(_customValue)}'),
+        ),
+        const SizedBox(height: 4),
+        CalendarDatePicker(
+          key: const ValueKey('custom-reminder-calendar'),
+          initialDate: _customValue,
+          firstDate: DateTime(
+            widget.now.year,
+            widget.now.month,
+            widget.now.day,
+          ),
+          lastDate: widget.now.add(const Duration(days: 365 * 5)),
+          onDateChanged: (date) => setState(() {
+            _customValue = DateTime(
+              date.year,
+              date.month,
+              date.day,
+              _customValue.hour,
+              _customValue.minute,
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
   Widget _customContent(ThemeData theme, ColorScheme scheme) {
     return Column(
       key: const ValueKey('custom-reminder-content'),
@@ -499,32 +423,70 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
           label: const Text('Quick reminder options'),
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 216,
-          child: CupertinoTheme(
-            data: CupertinoTheme.of(context).copyWith(
-              primaryColor: scheme.primary,
-              brightness: theme.brightness,
-            ),
-            child: CupertinoDatePicker(
-              key: const ValueKey('custom-reminder-picker'),
-              mode: CupertinoDatePickerMode.dateAndTime,
-              initialDateTime: _customValue,
-              minimumDate: widget.now,
-              maximumDate: widget.now.add(const Duration(days: 365 * 5)),
-              use24hFormat: widget.use24hTime,
-              onDateTimeChanged: (value) => _customValue = value,
-            ),
+        _customPicker(theme, scheme),
+      ],
+    );
+  }
+
+  Widget _presetTile(
+    ReminderPreset preset,
+    ThemeData theme,
+    ColorScheme scheme,
+  ) => OutlinedButton(
+    key: ValueKey('reminder-preset-${preset.id}'),
+    style: OutlinedButton.styleFrom(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    ),
+    onPressed: () => _selectTime(preset.at),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(preset.label),
+        const SizedBox(height: 2),
+        Text(
+          _whenLabel(preset.at),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          key: const ValueKey('save-custom-reminder'),
-          onPressed: () => _select(_customValue),
-          icon: const Icon(Icons.notifications_active_outlined),
-          label: const Text('Save reminder'),
-        ),
       ],
+    ),
+  );
+
+  /// One preset per line under a thumb, two to a line in a dialog: a wide
+  /// layout has the width for it, and it keeps the whole surface inside a
+  /// short desktop window instead of making the reader scroll for the custom
+  /// option below.
+  Widget _presets(
+    ThemeData theme,
+    ColorScheme scheme,
+    List<ReminderPreset> presets,
+  ) {
+    if (!widget.inDialog) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final preset in presets)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _presetTile(preset, theme, scheme),
+            ),
+        ],
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = (constraints.maxWidth - 8) / 2;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final preset in presets)
+              SizedBox(width: width, child: _presetTile(preset, theme, scheme)),
+          ],
+        );
+      },
     );
   }
 
@@ -539,42 +501,148 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
       children: [
         Text('Quick add', style: theme.textTheme.titleSmall),
         const SizedBox(height: 10),
-        for (final preset in presets)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: OutlinedButton(
-              key: ValueKey('reminder-preset-${preset.id}'),
-              style: OutlinedButton.styleFrom(
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: () => _select(preset.at),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(preset.label),
-                  const SizedBox(height: 2),
-                  Text(
-                    _whenLabel(context, preset.at),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        const SizedBox(height: 4),
+        _presets(theme, scheme, presets),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           key: const ValueKey('custom-reminder-toggle'),
           onPressed: () => setState(() => _showCustom = true),
           icon: const Icon(Icons.calendar_month_outlined),
           label: const Text('Custom date & time'),
         ),
-        if (widget.current != null) ...[
+      ],
+    );
+  }
+
+  Widget _timePane(ThemeData theme, ColorScheme scheme) => Column(
+    key: const ValueKey('time-reminder-pane'),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _repeatControl(),
+      const SizedBox(height: 16),
+      AnimatedSwitcher(
+        duration: Motion.base,
+        switchInCurve: Motion.emphasized,
+        switchOutCurve: Motion.standard,
+        child: _showCustom
+            ? _customContent(theme, scheme)
+            : _quickContent(theme, scheme, reminderPresets(widget.now)),
+      ),
+    ],
+  );
+
+  Widget _placePane(ThemeData theme, ColorScheme scheme) => Column(
+    key: const ValueKey('place-reminder-pane'),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SegmentedButton<LocationReminderTrigger>(
+        segments: [
+          for (final trigger in LocationReminderTrigger.values)
+            ButtonSegment(value: trigger, label: Text(trigger.label)),
+        ],
+        selected: {_trigger},
+        showSelectedIcon: false,
+        onSelectionChanged: (value) => setState(() => _trigger = value.first),
+      ),
+      const SizedBox(height: 8),
+      SegmentedButton<bool>(
+        key: const ValueKey('location-reminder-repeats'),
+        segments: const [
+          ButtonSegment(
+            value: false,
+            icon: Icon(Icons.looks_one_outlined),
+            label: Text('Once'),
+          ),
+          ButtonSegment(
+            value: true,
+            icon: Icon(Icons.repeat),
+            label: Text('Every time'),
+          ),
+        ],
+        selected: {_locationRepeats},
+        showSelectedIcon: false,
+        onSelectionChanged: (value) =>
+            setState(() => _locationRepeats = value.first),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        _locationRepeats
+            ? 'Stays on the note and reminds you on every visit.'
+            : 'Comes off the note once it has reminded you.',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 12),
+      RadioGroup<String>(
+        groupValue: _locationId,
+        onChanged: (value) {
+          if (value != null) setState(() => _locationId = value);
+        },
+        child: Column(
+          children: [
+            for (final location in widget.savedLocations)
+              RadioListTile<String>(
+                value: location.id,
+                title: Text(location.name),
+                subtitle: Text('${location.radiusMeters.round()} m radius'),
+              ),
+          ],
+        ),
+      ),
+      // Set here, delivered there. Only a phone can watch a geofence, and a
+      // reminder saved on a laptop that said nothing about it would look
+      // broken the moment the laptop stayed silent.
+      if (!widget.locationMonitored) ...[
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.phone_iphone, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Watched for by Skippy on your phone, so the reminder '
+                'arrives there.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ],
+  );
+
+  /// The sheet's committing actions: whatever the visible pane can be saved
+  /// with, and removing what the note already has. Kept out of the panes
+  /// because a dialog pins them below its scrolling part — a calendar plus a
+  /// list of presets is taller than a short desktop window, and the button
+  /// that finishes the job must not be the thing scrolled off the bottom.
+  Widget? _actions(ColorScheme scheme) {
+    final Widget? primary = switch (_kind) {
+      _ReminderKind.place => FilledButton.icon(
+        key: const ValueKey('save-location-reminder'),
+        onPressed: _locationId == null ? null : _selectPlace,
+        icon: const Icon(Icons.location_on_outlined),
+        label: const Text('Save location reminder'),
+      ),
+      // The presets commit themselves; only the custom date needs a button.
+      _ReminderKind.time when _showCustom => FilledButton.icon(
+        key: const ValueKey('save-custom-reminder'),
+        onPressed: () => _selectTime(_customValue),
+        icon: const Icon(Icons.notifications_active_outlined),
+        label: const Text('Save reminder'),
+      ),
+      _ReminderKind.time => null,
+    };
+    if (primary == null && !_hasExisting) return null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ?primary,
+        if (_hasExisting) ...[
           const SizedBox(height: 8),
           TextButton.icon(
             key: const ValueKey('remove-reminder'),
@@ -593,57 +661,88 @@ class _MobileReminderSheetState extends State<_MobileReminderSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final presets = reminderPresets(widget.now);
+    final currentLabel = _currentLabel;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    final actions = _actions(scheme);
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Set reminder',
-                    style: theme.textTheme.titleLarge,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
+            Expanded(
+              child: Text('Set reminder', style: theme.textTheme.titleLarge),
             ),
-            if (widget.current != null) ...[
-              Text(
-                'Currently ${_whenLabel(context, widget.current!)}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-            ] else
-              const SizedBox(height: 4),
-            const SizedBox(height: 12),
-            _repeatControl(),
-            const SizedBox(height: 16),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              child: _showCustom
-                  ? _customContent(theme, scheme)
-                  : _quickContent(theme, scheme, presets),
+            IconButton(
+              tooltip: 'Close',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close),
             ),
           ],
         ),
-      ),
+        if (currentLabel != null) ...[
+          Text(
+            currentLabel,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 8),
+        if (_offersPlace) _kindSwitch(),
+        AnimatedSize(
+          duration: Motion.base,
+          curve: Motion.emphasized,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: Motion.base,
+            switchInCurve: Motion.emphasized,
+            switchOutCurve: Motion.standard,
+            child: _kind == _ReminderKind.time
+                ? _timePane(theme, scheme)
+                : _placePane(theme, scheme),
+          ),
+        ),
+      ],
+    );
+
+    // A sheet grows with what is in it and is dragged around by its own
+    // handle, so its actions ride along at the bottom of the content. A
+    // dialog is capped by the window, so the same actions are pinned under
+    // the part that scrolls.
+    if (!widget.inDialog) {
+      return SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              body,
+              if (actions != null) ...[const SizedBox(height: 16), actions],
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            child: body,
+          ),
+        ),
+        if (actions != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: actions,
+          ),
+      ],
     );
   }
 }
