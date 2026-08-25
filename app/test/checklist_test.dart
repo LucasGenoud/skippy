@@ -1032,6 +1032,65 @@ void main() {
       }),
     );
   });
+
+  group('checking a row off', () {
+    Finder checkboxFor(String text) => find.descendant(
+      of: find
+          .ancestor(
+            of: find.widgetWithText(TextField, text),
+            matching: find.byType(Row),
+          )
+          .first,
+      matching: find.byType(PopCheckbox),
+    );
+
+    testWidgets('the row stays put while its pop plays', (tester) async {
+      // Filing the row away the same frame unmounted the checkbox that was
+      // mid-flourish, so the tick's pop and its dots were never seen.
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Milk'),
+          ChecklistItem(id: 'i2', text: 'Bread'),
+        ],
+      );
+      final at = tester.getTopLeft(find.widgetWithText(TextField, 'Milk'));
+
+      await tester.tap(checkboxFor('Milk'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Ticked in the store, still under the finger on screen.
+      expect(shapeOf('n1'), ['0:*Milk', '0:Bread']);
+      expect(tester.getTopLeft(find.widgetWithText(TextField, 'Milk')), at);
+      expect(find.textContaining('checked item'), findsNothing);
+
+      // And then it goes.
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, 'Milk'), findsNothing);
+      expect(find.text('1 checked item'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('unticking one brings it straight back', (tester) async {
+      // Nothing to wait for in this direction: the row is coming back to the
+      // list it is already drawn in.
+      await openChecklist(
+        tester,
+        items: const [ChecklistItem(id: 'i1', text: 'Milk', done: true)],
+      );
+      await tester.tap(find.text('1 checked item'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(checkboxFor('Milk'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(shapeOf('n1'), ['0:Milk']);
+      expect(find.textContaining('checked item'), findsNothing);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+  });
 }
 
 /// A one-line checklist row, as [AnimatedChecklist] lays it out.

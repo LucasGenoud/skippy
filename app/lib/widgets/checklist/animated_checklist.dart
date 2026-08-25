@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -316,6 +317,29 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   bool _celebrating = false;
   int _celebration = 0;
 
+  /// Rows that have just been ticked and are being held where they are for a
+  /// moment, each with the timer that will let it go.
+  ///
+  /// Checking a task files it away the same frame: down into the checked
+  /// section, which is usually collapsed, so the row is not moved but
+  /// unmounted outright, taking the checkbox's pop and its little burst of
+  /// dots with it. The one gesture in the list that deserves a flourish was
+  /// therefore the one that never showed one. Held for exactly as long as
+  /// that pop lasts, the row ticks, strikes through and celebrates under the
+  /// finger, and only then leaves.
+  final Map<String, Timer> _settling = {};
+
+  /// Rows on their way out, once held: they have no place left in the layout
+  /// (the checked section they belong to is collapsed), so rather than
+  /// blinking out they glide down onto its header and fade, and are dropped
+  /// when they get there.
+  final Map<String, Timer> _leaving = {};
+
+  /// How long a ticked row stays put before it files itself away: the length
+  /// of the checkbox's pop, so the row starts to leave on the frame the
+  /// flourish finishes.
+  static const Duration _settleDelay = Motion.slow;
+
   @override
   void initState() {
     super.initState();
@@ -350,6 +374,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   @override
   void dispose() {
+    for (final timer in [..._settling.values, ..._leaving.values]) {
+      timer.cancel();
+    }
     for (final handles in _handles.values) {
       handles.dispose();
     }
@@ -373,6 +400,10 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   @override
   void didUpdateWidget(AnimatedChecklist oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // A row that has gone away (an undo, another device) has nothing left to
+    // hold or to fade out.
+    final present = {for (final item in widget.items) item.id};
+    _releaseWhere((id) => !present.contains(id));
     _syncItems();
     // The only other things a row reads at build time. Its callbacks are read
     // when they fire, so a fresh closure from the parent doesn't stale a row.
@@ -421,9 +452,25 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     // struck through, so it never loses the thing it belongs to.
     _checked = [
       for (var i = 0; i < widget.items.length; i++)
-        if (isFinished(widget.items, i)) widget.items[i],
+        if (isFinished(widget.items, i) && !_heldInPlace(i)) widget.items[i],
     ];
     _finished = {for (final item in _checked) item.id};
+  }
+
+  /// Whether the row at [index] is being held where it is (see [_settling]).
+  /// Asked of the task holding it, so a subtask never sets off on its own
+  /// while the task it was checked off with is still standing still.
+  bool _heldInPlace(int index) =>
+      _settling.containsKey(widget.items[rootIndexOf(widget.items, index)].id);
+
+  /// Cancels the holds and exits matching [test], without rebuilding: callers
+  /// are either already inside a rebuild or follow with one.
+  void _releaseWhere(bool Function(String id) test) {
+    for (final id in [..._settling.keys, ..._leaving.keys]) {
+      if (!test(id)) continue;
+      _settling.remove(id)?.cancel();
+      _leaving.remove(id)?.cancel();
+    }
   }
 
   void _invalidateRows() {
@@ -904,6 +951,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
           y += _rowHeight(item.id);
         }
       }
+    }
+    // A row on its way into a collapsed section glides onto that section's
+    // header and fades there, taking no room of its own on the way: the rows
+    // it leaves behind close the gap as it goes.
+    for (final id in _leaving.keys) {
+      tops[id] = tops[_kHeaderId] ?? y;
     }
     return (tops: tops, total: y);
   }
@@ -1676,6 +1729,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     setState(() {
       _showChecked = !_showChecked;
       if (_showChecked) {
+        // A row still settling in place, or fading onto the header, has a
+        // place of its own to be again: it stops waiting and takes it with
+        // the rest of the section.
+        _releaseWhere((id) => true);
+        _syncItems();
+        _refreshOrder(keepLocalOrder: _draggingId != null);
         _enteringIds.addAll(_checked.map((item) => item.id));
       }
     });
@@ -1732,7 +1791,38 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       });
       HapticFeedback.lightImpact();
     }
+    _holdTicked(item);
     widget.onToggle(item.id);
+  }
+
+  /// Keeps a just-ticked row where the finger left it until its pop has
+  /// played out, then lets it file itself away (see [_settling]).
+  ///
+  /// Unticking releases the row instead: it is coming back to the list it is
+  /// already drawn in, and holding a row that has nowhere to go would only
+  /// keep the checked section a row too long.
+  void _holdTicked(ChecklistItem item) {
+    _releaseWhere((id) => id == item.id);
+    if (item.done || Motion.reduced(context)) return;
+    _settling[item.id] = Timer(_settleDelay, () => _releaseTicked(item.id));
+  }
+
+  /// The hold is up: the row rejoins the checked section, gliding into it
+  /// where that section is open, and fading onto its header where it is not.
+  void _releaseTicked(String id) {
+    if (!mounted) return;
+    setState(() {
+      _settling.remove(id)?.cancel();
+      _syncItems();
+      _refreshOrder(keepLocalOrder: _draggingId != null);
+      // A row the collapsed section has no room for holds its own frame while
+      // it fades; every other one is simply moved by [AnimatedPositioned].
+      if (_finished.contains(id) && !_showChecked) {
+        _leaving[id] = Timer(Motion.base, () {
+          if (mounted) setState(() => _leaving.remove(id));
+        });
+      }
+    });
   }
 
   /// Whether ticking [item] would leave nothing on the list unchecked.
@@ -1769,9 +1859,24 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       for (var i = 0; i < blockIndex; i++) {
         draggedTop += _rowHeight(_draggingBlock[i]);
       }
+      final leaving = _leaving.containsKey(id);
       Widget positionedChild = MeasureSize(
         onChange: (size) => _measuredRow(id, size.height),
         child: child,
+      );
+      // Always in the tree, never conditional: wrapping a row only while it
+      // leaves would rebuild it from scratch on the frame it starts to fade.
+      // At full opacity this costs nothing (RenderOpacity paints straight
+      // through), and it is what lets a row on its way into a collapsed
+      // section dissolve instead of blinking out.
+      positionedChild = IgnorePointer(
+        ignoring: leaving,
+        child: AnimatedOpacity(
+          opacity: leaving ? 0 : 1,
+          duration: moveDuration,
+          curve: Motion.standard,
+          child: positionedChild,
+        ),
       );
       if (_enteringIds.contains(id)) {
         positionedChild = _ChecklistRowEntrance(
@@ -1811,6 +1916,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
             if (_checked.isNotEmpty && _showChecked)
               for (final item in _checked)
                 positioned(item.id, _rowFor(item, dragging: false)),
+            // Kept a moment longer than the list has room for, so it can be
+            // seen to go (see [_leaving]).
+            for (final id in _leaving.keys)
+              if (_byId[id] case final ChecklistItem item)
+                positioned(id, _rowFor(item, dragging: false)),
             // Last, so the confetti fly over the rows rather than under them.
             if (_celebrating)
               Positioned.fill(
