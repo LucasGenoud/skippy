@@ -190,7 +190,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
               labelText: 'Search',
               isDense: true,
               border: const OutlineInputBorder(),
-              hintText: 'label:work is:pinned',
+              hintText: 'label:work is:pinned hasnot:reminder',
               helperText: 'Same filters as the search box',
               errorText: _queryError,
             ),

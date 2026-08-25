@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/notes_store.dart';
 import '../theme.dart';
+import '../util/motion.dart';
 import '../util/search_query.dart';
 import 'form_dialog.dart';
 import 'search_query_controller.dart';
@@ -29,6 +30,13 @@ class SaveAsSmartView extends SearchFilterResult {
 /// It writes straight to the box's controller and does NOT close on a tap:
 /// narrowing a search usually takes more than one filter, and a sheet that
 /// dismissed itself each time would have to be reopened for every one of them.
+///
+/// Every chip has three states, not two. "Notes with no link" is as ordinary a
+/// question as "notes with a link", so each filter can also be excluded, and a
+/// tap cycles off -> match -> exclude. The chip's own text is the token it
+/// stands for and rewrites itself to the negative spelling (`hasnot:link`),
+/// which is what teaches the operator: the sheet is the only place the query
+/// language is ever spelled out.
 class SearchFiltersSheet extends StatelessWidget {
   /// The live search box. Chips reflect it and toggle against it.
   final SearchQueryController controller;
@@ -59,8 +67,8 @@ class SearchFiltersSheet extends StatelessWidget {
     );
   }
 
-  void _toggle(String token) {
-    final next = toggleSearchFilter(controller.text, token);
+  void _cycle(String token) {
+    final next = cycleSearchFilter(controller.text, token);
     controller.setQuery(next);
     onChanged(next);
   }
@@ -104,8 +112,9 @@ class SearchFiltersSheet extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Tap to add or remove. Every filter you pick narrows the '
-                    'search further, and typing words narrows it more.',
+                    'Tap to match, again to exclude, again to clear. Every '
+                    'filter you pick narrows the search further, and typing '
+                    'words narrows it more.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -125,7 +134,7 @@ class SearchFiltersSheet extends StatelessWidget {
                             _quoted('label', label.name),
                         ],
                         query: query,
-                        onToggle: _toggle,
+                        onCycle: _cycle,
                       ),
                     _Group(
                       title: 'State',
@@ -138,7 +147,7 @@ class SearchFiltersSheet extends StatelessWidget {
                         'is:done',
                       ],
                       query: query,
-                      onToggle: _toggle,
+                      onCycle: _cycle,
                     ),
                     _Group(
                       title: 'Contents',
@@ -148,10 +157,10 @@ class SearchFiltersSheet extends StatelessWidget {
                         'has:image',
                         'has:audio',
                         'has:link',
-                        'label:none',
+                        'has:label',
                       ],
                       query: query,
-                      onToggle: _toggle,
+                      onCycle: _cycle,
                     ),
                     _Group(
                       title: 'Kind',
@@ -162,7 +171,7 @@ class SearchFiltersSheet extends StatelessWidget {
                         'kind:audio',
                       ],
                       query: query,
-                      onToggle: _toggle,
+                      onCycle: _cycle,
                     ),
                     _Group(
                       title: 'Color',
@@ -173,7 +182,7 @@ class SearchFiltersSheet extends StatelessWidget {
                         'color:blue',
                       ],
                       query: query,
-                      onToggle: _toggle,
+                      onCycle: _cycle,
                     ),
                   ],
                 ),
@@ -226,15 +235,18 @@ class SearchFiltersSheet extends StatelessWidget {
 
 class _Group extends StatelessWidget {
   final String title;
+
+  /// Positive tokens only; the negative of each is derived, so a group never
+  /// has to list a filter twice.
   final List<String> tokens;
   final String query;
-  final ValueChanged<String> onToggle;
+  final ValueChanged<String> onCycle;
 
   const _Group({
     required this.title,
     required this.tokens,
     required this.query,
-    required this.onToggle,
+    required this.onCycle,
   });
 
   @override
@@ -258,16 +270,99 @@ class _Group extends StatelessWidget {
             runSpacing: 8,
             children: [
               for (final token in tokens)
-                FilterChip(
-                  label: Text(token),
-                  labelStyle: theme.textTheme.bodySmall,
-                  visualDensity: VisualDensity.compact,
-                  selected: searchQueryHas(query, token),
-                  onSelected: (_) => onToggle(token),
+                _FilterCycleChip(
+                  token: token,
+                  query: query,
+                  onCycle: () => onCycle(token),
                 ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// What one chip is currently asking of the search.
+enum _Cycle { off, matching, excluding }
+
+/// A filter chip that cycles off -> match -> exclude on tap.
+///
+/// The exclusion is a peer of the match rather than a mode hidden behind a
+/// long press or a second control: it costs no extra hit target, which is what
+/// keeps the sheet usable one-thumbed on a phone.
+class _FilterCycleChip extends StatelessWidget {
+  /// The positive form, e.g. `has:link`.
+  final String token;
+  final String query;
+  final VoidCallback onCycle;
+
+  const _FilterCycleChip({
+    required this.token,
+    required this.query,
+    required this.onCycle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final excluded = negateSearchFilter(token);
+    final state = searchQueryHas(query, token)
+        ? _Cycle.matching
+        : searchQueryHas(query, excluded)
+        ? _Cycle.excluding
+        : _Cycle.off;
+    final excluding = state == _Cycle.excluding;
+    final shown = excluding ? excluded : token;
+
+    // Exclusion gets its own wash rather than the selected one, so "with" and
+    // "without" are told apart at a glance and not only by reading the three
+    // letters in the middle of the token.
+    final duration = Motion.reduced(context) ? Duration.zero : Motion.fast;
+    final selectedColor = excluding
+        ? excludedFilterColor(scheme)
+        : scheme.secondaryContainer;
+
+    return TweenAnimationBuilder<Color?>(
+      // The fill has to move between the two containers, because a chip that
+      // is already selected keeps its selection animation at rest and would
+      // otherwise change colour in one frame.
+      tween: ColorTween(end: selectedColor),
+      duration: duration,
+      curve: Motion.standard,
+      builder: (context, fill, _) => FilterChip(
+        label: AnimatedSize(
+          duration: duration,
+          curve: Motion.standard,
+          alignment: Alignment.centerLeft,
+          child: AnimatedSwitcher(
+            duration: duration,
+            switchInCurve: Motion.standard,
+            switchOutCurve: Motion.standard,
+            child: Text(
+              shown,
+              key: ValueKey(shown),
+              // Read out as words: a screen reader saying "hasnot colon link"
+              // explains nothing.
+              semanticsLabel: excluding ? 'Excluding $token' : token,
+            ),
+          ),
+        ),
+        labelStyle: theme.textTheme.bodySmall,
+        tooltip: switch (state) {
+          _Cycle.off => 'Match $token',
+          _Cycle.matching => 'Exclude instead',
+          _Cycle.excluding => 'Clear',
+        },
+        visualDensity: VisualDensity.compact,
+        selected: state != _Cycle.off,
+        selectedColor: fill,
+        showCheckmark: !excluding,
+        avatar: excluding
+            ? Icon(Icons.block, size: 16, color: scheme.error)
+            : null,
+        onSelected: (_) => onCycle(),
       ),
     );
   }

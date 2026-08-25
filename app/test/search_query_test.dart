@@ -73,6 +73,49 @@ void main() {
       expect(q.text, '');
     });
 
+    test('reads a negative field spelling as the same filter as a dash', () {
+      const excluded = SearchFilter(
+        field: FilterField.has,
+        value: 'link',
+        negated: true,
+      );
+      expect(parseSearchQuery('hasnot:link').filters, [excluded]);
+      expect(parseSearchQuery('-has:link').filters, [excluded]);
+      expect(parseSearchQuery('HasNot:Link').filters, [excluded]);
+      expect(parseSearchQuery('isnot:pinned').filters.single.negated, isTrue);
+      expect(parseSearchQuery('notlabel:work').filters, [
+        const SearchFilter(
+          field: FilterField.label,
+          value: 'work',
+          negated: true,
+        ),
+      ]);
+      expect(parseSearchQuery('nottype:audio').filters, [
+        const SearchFilter(
+          field: FilterField.kind,
+          value: 'audio',
+          negated: true,
+        ),
+      ]);
+      // The dash and the spelling are one operator, so using both cancels out.
+      expect(parseSearchQuery('-hasnot:link').filters.single.negated, isFalse);
+    });
+
+    test('a filter prints the spelling a user could have typed back', () {
+      expect(
+        parseSearchQuery('-has:link').filters.single.toString(),
+        'hasnot:link',
+      );
+      expect(
+        parseSearchQuery('-tag:work').filters.single.toString(),
+        'notlabel:work',
+      );
+      expect(
+        parseSearchQuery('has:link').filters.single.toString(),
+        'has:link',
+      );
+    });
+
     test('leaves an unknown prefix as text so URLs keep matching', () {
       final q = parseSearchQuery('https://example.com/x');
       expect(q.filters, isEmpty);
@@ -98,6 +141,12 @@ void main() {
       // A label that does not exist is a normal empty result, not a typo the
       // box should complain about: labels come and go.
       expect(parseSearchQuery('label:nope').unknownFilters, isEmpty);
+      // Excluding a value that does not exist is just as unsatisfiable, and
+      // the complaint names the negative spelling.
+      expect(
+        parseSearchQuery('hasnot:sketch').unknownFilters.map((f) => '$f'),
+        ['hasnot:sketch'],
+      );
     });
   });
 
@@ -134,6 +183,46 @@ void main() {
       final added = toggleSearchFilter(typed, 'is:pinned');
       expect(added, 'Sourdough "Rye Bread" -Milk is:pinned');
       expect(toggleSearchFilter(added, 'is:pinned'), typed);
+    });
+
+    test('negating a token rewrites the field, not the value', () {
+      expect(negateSearchFilter('has:link'), 'hasnot:link');
+      expect(negateSearchFilter('hasnot:link'), 'has:link');
+      expect(negateSearchFilter('-has:link'), 'has:link');
+      expect(negateSearchFilter('is:pinned'), 'isnot:pinned');
+      expect(negateSearchFilter('color:red'), 'notcolor:red');
+      // Quotes and the value's own capitals survive, because the label has to
+      // keep matching the name it was written with.
+      expect(negateSearchFilter('label:"To do"'), 'notlabel:"To do"');
+      // Not a filter at all.
+      expect(negateSearchFilter('milk'), 'milk');
+      expect(negateSearchFilter('https://example.com'), 'https://example.com');
+    });
+
+    test('a chip cycles off, then matching, then excluding, then off', () {
+      var query = cycleSearchFilter('milk', 'has:link');
+      expect(query, 'milk has:link');
+      query = cycleSearchFilter(query, 'has:link');
+      expect(query, 'milk hasnot:link');
+      query = cycleSearchFilter(query, 'has:link');
+      expect(query, 'milk');
+    });
+
+    test('the excluding step rewrites the filter where it already stands', () {
+      // Removing and re-appending would send it to the end of the query, past
+      // filters the user picked after it.
+      const query = 'is:pinned has:link kind:text';
+      expect(
+        cycleSearchFilter(query, 'has:link'),
+        'is:pinned hasnot:link kind:text',
+      );
+    });
+
+    test('a chip reads a filter typed by hand, in either spelling', () {
+      expect(searchQueryHas('-has:link', 'hasnot:link'), isTrue);
+      expect(searchQueryHas('hasnot:link', 'has:link'), isFalse);
+      // So the cycle picks up from what is already in the box.
+      expect(cycleSearchFilter('-has:link', 'has:link'), '');
     });
 
     test('an alias toggles the filter it means, not the text it spells', () {
@@ -181,6 +270,20 @@ void main() {
         spans.cast<TextSpan>().map((s) => s.text).join(),
         'milk label:work eggs',
       );
+    });
+
+    testWidgets('an excluding operator is tinted apart from a matching one', (
+      tester,
+    ) async {
+      final spans = await spansFor(tester, 'has:link hasnot:image -is:pinned');
+      final fills = {
+        for (final span in spans.cast<TextSpan>())
+          if (span.style?.backgroundColor != null)
+            span.text: span.style!.backgroundColor,
+      };
+      expect(fills['hasnot:image'], isNot(fills['has:link']));
+      // The dash spelling is the same operator, so it gets the same tint.
+      expect(fills['-is:pinned'], fills['hasnot:image']);
     });
 
     testWidgets('a query with no operators is left entirely alone', (
@@ -270,6 +373,43 @@ void main() {
         ).matches(note('d', content: 'no url here'), context),
         isFalse,
       );
+    });
+
+    test('a negative filter keeps the notes the positive one drops', () {
+      final withLink = note('a', content: 'see https://example.com');
+      final withoutLink = note('b', content: 'no url here');
+      expect(
+        parseSearchQuery('hasnot:link').matches(withoutLink, context),
+        isTrue,
+      );
+      expect(
+        parseSearchQuery('hasnot:link').matches(withLink, context),
+        isFalse,
+      );
+
+      final labelled = note('c', labelIds: {'l-work'});
+      expect(
+        parseSearchQuery('notlabel:work').matches(labelled, context),
+        isFalse,
+      );
+      expect(
+        parseSearchQuery('notlabel:work').matches(withoutLink, context),
+        isTrue,
+      );
+
+      final pinned = note('d', pinned: true);
+      expect(
+        parseSearchQuery('isnot:pinned').matches(pinned, context),
+        isFalse,
+      );
+      expect(
+        parseSearchQuery('isnot:pinned').matches(withoutLink, context),
+        isTrue,
+      );
+
+      final red = note('e', color: 'red', kind: NoteKind.markdown);
+      expect(parseSearchQuery('notcolor:red').matches(red, context), isFalse);
+      expect(parseSearchQuery('notkind:text').matches(red, context), isTrue);
     });
 
     test('color: and kind: match the note fields', () {
@@ -373,6 +513,21 @@ void main() {
         currentUserId: 'me',
       );
       expect(result.others.map((n) => n.id), ['mine']);
+    });
+
+    test('isnot:archived does not reveal the notes is:archived would', () {
+      final result = selectNotes(
+        notes: [
+          note('live', title: 'live'),
+          archived('old'),
+        ],
+        labels: labels,
+        selection: ViewSelection.notes,
+        query: 'isnot:archived',
+        sortMode: SortMode.custom,
+        currentUserId: 'me',
+      );
+      expect(result.others.map((n) => n.id), ['live']);
     });
 
     test('a negated state filter narrows the view instead of replacing it', () {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import '../util/search_query.dart';
 
 /// The search box's controller, which paints a tinted background behind the
@@ -12,6 +13,9 @@ import '../util/search_query.dart';
 /// `LinkifyingController` in the editor), so the field stays fully editable:
 /// the caret, selection, and autocorrect all behave normally, which a
 /// read-only overlay of chips would break.
+///
+/// Filters that exclude (`hasnot:link`, `-is:pinned`) get their own tint, so a
+/// query that hides notes never looks like one that finds them.
 class SearchQueryController extends TextEditingController {
   SearchQueryController({super.text});
 
@@ -51,6 +55,12 @@ class SearchQueryController extends TextEditingController {
       color: scheme.onSecondaryContainer,
       fontWeight: FontWeight.w500,
     );
+    // The same wash the filter sheet paints an excluded chip with.
+    final excludingStyle = base.copyWith(
+      backgroundColor: excludedFilterColor(scheme),
+      color: scheme.onSurface,
+      fontWeight: FontWeight.w500,
+    );
 
     final spans = <InlineSpan>[];
     var cursor = 0;
@@ -58,7 +68,12 @@ class SearchQueryController extends TextEditingController {
       if (token.start > cursor) {
         spans.add(TextSpan(text: text.substring(cursor, token.start)));
       }
-      spans.add(TextSpan(text: token.raw, style: filterStyle));
+      spans.add(
+        TextSpan(
+          text: token.raw,
+          style: token.filter!.negated ? excludingStyle : filterStyle,
+        ),
+      );
       cursor = token.end;
     }
     if (cursor < text.length) {

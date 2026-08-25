@@ -14,22 +14,45 @@ import 'linkify.dart';
 /// would otherwise parse as the field `https` with the value `//example.com`
 /// and stop matching the note that contains it. Anything not listed here stays
 /// free text.
+///
+/// Every field has a spelling that excludes rather than includes, so "notes
+/// with no link" is one word rather than a punctuation mark: `hasnot:link` is
+/// `-has:link`. The two forms parse to the same filter, so a query can mix
+/// them freely and a chip toggles whichever one is already there. The `not`
+/// goes where English puts it, after `has`/`is` and before a noun:
+/// `hasnot:`, `isnot:`, `notlabel:`, `notcolor:`, `notkind:`.
 enum FilterField {
-  label(['label', 'tag']),
-  state(['is']),
-  has(['has']),
-  color(['color', 'colour']),
-  kind(['kind', 'type']);
+  label(['label', 'tag'], ['notlabel', 'nottag']),
+  state(['is'], ['isnot']),
+  has(['has'], ['hasnot']),
+  color(['color', 'colour'], ['notcolor', 'notcolour']),
+  kind(['kind', 'type'], ['notkind', 'nottype']);
 
   /// Every spelling that addresses this field, first one canonical.
   final List<String> keywords;
-  const FilterField(this.keywords);
+
+  /// The same, for the spellings that also negate.
+  final List<String> negatedKeywords;
+
+  const FilterField(this.keywords, this.negatedKeywords);
 
   String get keyword => keywords.first;
+  String get negatedKeyword => negatedKeywords.first;
 
-  static FilterField? fromKeyword(String word) {
+  /// The canonical spelling of this field for a filter that does or does not
+  /// negate.
+  String keywordFor({required bool negated}) =>
+      negated ? negatedKeyword : keyword;
+
+  /// The field [word] addresses, and whether that spelling negates on its own.
+  static ({FilterField field, bool negated})? resolveKeyword(String word) {
     for (final field in values) {
-      if (field.keywords.contains(word)) return field;
+      if (field.keywords.contains(word)) {
+        return (field: field, negated: false);
+      }
+      if (field.negatedKeywords.contains(word)) {
+        return (field: field, negated: true);
+      }
     }
     return null;
   }
@@ -56,7 +79,12 @@ const List<String> kHasValues = [
   'label',
 ];
 
-/// One `field:value` term, optionally negated with a leading `-`.
+/// One `field:value` term, and whether it includes or excludes.
+///
+/// A filter is negated either by a leading `-` (`-has:link`) or by the field's
+/// own negative spelling (`hasnot:link`). Both produce the same filter, so
+/// equality here is about meaning rather than spelling, which is what lets a
+/// chip find and toggle a filter the user typed by hand.
 class SearchFilter {
   final FilterField field;
 
@@ -80,8 +108,11 @@ class SearchFilter {
   @override
   int get hashCode => Object.hash(field, value, negated);
 
+  /// The canonical spelling, negative form and all: `hasnot:link`. This is
+  /// what the user is told about when a filter cannot be satisfied, so it has
+  /// to be a query they could have typed.
   @override
-  String toString() => '${negated ? '-' : ''}${field.keyword}:$value';
+  String toString() => '${field.keywordFor(negated: negated)}:$value';
 }
 
 /// One run of free text. Quoted runs keep their spaces, so `"buy milk"` is a
@@ -130,7 +161,7 @@ class SearchQuery {
   /// notes view find archived notes instead of matching nothing: the filter is
   /// more specific than the view's default, so it wins.
   ///
-  /// Negated filters never override; `-is:archived` narrows what the view
+  /// Negated filters never override; `isnot:archived` narrows what the view
   /// already shows rather than asking for a different set.
   StateOverride? get stateOverride {
     var archived = false;
@@ -276,10 +307,18 @@ SearchFilter? _filterOf(String raw) {
   }
   final colon = body.indexOf(':');
   if (colon <= 0) return null;
-  final field = FilterField.fromKeyword(body.substring(0, colon).toLowerCase());
+  final resolved = FilterField.resolveKeyword(
+    body.substring(0, colon).toLowerCase(),
+  );
   final value = body.substring(colon + 1).trim().toLowerCase();
-  if (field == null || value.isEmpty) return null;
-  return SearchFilter(field: field, value: value, negated: negated);
+  if (resolved == null || value.isEmpty) return null;
+  // The dash and the negative spelling are the same operator, so a query that
+  // uses both cancels out: `-hasnot:link` is `has:link`.
+  return SearchFilter(
+    field: resolved.field,
+    value: value,
+    negated: negated != resolved.negated,
+  );
 }
 
 SearchQuery parseSearchQuery(String input) {
@@ -309,27 +348,86 @@ bool searchQueryHas(String query, String token) {
   return tokenizeSearchQuery(query).any((t) => t.filter == target);
 }
 
-/// Add [token] to [query], or take it back out when it is already there.
+/// Rewrite the one token that means [target]: [replacement] takes its place,
+/// or it is dropped when [replacement] is null. A [target] that is not in the
+/// query yet appends [replacement] instead.
 ///
-/// This is what makes the filter sheet a set of toggles rather than a list of
-/// one-shot insertions: tapping the same chip twice leaves the query as it
-/// was. Everything the user typed keeps its original spelling, because only
-/// whole tokens are added and removed.
-String toggleSearchFilter(String query, String token) {
-  final target = _filterOf(token);
+/// Every other token is re-emitted exactly as it was written, which is what
+/// keeps the user's own words out of this: re-serializing a parse would
+/// lowercase them while they are still typing.
+String _rewriteFilter(String query, SearchFilter? target, String? replacement) {
   if (target == null) return query;
-  final tokens = tokenizeSearchQuery(query);
   final kept = <String>[];
-  var removed = false;
-  for (final t in tokens) {
-    if (!removed && t.filter == target) {
-      removed = true;
+  var found = false;
+  for (final t in tokenizeSearchQuery(query)) {
+    if (!found && t.filter == target) {
+      found = true;
+      if (replacement != null) kept.add(replacement);
       continue;
     }
     kept.add(t.raw);
   }
-  if (!removed) kept.add(token);
+  if (!found && replacement != null) kept.add(replacement);
   return kept.join(' ');
+}
+
+/// Add [token] to [query], or take it back out when it is already there.
+///
+/// This is what makes the filter sheet a set of toggles rather than a list of
+/// one-shot insertions: tapping the same chip twice leaves the query as it
+/// was.
+String toggleSearchFilter(String query, String token) => _rewriteFilter(
+  query,
+  _filterOf(token),
+  searchQueryHas(query, token) ? null : token,
+);
+
+/// The same filter with its meaning flipped: `has:link` becomes `hasnot:link`,
+/// and `hasnot:link` (or `-has:link`) becomes `has:link` again.
+///
+/// Only the field word is rewritten, rather than re-serializing a parse, so
+/// the value keeps the quotes that hold it together and the capitals it was
+/// written with: `label:"To do"` becomes `notlabel:"To do"`.
+///
+/// Anything that is not a filter comes back untouched.
+String negateSearchFilter(String token) {
+  var rest = token;
+  var dashed = false;
+  if (rest.length > 1 && rest.startsWith('-')) {
+    dashed = true;
+    rest = rest.substring(1);
+  }
+  final colon = rest.indexOf(':');
+  if (colon <= 0) return token;
+  final resolved = FilterField.resolveKeyword(
+    rest.substring(0, colon).toLowerCase(),
+  );
+  if (resolved == null) return token;
+  final negated = dashed != resolved.negated;
+  final keyword = resolved.field.keywordFor(negated: !negated);
+  return '$keyword:${rest.substring(colon + 1)}';
+}
+
+/// Step [token] (written in its positive form) through the three things a
+/// filter can mean: absent, then matching, then excluding, then absent again.
+///
+/// A chip cycles rather than switching because exclusion is a peer of
+/// inclusion, not an advanced mode hidden behind a second control: `has:link`
+/// and `hasnot:link` are the same question asked either way round, and one tap
+/// target for both keeps the sheet the same size and the same shape on a
+/// phone. Going from matching to excluding rewrites the filter where it
+/// already stands, so nothing jumps to the end of the query mid-cycle.
+String cycleSearchFilter(String query, String token) {
+  final matching = _filterOf(token);
+  if (matching == null) return query;
+  final excluding = negateSearchFilter(token);
+  if (searchQueryHas(query, token)) {
+    return _rewriteFilter(query, matching, excluding);
+  }
+  if (searchQueryHas(query, excluding)) {
+    return _rewriteFilter(query, _filterOf(excluding), null);
+  }
+  return _rewriteFilter(query, matching, token);
 }
 
 bool _containsText(Note note, String needle, SearchContext context) {

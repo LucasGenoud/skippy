@@ -3555,7 +3555,7 @@ void main() {
       },
     );
 
-    testWidgets('the filter sheet stays open and toggles filters on and off', (
+    testWidgets('the filter sheet stays open and cycles a filter three ways', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1200, 900);
@@ -3598,8 +3598,18 @@ void main() {
         'is:pinned is:open',
       );
 
-      // Tapping an applied filter takes it back out.
+      // Tapping an applied filter turns it into an exclusion, and the chip
+      // rewrites itself to the operator that says so.
       await tester.tap(chip('is:pinned'));
+      await tester.pumpAndSettle();
+      expect(selected('isnot:pinned'), isTrue);
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        'isnot:pinned is:open',
+      );
+
+      // One more tap takes it back out entirely.
+      await tester.tap(chip('isnot:pinned'));
       await tester.pumpAndSettle();
       expect(selected('is:pinned'), isFalse);
       expect(tester.widget<TextField>(field).controller!.text, 'is:open');

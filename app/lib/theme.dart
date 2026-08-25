@@ -62,6 +62,30 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
 Color hairlineColor(ColorScheme scheme) =>
     scheme.outlineVariant.withValues(alpha: 0.8);
 
+/// The wash behind a filter that excludes rather than matches: `hasnot:link`
+/// on a chip, and the same operator tinted inside the search box.
+///
+/// Built exactly like the accent wash `secondaryContainer` carries (the same
+/// alpha, over the same surface) but from the scheme's error hue, so an
+/// excluding filter is legibly the negative of a matching one at a glance
+/// while still reading as one of this app's washes. It cannot come from the
+/// accent itself: two weights of one hue say "more" and "less", not "with"
+/// and "without". `tertiaryContainer` was the other candidate and is worse —
+/// it is whatever third hue `fromSeed` happened to derive, so it would drift
+/// with the accent someone picks in Settings instead of meaning something.
+///
+/// Text on it is the app's ordinary body colour, like every other wash here
+/// (7:1 or better against it for every accent, in both themes). Colour is
+/// never the only signal: where someone's accent is itself a red, the two
+/// washes land within about 1.1:1 of each other, so the chip also carries a
+/// block glyph and spells the negative operator out.
+Color excludedFilterColor(ColorScheme scheme) => Color.alphaBlend(
+  scheme.error.withValues(
+    alpha: scheme.brightness == Brightness.light ? 0.22 : 0.20,
+  ),
+  scheme.surface,
+);
+
 /// The fill behind a board column: the trough of the depth model at the top of
 /// this file. Derived from the canvas rather than fixed, so it keeps the
 /// accent's tint and moves with it.
