@@ -63,8 +63,17 @@
        manager skips fields it cannot see. Give them a size back, which is
        exactly what Flutter itself already does on Safari and for the same
        reason, and keep them from taking pointer events. They stay invisible:
-       Flutter paints them with no colour, background or border. */
+       Flutter paints them with no colour, background or border.
+
+       Size alone is not always enough. Some engine versions position the
+       unfocused fields absolutely and park them at -9999px, which fails the
+       same viewability check a second way. Pinning them back to the origin
+       hands the placement to the transform Flutter already computes for each
+       one, so the hidden input lands over the field it mirrors; where the
+       fields are laid out statically instead, these two lines do nothing. */
     flutter-view form input:not(:focus):not(.submitBtn) {
+      top: 0 !important;
+      left: 0 !important;
       width: auto !important;
       height: auto !important;
       pointer-events: none !important;
