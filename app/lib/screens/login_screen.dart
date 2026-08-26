@@ -3,13 +3,22 @@ import 'package:flutter/services.dart';
 import '../theme.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/form_dialog.dart';
+import '../widgets/form_error_banner.dart';
 import '../widgets/login_field.dart';
 import 'package:provider/provider.dart';
 
+import '../api/api_client.dart';
 import '../state/auth_store.dart';
+import '../util/motion.dart';
+import '../util/network_error.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Prefills the email field. Set when someone has just come back from the
+  /// password reset page, so the only thing left to type is the password they
+  /// chose there.
+  final String? initialEmail;
+
+  const LoginScreen({super.key, this.initialEmail});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -34,6 +43,42 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _emailError;
   String? _passwordError;
   String? _confirmError;
+
+  /// Whether this server can email a reset link. It depends on the
+  /// deployment's own mail configuration, so it is asked per server and
+  /// re-asked whenever the active one changes.
+  bool _resetOffered = false;
+  String? _capabilitiesFor;
+
+  @override
+  void initState() {
+    super.initState();
+    final email = widget.initialEmail;
+    if (email != null) _email.text = email;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `build` watches the AuthStore, so switching servers lands here first.
+    final auth = context.read<AuthStore>();
+    final url = auth.activeUrl;
+    if (url == _capabilitiesFor) return;
+    _capabilitiesFor = url;
+    _resetOffered = false;
+    _loadCapabilities(auth.api, url);
+  }
+
+  Future<void> _loadCapabilities(Api api, String url) async {
+    try {
+      final capabilities = await api.fetchCapabilities();
+      if (!mounted || _capabilitiesFor != url) return;
+      setState(() => _resetOffered = capabilities.passwordReset);
+    } catch (_) {
+      // Unreachable, or a server too old to answer: no reset link offered.
+      // Signing in will report the connection failure on its own.
+    }
+  }
 
   @override
   void dispose() {
@@ -104,6 +149,15 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       await auth.signIn(email, password);
     }
+  }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final auth = context.read<AuthStore>();
+    await _ForgotPasswordDialog.show(
+      context,
+      api: auth.api,
+      initialEmail: _email.text.trim(),
+    );
   }
 
   Future<void> _showAddUrlDialog() async {
@@ -301,6 +355,27 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ? _confirmFocus.requestFocus()
                                 : _submit(),
                           ),
+                          // Forgot password, only while signing in and only
+                          // where the server can actually send the mail.
+                          AnimatedSize(
+                            duration: Motion.fast,
+                            curve: Motion.standard,
+                            alignment: Alignment.topCenter,
+                            child: !creating && _resetOffered
+                                ? Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: auth.busy
+                                          ? null
+                                          : _showForgotPasswordDialog,
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      child: const Text('Forgot password?'),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
                           // Confirm password, only when creating an account.
                           AnimatedSize(
                             duration: const Duration(milliseconds: 180),
@@ -325,7 +400,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           if (auth.error != null) ...[
                             const SizedBox(height: 16),
-                            _ErrorBanner(message: auth.error!),
+                            FormErrorBanner(message: auth.error!),
                           ],
                           const SizedBox(height: 24),
                           FilledButton.icon(
@@ -374,39 +449,175 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// A soft error banner shown above the submit button.
-class _ErrorBanner extends StatelessWidget {
-  final String message;
-  const _ErrorBanner({required this.message});
+/// Asks the server to email a reset link.
+///
+/// It reports the same thing whether or not the address has an account here,
+/// because the server does: telling someone which addresses are registered is
+/// exactly what the endpoint refuses to do.
+class _ForgotPasswordDialog extends StatefulWidget {
+  final Api api;
+  final String initialEmail;
 
-  /// Last line of defence against a message-less banner. Callers upstream
-  /// (`ApiException.serverMessage`, `describeConnectionFailure`) already
-  /// guarantee text, but a red box with nothing in it tells someone their
-  /// sign-in failed and then refuses to say how, so the fallback stays.
-  static const _fallback = 'Something went wrong. Try again in a moment.';
+  const _ForgotPasswordDialog({required this.api, required this.initialEmail});
+
+  static Future<void> show(
+    BuildContext context, {
+    required Api api,
+    required String initialEmail,
+  }) => showFormDialog<void>(
+    context,
+    builder: (_) => _ForgotPasswordDialog(api: api, initialEmail: initialEmail),
+  );
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final TextEditingController _email = TextEditingController(
+    text: widget.initialEmail,
+  );
+  bool _busy = false;
+  String? _error;
+
+  /// The address the request went out for, once it has. Switches the dialog
+  /// to its confirmation.
+  String? _sentTo;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    if (_busy) return;
+    final email = _email.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Enter your email');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.api.requestPasswordReset(email);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _sentTo = email;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.serverMessage;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = describeConnectionFailure(e, widget.api.baseUrl);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final message = this.message.trim().isEmpty ? _fallback : this.message;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(kRadius),
+    final theme = Theme.of(context);
+    final sentTo = _sentTo;
+    return FormDialog(
+      title: Text(sentTo == null ? 'Reset password' : 'Check your email'),
+      width: 400,
+      content: AnimatedSize(
+        duration: Motion.fast,
+        curve: Motion.standard,
+        alignment: Alignment.topCenter,
+        child: sentTo == null ? _form(theme) : _sent(theme, sentTo),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+      actions: sentTo == null
+          ? [
+              TextButton(
+                onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: _busy ? null : _send,
+                child: _busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Send link'),
+              ),
+            ]
+          : [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+    );
+  }
+
+  Widget _form(ThemeData theme) {
+    final error = _error;
+    return Column(
+      key: const ValueKey('form'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          "We'll email you a link to choose a new password.",
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _email,
+          autofocus: true,
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.username],
+          textInputAction: TextInputAction.done,
+          onChanged: (_) {
+            if (_error != null) setState(() => _error = null);
+          },
+          onSubmitted: (_) => _send(),
+          decoration: const InputDecoration(
+            labelText: 'Email',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        if (error != null) ...[
+          const SizedBox(height: 16),
+          FormErrorBanner(message: error),
+        ],
+      ],
+    );
+  }
+
+  Widget _sent(ThemeData theme, String email) {
+    final scheme = theme.colorScheme;
+    return Row(
+      key: const ValueKey('sent'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.mark_email_read_outlined, size: 20, color: scheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'If $email has an account here, a link to choose a new password '
+            'is on its way. It works once and expires in an hour.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

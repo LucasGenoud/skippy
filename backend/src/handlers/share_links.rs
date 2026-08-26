@@ -30,18 +30,7 @@ use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::{is_note_workspace_owner, now};
-
-/// Bytes of randomness in a token. A link is a bearer capability, so the token
-/// carries the whole security of the page: 192 bits is far past guessing, and
-/// still a URL people can paste.
-const TOKEN_BYTES: usize = 24;
-
-fn new_token() -> String {
-    let mut bytes = [0u8; TOKEN_BYTES];
-    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
-    hex::encode(bytes)
-}
+use super::{is_note_workspace_owner, new_token, now};
 
 fn public_token(secret: &[u8], stored_id: &str) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");

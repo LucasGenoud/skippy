@@ -14,6 +14,7 @@ persistence and optimistic, offline-capable edits.
   Telegram, or email
 - Checklists with subtasks, up to three levels deep
 - Sharing, public read-only links, live sync, and version history
+- Password reset by email, when the deployment has a mail server configured
 - Optional self-hosted Whisper transcription, Tesseract image text recognition,
   and OpenAI-compatible embeddings
 - Optional LLM features: automatic labels, note editing, and notes chat
@@ -178,6 +179,16 @@ SMTP_PASSWORD     # secret; never returned to the app
 SMTP_FROM         # defaults to SMTP_USERNAME
 ```
 
+Pinning the mail server also switches on password reset. Once `SMTP_HOST` and
+a sender (`SMTP_FROM`, or `SMTP_USERNAME` standing in for it) are set and
+`PUBLIC_URL` says where the deployment answers, the login screen offers
+"Forgot password?" and the server emails a one-shot link that expires in an
+hour. The link is built from `PUBLIC_URL`, never from the request's `Host`
+header, so a stranger cannot aim it somewhere else. Redeeming it also signs
+every existing session out of that account. Leave either variable unset and
+the option stays hidden; the server reports it on `/api/capabilities` as
+`password_reset`.
+
 Leave a variable unset to keep that field the user's own. The override is
 applied server-side on every read, so it holds regardless of what a client
 stores.
@@ -189,7 +200,7 @@ values come from the shell or `.env`.
 
 | Service | Variable | Compose value or host input | Purpose |
 | --- | --- | --- | --- |
-| server | `PUBLIC_URL` | host/.env; empty by default | Public browser URL and allowed CORS origin. |
+| server | `PUBLIC_URL` | host/.env; empty by default | Public browser URL, allowed CORS origin, and the base of emailed password reset links. |
 | server | `EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
 | server | `EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
 | server | `EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
@@ -208,12 +219,12 @@ values come from the shell or `.env`.
 | server (optional) | `LLM_LABELING` | host/.env; empty by default | Forces automatic labeling on or off. |
 | server (optional) | `LLM_CHAT` | host/.env; empty by default | Forces notes chat on or off. |
 | server (optional) | `LLM_WRITING` | host/.env; empty by default | Forces AI note editing on or off. |
-| server (optional) | `SMTP_HOST` | host/.env; empty by default | Server-managed mail server for email reminders; locks the field in the app. |
+| server (optional) | `SMTP_HOST` | host/.env; empty by default | Server-managed mail server for email reminders and password reset; locks the field in the app. |
 | server (optional) | `SMTP_PORT` | host/.env; empty by default | Mail server port; blank follows `SMTP_SECURITY`. |
 | server (optional) | `SMTP_SECURITY` | host/.env; `tls` by default | `tls`, `starttls`, or `none`. |
 | server (optional) | `SMTP_USERNAME` | host/.env; empty by default | Mail account to authenticate as. |
 | server (optional) | `SMTP_PASSWORD` | host/.env; empty by default | Mail account password; never returned to the app. |
-| server (optional) | `SMTP_FROM` | host/.env; empty by default | Address reminders are sent from. |
+| server (optional) | `SMTP_FROM` | host/.env; empty by default | Address reminders and password reset links are sent from. |
 | whisper | `ASR_MODEL` | `base` (`large-v3` for GPU) | Whisper model to load. |
 | whisper | `ASR_ENGINE` | `faster_whisper` | Whisper inference engine. |
 | whisper (GPU) | `ASR_DEVICE` | `cuda` | Runs inference on an NVIDIA GPU. |
@@ -366,6 +377,8 @@ defaults; S3-compatible storage is also supported.
 Authenticated JSON endpoints live under `/api`. The main groups are:
 
 - `/auth`, `/workspaces`, `/notes`, `/labels`, and `/stages`
+- `/auth/forgot-password` and `/auth/reset-password`, unauthenticated on
+  purpose and available only where the server can send mail
 - `/notes/{id}/versions`, `/notes/{id}/attachments`,
   `/notes/{id}/item-reminders/{item_id}`, and sharing endpoints
 - `/search`, `/chat`, `/settings`, `/unfurl`, and `/ws`

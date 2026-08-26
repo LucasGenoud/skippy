@@ -21,7 +21,10 @@ mod workspaces;
 mod writing;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
-pub use auth::{delete_account, login, logout, me, register, update_account};
+pub use auth::{
+    delete_account, forgot_password, login, logout, me, password_reset_available, register,
+    reset_password, update_account,
+};
 pub use chat::chat_ws;
 pub use events::ws_handler;
 pub use labels::{create_label, delete_label, list_labels, update_label};
@@ -63,6 +66,17 @@ fn now() -> String {
 
 fn new_id() -> String {
     Uuid::new_v4().to_string()
+}
+
+/// Bytes of randomness in a bearer token that travels in a URL (a share link,
+/// a password reset link). The token carries the whole security of the page,
+/// so 192 bits is far past guessing and still something people can paste.
+const TOKEN_BYTES: usize = 24;
+
+fn new_token() -> String {
+    let mut bytes = [0u8; TOKEN_BYTES];
+    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
+    hex::encode(bytes)
 }
 
 /// Load a note, requiring workspace membership or a direct share. Strangers
@@ -173,6 +187,10 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Val
         "semantic_search": state.search.is_some(),
         "audio_transcription": state.transcribe.is_some(),
         "image_ocr": state.ocr.is_some(),
+        // Whether the login screen should offer "Forgot password?": the server
+        // needs both its own mail server and a public address to send a
+        // working link. See [`password_reset_available`].
+        "password_reset": password_reset_available(&state),
         "server_version": crate::SERVER_VERSION,
     }))
 }

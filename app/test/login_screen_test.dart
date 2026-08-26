@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -10,17 +12,32 @@ import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/theme.dart';
 import 'package:skippy/widgets/login_field.dart';
 
-/// [server] answers every request; the default never gets called, the tests
-/// that submit the form supply their own failure.
-Widget loginApp({http.Client? server}) => ChangeNotifierProvider(
-  create: (_) => AuthStore(
-    api: ApiClient(baseUrl: 'http://server.test', httpClient: server),
-  ),
-  child: MaterialApp(
-    theme: buildTheme(Brightness.light),
-    home: const LoginScreen(),
-  ),
-);
+/// A server that only answers the capability probe the login screen makes on
+/// mount, with password reset [passwordReset]. Everything else 404s; the tests
+/// that submit the form supply their own [server].
+http.Client capabilityServer({bool passwordReset = false}) =>
+    MockClient((request) async {
+      if (request.url.path.endsWith('/capabilities')) {
+        return http.Response('{"password_reset": $passwordReset}', 200);
+      }
+      return http.Response('', 404);
+    });
+
+/// [server] answers every request, including the capability probe, so a test
+/// that supplies one has to answer that too (or accept reset being hidden).
+Widget loginApp({http.Client? server, bool passwordReset = false}) =>
+    ChangeNotifierProvider(
+      create: (_) => AuthStore(
+        api: ApiClient(
+          baseUrl: 'http://server.test',
+          httpClient: server ?? capabilityServer(passwordReset: passwordReset),
+        ),
+      ),
+      child: MaterialApp(
+        theme: buildTheme(Brightness.light),
+        home: const LoginScreen(),
+      ),
+    );
 
 /// The login input labelled [label]. Read through [LoginField] rather than
 /// [TextField]: the web builds a DOM `<input>` instead, and the autofill
@@ -212,5 +229,155 @@ void main() {
 
     expect(find.text('Enter your email'), findsNothing);
     expect(find.text('Enter your password'), findsOneWidget);
+  });
+
+  testWidgets('forgot password stays hidden when the server cannot mail', (
+    tester,
+  ) async {
+    await tester.pumpWidget(loginApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forgot password?'), findsNothing);
+  });
+
+  testWidgets('forgot password is offered only while signing in', (
+    tester,
+  ) async {
+    await tester.pumpWidget(loginApp(passwordReset: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forgot password?'), findsOneWidget);
+
+    // Creating an account has nothing to reset.
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot password?'), findsNothing);
+
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot password?'), findsOneWidget);
+  });
+
+  testWidgets('the reset dialog opens prefilled and confirms without saying '
+      'whether the account exists', (tester) async {
+    final asked = <String>[];
+    final server = MockClient((request) async {
+      if (request.url.path.endsWith('/capabilities')) {
+        return http.Response('{"password_reset": true}', 200);
+      }
+      if (request.url.path.endsWith('/auth/forgot-password')) {
+        asked.add(request.body);
+        return http.Response('', 202);
+      }
+      return http.Response('', 404);
+    });
+    await tester.pumpWidget(loginApp(server: server));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.ancestor(of: find.text('Email'), matching: find.byType(TextField)),
+      'ada@example.test',
+    );
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+
+    // The address already typed into the form carries into the dialog.
+    expect(
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(TextField),
+            ),
+          )
+          .controller
+          ?.text,
+      'ada@example.test',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Send link'));
+    await tester.pumpAndSettle();
+
+    expect(asked, [
+      jsonEncode({'email': 'ada@example.test'}),
+    ]);
+    expect(find.text('Check your email'), findsOneWidget);
+    expect(
+      find.textContaining('If ada@example.test has an account here'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a server that refuses the reset says so in the dialog', (
+    tester,
+  ) async {
+    final server = MockClient((request) async {
+      if (request.url.path.endsWith('/capabilities')) {
+        return http.Response('{"password_reset": true}', 200);
+      }
+      return http.Response(
+        '{"error":"this server cannot send password reset email"}',
+        503,
+      );
+    });
+    await tester.pumpWidget(loginApp(server: server));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.ancestor(of: find.text('Email'), matching: find.byType(TextField)),
+      'ada@example.test',
+    );
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Send link'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('this server cannot send password reset email'),
+      findsOneWidget,
+    );
+    // Still on the form, so the address can be corrected and retried.
+    expect(find.widgetWithText(FilledButton, 'Send link'), findsOneWidget);
+  });
+
+  testWidgets('an empty address is refused before any request', (tester) async {
+    var requests = 0;
+    final server = MockClient((request) async {
+      if (request.url.path.endsWith('/capabilities')) {
+        return http.Response('{"password_reset": true}', 200);
+      }
+      requests++;
+      return http.Response('', 202);
+    });
+    await tester.pumpWidget(loginApp(server: server));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Send link'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter your email'), findsOneWidget);
+    expect(requests, 0);
+  });
+
+  testWidgets('an emailed address prefills the sign-in form', (tester) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AuthStore(
+          api: ApiClient(
+            baseUrl: 'http://server.test',
+            httpClient: capabilityServer(),
+          ),
+        ),
+        child: MaterialApp(
+          theme: buildTheme(Brightness.light),
+          home: const LoginScreen(initialEmail: 'ada@example.test'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('ada@example.test'), findsOneWidget);
   });
 }

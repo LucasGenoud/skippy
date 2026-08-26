@@ -14,6 +14,17 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL
 ) STRICT;
 
+-- One-shot password reset grants. The row holds a SHA-256 digest of the
+-- token, never the token itself, so a database copy cannot be used to reset
+-- anyone's password. A row is deleted the moment it is redeemed, and a new
+-- request for the same account replaces any outstanding one.
+CREATE TABLE IF NOT EXISTS password_resets (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -244,6 +255,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
     ON workspaces(owner_id) WHERE is_default = 1;
 CREATE INDEX IF NOT EXISTS idx_cleanup_jobs_due
     ON cleanup_jobs(next_attempt_at, id);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 "#;
 
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {

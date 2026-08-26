@@ -98,6 +98,15 @@ abstract class Api {
   );
   Future<({String token, AuthUser user})> login(String email, String password);
   Future<void> logout();
+
+  /// Ask the server to email a reset link. Returns normally whether or not
+  /// the address has an account here: the server will not say, and neither
+  /// does this.
+  Future<void> requestPasswordReset(String email);
+
+  /// Redeem an emailed link. Returns the address the link was sent to, so the
+  /// sign-in form can be filled in for the person who just used it.
+  Future<String> resetPassword(String token, String password);
   Future<AuthUser> me();
   Future<void> deleteAccount(String currentPassword);
   Future<AuthUser> updateAccount({
@@ -256,12 +265,14 @@ abstract class Api {
 
   /// Which optional, service-backed features this server has enabled. Drives
   /// semantic-search availability, whether audio recordings are transcribed,
-  /// and whether uploaded pictures are read for text.
+  /// whether uploaded pictures are read for text, and whether the login screen
+  /// offers a password reset.
   Future<
     ({
       bool semanticSearch,
       bool audioTranscription,
       bool imageOcr,
+      bool passwordReset,
       String? serverVersion,
     })
   >
@@ -391,6 +402,31 @@ class ApiClient extends _ApiTransport implements Api {
     String email,
     String password,
   ) => _authCall('/auth/login', {'email': email, 'password': password});
+
+  @override
+  Future<void> requestPasswordReset(String email) async {
+    _decode(
+      await _client.post(
+        _uri('/auth/forgot-password'),
+        headers: {'content-type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      ),
+      authed: false,
+    );
+  }
+
+  @override
+  Future<String> resetPassword(String token, String password) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/auth/reset-password'),
+        headers: {'content-type': 'application/json'},
+        body: jsonEncode({'token': token, 'password': password}),
+      ),
+      authed: false,
+    );
+    return ((data as Map?) ?? const {})['email']?.toString() ?? '';
+  }
 
   @override
   Future<void> logout() async {
@@ -990,6 +1026,7 @@ class ApiClient extends _ApiTransport implements Api {
       bool semanticSearch,
       bool audioTranscription,
       bool imageOcr,
+      bool passwordReset,
       String? serverVersion,
     })
   >
@@ -1004,6 +1041,8 @@ class ApiClient extends _ApiTransport implements Api {
       semanticSearch: map['semantic_search'] == true,
       audioTranscription: map['audio_transcription'] == true,
       imageOcr: map['image_ocr'] == true,
+      // Absent on servers older than the reset feature, which reads as off.
+      passwordReset: map['password_reset'] == true,
       // Older servers do not advertise their version; leave it unavailable
       // rather than treating a missing field as a malformed response.
       serverVersion: map['server_version']?.toString(),

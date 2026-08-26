@@ -93,6 +93,14 @@ pub struct DeletedWorkspace {
     pub audience: Vec<String>,
 }
 
+/// An outstanding password reset grant, looked up by the token in the link.
+pub struct PasswordReset {
+    pub user_id: String,
+    /// RFC3339 instant after which the grant no longer counts. Freshness is
+    /// judged by the caller so the store stays free of clock policy.
+    pub expires_at: String,
+}
+
 /// Account identities and durable sessions.
 #[async_trait]
 pub trait AccountRepository: Send + Sync {
@@ -117,6 +125,21 @@ pub trait AccountRepository: Send + Sync {
     async fn create_session(&self, token: &str, user_id: &str) -> RepoResult<()>;
     async fn user_id_for_token(&self, token: &str) -> RepoResult<Option<String>>;
     async fn delete_session(&self, token: &str) -> RepoResult<()>;
+    /// Drop every session an account holds. A password reset ends the old
+    /// sessions along with the old password: whoever needed the reset should
+    /// not stay signed in on a device they may have lost control of.
+    async fn delete_sessions_for_user(&self, user_id: &str) -> RepoResult<()>;
+    /// Record a reset grant, replacing any outstanding one for the account so
+    /// only the newest link in someone's inbox works.
+    async fn create_password_reset(
+        &self,
+        token: &str,
+        user_id: &str,
+        expires_at: &str,
+    ) -> RepoResult<()>;
+    /// Redeem a grant: the row is removed whether or not it had expired, so a
+    /// link is good for exactly one attempt.
+    async fn consume_password_reset(&self, token: &str) -> RepoResult<Option<PasswordReset>>;
 }
 
 /// Workspace lifecycle, membership, and roster views.

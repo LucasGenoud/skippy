@@ -11,8 +11,8 @@ use super::sqlite_rows::{
 };
 use super::sqlite_schema;
 use super::{
-    AccountRepository, CleanupKind, DeletedAccount, DeletedWorkspace, NoteRepository, PurgedNote,
-    RepoError, RepoResult, TaxonomyRepository, WorkspaceRepository,
+    AccountRepository, CleanupKind, DeletedAccount, DeletedWorkspace, NoteRepository,
+    PasswordReset, PurgedNote, RepoError, RepoResult, TaxonomyRepository, WorkspaceRepository,
 };
 use crate::models::*;
 
@@ -326,6 +326,59 @@ impl AccountRepository for SqliteRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    async fn delete_sessions_for_user(&self, user_id: &str) -> RepoResult<()> {
+        sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // -- password resets ----------------------------------------------------
+
+    async fn create_password_reset(
+        &self,
+        token: &str,
+        user_id: &str,
+        expires_at: &str,
+    ) -> RepoResult<()> {
+        let mut tx = self.pool.begin().await?;
+        // Requesting a new link retires the previous one, and expired rows for
+        // other accounts leave with it, so the table stays the size of the
+        // resets actually in flight.
+        sqlx::query("DELETE FROM password_resets WHERE user_id = ? OR expires_at < ?")
+            .bind(user_id)
+            .bind(now())
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "INSERT INTO password_resets (token, user_id, expires_at, created_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(session_token_digest(token))
+        .bind(user_id)
+        .bind(expires_at)
+        .bind(now())
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn consume_password_reset(&self, token: &str) -> RepoResult<Option<PasswordReset>> {
+        let row = sqlx::query(
+            "DELETE FROM password_resets WHERE token = ?
+             RETURNING user_id, expires_at",
+        )
+        .bind(session_token_digest(token))
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| PasswordReset {
+            user_id: row.get("user_id"),
+            expires_at: row.get("expires_at"),
+        }))
     }
 }
 

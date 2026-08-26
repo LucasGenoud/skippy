@@ -307,6 +307,7 @@ void main() {
       semanticSearch: false,
       audioTranscription: false,
       imageOcr: false,
+      passwordReset: false,
       serverVersion: 'test-server',
     );
     await pumpSettings(tester, api);

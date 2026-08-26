@@ -10,6 +10,7 @@ import 'screens/editor_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/public_share_screen.dart';
+import 'screens/reset_password_screen.dart';
 import 'screens/widget_config_screen.dart';
 import 'state/auth_store.dart';
 import 'state/home_widget_bridge.dart';
@@ -130,6 +131,26 @@ class _SkippyAppState extends State<SkippyApp> {
   late final String? _publicShareToken = kIsWeb
       ? publicShareToken(Uri.base.path)
       : null;
+
+  /// Set when the app was opened at a `/reset/<token>` URL: the form behind an
+  /// emailed password reset link.
+  ///
+  /// Unlike [_publicShareToken] this one is cleared, because the reset page
+  /// does end: once the password is set (or the link turns out to be dead)
+  /// the person belongs on the sign-in form, which [_resetEmail] prefills.
+  /// A reload would put them back here, and a spent link says so plainly.
+  ///
+  /// A notifier rather than plain state for the same reason the auth gate
+  /// below is a Consumer: this builds the initial route's page, which the
+  /// route caches and rebuilds on its own terms, so a `setState` here would
+  /// leave the reset form on screen. Listening directly gets the rebuild.
+  late final ValueNotifier<String?> _resetToken = ValueNotifier(
+    kIsWeb ? passwordResetToken(Uri.base.path) : null,
+  );
+
+  /// The address of the account whose password was just reset, carried to the
+  /// sign-in form as its prefill.
+  String? _resetEmail;
 
   /// The client the public page reads through: pinned to the origin that
   /// served the page, not to [_api].
@@ -307,6 +328,7 @@ class _SkippyAppState extends State<SkippyApp> {
     _reminders?.dispose();
     _locationReminders?.dispose();
     _widgets?.dispose();
+    _resetToken.dispose();
     _auth.dispose();
     super.dispose();
   }
@@ -379,38 +401,58 @@ class _SkippyAppState extends State<SkippyApp> {
               token: token,
               api: _publicApi,
             ),
-            _ => Consumer<AuthStore>(
-              builder: (context, auth, _) {
-                final store = _store;
-                final configuring = _configuringWidgetId;
-                return AnimatedSwitcher(
-                  duration: Motion.slow,
-                  switchInCurve: Motion.standard,
-                  switchOutCurve: Motion.standard,
-                  child: switch (auth.status) {
-                    AuthStatus.restoring => const Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
-                    ),
-                    AuthStatus.signedOut => const LoginScreen(),
-                    AuthStatus.signedIn =>
-                      store == null
-                          ? const Scaffold(
-                              body: Center(child: CircularProgressIndicator()),
-                            )
-                          // Answering the launcher takes precedence over the
-                          // grid: it is holding a half-created widget until we do.
-                          : configuring != null
-                          ? WidgetConfigScreen(
-                              widgetId: configuring,
-                              widgets: _homeWidgets,
-                            )
-                          : HomeScreen(
-                              key: ValueKey(
-                                '${_api.baseUrl}:${store.currentUserId}',
-                              ),
-                            ),
+            _ => ValueListenableBuilder<String?>(
+              valueListenable: _resetToken,
+              builder: (context, resetToken, _) => switch (resetToken) {
+                // Pinned to the origin that served the page, for the same
+                // reason the public share page is: the only backend that can
+                // answer for this token is the one that mailed the link.
+                final String token => ResetPasswordScreen(
+                  token: token,
+                  api: _publicApi,
+                  onDone: (email) {
+                    _resetEmail = email;
+                    _resetToken.value = null;
                   },
-                );
+                ),
+                _ => Consumer<AuthStore>(
+                  builder: (context, auth, _) {
+                    final store = _store;
+                    final configuring = _configuringWidgetId;
+                    return AnimatedSwitcher(
+                      duration: Motion.slow,
+                      switchInCurve: Motion.standard,
+                      switchOutCurve: Motion.standard,
+                      child: switch (auth.status) {
+                        AuthStatus.restoring => const Scaffold(
+                          body: Center(child: CircularProgressIndicator()),
+                        ),
+                        AuthStatus.signedOut => LoginScreen(
+                          initialEmail: _resetEmail,
+                        ),
+                        AuthStatus.signedIn =>
+                          store == null
+                              ? const Scaffold(
+                                  body: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                )
+                              // Answering the launcher takes precedence over the
+                              // grid: it is holding a half-created widget until we do.
+                              : configuring != null
+                              ? WidgetConfigScreen(
+                                  widgetId: configuring,
+                                  widgets: _homeWidgets,
+                                )
+                              : HomeScreen(
+                                  key: ValueKey(
+                                    '${_api.baseUrl}:${store.currentUserId}',
+                                  ),
+                                ),
+                      },
+                    );
+                  },
+                ),
               },
             ),
           },

@@ -97,6 +97,12 @@ pub struct AppState {
     /// per-user copy in the settings document and lock the field in the app.
     /// Empty by default (nothing managed); `main` fills it from the env.
     pub managed: Arc<config::ManagedSettings>,
+    /// Where this deployment answers on the public internet (`PUBLIC_URL`,
+    /// trailing slash trimmed), for the one thing the server has to write a
+    /// link into rather than serve one: the password reset email. Deliberately
+    /// not derived from a request's `Host` header, which a stranger controls.
+    /// `None` leaves password reset switched off.
+    pub public_url: Option<Arc<str>>,
     /// In-memory cache of link-preview unfurls, keyed by URL. Time-limited so
     /// stale metadata eventually refreshes; not persisted (re-fetched after a
     /// restart). See [`handlers::unfurl`].
@@ -131,6 +137,7 @@ impl AppState {
             label_delay: Duration::from_secs(20),
             file_secret: Arc::new(secret),
             managed: Arc::new(config::ManagedSettings::default()),
+            public_url: None,
             unfurl_cache: Arc::default(),
             cleanup_running: Arc::default(),
             auth_attempts: Arc::default(),
@@ -178,6 +185,14 @@ impl AppState {
         self.managed = Arc::new(managed);
         self
     }
+
+    /// Pin the deployment's public address. A blank value leaves it unset,
+    /// which is the same as never having configured one.
+    pub fn with_public_url(mut self, url: &str) -> Self {
+        let url = url.trim().trim_end_matches('/');
+        self.public_url = (!url.is_empty()).then(|| Arc::from(url));
+        self
+    }
 }
 
 /// The full API router. Tests build this against an in-memory repository.
@@ -195,6 +210,10 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         .route("/managed-settings", get(handlers::managed_settings))
         .route("/auth/register", post(handlers::register))
         .route("/auth/login", post(handlers::login))
+        // Both deliberately unauthenticated: the point of a reset is that the
+        // account holder cannot sign in. See `handlers::forgot_password`.
+        .route("/auth/forgot-password", post(handlers::forgot_password))
+        .route("/auth/reset-password", post(handlers::reset_password))
         .route("/auth/logout", post(handlers::logout))
         .route(
             "/auth/me",

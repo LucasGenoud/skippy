@@ -52,12 +52,14 @@ class FakeApi implements Api {
     bool semanticSearch,
     bool audioTranscription,
     bool imageOcr,
+    bool passwordReset,
     String? serverVersion,
   })
   capabilities = (
     semanticSearch: true,
     audioTranscription: false,
     imageOcr: false,
+    passwordReset: false,
     serverVersion: 'test-server',
   );
 
@@ -132,6 +134,40 @@ class FakeApi implements Api {
 
   @override
   Future<void> logout() => _run('logout', () {});
+
+  /// Addresses [requestPasswordReset] was called with, in order.
+  final List<String> passwordResetRequests = [];
+
+  /// Thrown by [requestPasswordReset] and [resetPassword] when set, so tests
+  /// can exercise the failure paths.
+  Object? passwordResetError;
+
+  /// Tokens [resetPassword] accepts, mapped to the address it answers with.
+  /// Anything else is refused the way the server refuses a spent link.
+  Map<String, String> resetTokens = {};
+
+  @override
+  Future<void> requestPasswordReset(String email) =>
+      _run('requestPasswordReset', () {
+        final error = passwordResetError;
+        if (error != null) throw error;
+        passwordResetRequests.add(email);
+      });
+
+  @override
+  Future<String> resetPassword(String token, String password) =>
+      _run('resetPassword', () {
+        final error = passwordResetError;
+        if (error != null) throw error;
+        final email = resetTokens.remove(token);
+        if (email == null) {
+          throw ApiException(
+            403,
+            '{"error":"this reset link has expired or was already used"}',
+          );
+        }
+        return email;
+      });
 
   @override
   Future<void> deleteAccount(String currentPassword) =>
@@ -763,6 +799,7 @@ class FakeApi implements Api {
       bool semanticSearch,
       bool audioTranscription,
       bool imageOcr,
+      bool passwordReset,
       String? serverVersion,
     })
   >

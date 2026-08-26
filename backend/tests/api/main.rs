@@ -16,6 +16,7 @@ mod llm;
 mod notes;
 mod notify;
 mod ocr;
+mod password_reset;
 mod search;
 mod settings;
 mod share_links;

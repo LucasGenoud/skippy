@@ -225,7 +225,10 @@ async fn main() -> anyhow::Result<()> {
     let files = init_file_store(&uploads)?;
     let mut state = AppState::new(repo, files)
         .with_file_secret(file_secret)
-        .with_managed(ManagedSettings::from_env());
+        .with_managed(ManagedSettings::from_env())
+        // The password reset email is the one place the server writes a link
+        // to itself, so it needs to be told where it answers.
+        .with_public_url(&std::env::var("PUBLIC_URL").unwrap_or_default());
     if let Some(service) = init_transcription().await {
         state = state.with_transcription(service);
     }

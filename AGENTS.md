@@ -95,7 +95,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/auth.rs`: password hashing, token authentication, and authenticated-user extraction.
 - `backend/src/error.rs`: API error shape and HTTP status conversion.
 - `backend/src/handlers/mod.rs`: feature exports and shared handler helpers.
-- `backend/src/handlers/auth.rs`: registration, login, logout, current user.
+- `backend/src/handlers/auth.rs`: registration, login, logout, current user, and the signed-out password reset (mail-gated, one-shot links).
 - `backend/src/handlers/notes.rs`: note CRUD, reorder, trash purge, checklist history, and note mutation orchestration.
 - `backend/src/handlers/versions.rs`: version timeline and restores.
 - `backend/src/handlers/attachments.rs`: multipart upload, signed serving, ranges, transcription trigger, deletion.
@@ -153,7 +153,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/state/link_preview_cache.dart`: in-memory/client preview cache and fetch coalescing.
 - `app/lib/state/share_intake*.dart`: Android/iOS share-sheet payload intake with platform stubs.
 - `app/lib/state/editor_history.dart`: editor undo/redo grouping.
-- `app/lib/screens/login_screen.dart`: server selection and authentication.
+- `app/lib/screens/login_screen.dart`: server selection, authentication, and the "Forgot password?" request dialog.
+- `app/lib/screens/reset_password_screen.dart`: the form behind an emailed reset link; runs outside the signed-in app like the public share page.
 - `app/lib/screens/home_screen.dart`: main coordinator for views, selection, search, reorder, navigation, keyboard shortcuts, and share intake.
 - `app/lib/screens/editor_screen.dart`: note-kind editing, drafts, attachments, recording, find-in-note, and save lifecycle.
 - `app/lib/screens/history_screen.dart`: version display and restore.

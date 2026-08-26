@@ -71,6 +71,26 @@ pub struct DeleteAccountRequest {
     pub current_password: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    /// The secret from the emailed link.
+    pub token: String,
+    pub password: String,
+}
+
+/// What a redeemed reset link hands back: the address the link was sent to, so
+/// the app can drop the person straight onto a prefilled sign-in form. It
+/// tells the holder of the link nothing they did not already have.
+#[derive(Debug, Serialize)]
+pub struct ResetPasswordResponse {
+    pub email: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,

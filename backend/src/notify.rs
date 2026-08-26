@@ -641,6 +641,32 @@ pub fn parse_smtp_settings(settings: &Value) -> Option<SmtpConfig> {
     })
 }
 
+/// Stand-in recipient used only to ask whether the deployment's own mail
+/// settings are complete. [`parse_smtp_settings`] insists on a recipient, and
+/// the real one is an account's address, known only per request.
+const MAIL_PROBE_RECIPIENT: &str = "probe@example.invalid";
+
+/// A settings document for mail the *deployment* sends on its own behalf (the
+/// password reset link), addressed to `to`.
+///
+/// Everything except the recipient comes from the env-pinned keys in
+/// [`crate::config::MANAGED_KEYS`]. A signed-out request has no settings
+/// document to read, and reading the one belonging to the address being asked
+/// about would let a stranger point the server's mail at a relay of their
+/// choosing. `None` when the operator has not pinned enough for the server to
+/// send anything at all.
+pub fn server_mail(managed: &crate::config::ManagedSettings, to: &str) -> Option<Value> {
+    let mut settings = serde_json::json!({ "smtp_to": to });
+    managed.overlay_onto(&mut settings);
+    parse_smtp_settings(&settings).is_some().then_some(settings)
+}
+
+/// Whether this deployment can send mail of its own. The recipient is the one
+/// part [`server_mail`] cannot answer for, so a placeholder stands in for it.
+pub fn server_mail_configured(managed: &crate::config::ManagedSettings) -> bool {
+    server_mail(managed, MAIL_PROBE_RECIPIENT).is_some()
+}
+
 /// Emails a reminder through the user's (or the operator's) SMTP server.
 ///
 /// Keys: `smtp_host`, `smtp_port`, `smtp_security` (`tls`/`starttls`/`none`),

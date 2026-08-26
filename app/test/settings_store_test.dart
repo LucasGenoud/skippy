@@ -348,6 +348,7 @@ void main() {
         semanticSearch: true,
         audioTranscription: false,
         imageOcr: false,
+        passwordReset: false,
         serverVersion: 'test-server',
       );
       await settings.load();
@@ -371,6 +372,7 @@ void main() {
         semanticSearch: true,
         audioTranscription: true,
         imageOcr: true,
+        passwordReset: false,
         serverVersion: 'test-server',
       );
       final other = SettingsStore(api: api);
@@ -389,6 +391,7 @@ void main() {
       semanticSearch: true,
       audioTranscription: false,
       imageOcr: false,
+      passwordReset: false,
       serverVersion: 'test-server',
     );
     await settings.load();
@@ -438,6 +441,7 @@ void main() {
       semanticSearch: false,
       audioTranscription: false,
       imageOcr: false,
+      passwordReset: false,
       serverVersion: 'test-server',
     );
     final third = SettingsStore(api: api);
