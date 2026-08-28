@@ -8,10 +8,13 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../models/saved_location.dart';
 import '../state/note_conversion.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
+import '../util/location_geofences.dart';
+import '../util/location_reminder_grants.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
@@ -71,6 +74,13 @@ class _QuickAddBarState extends State<QuickAddBar> {
   Set<String> _labelIds = {};
   DateTime? _reminderAt;
   ReminderRepeat? _reminderRepeat;
+
+  /// A saved place the note should be reminded at, held the same way the time
+  /// reminder is: the reminder belongs to a note id, and there is no note id
+  /// until the composer is saved.
+  String? _locationId;
+  LocationReminderTrigger? _locationTrigger;
+  bool _locationRepeats = false;
   bool _pinned = false;
   final List<DroppedFile> _files = [];
 
@@ -131,6 +141,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   bool get _hasContent {
     if (_titleController.text.trim().isNotEmpty) return true;
     if (_files.isNotEmpty || _reminderAt != null) return true;
+    if (_locationId != null) return true;
     if (_kind == NoteKind.checklist) {
       return _items.any((i) => i.text.trim().isNotEmpty);
     }
@@ -149,6 +160,25 @@ class _QuickAddBarState extends State<QuickAddBar> {
     if (_color != 'default') store.setColor(note.id, _color);
     if (_reminderAt != null) {
       store.setReminder(note.id, _reminderAt, _reminderRepeat);
+    }
+    // The place reminder is personal, so it lands in settings against the id
+    // the note has just been given rather than on the note itself. The cap can
+    // only be hit here by a composer that was left open while other reminders
+    // were added, so say so rather than dropping it silently.
+    if (_locationId case final locationId?) {
+      final settings = context.read<SettingsStore>();
+      if (!settings.setLocationReminder(
+        note.id,
+        locationId,
+        _locationTrigger ?? LocationReminderTrigger.arrive,
+        repeats: _locationRepeats,
+      )) {
+        showAppSnack(
+          'You can have up to 20 active location reminders.',
+          icon: Icons.location_disabled_outlined,
+          kind: SnackKind.warning,
+        );
+      }
     }
     if (_pinned) store.togglePin(note.id);
     if (_kind == NoteKind.checklist) {
@@ -211,6 +241,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
       _labelIds = {};
       _reminderAt = null;
       _reminderRepeat = null;
+      _locationId = null;
+      _locationTrigger = null;
+      _locationRepeats = false;
       _pinned = false;
       _files.clear();
     });
@@ -281,18 +314,55 @@ class _QuickAddBarState extends State<QuickAddBar> {
   );
 
   Future<void> _editReminder() => _withModal(() async {
+    final settings = context.read<SettingsStore>();
     final selection = await ReminderPicker.show(
       context,
       current: _reminderAt,
       currentRepeat: _reminderRepeat,
-      use24hTime: context.read<SettingsStore>().use24hTime,
+      currentLocation: _draftLocationReminder,
+      savedLocations: settings.savedLocations,
+      locationMonitored: LocationGeofences.supported,
+      use24hTime: settings.use24hTime,
     );
     if (!mounted || selection == null) return;
+    if (selection.locationId != null) {
+      final granted = await ensureLocationReminderGrants();
+      if (!mounted || !granted) return;
+      // The two kinds are exclusive on a note, here as in the editor.
+      setState(() {
+        _locationId = selection.locationId;
+        _locationTrigger = selection.locationTrigger;
+        _locationRepeats = selection.locationRepeats;
+        _reminderAt = null;
+        _reminderRepeat = null;
+      });
+      return;
+    }
     setState(() {
+      _clearLocationReminder();
       _reminderAt = selection.at;
       _reminderRepeat = selection.repeat;
     });
   });
+
+  /// What the composer holds, shaped like a saved one so the picker can open
+  /// on it. The note id is a placeholder: nothing reads it until [_commit]
+  /// writes the reminder against the id the note is actually created with.
+  LocationReminder? get _draftLocationReminder => switch (_locationId) {
+    final id? => LocationReminder(
+      noteId: '',
+      locationId: id,
+      trigger: _locationTrigger ?? LocationReminderTrigger.arrive,
+      repeats: _locationRepeats,
+    ),
+    _ => null,
+  };
+
+  void _clearLocationReminder() {
+    _locationId = null;
+    _locationTrigger = null;
+    _locationRepeats = false;
+  }
 
   /// Files picked while composing wait here until the note is created, so a
   /// composer that is closed without saving uploads nothing.
@@ -722,7 +792,13 @@ class _QuickAddBarState extends State<QuickAddBar> {
       for (final id in _labelIds)
         if (store.labelById(id) case final Label label) label,
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    if (_reminderAt == null && labels.isEmpty) return const SizedBox.shrink();
+    final location = switch (_locationId) {
+      final id? => settings.savedLocationById(id),
+      _ => null,
+    };
+    if (_reminderAt == null && location == null && labels.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Wrap(
@@ -742,6 +818,16 @@ class _QuickAddBarState extends State<QuickAddBar> {
                 _reminderAt = null;
                 _reminderRepeat = null;
               }),
+            ),
+          if (location != null)
+            InputChip(
+              avatar: const Icon(Icons.location_on_outlined, size: 16),
+              label: Text(
+                '${_draftLocationReminder!.label} · ${location.name}',
+              ),
+              visualDensity: VisualDensity.compact,
+              onPressed: _editReminder,
+              onDeleted: () => setState(_clearLocationReminder),
             ),
           for (final label in labels)
             InputChip(

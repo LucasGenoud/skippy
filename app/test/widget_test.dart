@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/screens/history_screen.dart';
@@ -34,11 +36,14 @@ import 'package:skippy/widgets/skeleton.dart';
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
 
-Widget harness(NotesStore store, Widget child) {
+Widget harness(NotesStore store, Widget child, {SettingsStore? settings}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider.value(value: store),
-      ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+      if (settings == null)
+        ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api))
+      else
+        ChangeNotifierProvider.value(value: settings),
       Provider(create: (_) => LinkPreviewCache(api: store.api)),
     ],
     child: MaterialApp(
@@ -1182,6 +1187,59 @@ void main() {
       final note = store.notesFor(ViewSelection.notes, '').others.single;
       expect(note.labelIds, {label.id});
       await flushTimers(tester);
+    });
+
+    testWidgets('a place picked while composing reminds the created note', (
+      tester,
+    ) async {
+      await store.load();
+      // The composer is a wide-screen surface, so this is the desktop/web
+      // case: the reminder is saved here and armed by the phone on its next
+      // sync, with nothing to ask this device for.
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final settings = SettingsStore(api: api);
+      final home = settings.addSavedLocation(
+        name: 'Home',
+        latitude: 46.2,
+        longitude: 6.1,
+        radiusMeters: 150,
+      );
+      await tester.pumpWidget(
+        harness(store, const QuickAddBar(), settings: settings),
+      );
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Take a note…'),
+        'water the plants',
+      );
+
+      await tester.tap(find.byTooltip('Remind me'));
+      await tester.pumpAndSettle();
+      // The composer offers the same two kinds of reminder the editor does.
+      await tester.tap(find.text('At a place'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save location reminder'));
+      await tester.pumpAndSettle();
+
+      // Chipped on the composer before the note it belongs to exists.
+      expect(
+        find.widgetWithText(InputChip, 'When I arrive · Home'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      final note = store.notesFor(ViewSelection.notes, '').others.single;
+      final reminder = settings.locationReminderForNote(note.id);
+      expect(reminder?.locationId, home.id);
+      expect(reminder?.trigger, LocationReminderTrigger.arrive);
+      expect(note.reminderAt, isNull);
+      await flushTimers(tester);
+      debugDefaultTargetPlatformOverride = null;
     });
 
     testWidgets('Discard note throws the composed note away', (tester) async {
