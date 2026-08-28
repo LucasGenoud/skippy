@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
@@ -86,6 +87,50 @@ void main() {
     expect(other.palette.last.name, 'Lava');
     expect(other.palette.last.light, const Color(0xFFFF5722));
     other.dispose();
+  });
+
+  test('a failed save keeps retrying, and lets remote changes back in', () {
+    // A device that could not write its settings used to stop reading them
+    // too: the pending save made every load skip the server's document, so a
+    // place reminder added on another device stayed invisible here until this
+    // one wrote again — and that write then erased it.
+    fakeAsync((async) {
+      final api = FakeApi();
+      final settings = SettingsStore(api: api);
+      settings.load();
+      async.flushMicrotasks();
+
+      api.failWith = Exception('offline');
+      settings.setUse24hTime(true);
+      async.elapse(const Duration(seconds: 1));
+      expect(api.settings['time_format'], isNull, reason: 'the save failed');
+
+      api.failWith = null;
+      async.elapse(const Duration(seconds: 10));
+      expect(api.settings['time_format'], '24h', reason: 'the retry landed');
+
+      // With nothing pending, what another device wrote arrives on the next
+      // pull instead of being skipped.
+      api.settings = {
+        ...api.settings,
+        'saved_locations': [
+          {
+            'id': 'p1',
+            'name': 'Home',
+            'latitude': 46.2,
+            'longitude': 6.1,
+            'radius_meters': 150,
+          },
+        ],
+        'location_reminders': [
+          {'note_id': 'n1', 'location_id': 'p1', 'trigger': 'arrive'},
+        ],
+      };
+      settings.load();
+      async.elapse(const Duration(seconds: 1));
+      expect(settings.locationReminderForNote('n1')?.locationId, 'p1');
+      settings.dispose();
+    });
   });
 
   group('saved smart views', () {

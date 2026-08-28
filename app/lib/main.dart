@@ -172,7 +172,15 @@ class _SkippyAppState extends State<SkippyApp> {
   /// store has finished pulling, otherwise it briefly re-publishes the stale
   /// cache that was present before the resume.
   Future<void> _refreshForegroundServices() async {
-    await _store?.onResumed();
+    // Both halves of the account, not just the notes: a reminder pinned to a
+    // saved place lives in the settings document, so a phone that only re-pulled
+    // its notes came back without the place reminder set on a laptop while it
+    // slept — invisible, and worse, never armed. Awaited together, and before
+    // the schedulers below, which arm from what these two hold.
+    await Future.wait([
+      if (_store case final store?) store.onResumed(),
+      if (_settings case final settings?) settings.load(),
+    ]);
     // Time, permissions and the device's timezone can all have moved while we
     // were away; re-arm against what the OS actually holds.
     _reminders?.reconcile();

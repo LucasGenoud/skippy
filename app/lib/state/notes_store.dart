@@ -53,8 +53,16 @@ class NotesStore extends ChangeNotifier {
   /// fresh login on another server must never migrate another server's data.
   final bool migrateLegacyCache;
 
-  /// Invoked on server-push change events, so siblings (e.g. the settings
-  /// store) can refresh from the same socket.
+  /// Invoked when whatever else the account keeps on the server may have
+  /// moved: a push event on the socket, and the outage recovery where such an
+  /// event would have been missed. Siblings that own the rest of the account
+  /// (the settings store, which holds saved places and the reminders pinned to
+  /// them) re-pull from here, so they never sit on a document older than the
+  /// notes beside them.
+  ///
+  /// A resume is the third such moment, and the app drives that one itself:
+  /// it has to await the re-pull before re-arming alarms and geofences from
+  /// what it fetched.
   final VoidCallback? onRemoteChange;
 
   static const _uuid = Uuid();
@@ -1078,8 +1086,12 @@ class NotesStore extends ChangeNotifier {
       final wasDown = _connectionDown;
       if (_markConnectionUp()) notifyListeners();
       // Recovered: push whatever was waiting, whether or not the outage
-      // lasted long enough for the user to ever hear about it.
-      if (wasDown) await retryNow();
+      // lasted long enough for the user to ever hear about it, and re-pull —
+      // a reconnected socket replays nothing it missed while it was gone.
+      if (wasDown) {
+        onRemoteChange?.call();
+        await retryNow();
+      }
     } catch (_) {
       if (_disposed) return;
       _markConnectionDown();

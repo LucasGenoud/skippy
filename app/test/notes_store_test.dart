@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/dropped_file.dart';
@@ -65,12 +65,14 @@ NotesStore testStore(
   LocalCache? cache,
   String cacheNamespace = '',
   bool migrateLegacyCache = false,
+  VoidCallback? onRemoteChange,
 }) => NotesStore(
   api: api,
   cache: cache,
   currentUserId: 'u-me',
   cacheNamespace: cacheNamespace,
   migrateLegacyCache: migrateLegacyCache,
+  onRemoteChange: onRemoteChange,
   offlineGrace: testOfflineGrace,
 );
 
@@ -1008,6 +1010,25 @@ void main() {
         expect(store.offline, isFalse);
       },
     );
+
+    test('recovering from an outage re-pulls the rest of the account', () async {
+      // The settings document (saved places, and the reminders pinned to them)
+      // rides the same socket, and a reconnected socket replays nothing it
+      // missed. Without this the phone came back holding notes from now and
+      // places from before the outage.
+      var siblingPulls = 0;
+      final s = testStore(api, onRemoteChange: () => siblingPulls++);
+      await s.load();
+      expect(siblingPulls, 0);
+
+      api.failWith = Exception('network down');
+      await s.checkConnectionNow();
+
+      api.failWith = null;
+      await s.checkConnectionNow();
+      expect(siblingPulls, 1);
+      s.dispose();
+    });
   });
 
   group('manual refresh', () {

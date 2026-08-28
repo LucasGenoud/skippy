@@ -314,6 +314,7 @@ class SettingsStore extends ChangeNotifier {
 
   Timer? _saveDebounce;
   bool _savePending = false;
+  int _saveAttempt = 0;
   bool _disposed = false;
   int _customCounter = 0;
 
@@ -546,16 +547,39 @@ class SettingsStore extends ChangeNotifier {
     change();
     notifyListeners();
     _savePending = true;
+    _saveAttempt = 0;
+    _scheduleSave(const Duration(milliseconds: 600));
+  }
+
+  /// Write the document, and keep trying until it lands.
+  ///
+  /// A save that failed used to wait for the user's next settings edit, which
+  /// left [_savePending] set — and a pending save makes [load] skip the
+  /// server's document, so one failed write (a phone that saved a setting on a
+  /// dead train) stopped that device from ever seeing a place reminder added
+  /// on another one, right up until the next write went out and overwrote it.
+  void _scheduleSave(Duration delay) {
     _saveDebounce?.cancel();
-    _saveDebounce = Timer(const Duration(milliseconds: 600), () async {
+    _saveDebounce = Timer(delay, () async {
       if (_disposed) return;
       try {
         await api.putSettings(toJson());
-        if (!_disposed) _savePending = false;
+        if (_disposed) return;
+        _savePending = false;
+        _saveAttempt = 0;
       } catch (_) {
-        // Retry on the next mutation or app start; local values still apply.
+        if (_disposed) return;
+        _saveAttempt++;
+        _scheduleSave(_saveRetryDelay(_saveAttempt));
       }
     });
+  }
+
+  /// Backs off to a minute, which is where it stays: an unreachable server is
+  /// worth asking again occasionally, not every five seconds all day.
+  static Duration _saveRetryDelay(int attempt) {
+    final seconds = 5 * (1 << (attempt - 1).clamp(0, 4));
+    return Duration(seconds: seconds > 60 ? 60 : seconds);
   }
 
   void setThemeMode(ThemeMode mode) => _mutate(() => themeMode = mode);
