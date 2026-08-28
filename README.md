@@ -82,7 +82,26 @@ CRDT-style collaboration. Collaboration uses last-write-wins at note level.
 
 ## Quick start with Docker
 
-Choose a Compose file:
+Skippy is published as `ghcr.io/lucasgenoud/skippy:latest`. The smallest
+deployment is one service and one volume. Save this as `docker-compose.yml`
+and run `docker compose up -d`:
+
+```yaml
+services:
+  server:
+    image: ghcr.io/lucasgenoud/skippy:latest
+    ports:
+      - "8787:8787"
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+
+volumes:
+  app_data:
+```
+
+The Compose files in this repository run the same image with every setting
+spelled out:
 
 ```sh
 docker compose -f docker-compose.minimal.yml up -d
@@ -111,9 +130,16 @@ printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 Keep `.env` private. Keep matching `S3_*` and `GARAGE_DEFAULT_*`
 values unchanged after Garage setup.
 
-Open <http://localhost:8787>. The image builds the Flutter web app and Rust
-server. SQLite data persists in the `app_data` volume. Disk-storage deployments
-also keep attachments there; the full stack stores attachments in Garage.
+Open <http://localhost:8787>. The image bundles the Flutter web app and the
+Rust server. SQLite data persists in the `app_data` volume. Disk-storage
+deployments also keep attachments there; the full stack stores attachments in
+Garage.
+
+To build the image yourself rather than pull it:
+
+```sh
+docker build -t ghcr.io/lucasgenoud/skippy:latest .
+```
 
 The current database schema has no in-place migration path. Start with a new
 database when installing a schema revision.

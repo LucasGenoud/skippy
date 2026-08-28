@@ -1,7 +1,6 @@
 services:
   server:
-    build: .
-    image: forgejo.genoud.dev/lucasgenoud/skippy:latest
+    image: ghcr.io/lucasgenoud/skippy:latest
     ports:
       - "8787:8787"
     environment:

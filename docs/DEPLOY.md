@@ -37,6 +37,11 @@ image (it reads `~/.docker/config.json`):
 docker login forgejo.genoud.dev
 ```
 
+The Compose files in the repository point at the public GitHub image,
+`ghcr.io/lucasgenoud/skippy:latest`. The homeserver stays on the Forgejo
+registry: set `server`'s `image:` to
+`forgejo.genoud.dev/lucasgenoud/skippy:latest` in its own copy.
+
 Generate credentials before the first start. Copy each output line into the
 private `.env` file:
 
