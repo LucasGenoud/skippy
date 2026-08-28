@@ -301,6 +301,8 @@ Frontend tests use `FakeApi`. Store tests should cover optimistic state immediat
 
 Place regressions near the layer that owns the rule, then add a cross-layer test when serialization, authorization, or asynchronous side effects are involved. Prefer behavior assertions over implementation-detail assertions.
 
+A bug fix starts with the test. Write it, run it, watch it fail for the reason you claim the bug is. Only then write the fix, and watch the same test pass. A fix that never had a red test is unverified.
+
 ## Coding and maintenance conventions
 
 - Preserve optimistic UI behavior: network calls should not move onto the direct interaction path without a deliberate product decision.
@@ -312,3 +314,32 @@ Place regressions near the layer that owns the rule, then add a cross-layer test
 - Do not commit generated or runtime data such as `app/build`, `app/.dart_tool`, `backend/target`, SQLite databases, upload directories, logs, or model caches. `Cargo.lock` and `app/pubspec.lock` are intentionally tracked.
 - Do not perform broad formatting, dependency upgrades, database deletion, or generated platform rewrites as collateral work.
 - Repository documentation should use plain text without emoji.
+
+### Code style
+
+- Pull recurring or meaningful literals out into named constants or enums. A value fixed by a spec gets a constant even when used once: HTTP status codes, the 16 KB settings cap, the 500-record checklist history cap. Self-explanatory one-offs stay inline.
+- Prefer early return and `continue` to nesting. Avoid the arrow anti-pattern.
+- Keep function names under 30 characters.
+- A parameter that selects behavior takes an enum, not a `bool`. `openFullscreen: true` says nothing at the call site; a named variant does. New signatures only, do not churn existing ones.
+- Always brace `if`, including one-liners. The tree predates this rule, so apply it to lines you write or change, never as a sweep.
+- Separate logical blocks with a blank line.
+- Comment what a block does and why, in as few words as that takes. Reach for a concrete example, or an ASCII diagram when the shape of a system is the hard part.
+- Fields and functions stay private. Widening visibility is a design change, not an implementation detail: ask before promoting anything to internal or public.
+- Talk to the layer directly below you and no further. A screen or a handler never reaches a raw socket, a SQL query, or a device API; it goes through whatever owns that. Low-level mechanics belong behind an abstraction that speaks in domain terms, the way `Repository`, `FileStore`, and `ApiClient` already do.
+
+### Scope of a change
+
+- Touch only what the change requires, and keep the diff small.
+- Do not comment, rename, or reformat a block you did not otherwise modify.
+
+### Writing for people
+
+Comments, commit messages, and replies: the fewest words that carry the meaning. Pick each one, cut the rest.
+
+No superlatives, no praise, no agreeing for its own sake. Say what is true, including when the answer is that the request is wrong.
+
+### Commit messages
+
+Conventional Commits, lowercase after the type prefix, imperative mood, no trailing period, as in `fix: stop the live-sync socket from multiplying its reconnects`. The subject must complete the sentence "if applied, this commit will ...".
+
+Blank line before the body. Wrap the body at 72 characters. The body carries what changed and why; the diff already carries how.
