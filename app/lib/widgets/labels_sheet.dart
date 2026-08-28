@@ -6,6 +6,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
+import '../theme.dart';
 import 'drag_reorder_list.dart';
 import 'form_dialog.dart';
 import 'glyph_picker.dart';
@@ -174,17 +175,18 @@ class _LabelsSheetState extends State<LabelsSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: Text(
-                isMultiple
-                    ? 'Add label to ${notes.length} notes'
-                    : 'Label note',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
+            ModalHeader(
+              title: isMultiple
+                  ? 'Add label to ${notes.length} notes'
+                  : 'Label note',
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(
+                kModalInset,
+                kModalHeaderGap,
+                kModalInset,
+                kSpaceSm,
+              ),
               child: TextField(
                 controller: _controller,
                 autofocus: false,

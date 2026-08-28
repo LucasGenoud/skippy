@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../state/notes_store.dart';
+import '../theme.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
@@ -80,11 +81,12 @@ class _ShareDialogState extends State<ShareDialog> {
 
     return FormDialog(
       title: const Text('Collaborators'),
-      width: 400,
+      width: kDialogWidth,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: CircleAvatar(
               radius: 16,
               child: Text(
@@ -97,6 +99,7 @@ class _ShareDialogState extends State<ShareDialog> {
           ),
           for (final collaborator in note.collaborators)
             ListTile(
+              contentPadding: EdgeInsets.zero,
               dense: true,
               leading: CircleAvatar(
                 radius: 16,
@@ -129,53 +132,50 @@ class _ShareDialogState extends State<ShareDialog> {
             ),
           if (isOwner) ...[
             const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      decoration: const InputDecoration(
-                        hintText: 'Add people by email',
-                        isDense: true,
-                        prefixIcon: Icon(Icons.person_add_alt, size: 20),
-                      ),
-                      onSubmitted: (_) => _add(),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: const InputDecoration(
+                      hintText: 'Add people by email',
+                      isDense: true,
+                      prefixIcon: Icon(Icons.person_add_alt, size: 20),
                     ),
+                    onSubmitted: (_) => _add(),
                   ),
-                  const SizedBox(width: 8),
-                  AnimatedSwitcher(
-                    duration: Motion.fast,
-                    switchInCurve: Motion.standard,
-                    switchOutCurve: Motion.standard,
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: ScaleTransition(scale: animation, child: child),
-                    ),
-                    child: _busy
-                        ? const Padding(
-                            key: ValueKey('busy'),
-                            padding: EdgeInsets.all(10),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : IconButton(
-                            key: const ValueKey('send'),
-                            icon: const Icon(Icons.send),
-                            tooltip: 'Share',
-                            onPressed: _add,
+                ),
+                const SizedBox(width: 8),
+                AnimatedSwitcher(
+                  duration: Motion.fast,
+                  switchInCurve: Motion.standard,
+                  switchOutCurve: Motion.standard,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: animation, child: child),
+                  ),
+                  child: _busy
+                      ? const Padding(
+                          key: ValueKey('busy'),
+                          padding: EdgeInsets.all(10),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                  ),
-                ],
-              ),
+                        )
+                      : IconButton(
+                          key: const ValueKey('send'),
+                          icon: const Icon(Icons.send),
+                          tooltip: 'Share',
+                          onPressed: _add,
+                        ),
+                ),
+              ],
             ),
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                padding: const EdgeInsets.only(top: kSpaceSm),
                 child: Text(
                   _error!,
                   style: TextStyle(color: scheme.error, fontSize: 13),
@@ -187,7 +187,7 @@ class _ShareDialogState extends State<ShareDialog> {
             // enough to keep apart: one grants editing, the other grants
             // reading to anyone holding a URL.
             ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.link),
               title: const Text('Public link'),
               subtitle: const Text('Read-only, for people without an account'),
@@ -199,7 +199,7 @@ class _ShareDialogState extends State<ShareDialog> {
             ),
           ] else
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(vertical: kSpaceLg),
               child: Text(
                 'Everyone here can edit this note.',
                 style: Theme.of(
@@ -292,7 +292,7 @@ class _BulkShareDialogState extends State<BulkShareDialog> {
 
     return FormDialog(
       title: Text('Share ${ownedIds.length} $plural'),
-      width: 400,
+      width: kDialogWidth,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

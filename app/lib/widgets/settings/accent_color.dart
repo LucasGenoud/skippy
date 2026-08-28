@@ -203,7 +203,7 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
     ).primary;
     return FormDialog(
       title: const Text('Custom accent'),
-      width: 380,
+      width: kDialogWidth,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

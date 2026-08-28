@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../api/api_client.dart';
 import '../models/share_link.dart';
+import '../theme.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
 
@@ -163,7 +164,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
     if (link == null || _busy) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('Revoke this link?'),
         content: const Text(
           'The page stops working immediately for everyone holding it. '
@@ -221,7 +222,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
 
     return FormDialog(
       title: const Text('Public link'),
-      width: 440,
+      width: kDialogWidth,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,7 +343,7 @@ class _LinkRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: kBorderRadius,
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(

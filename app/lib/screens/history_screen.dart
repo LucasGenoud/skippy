@@ -7,6 +7,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
+import '../widgets/form_dialog.dart';
 
 /// The edit-history timeline for a single note: the current state on top,
 /// then every past version newest-first, each restorable. Restoring rolls the
@@ -49,7 +50,7 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
     final settings = context.read<SettingsStore>();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('Restore this version?'),
         content: Text(
           'The note will roll back to how it was on '

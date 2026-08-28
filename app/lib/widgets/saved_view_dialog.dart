@@ -138,7 +138,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
     final navigator = Navigator.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: Text('Delete "${_name.text.trim()}"?'),
         content: const Text(
           'The smart view goes away. The notes it showed are untouched.',

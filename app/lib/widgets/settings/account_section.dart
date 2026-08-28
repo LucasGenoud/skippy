@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../api/api_client.dart';
 import '../../state/auth_store.dart';
+import '../../theme.dart';
 import '../form_dialog.dart';
 
 enum _AccountField { name, email, password }
@@ -124,7 +125,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     final scheme = Theme.of(context).colorScheme;
     return FormDialog(
       title: const Text('Delete account?'),
-      width: 420,
+      width: kDialogWidth,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,7 +302,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
     final needsCurrentPassword = widget.field != _AccountField.name;
     return FormDialog(
       title: Text(_title),
-      width: 400,
+      width: kDialogWidth,
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

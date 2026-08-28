@@ -92,39 +92,18 @@ class SearchFiltersSheet extends StatelessWidget {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 12, 4),
-                child: Row(
-                  children: [
-                    Icon(Icons.tune, color: scheme.onSurfaceVariant, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Search filters',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
+              const ModalHeader(
+                icon: Icons.tune,
+                title: 'Search filters',
+                subtitle:
                     'Tap to match, again to exclude, again to clear. Every '
                     'filter you pick narrows the search further, and typing '
                     'words narrows it more.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
               ),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                  padding: modalBodyPadding(hasFooter: true),
                   children: [
                     if (labels.isNotEmpty)
                       _Group(
@@ -188,37 +167,34 @@ class SearchFiltersSheet extends StatelessWidget {
                 ),
               ),
               Divider(height: 1, color: hairlineColor(scheme)),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      // On a phone the sheet covers the search box, so the
-                      // query it is editing has to be visible from in here.
-                      child: Text(
-                        query.trim().isEmpty
-                            ? 'Build a search to save it as a smart view'
-                            : query.trim(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontFamily: query.trim().isEmpty ? null : 'monospace',
-                        ),
+              ModalFooter(
+                children: [
+                  Expanded(
+                    // On a phone the sheet covers the search box, so the
+                    // query it is editing has to be visible from in here.
+                    child: Text(
+                      query.trim().isEmpty
+                          ? 'Build a search to save it as a smart view'
+                          : query.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontFamily: query.trim().isEmpty ? null : 'monospace',
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton.tonalIcon(
-                      onPressed: query.trim().isEmpty
-                          ? null
-                          : () => Navigator.of(
-                              context,
-                            ).pop(const SaveAsSmartView()),
-                      icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                      label: const Text('Save as smart view'),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: query.trim().isEmpty
+                        ? null
+                        : () => Navigator.of(
+                            context,
+                          ).pop(const SaveAsSmartView()),
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    label: const Text('Save as smart view'),
+                  ),
+                ],
               ),
             ],
           );

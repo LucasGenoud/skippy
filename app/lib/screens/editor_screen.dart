@@ -1,3 +1,4 @@
+import '../widgets/form_dialog.dart';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
@@ -1710,7 +1711,7 @@ class _AddToHomeScreenHelp extends StatelessWidget {
       'Tap the + button in the corner.',
       'Search for Skippy and pick a widget size.',
     ];
-    return AlertDialog(
+    return AppDialog(
       icon: const Icon(Icons.widgets_outlined),
       title: const Text('Add a Skippy widget'),
       content: Column(

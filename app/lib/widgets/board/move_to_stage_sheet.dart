@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
+import '../../theme.dart';
 import '../form_dialog.dart';
 
 /// Picks the column one or more notes belong in.
@@ -55,13 +56,8 @@ class MoveToStageSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-              child: Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
+            ModalHeader(title: title),
+            const SizedBox(height: kSpaceSm),
             _StageOption(
               label: 'Unassigned',
               color: null,
@@ -82,11 +78,7 @@ class MoveToStageSheet extends StatelessWidget {
     );
   }
 
-  void _move(
-    BuildContext context,
-    NotesStore store,
-    String? stageId,
-  ) {
+  void _move(BuildContext context, NotesStore store, String? stageId) {
     Navigator.of(context).pop();
     final moved = [
       for (final id in noteIds)

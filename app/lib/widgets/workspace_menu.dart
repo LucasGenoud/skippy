@@ -281,7 +281,7 @@ class _WorkspaceNameDialogState extends State<WorkspaceNameDialog> {
     final creating = widget.workspace == null;
     return FormDialog(
       title: Text(creating ? 'New workspace' : 'Rename workspace'),
-      width: 360,
+      width: kDialogWidthCompact,
       content: TextField(
         controller: _controller,
         autofocus: true,
@@ -321,13 +321,8 @@ class MoveToWorkspaceSheet {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Text(
-                'Move to workspace',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
+            const ModalHeader(title: 'Move to workspace'),
+            const SizedBox(height: kSpaceSm),
             for (final workspace in store.workspaces)
               ListTile(
                 onTap: () => Navigator.of(context).pop(workspace.id),

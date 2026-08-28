@@ -529,7 +529,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     final sentTo = _sentTo;
     return FormDialog(
       title: Text(sentTo == null ? 'Reset password' : 'Check your email'),
-      width: 400,
+      width: kDialogWidth,
       content: AnimatedSize(
         duration: Motion.fast,
         curve: Motion.standard,
@@ -660,7 +660,7 @@ class _ServerUrlDialogState extends State<_ServerUrlDialog> {
   Widget build(BuildContext context) {
     return FormDialog(
       title: Text(_editing ? 'Edit Server' : 'Add Server'),
-      width: 400,
+      width: kDialogWidth,
       content: TextField(
         controller: _url,
         autofocus: true,

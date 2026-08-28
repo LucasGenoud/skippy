@@ -1,3 +1,4 @@
+import '../form_dialog.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -279,7 +280,7 @@ class _RestoreBackupDialogState extends State<RestoreBackupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return AppDialog(
       title: const Text('Choose workspaces to restore'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),

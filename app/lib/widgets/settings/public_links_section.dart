@@ -6,6 +6,7 @@ import '../../models/share_link.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../util/snack.dart';
+import '../form_dialog.dart';
 
 /// Every public link this account has published, with a way to take each one
 /// down.
@@ -57,7 +58,7 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
     final api = context.read<NotesStore>().api;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: Text('Revoke the link to "${link.title}"?'),
         content: const Text(
           'The page stops working immediately for everyone holding it. '

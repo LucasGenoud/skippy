@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/settings_store.dart';
+import '../theme.dart';
 import '../util/motion.dart';
 import 'form_dialog.dart';
 
@@ -24,7 +25,6 @@ class ColorPickerSheet extends StatelessWidget {
     final settings = context.read<SettingsStore>();
     return showAdaptiveSelectionSurface<void>(
       context,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       builder: (context) => ChangeNotifierProvider.value(
         value: settings,
         child: StatefulBuilder(
@@ -55,35 +55,54 @@ class ColorPickerSheet extends StatelessWidget {
         ),
     ];
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Note color', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 48,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final entry in entries)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: _ColorDot(
-                        name: entry.name,
-                        fill: entry.fill,
-                        selected: entry.key == selected,
-                        surface: scheme.surface,
-                        onTap: () => onSelect(entry.key),
-                      ),
-                    ),
-                ],
-              ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const ModalHeader(title: 'Note color'),
+          Padding(
+            padding: modalBodyPadding(),
+            child: _swatches(context, entries, scheme),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The palette itself. Under a thumb it is one line that scrolls, which is
+  /// the shape a sheet wants; in a dialog it wraps, because a box that shows
+  /// most of a row and then cuts the rest off at its edge reads as broken
+  /// rather than as scrollable.
+  Widget _swatches(
+    BuildContext context,
+    List<({String key, String name, Color? fill})> entries,
+    ColorScheme scheme,
+  ) {
+    Widget dot(({String key, String name, Color? fill}) entry) => _ColorDot(
+      name: entry.name,
+      fill: entry.fill,
+      selected: entry.key == selected,
+      surface: scheme.surface,
+      onTap: () => onSelect(entry.key),
+    );
+    if (!modalIsSheet(context)) {
+      return Wrap(
+        spacing: kSpaceMd,
+        runSpacing: kSpaceMd,
+        children: [for (final entry in entries) dot(entry)],
+      );
+    }
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final entry in entries)
+            Padding(
+              padding: const EdgeInsets.only(right: kSpaceMd),
+              child: dot(entry),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

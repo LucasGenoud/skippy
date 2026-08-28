@@ -1,3 +1,4 @@
+import '../widgets/form_dialog.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -501,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _confirmEmptyTrash(NotesStore store) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('Empty trash?'),
         content: const Text('All notes in Trash will be permanently deleted.'),
         actions: [

@@ -44,6 +44,49 @@ const double kSpaceLg = 16;
 const double kCompactIconSize = 20;
 const double kStandardIconSize = 24;
 
+/// The edge every modal surface keeps: dialogs, bottom sheets, and the
+/// full-screen page a phone gets instead of a dialog. One number, because a
+/// modal's footer has to line up with the body above it, and two modals opened
+/// one after the other must not shift their content sideways. The Material
+/// defaults (24 for a dialog, whatever each sheet hand-picked here) had the
+/// app running three different insets at once.
+const double kModalInset = 20;
+
+/// Gap between a modal's header block (title, and any one-line explanation
+/// under it) and the body it introduces.
+const double kModalHeaderGap = 16;
+
+/// The three insets a dialog is built from, shared with the hand-rolled sheets
+/// through `ModalHeader`/`ModalFooter` so a sheet and a dialog showing the same
+/// thing are laid out identically. The action row sits a touch tighter because
+/// a text button brings padding of its own.
+const EdgeInsets kModalTitlePadding = EdgeInsets.fromLTRB(
+  kModalInset,
+  kModalInset,
+  kModalInset,
+  0,
+);
+const EdgeInsets kModalContentPadding = EdgeInsets.fromLTRB(
+  kModalInset,
+  kModalHeaderGap,
+  kModalInset,
+  kModalInset,
+);
+
+const EdgeInsets kModalActionsPadding = EdgeInsets.fromLTRB(
+  kModalInset - kSpaceSm,
+  0,
+  kModalInset - kSpaceSm,
+  kModalInset - kSpaceSm,
+);
+
+/// The two widths a dialog comes in. Content decides which — a confirmation or
+/// a single field is a [kDialogWidthCompact]; anything with a list, a grid or a
+/// paragraph in it is a [kDialogWidth] — but nothing picks its own number, so
+/// two dialogs opened in a row stay the same shape.
+const double kDialogWidthCompact = 360;
+const double kDialogWidth = 420;
+
 /// [kRadius] as a [Radius]/[BorderRadius] for the many hand-rolled containers
 /// that can't read a shape from the theme.
 const Radius kRadiusCorner = Radius.circular(kRadius);
@@ -259,10 +302,15 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
     // made of: M3's default puts dialogs on `surfaceContainerHigh`, which in
     // this ladder sits within a couple of units of the canvas and left a
     // dialog looking like a patch of background with a scrim around it.
+    // Only the action row's inset is theme-wide: the title/content insets are
+    // not settable here in this Flutter version, and a text style frozen from
+    // `base` would lose its size (the geometry is localized in later), so
+    // [AppDialog] applies both and every dialog in the app goes through it.
     dialogTheme: base.dialogTheme.copyWith(
       shape: kRoundedShape,
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
+      actionsPadding: kModalActionsPadding,
     ),
     // Popup menus borrow the compact, outlined floating-surface treatment used
     // by the motion preview: enough separation from the canvas without a

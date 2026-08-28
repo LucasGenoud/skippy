@@ -54,7 +54,7 @@ class ShortcutHelpDialog extends StatelessWidget {
 
     return FormDialog(
       title: const Text('Keyboard shortcuts'),
-      width: 360,
+      width: kDialogWidthCompact,
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

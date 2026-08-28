@@ -134,30 +134,13 @@ class ReminderPicker {
       use24hTime: use24hTime,
       inDialog: !narrow,
     );
-    final scheme = Theme.of(context).colorScheme;
-    if (narrow) {
-      return showModalBottomSheet<ReminderSelection>(
-        context: context,
-        backgroundColor: scheme.surfaceContainer,
-        showDragHandle: true,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: sheet,
-      );
-    }
-    return showDialog<ReminderSelection>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: scheme.surfaceContainer,
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 460,
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: sheet(context),
-        ),
-      ),
+    // The same shell every other picker arrives in, rather than a second one
+    // that happened to pick a different paper and a different width.
+    return showAdaptiveSelectionSurface<ReminderSelection>(
+      context,
+      isScrollControlled: true,
+      maxWidth: 460,
+      builder: sheet,
     );
   }
 }
@@ -664,32 +647,15 @@ class _ReminderSheetState extends State<_ReminderSheet> {
     final currentLabel = _currentLabel;
 
     final actions = _actions(scheme);
+    final header = ModalHeader(
+      title: 'Set reminder',
+      subtitle: currentLabel,
+      onClose: () => Navigator.of(context).pop(),
+    );
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text('Set reminder', style: theme.textTheme.titleLarge),
-            ),
-            IconButton(
-              tooltip: 'Close',
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close),
-            ),
-          ],
-        ),
-        if (currentLabel != null) ...[
-          Text(
-            currentLabel,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-        const SizedBox(height: 8),
         if (_offersPlace) _kindSwitch(),
         AnimatedSize(
           duration: Motion.base,
@@ -715,13 +681,17 @@ class _ReminderSheetState extends State<_ReminderSheet> {
       return SafeArea(
         top: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              body,
-              if (actions != null) ...[const SizedBox(height: 16), actions],
+              header,
+              Padding(
+                padding: modalBodyPadding(hasFooter: actions != null),
+                child: body,
+              ),
+              if (actions != null)
+                ModalFooter(stacked: true, children: [actions]),
             ],
           ),
         ),
@@ -731,17 +701,14 @@ class _ReminderSheetState extends State<_ReminderSheet> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        header,
         Flexible(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            padding: modalBodyPadding(hasFooter: actions != null),
             child: body,
           ),
         ),
-        if (actions != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-            child: actions,
-          ),
+        if (actions != null) ModalFooter(stacked: true, children: [actions]),
       ],
     );
   }

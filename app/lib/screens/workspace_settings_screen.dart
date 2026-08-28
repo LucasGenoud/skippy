@@ -8,6 +8,7 @@ import '../util/motion.dart';
 import '../util/snack.dart';
 import '../util/workspace_stats.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/form_dialog.dart';
 import '../widgets/workspace_menu.dart';
 import 'workspace_stats_screen.dart';
 
@@ -470,7 +471,7 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
         '$noteCount notes and all their attachments will be permanently '
             'deleted. This can\'t be undone.',
     };
-    return AlertDialog(
+    return AppDialog(
       title: Text('Delete "${widget.workspace.name}"?'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
