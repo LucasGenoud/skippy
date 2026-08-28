@@ -46,25 +46,38 @@ Future<void> downloadUrl(String url, String filename) async {
   await _save(filename, response.bodyBytes, response.headers['content-type']);
 }
 
-Future<void> _save(String filename, Uint8List bytes, String? mime) =>
-    _isDesktop
-    ? _saveToChosenFile(filename, bytes)
+Future<void> _save(String filename, Uint8List bytes, String? mime) => _isDesktop
+    ? _saveToChosenFile(filename, bytes, mime)
     : _shareBytes(filename, bytes, mime);
 
 /// Desktop: ask where to put it, and let the picker write the bytes. A null
-/// path means the user dismissed the dialog, which is not an error.
-Future<void> _saveToChosenFile(String filename, Uint8List bytes) async {
+/// URI means the user dismissed the dialog, which is not an error.
+Future<void> _saveToChosenFile(
+  String filename,
+  Uint8List bytes,
+  String? mime,
+) async {
   final safe = _sanitize(filename);
   try {
     await FilePicker.saveFile(
       dialogTitle: 'Save $safe',
       fileName: safe,
       bytes: bytes,
-      lockParentWindow: true,
+      mimeType: _bareMime(mime),
+      windowsOptions: const WindowsOptions(lockParentWindow: true),
+      linuxOptions: const LinuxOptions(lockParentWindow: true),
     );
   } catch (e) {
     debugPrint('save dialog failed for $filename: $e');
   }
+}
+
+/// The save dialog wants a bare type, but a `mime` taken off a Content-Type
+/// header can carry parameters (`text/plain; charset=utf-8`). Drop them, and
+/// fall back to the generic type when there is nothing usable left.
+String _bareMime(String? mime) {
+  final bare = (mime ?? '').split(';').first.trim();
+  return bare.isEmpty ? 'application/octet-stream' : bare;
 }
 
 /// Mobile: the bytes are written to a temp file first so the OS gets a real

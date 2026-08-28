@@ -1,9 +1,6 @@
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
-// file_picker keeps the platform interface out of its public library, so
-// standing a fake in front of the save dialog has to reach into src/.
-import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/util/download.dart';
@@ -16,21 +13,25 @@ class _RecordingFilePicker extends FilePickerPlatform {
   int calls = 0;
   String? fileName;
   Uint8List? bytes;
+  String? mimeType;
 
   @override
-  Future<String?> saveFile({
+  Future<Uri?> saveFile({
+    required String fileName,
+    required Uint8List bytes,
+    required String mimeType,
     String? dialogTitle,
-    String? fileName,
     String? initialDirectory,
-    FileType type = FileType.any,
-    List<String>? allowedExtensions,
-    Uint8List? bytes,
-    bool lockParentWindow = false,
+    Function(FilePickerStatus)? onFileSaving,
+    WindowsOptions windowsOptions = const WindowsOptions(),
+    LinuxOptions linuxOptions = const LinuxOptions(),
+    WebOptions webOptions = const WebOptions(),
   }) async {
     calls++;
     this.fileName = fileName;
     this.bytes = bytes;
-    return '/tmp/$fileName';
+    this.mimeType = mimeType;
+    return Uri.file('/tmp/$fileName');
   }
 }
 
@@ -46,19 +47,23 @@ void main() {
 
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-  test('a desktop export goes through the save dialog, with the bytes', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+  test(
+    'a desktop export goes through the save dialog, with the bytes',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
 
-    await downloadBytesFile(
-      'skippy-2026-08-13.zip',
-      Uint8List.fromList([1, 2, 3, 4]),
-      'application/zip',
-    );
+      await downloadBytesFile(
+        'skippy-2026-08-13.zip',
+        Uint8List.fromList([1, 2, 3, 4]),
+        'application/zip',
+      );
 
-    expect(picker.calls, 1);
-    expect(picker.fileName, 'skippy-2026-08-13.zip');
-    expect(picker.bytes, [1, 2, 3, 4]);
-  });
+      expect(picker.calls, 1);
+      expect(picker.fileName, 'skippy-2026-08-13.zip');
+      expect(picker.bytes, [1, 2, 3, 4]);
+      expect(picker.mimeType, 'application/zip');
+    },
+  );
 
   test('Windows gets the same dialog, not the share sheet', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;

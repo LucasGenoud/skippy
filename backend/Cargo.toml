@@ -20,19 +20,26 @@ serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "v5"] }
-tower-http = { version = "0.6", features = ["cors", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "fs"] }
 anyhow = "1"
 async-trait = "0.1"
 argon2 = "0.5"
+# Held at 0.6 by argon2 0.5 (the newest release): SaltString::generate takes the
+# RNG through password-hash 0.5, which is built against this rand_core.
 rand_core = { version = "0.6", features = ["getrandom"] }
 futures = "0.3"
 # vec0 virtual table for the semantic-search index; registered process-wide
 # via sqlite3_auto_extension, so libsqlite3-sys must stay the version sqlx uses.
 sqlite-vec = "0.1"
 libsqlite3-sys = "0.30"
+# Held at 0.12 deliberately. reqwest 0.13's `rustls` feature switches the crypto
+# provider to aws-lc-rs (whose build wants cmake, which the rust:trixie builder
+# in the Dockerfile does not carry) and moves root certificates onto
+# rustls-platform-verifier. That is a TLS migration to make on its own terms,
+# not a side effect of a dependency sweep.
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls", "stream"] }
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 hex = "0.4"
 # SMTP for the email notification connector. rustls to match reqwest's TLS
 # stack (no OpenSSL in the build image); default features would pull native-tls.
