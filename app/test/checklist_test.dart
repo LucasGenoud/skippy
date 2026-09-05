@@ -691,6 +691,64 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('a detached iOS space keeps the word it just committed', (
+      tester,
+    ) async {
+      // When typing quickly, iOS can commit the composed word and immediately
+      // report the following space as a replacement value of its own instead
+      // of the full "word ". The field still has a collapsed caret, so this
+      // is an insertion, not a request to replace what was just written.
+      await openChecklist(tester);
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Pancake',
+          selection: TextSelection.collapsed(offset: 7),
+          composing: TextRange(start: 0, end: 7),
+        ),
+      );
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: ' ',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+
+      expect(written(focusedField(tester)), 'Pancake ');
+      expect(itemsOf('n1'), ['Pancake ']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a space still replaces an explicitly selected word', (
+      tester,
+    ) async {
+      await openChecklist(tester);
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+
+      tester.testTextInput.enterText('Pancake');
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Pancake',
+          selection: TextSelection(baseOffset: 0, extentOffset: 7),
+        ),
+      );
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: ' ',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+
+      expect(written(focusedField(tester)), ' ');
+      expect(itemsOf('n1'), [' ']);
+      await flushTimers(tester);
+    });
+
     testWidgets('every row requests sentence capitalization', (tester) async {
       // Reported: only the first item of a list came out capitalized. The
       // composer asked for it; the rows Enter creates did not, so everything

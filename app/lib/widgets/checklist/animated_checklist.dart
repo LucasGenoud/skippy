@@ -106,6 +106,30 @@ const _kEmptyRowMarker = '\u200b';
 
 String _withoutMarker(String text) => text.replaceAll(_kEmptyRowMarker, '');
 
+/// Repairs a malformed transition iOS can send when a quickly typed word is
+/// committed and Space is pressed immediately afterwards. The input client
+/// sometimes reports only the newly inserted space as the field's complete
+/// value, even though the old value still has a collapsed caret after the
+/// word. Treat that one narrow shape as the insertion it describes. A real
+/// replacement carries a non-collapsed old selection and passes through.
+final _keepCommittedWordBeforeSpace = TextInputFormatter.withFunction((
+  oldValue,
+  newValue,
+) {
+  if (newValue.text != ' ' ||
+      oldValue.text.isEmpty ||
+      !oldValue.selection.isValid ||
+      !oldValue.selection.isCollapsed) {
+    return newValue;
+  }
+  final offset = oldValue.selection.baseOffset.clamp(0, oldValue.text.length);
+  final repaired = oldValue.text.replaceRange(offset, offset, newValue.text);
+  return TextEditingValue(
+    text: repaired,
+    selection: TextSelection.collapsed(offset: offset + 1),
+  );
+});
+
 /// Drops the marker inside the input pipeline, so the first character typed
 /// over it lands in the controller already clean. Formatters run on platform
 /// edits only, which is exactly right here: parking the marker is a
@@ -1344,7 +1368,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
         // the only row that asked, which is why the first item on a list came
         // out capitalized and every row started with Enter did not.
         textCapitalization: TextCapitalization.sentences,
-        inputFormatters: [_stripMarker],
+        inputFormatters: [_keepCommittedWordBeforeSpace, _stripMarker],
         style: style,
         decoration: InputDecoration(
           hintText: hintText,
