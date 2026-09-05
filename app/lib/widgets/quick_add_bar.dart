@@ -21,6 +21,7 @@ import '../util/snack.dart';
 import 'checklist/animated_checklist.dart';
 import 'app_logo.dart';
 import 'color_picker.dart';
+import 'editor/highlighted_text_field.dart';
 import 'file_drop.dart';
 import 'labels_sheet.dart';
 import 'markdown_toolbar.dart';
@@ -56,7 +57,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   static const _uuid = Uuid();
 
   final _titleController = TextEditingController();
-  final _contentController = TextEditingController();
+  final _contentController = MarkdownEditingController(markdownEnabled: false);
   late final FocusNode _titleFocus;
   final _contentFocus = FocusNode();
 
@@ -708,6 +709,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
         ),
       );
     }
+    _contentController.markdownEnabled = _kind == NoteKind.markdown;
     return TextField(
       controller: _contentController,
       focusNode: _contentFocus,

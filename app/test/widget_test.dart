@@ -22,6 +22,7 @@ import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/all_done_burst.dart';
 import 'package:skippy/widgets/checklist/animated_checklist.dart';
+import 'package:skippy/widgets/editor/highlighted_text_field.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
 import 'package:skippy/widgets/linked_text.dart';
@@ -1419,7 +1420,7 @@ void main() {
       await flushTimers(tester);
     });
 
-    testWidgets('markdown opens in preview and tapping edits source', (
+    testWidgets('markdown opens in preview and switches to styled source', (
       tester,
     ) async {
       api.notes['n1'] = serverNote(
@@ -1434,18 +1435,74 @@ void main() {
       expect(preview.selectable, isTrue);
       expect(find.byType(SelectionArea), findsNothing);
       expect(find.byType(SelectableText), findsWidgets);
-      expect(find.byTooltip('Edit markdown'), findsOneWidget);
+      expect(find.byKey(const Key('markdown-mode-switch')), findsOneWidget);
+      expect(find.text('Edit'), findsOneWidget);
+      expect(find.text('Preview'), findsOneWidget);
 
-      await tester.tap(find.byType(SelectableText).first);
+      await tester.tap(find.text('Edit'));
       await tester.pump();
-      expect(find.byTooltip('Preview'), findsOneWidget);
       final source = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .last;
       expect(source.focusNode.hasFocus, isTrue);
+      expect(source.controller, isA<MarkdownEditingController>());
       await tester.enterText(find.byType(TextField).last, '**Edited** preview');
       expect(store.noteById('n1')!.content, '**Edited** preview');
+      await tester.tap(find.text('Preview'));
+      await tester.pump();
+      expect(find.byType(MarkdownBody), findsOneWidget);
+      expect(find.textContaining('Edited', findRichText: true), findsWidgets);
       await flushTimers(tester);
+    });
+
+    testWidgets('markdown source styles syntax without changing its text', (
+      tester,
+    ) async {
+      final controller = MarkdownEditingController(
+        text: '# Heading\nSome **bold** and `code`',
+      );
+      addTearDown(controller.dispose);
+      late BuildContext buildContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              buildContext = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+
+      final root = controller.buildTextSpan(
+        context: buildContext,
+        style: const TextStyle(fontSize: 14),
+        withComposing: false,
+      );
+      final spans = root.children!.cast<TextSpan>();
+      expect(spans.map((span) => span.text).join(), controller.text);
+      expect(
+        spans.any(
+          (span) =>
+              span.text?.contains('Heading') == true &&
+              span.style?.fontWeight == FontWeight.w700,
+        ),
+        isTrue,
+      );
+      expect(
+        spans.any(
+          (span) =>
+              span.text == 'bold' && span.style?.fontWeight == FontWeight.w700,
+        ),
+        isTrue,
+      );
+      expect(
+        spans.any(
+          (span) =>
+              span.text == 'code' && span.style?.fontFamily == 'monospace',
+        ),
+        isTrue,
+      );
     });
 
     testWidgets('typing in a fresh editor creates the note; closing keeps it', (

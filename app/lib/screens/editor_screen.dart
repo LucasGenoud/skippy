@@ -263,7 +263,7 @@ class _EditorScreenState extends State<EditorScreen> {
   late final NotesStore _store;
   late final SettingsStore _settings;
   late final TextEditingController _titleController;
-  late final LinkifyingController _contentController;
+  late final MarkdownEditingController _contentController;
   final _findController = TextEditingController();
   final _titleFocus = FocusNode();
   final _contentFocus = FocusNode();
@@ -299,7 +299,10 @@ class _EditorScreenState extends State<EditorScreen> {
     // draft still opens as source so typing can begin immediately.
     _previewMarkdown = note?.kind == NoteKind.markdown;
     _titleController = TextEditingController(text: note?.title ?? '');
-    _contentController = LinkifyingController(text: note?.content ?? '');
+    _contentController = MarkdownEditingController(
+      text: note?.content ?? '',
+      markdownEnabled: (note?.kind ?? widget.kind) == NoteKind.markdown,
+    );
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
     _findController.addListener(() => setState(() {}));
@@ -1016,17 +1019,6 @@ class _EditorScreenState extends State<EditorScreen> {
             onPressed: _closeFind,
           )
         else ...[
-          if (_kind == NoteKind.markdown)
-            IconButton(
-              icon: Icon(
-                _previewMarkdown
-                    ? Icons.edit_outlined
-                    : Icons.visibility_outlined,
-              ),
-              tooltip: _previewMarkdown ? 'Edit markdown' : 'Preview',
-              onPressed: () =>
-                  setState(() => _previewMarkdown = !_previewMarkdown),
-            ),
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Find in note',
@@ -1264,6 +1256,8 @@ class _EditorScreenState extends State<EditorScreen> {
                                       border: InputBorder.none,
                                     ),
                                   ),
+                                  if (_kind == NoteKind.markdown)
+                                    _markdownModeSwitch(),
                                   _contentEditor(
                                     trashed: trashed,
                                     query: query,
@@ -1502,13 +1496,64 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  Widget _markdownModeSwitch() {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      child: Row(
+        children: [
+          SegmentedButton<bool>(
+            key: const Key('markdown-mode-switch'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment<bool>(
+                value: false,
+                icon: Icon(Icons.edit_outlined, size: 18),
+                label: Text('Edit'),
+                tooltip: 'Edit markdown source',
+              ),
+              ButtonSegment<bool>(
+                value: true,
+                icon: Icon(Icons.visibility_outlined, size: 18),
+                label: Text('Preview'),
+                tooltip: 'Preview rendered markdown',
+              ),
+            ],
+            selected: {_previewMarkdown},
+            onSelectionChanged: (selection) =>
+                _setMarkdownPreview(selection.single),
+          ),
+          if (!_previewMarkdown) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Markdown syntax stays visible while formatting is styled',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _setMarkdownPreview(bool preview) {
+    if (_previewMarkdown == preview) return;
+    if (preview) _contentFocus.unfocus();
+    setState(() => _previewMarkdown = preview);
+    if (!preview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _contentFocus.requestFocus();
+      });
+    }
+  }
+
   void _editMarkdownFromPreview() {
-    setState(() => _previewMarkdown = false);
-    // The TextField only exists after the mode change has rebuilt. Requesting
-    // focus on the next frame keeps the shortcut reliable on every platform.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _contentFocus.requestFocus();
-    });
+    _setMarkdownPreview(false);
   }
 
   /// Audio note: the clip player on top, then the transcript, a live
