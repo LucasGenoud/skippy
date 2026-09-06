@@ -1,10 +1,12 @@
 import 'note.dart';
+import 'saved_view.dart';
 
 /// A container for notes and labels. Every account has one default workspace
 /// and may create more; members are invited per workspace and see every note
 /// it holds. Its labels are a shared taxonomy rather than personal ones.
 class Workspace {
   final String id;
+  final List<SavedView> savedViews;
   final String name;
   final bool notesEnabled;
   final bool boardEnabled;
@@ -22,6 +24,7 @@ class Workspace {
 
   const Workspace({
     required this.id,
+    this.savedViews = const [],
     required this.name,
     this.notesEnabled = true,
     this.boardEnabled = true,
@@ -36,12 +39,14 @@ class Workspace {
   bool get isShared => members.isNotEmpty;
 
   Workspace copyWith({
+    List<SavedView>? savedViews,
     String? name,
     bool? notesEnabled,
     bool? boardEnabled,
     List<UserRef>? members,
   }) => Workspace(
     id: id,
+    savedViews: savedViews ?? this.savedViews,
     name: name ?? this.name,
     notesEnabled: notesEnabled ?? this.notesEnabled,
     boardEnabled: boardEnabled ?? this.boardEnabled,
@@ -52,6 +57,11 @@ class Workspace {
 
   factory Workspace.fromJson(Map<String, dynamic> json) => Workspace(
     id: json['id'] as String,
+    savedViews: [
+      for (final entry in json['smart_views'] as List? ?? const [])
+        if (entry is Map<String, dynamic>)
+          if (SavedView.fromJson(entry) case final SavedView view) view,
+    ],
     name: json['name'] as String? ?? '',
     notesEnabled: json['notes_enabled'] as bool? ?? true,
     boardEnabled: json['board_enabled'] as bool? ?? true,
@@ -66,6 +76,7 @@ class Workspace {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'smart_views': [for (final view in savedViews) view.toJson()],
     'name': name,
     'notes_enabled': notesEnabled,
     'board_enabled': boardEnabled,

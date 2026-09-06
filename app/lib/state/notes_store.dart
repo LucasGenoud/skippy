@@ -11,6 +11,7 @@ import '../util/backup.dart';
 import '../util/connectivity.dart';
 import 'checklist_tree.dart';
 import 'local_cache.dart';
+import '../models/saved_view.dart';
 import 'note_collection.dart';
 import 'note_conversion.dart';
 import 'note_attachment_coordinator.dart';
@@ -476,6 +477,9 @@ class NotesStore extends ChangeNotifier {
         await api.deleteLabel(label.id);
         onProgress?.call(++completed, totalSteps);
       }
+      for (final view in defaultWorkspace?.savedViews ?? const <SavedView>[]) {
+        await api.deleteSavedView(defaultId!, view.id);
+      }
       for (final stage in defaultStages) {
         await api.deleteStage(stage.id);
         onProgress?.call(++completed, totalSteps);
@@ -516,6 +520,9 @@ class NotesStore extends ChangeNotifier {
           );
         }
 
+        for (final view in backupWorkspace.savedViews) {
+          await api.putSavedView(targetWorkspaceId, view);
+        }
         final labelMap = <String, String>{};
         for (final backupLabel in backupWorkspace.labels) {
           final id = _uuid.v4();
@@ -745,15 +752,13 @@ class NotesStore extends ChangeNotifier {
       final startedWithLocalChanges = _hasLocalChangesInFlight;
       final revisionAtStart = _localWriteRevision;
       try {
-        final workspaces = await api.fetchWorkspaces();
-        if (!isCurrent()) return;
-        final notes = await api.fetchNotes();
-        if (!isCurrent()) return;
-        final labels = await api.fetchLabels();
-        if (!isCurrent()) return;
-        final stages = await api.fetchStages();
-        if (!isCurrent()) return;
-        final history = await api.fetchChecklistHistory();
+        final (workspaces, notes, labels, stages, history) = await (
+          api.fetchWorkspaces(),
+          api.fetchNotes(),
+          api.fetchLabels(),
+          api.fetchStages(),
+          api.fetchChecklistHistory(),
+        ).wait;
         if (!isCurrent()) return;
         final writesChangedDuringFetch = revisionAtStart != _localWriteRevision;
         // A write can enter and leave the queue entirely while these requests
@@ -795,48 +800,25 @@ class NotesStore extends ChangeNotifier {
   /// pending writes so the refetch reflects them. Skips clobbering when local
   /// changes are still in flight, matching [load].
   Future<void> refresh() async {
-    if (_disposed || refreshing) return;
-    final generation = ++_fetchGeneration;
-    bool isCurrent() => !_disposed && generation == _fetchGeneration;
+    if (_disposed || refreshing) {
+      return;
+    }
     refreshing = true;
     notifyListeners();
-    // Push anything queued/mid-debounce first, so the server state we pull back
-    // already includes it (and won't be discarded by the in-flight guard).
     for (final id in _saveDebounce.keys.toList()) {
       _saveDebounce.remove(id)?.cancel();
       _enqueueContentPatch(id);
     }
-    if (_queue.isNotEmpty) _flush();
+    if (_queue.isNotEmpty) {
+      _flush();
+    }
     try {
-      final workspaces = await api.fetchWorkspaces();
-      if (!isCurrent()) return;
-      final notes = await api.fetchNotes();
-      if (!isCurrent()) return;
-      final labels = await api.fetchLabels();
-      if (!isCurrent()) return;
-      final stages = await api.fetchStages();
-      if (!isCurrent()) return;
-      final history = await api.fetchChecklistHistory();
-      if (!isCurrent()) return;
-      if (!_hasLocalChangesInFlight) {
-        _notes = notes..sort((a, b) => a.position.compareTo(b.position));
-        _labels = labels;
-        _stages = stages;
-        _workspaces = workspaces;
-        _reconcileActiveWorkspace();
-        _checklistHistory = history;
-      } else {
-        _reloadPending = true;
-      }
-      _markConnectionUp();
-    } catch (_) {
-      if (!isCurrent()) return;
-      _markConnectionDown();
+      // One snapshot path owns generation and write-revision checks. Manual
+      // refresh must reject a pre-edit snapshot just like live sync does.
+      await load();
     } finally {
       refreshing = false;
-      if (isCurrent()) {
-        // A refresh may have superseded the initial load.
-        loading = false;
+      if (!_disposed) {
         notifyListeners();
       }
     }
@@ -1646,6 +1628,119 @@ class NotesStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------------
   // Workspaces
+
+  List<SavedView> get savedViews =>
+      List.unmodifiable(activeWorkspace?.savedViews ?? const <SavedView>[]);
+
+  SavedView? savedViewById(String id) {
+    for (final view in savedViews) {
+      if (view.id == id) {
+        return view;
+      }
+    }
+    return null;
+  }
+
+  SavedView addSavedView({
+    required String name,
+    required String query,
+    String? icon,
+    String? color,
+  }) {
+    final view = SavedView(
+      id: _uuid.v4(),
+      name: name.trim(),
+      query: query.trim(),
+      icon: icon,
+      color: color,
+      position: savedViews.isEmpty ? 1024 : savedViews.last.position + 1024,
+    );
+    _putSavedView(view);
+    return view;
+  }
+
+  void updateSavedView(
+    String id, {
+    required String name,
+    required String query,
+    String? icon,
+    String? color,
+  }) {
+    final view = savedViewById(id);
+    if (view == null) {
+      return;
+    }
+    _putSavedView(
+      view.copyWith(
+        name: name.trim(),
+        query: query.trim(),
+        icon: icon,
+        color: color,
+      ),
+    );
+  }
+
+  void _putSavedView(SavedView view) {
+    final index = _workspaces.indexWhere((w) => w.id == _activeWorkspaceId);
+    if (index < 0) {
+      return;
+    }
+    final workspace = _workspaces[index];
+    _workspaces[index] = workspace.copyWith(
+      savedViews: [
+        for (final old in workspace.savedViews)
+          if (old.id != view.id) old,
+        view,
+      ]..sort((a, b) => a.position.compareTo(b.position)),
+    );
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.savedViewPut,
+        id: view.id,
+        data: {'workspaceId': workspace.id, 'view': view.toJson()},
+      ),
+    );
+  }
+
+  void removeSavedView(String id) {
+    final index = _workspaces.indexWhere((w) => w.id == _activeWorkspaceId);
+    if (index < 0 || savedViewById(id) == null) {
+      return;
+    }
+    final workspace = _workspaces[index];
+    _workspaces[index] = workspace.copyWith(
+      savedViews: workspace.savedViews.where((v) => v.id != id).toList(),
+    );
+    notifyListeners();
+    _enqueue(
+      PendingOp(
+        PendingOpKind.savedViewDelete,
+        id: id,
+        data: {'workspaceId': workspace.id},
+      ),
+    );
+  }
+
+  void reorderSavedViews(int oldIndex, int newIndex) {
+    final next = [...savedViews];
+    if (oldIndex < 0 || oldIndex >= next.length) {
+      return;
+    }
+    final view = next.removeAt(oldIndex);
+    final target = newIndex.clamp(0, next.length);
+    final before = target == 0
+        ? (next.isEmpty ? 0.0 : next.first.position - 2048)
+        : next[target - 1].position;
+    final after = target == next.length ? before + 2048 : next[target].position;
+    _putSavedView(
+      view.copyWith(
+        position: (before + after) / 2,
+        icon: view.icon,
+        color: view.color,
+      ),
+    );
+  }
 
   /// Create a workspace and switch to it. Optimistic like note creation: the
   /// switch happens now and the write drains through the queue.

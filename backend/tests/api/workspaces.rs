@@ -682,3 +682,49 @@ async fn make_label_in(app: &Router, token: &str, name: &str, workspace_id: &str
     assert_eq!(status, StatusCode::CREATED, "create label {name}: {body}");
     body["id"].as_str().unwrap().to_string()
 }
+
+#[tokio::test]
+async fn smart_views_belong_to_workspace() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+    let work = make_workspace(&app, &ada, "Work").await;
+    let path = format!("/api/workspaces/{work}/smart-views/pinned");
+    let view = json!({"id":"pinned", "name":"Pinned", "query":"is:pinned", "position":1024});
+    assert_eq!(
+        send(&app, "PUT", &path, Some(&bob), Some(view.clone()))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(&app, "PUT", &path, Some(&ada), Some(view.clone()))
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    invite(&app, &ada, &work, &test_email("bob")).await;
+    let shared = workspaces(&app, &bob).await;
+    assert_eq!(
+        shared.iter().find(|w| w["id"] == work).unwrap()["smart_views"][0]["query"],
+        "is:pinned"
+    );
+    assert_eq!(shared[0]["smart_views"], json!([]));
+    let changed = json!({"id":"pinned", "name":"Open", "query":"is:open", "position":1024});
+    assert_eq!(
+        send(&app, "PUT", &path, Some(&bob), Some(changed)).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        send(&app, "DELETE", &path, Some(&bob), None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        workspaces(&app, &ada)
+            .await
+            .iter()
+            .find(|w| w["id"] == work)
+            .unwrap()["smart_views"],
+        json!([])
+    );
+}

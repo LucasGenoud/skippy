@@ -79,25 +79,6 @@ impl SqliteRepository {
     }
 }
 
-impl SqliteRepository {
-    /// Public display names for every account, keyed by id. One query beats a
-    /// lookup per row in the decoration paths, and the table is small.
-    async fn user_directory(&self) -> RepoResult<HashMap<String, UserPublic>> {
-        let mut users = HashMap::new();
-        for row in sqlx::query("SELECT id, name FROM users")
-            .fetch_all(&self.pool)
-            .await?
-        {
-            let user = UserPublic {
-                id: row.get("id"),
-                name: row.get("name"),
-            };
-            users.insert(user.id.clone(), user);
-        }
-        Ok(users)
-    }
-}
-
 #[async_trait]
 impl AccountRepository for SqliteRepository {
     // -- users & sessions ---------------------------------------------------
@@ -384,25 +365,82 @@ impl AccountRepository for SqliteRepository {
 
 #[async_trait]
 impl WorkspaceRepository for SqliteRepository {
+    async fn put_smart_view(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        view: &SavedView,
+    ) -> RepoResult<bool> {
+        let result = sqlx::query(&format!(
+            "INSERT INTO smart_views (workspace_id, id, data)
+             SELECT id, ?, ? FROM workspaces WHERE id = ? AND id IN ({MY_WORKSPACES})
+             ON CONFLICT(workspace_id, id) DO UPDATE SET data = excluded.data"
+        ))
+        .bind(&view.id)
+        .bind(serde_json::to_string(view)?)
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn delete_smart_view(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        id: &str,
+    ) -> RepoResult<bool> {
+        let result = sqlx::query(&format!(
+            "DELETE FROM smart_views WHERE workspace_id = ? AND id = ? AND workspace_id IN ({MY_WORKSPACES})"
+        ))
+        .bind(workspace_id).bind(id).bind(user_id).bind(user_id)
+        .execute(&self.pool).await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>> {
         let rows = sqlx::query(&format!(
-            "SELECT * FROM workspaces WHERE id IN ({MY_WORKSPACES})
-             ORDER BY is_default DESC, created_at ASC"
+            "SELECT w.*, u.name AS owner_name FROM workspaces w
+             JOIN users u ON u.id = w.owner_id WHERE w.id IN ({MY_WORKSPACES})
+             ORDER BY w.is_default DESC, w.created_at ASC"
         ))
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
+        let owners: HashMap<String, UserPublic> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.get("id"),
+                    UserPublic {
+                        id: row.get("owner_id"),
+                        name: row.get("owner_name"),
+                    },
+                )
+            })
+            .collect();
         let workspaces: Vec<Workspace> = rows.iter().map(workspace_from_row).collect();
         if workspaces.is_empty() {
             return Ok(vec![]);
         }
 
+        let mut views: HashMap<String, Vec<SavedView>> = HashMap::new();
+        for row in sqlx::query(&format!(
+            "SELECT workspace_id, data FROM smart_views WHERE workspace_id IN ({MY_WORKSPACES}) ORDER BY json_extract(data, '$.position'), id"
+        )).bind(user_id).bind(user_id).fetch_all(&self.pool).await? {
+            views.entry(row.get("workspace_id")).or_default()
+                .push(serde_json::from_str(row.get::<&str, _>("data"))?);
+        }
         let mut members_by_workspace: HashMap<String, Vec<UserPublic>> = HashMap::new();
-        for row in sqlx::query(
+        for row in sqlx::query(&format!(
             "SELECT m.workspace_id, u.id, u.name FROM workspace_members m
-             JOIN users u ON u.id = m.user_id",
-        )
+             JOIN users u ON u.id = m.user_id WHERE m.workspace_id IN ({MY_WORKSPACES})"
+        ))
+        .bind(user_id)
+        .bind(user_id)
         .fetch_all(&self.pool)
         .await?
         {
@@ -414,8 +452,6 @@ impl WorkspaceRepository for SqliteRepository {
                     name: row.get("name"),
                 });
         }
-        let users = self.user_directory().await?;
-
         Ok(workspaces
             .into_iter()
             .map(|workspace| {
@@ -425,13 +461,8 @@ impl WorkspaceRepository for SqliteRepository {
                     .unwrap_or_default();
                 members.sort_by(|a, b| a.name.cmp(&b.name));
                 WorkspaceView {
-                    owner: users
-                        .get(&workspace.owner_id)
-                        .cloned()
-                        .unwrap_or(UserPublic {
-                            id: workspace.owner_id.clone(),
-                            name: "?".to_string(),
-                        }),
+                    smart_views: views.remove(&workspace.id).unwrap_or_default(),
+                    owner: owners[&workspace.id].clone(),
                     members,
                     id: workspace.id,
                     name: workspace.name,

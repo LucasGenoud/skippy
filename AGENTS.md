@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Instruction source
+
+`AGENTS.md` is the canonical repository guidance for all coding agents. Keep Claude-specific repository instructions here too, rather than adding a separate `CLAUDE.md` or `agent.md`.
+
 ## Purpose and scope
 
 This file is the working map for agents modifying this repository. It applies to the whole tree unless a more specific `AGENTS.md` is added below it.
@@ -204,6 +208,25 @@ Stages (board columns) are shared workspace state too, and are deliberately a se
 A note's stage must belong to the note's workspace. `prune_foreign_stage` is the single-stage counterpart of `prune_foreign_labels` and is what stops a stray or foreign stage id from sticking; a workspace move clears the stage for the same reason it drops the old labels. `stage_position` orders cards within a column and is separate from `position` on purpose, so arranging the board never reshuffles the grid. A move is one patch carrying both `stage_id` and `stage_position`, not a stage change chased by a reorder.
 
 Recheck the entire permission matrix when adding a note-related endpoint. Do not fetch a raw row first and bolt on an inconsistent permission check if an existing participant-scoped repository method can express the operation.
+
+### Smart views and ownership boundaries
+
+Smart views belong to a workspace, like labels and stages. `smart_views` stores
+one definition per `(workspace_id, id)`; every workspace member may edit it,
+and direct note sharing grants no access. `WorkspaceView.smart_views` carries
+them to the client. `NotesStore` filters them by the active workspace and uses
+its durable queue for per-view PUT/DELETE operations. They belong in workspace
+backups, never in `SettingsStore`. Startup atomically imports legacy personal
+`saved_views` into the owner's default workspace and removes the old key.
+
+Theme, palette, display preferences, notification destinations, credentials,
+saved places and location reminders remain personal. Workspace ownership does
+not imply sharing a person's secrets or device preferences. A user-scoped
+cache is an isolation boundary, not ownership of the records it holds.
+
+Initial load, live sync and manual refresh share the same snapshot path. Fetch
+independent resources concurrently and reject snapshots if the generation or
+local write revision changed, including writes that finished during the fetch.
 
 ### Mutation side effects
 

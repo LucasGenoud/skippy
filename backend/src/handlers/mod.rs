@@ -18,6 +18,7 @@ mod stages;
 mod unfurl;
 mod versions;
 mod workspaces;
+pub use workspaces::{delete_smart_view, put_smart_view};
 mod writing;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};

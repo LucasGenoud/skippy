@@ -1,3 +1,4 @@
+import '../models/saved_view.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -126,6 +127,8 @@ abstract class Api {
     required bool notesEnabled,
     required bool boardEnabled,
   });
+  Future<void> putSavedView(String workspaceId, SavedView view);
+  Future<void> deleteSavedView(String workspaceId, String id);
   Future<void> deleteWorkspace(String id);
 
   /// Invite someone by email; returns the workspace with its new roster.
@@ -534,6 +537,27 @@ class ApiClient extends _ApiTransport implements Api {
       ),
     );
     return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> putSavedView(String workspaceId, SavedView view) async {
+    _decode(
+      await _client.put(
+        _uri('/workspaces/$workspaceId/smart-views/${view.id}'),
+        headers: _headers(),
+        body: jsonEncode(view.toJson()),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteSavedView(String workspaceId, String id) async {
+    _decode(
+      await _client.delete(
+        _uri('/workspaces/$workspaceId/smart-views/$id'),
+        headers: _headers(),
+      ),
+    );
   }
 
   @override

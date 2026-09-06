@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -41,6 +41,13 @@ CREATE TABLE IF NOT EXISTS workspace_members (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     PRIMARY KEY (workspace_id, user_id)
 ) WITHOUT ROWID, STRICT;
+
+CREATE TABLE IF NOT EXISTS smart_views (
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    data TEXT NOT NULL CHECK (json_valid(data)),
+    PRIMARY KEY (workspace_id, id)
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS stages (
     id TEXT PRIMARY KEY,
@@ -260,6 +267,58 @@ CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
+    import_personal_views(pool).await?;
+    Ok(())
+}
+
+/// Claim old personal definitions only once, in their owner's default
+/// workspace. Clearing the old key atomically prevents deleted views from
+/// reappearing after a restart; unrelated preferences stay intact.
+async fn import_personal_views(pool: &SqlitePool) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    let rows = sqlx::query(
+        "SELECT s.user_id, s.data, w.id AS workspace_id FROM user_settings s
+         JOIN workspaces w ON w.owner_id = s.user_id AND w.is_default = 1
+         WHERE json_type(s.data, '$.saved_views') IS NOT NULL",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for row in rows {
+        let mut settings: serde_json::Value = serde_json::from_str(row.get("data"))?;
+        if let Some(entries) = settings["saved_views"].as_array() {
+            for (index, entry) in entries.iter().enumerate() {
+                let Ok(mut view) =
+                    serde_json::from_value::<crate::models::SavedView>(entry.clone())
+                else {
+                    continue;
+                };
+                if view.id.trim().is_empty()
+                    || view.name.trim().is_empty()
+                    || view.query.trim().is_empty()
+                {
+                    continue;
+                }
+                view.position = (index + 1) as f64 * 1024.0;
+                sqlx::query(
+                    "INSERT OR IGNORE INTO smart_views (workspace_id, id, data) VALUES (?, ?, ?)",
+                )
+                .bind(row.get::<&str, _>("workspace_id"))
+                .bind(&view.id)
+                .bind(serde_json::to_string(&view)?)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        if let Some(object) = settings.as_object_mut() {
+            object.remove("saved_views");
+        }
+        sqlx::query("UPDATE user_settings SET data = ? WHERE user_id = ?")
+            .bind(serde_json::to_string(&settings)?)
+            .bind(row.get::<&str, _>("user_id"))
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -271,6 +330,46 @@ mod tests {
     use crate::models::User;
     use crate::store::AccountRepository;
     use crate::store::sqlite::SqliteRepository;
+
+    #[tokio::test]
+    async fn legacy_views_move_once() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        super::initialize(&pool).await.unwrap();
+        sqlx::raw_sql(r#"
+            INSERT INTO users VALUES ('u', 'User', 'u@example.test', 'hash', 'now');
+            INSERT INTO workspaces (id, owner_id, name, is_default, created_at) VALUES ('w', 'u', 'My notes', 1, 'now');
+            INSERT INTO user_settings VALUES ('u', '{"theme":"dark","saved_views":[{"id":"v","name":"Pinned","query":"is:pinned"}]}');
+        "#).execute(&pool).await.unwrap();
+        super::initialize(&pool).await.unwrap();
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM smart_views WHERE workspace_id = 'w'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 1);
+        sqlx::query("DELETE FROM smart_views")
+            .execute(&pool)
+            .await
+            .unwrap();
+        super::initialize(&pool).await.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM smart_views")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+        let data: String = sqlx::query_scalar("SELECT data FROM user_settings")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&data).unwrap(),
+            serde_json::json!({"theme":"dark"})
+        );
+    }
 
     #[tokio::test]
     async fn workspace_integrity_is_enforced_by_foreign_keys_and_checks() {

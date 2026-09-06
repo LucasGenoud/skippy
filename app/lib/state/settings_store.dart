@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../models/notify_channels.dart';
-import '../models/saved_view.dart';
 import '../models/saved_location.dart';
 import '../theme.dart';
 
@@ -266,17 +265,6 @@ class SettingsStore extends ChangeNotifier {
   Map<String, String> notifyValues = {};
   bool reminderNotificationsEnabled = true;
 
-  /// Named searches pinned to the sidebar, in the order they appear there.
-  /// See [SavedView] for why these live in the settings document.
-  List<SavedView> savedViews = [];
-
-  SavedView? savedViewById(String id) {
-    for (final view in savedViews) {
-      if (view.id == id) return view;
-    }
-    return null;
-  }
-
   // Reminders scheduled with the OS on this device instead of pushed by the
   // server, so they fire offline and without a channel. Opt-in (unlike the
   // toggles above) because switching it on asks for a system permission, and
@@ -479,14 +467,6 @@ class SettingsStore extends ChangeNotifier {
                     case final LocationReminder reminder)
                   if (locationIds.contains(reminder.locationId)) reminder,
           ];
-    final rawViews = json['saved_views'];
-    savedViews = rawViews is! List
-        ? []
-        : [
-            for (final entry in rawViews)
-              if (entry is Map<String, dynamic>)
-                if (SavedView.fromJson(entry) case final SavedView v) v,
-          ];
     final rawPalette = json['palette'];
     if (rawPalette is List) {
       final parsed = [
@@ -539,7 +519,6 @@ class SettingsStore extends ChangeNotifier {
       for (final reminder in locationReminders) reminder.toJson(),
     ],
     'palette': [for (final entry in palette) entry.toJson()],
-    'saved_views': [for (final view in savedViews) view.toJson()],
   };
 
   void _mutate(VoidCallback change) {
@@ -721,61 +700,6 @@ class SettingsStore extends ChangeNotifier {
           .toList();
     });
   }
-
-  // -- saved views -----------------------------------------------------------
-
-  /// Adds a smart view and returns it, so the caller can open what it just
-  /// saved without having to find it again.
-  SavedView addSavedView({
-    required String name,
-    required String query,
-    String? icon,
-    String? color,
-  }) {
-    final view = SavedView(
-      // Same shape as a custom palette key: unique per device without needing
-      // a uuid dependency here, and the counter covers two in one millisecond.
-      id: 'view-${DateTime.now().millisecondsSinceEpoch}-${_customCounter++}',
-      name: name.trim(),
-      query: query.trim(),
-      icon: icon,
-      color: color,
-    );
-    _mutate(() => savedViews = [...savedViews, view]);
-    return view;
-  }
-
-  void updateSavedView(
-    String id, {
-    required String name,
-    required String query,
-    String? icon,
-    String? color,
-  }) => _mutate(() {
-    savedViews = [
-      for (final view in savedViews)
-        view.id == id
-            ? view.copyWith(
-                name: name.trim(),
-                query: query.trim(),
-                icon: icon,
-                color: color,
-              )
-            : view,
-    ];
-  });
-
-  void removeSavedView(String id) =>
-      _mutate(() => savedViews = savedViews.where((v) => v.id != id).toList());
-
-  /// Moves the view at [oldIndex] to [newIndex], for sidebar drag-reorder.
-  void reorderSavedViews(int oldIndex, int newIndex) => _mutate(() {
-    final next = [...savedViews];
-    if (oldIndex < 0 || oldIndex >= next.length) return;
-    final view = next.removeAt(oldIndex);
-    next.insert(newIndex.clamp(0, next.length), view);
-    savedViews = next;
-  });
 
   // -- palette ---------------------------------------------------------------
 

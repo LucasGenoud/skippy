@@ -3310,7 +3310,6 @@ void main() {
     ) async {
       var mode = ThemeMode.light;
       late StateSetter setMode;
-      // The rail reads saved smart views out of settings, so it needs one.
       final settings = SettingsStore(api: store.api);
       addTearDown(settings.dispose);
       await tester.pumpWidget(
@@ -3647,7 +3646,7 @@ void main() {
         final settings = SettingsStore(api: api);
         addTearDown(settings.dispose);
         await settings.load();
-        settings.addSavedView(name: 'Pinned', query: 'is:pinned');
+        store.addSavedView(name: 'Pinned', query: 'is:pinned');
 
         await tester.pumpWidget(homeApp(store, settings: settings));
         await tester.pumpAndSettle();
@@ -3666,6 +3665,12 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Pinned recipe'), findsOneWidget);
         expect(find.text('Pinned report'), findsNothing);
+        store.createWorkspace('Other workspace');
+        await tester.pumpAndSettle();
+        expect(find.text('Pinned'), findsNothing);
+        store.setActiveWorkspace('w-default');
+        await tester.pumpAndSettle();
+        expect(find.text('Pinned'), findsWidgets);
         await flushTimers(tester);
       },
     );

@@ -246,3 +246,53 @@ pub async fn remove_workspace_member(
     state.hub.notify(&members, CHANGED_MSG);
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Each write replaces one definition, so collaborators editing different
+/// views never overwrite one another's list.
+pub async fn put_smart_view(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((workspace_id, id)): Path<(String, String)>,
+    Json(mut view): Json<SavedView>,
+) -> ApiResult<StatusCode> {
+    view.name = view.name.trim().to_string();
+    view.query = view.query.trim().to_string();
+    if view.id != id
+        || id.is_empty()
+        || id.len() > 128
+        || view.name.is_empty()
+        || view.name.len() > 240
+        || view.query.is_empty()
+        || view.query.len() > 4096
+        || view.icon.as_ref().is_some_and(|v| v.len() > 128)
+        || view.color.as_ref().is_some_and(|v| v.len() > 32)
+        || !view.position.is_finite()
+    {
+        return Err(ApiError::BadRequest("invalid smart view".to_string()));
+    }
+    if !state
+        .repo
+        .put_smart_view(&user_id, &workspace_id, &view)
+        .await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    notify_workspace(&state, &workspace_id).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn delete_smart_view(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((workspace_id, id)): Path<(String, String)>,
+) -> ApiResult<StatusCode> {
+    if !state
+        .repo
+        .delete_smart_view(&user_id, &workspace_id, &id)
+        .await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    notify_workspace(&state, &workspace_id).await;
+    Ok(StatusCode::NO_CONTENT)
+}

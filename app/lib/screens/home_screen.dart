@@ -460,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
   SavedView? get _savedView {
     final id = _selection.savedViewId;
     if (id == null) return null;
-    return context.read<SettingsStore>().savedViewById(id);
+    return context.read<NotesStore>().savedViewById(id);
   }
 
   /// What actually filters the grid: the open smart view's saved query with
@@ -542,7 +542,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // A smart view deleted on another device leaves this one pointing at
         // nothing; treat that like a deleted label and fall back to the grid.
         NoteView.smart =>
-          context.read<SettingsStore>().savedViewById(selection.savedViewId!) !=
+          context.read<NotesStore>().savedViewById(selection.savedViewId!) !=
               null,
         NoteView.reminders || NoteView.archive || NoteView.trash => true,
       };

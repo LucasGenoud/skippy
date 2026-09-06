@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/saved_view.dart';
 import 'package:skippy/models/workspace.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/util/backup.dart';
@@ -54,7 +55,19 @@ void main() {
       final bytes = await createBackupArchive(
         workspaces: const [
           Workspace(id: 'w-default', name: 'My notes', isDefault: true),
-          Workspace(id: 'w-travel', name: 'Travel', notesEnabled: false),
+          Workspace(
+            id: 'w-travel',
+            name: 'Travel',
+            notesEnabled: false,
+            savedViews: [
+              SavedView(
+                id: 'pinned',
+                name: 'Pinned',
+                query: 'is:pinned',
+                position: 1024,
+              ),
+            ],
+          ),
         ],
         notes: [note],
         labels: const [
@@ -86,6 +99,7 @@ void main() {
         'Travel',
       ]);
       final travel = restored.workspaces.last;
+      expect(travel.savedViews.single.query, 'is:pinned');
       expect(travel.notesEnabled, isFalse);
       expect(travel.boardEnabled, isTrue);
       expect(travel.labels.single.name, 'Travel');
@@ -203,6 +217,9 @@ void main() {
         workspaces: [
           BackupWorkspace(
             id: 'backup-default',
+            savedViews: const [
+              SavedView(id: 'v', name: 'Open', query: 'is:open'),
+            ],
             name: 'Restored home',
             isDefault: true,
             labels: const [
@@ -281,6 +298,7 @@ void main() {
         onProgress: (done, total) => progress = (done: done, total: total),
       );
 
+      expect(api.workspaces['w-default']!.savedViews.single.query, 'is:open');
       expect(result.workspaces, 2);
       expect(result.notes, 2);
       expect(result.attachments, 1);

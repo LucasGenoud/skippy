@@ -8,7 +8,7 @@ persistence and optimistic, offline-capable edits.
 
 - Text, Markdown, checklist, audio, and attachment notes
 - Grid, list, and kanban board views with drag-to-reorder
-- Workspaces, labels, stages, archive, trash, time and location reminders,
+- Workspaces, shared smart views, labels, stages, archive, trash, time and location reminders,
   search, and exports
 - Reminders on a whole note or on a single checklist item, pushed through ntfy,
   Telegram, or email
@@ -367,6 +367,12 @@ them live in the account's settings document, so any platform can set one and
 the phone arms it on its next sync. The reminder picker says as much wherever
 the device itself is not the one watching.
 
+Smart views are named searches shared by a workspace's members. Switching
+workspaces switches the sidebar's smart views; every member can create, edit,
+reorder or delete them. Existing personal smart views are imported once into
+their owner's default workspace on server startup. Personal appearance,
+notification accounts and saved locations remain user settings.
+
 ## User backups
 
 Settings lets each user create and restore a portable backup of their own
@@ -403,6 +409,7 @@ defaults; S3-compatible storage is also supported.
 Authenticated JSON endpoints live under `/api`. The main groups are:
 
 - `/auth`, `/workspaces`, `/notes`, `/labels`, and `/stages`
+- `/workspaces/{id}/smart-views/{view_id}` (member-scoped PUT and DELETE)
 - `/auth/forgot-password` and `/auth/reset-password`, unauthenticated on
   purpose and available only where the server can send mail
 - `/notes/{id}/versions`, `/notes/{id}/attachments`,

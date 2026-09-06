@@ -145,6 +145,18 @@ pub trait AccountRepository: Send + Sync {
 /// Workspace lifecycle, membership, and roster views.
 #[async_trait]
 pub trait WorkspaceRepository: Send + Sync {
+    async fn put_smart_view(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        view: &SavedView,
+    ) -> RepoResult<bool>;
+    async fn delete_smart_view(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        id: &str,
+    ) -> RepoResult<bool>;
     /// Every workspace the user owns or has been invited to, default first.
     async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>>;
     async fn workspace(&self, workspace_id: &str) -> RepoResult<Option<Workspace>>;

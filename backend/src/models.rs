@@ -127,6 +127,7 @@ pub struct Workspace {
 /// display names.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceView {
+    pub smart_views: Vec<SavedView>,
     pub id: String,
     pub name: String,
     pub notes_enabled: bool,
@@ -136,6 +137,18 @@ pub struct WorkspaceView {
     pub members: Vec<UserPublic>,
     pub is_default: bool,
     pub created_at: String,
+}
+
+/// A shared search definition, ordered within its workspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedView {
+    pub id: String,
+    pub name: String,
+    pub query: String,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    #[serde(default)]
+    pub position: f64,
 }
 
 #[derive(Debug, Deserialize)]

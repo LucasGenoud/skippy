@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 
 import '../models/note.dart';
+import '../models/saved_view.dart';
 import '../models/workspace.dart';
 import 'mime.dart';
 
@@ -42,6 +43,7 @@ class BackupBundle {
 }
 
 class BackupWorkspace {
+  final List<SavedView> savedViews;
   final String id;
   final String name;
   final bool isDefault;
@@ -52,6 +54,7 @@ class BackupWorkspace {
   final List<BackupNote> notes;
 
   const BackupWorkspace({
+    this.savedViews = const [],
     required this.id,
     required this.name,
     required this.isDefault,
@@ -298,6 +301,7 @@ Future<Uint8List> createBackupArchive({
       'is_default': workspace.isDefault,
       'notes_enabled': workspace.notesEnabled,
       'board_enabled': workspace.boardEnabled,
+      'smart_views': [for (final view in workspace.savedViews) view.toJson()],
       'labels': [
         for (final label in workspaceLabels)
           {
@@ -438,6 +442,7 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
         isDefault: isDefault,
         notesEnabled: notesEnabled,
         boardEnabled: boardEnabled,
+        savedViews: _readSavedViews(map['smart_views']),
         labels: parsed.labels,
         stages: parsed.stages,
         notes: parsed.notes,
@@ -689,4 +694,31 @@ DateTime? _optionalDate(Object? value) {
 String _safeName(String filename) {
   final cleaned = filename.replaceAll(RegExp(r'[/\\\x00-\x1f]'), '_').trim();
   return cleaned.isEmpty ? 'file' : cleaned;
+}
+
+List<SavedView> _readSavedViews(dynamic raw) {
+  if (raw == null) {
+    return const [];
+  }
+  if (raw is! List || raw.length > 2000) {
+    throw const FormatException('Invalid smart views');
+  }
+  final ids = <String>{};
+  return [for (final entry in raw) _readSavedView(entry, ids)];
+}
+
+SavedView _readSavedView(dynamic entry, Set<String> ids) {
+  if (entry is! Map<String, dynamic>) {
+    throw const FormatException('Invalid smart view');
+  }
+  final view = SavedView.fromJson(entry);
+  if (view == null ||
+      !ids.add(view.id) ||
+      !view.position.isFinite ||
+      view.id.length > 128 ||
+      view.name.length > 240 ||
+      view.query.length > 4096) {
+    throw const FormatException('Invalid smart view');
+  }
+  return view;
 }

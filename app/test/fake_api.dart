@@ -1,3 +1,4 @@
+import 'package:skippy/models/saved_view.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,34 @@ class FakeApi implements Api {
   final String baseUrl;
 
   FakeApi({this.baseUrl = 'http://fake.test'});
+
+  @override
+  Future<void> putSavedView(String workspaceId, SavedView view) =>
+      _run('putSavedView:$workspaceId:${view.id}', () {
+        final workspace = workspaces[workspaceId];
+        if (workspace == null) {
+          throw ApiException(404, 'not found');
+        }
+        workspaces[workspaceId] = workspace.copyWith(
+          savedViews: [
+            for (final old in workspace.savedViews)
+              if (old.id != view.id) old,
+            view,
+          ]..sort((a, b) => a.position.compareTo(b.position)),
+        );
+      });
+
+  @override
+  Future<void> deleteSavedView(String workspaceId, String id) =>
+      _run('deleteSavedView:$workspaceId:$id', () {
+        final workspace = workspaces[workspaceId];
+        if (workspace == null) {
+          throw ApiException(404, 'not found');
+        }
+        workspaces[workspaceId] = workspace.copyWith(
+          savedViews: workspace.savedViews.where((v) => v.id != id).toList(),
+        );
+      });
 
   final Map<String, Note> notes = {};
   final Map<String, Label> labels = {};

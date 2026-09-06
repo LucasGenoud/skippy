@@ -230,6 +230,10 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
             axum::routing::patch(handlers::update_workspace).delete(handlers::delete_workspace),
         )
         .route(
+            "/workspaces/{id}/smart-views/{view_id}",
+            put(handlers::put_smart_view).delete(handlers::delete_smart_view),
+        )
+        .route(
             "/workspaces/{id}/members",
             post(handlers::add_workspace_member),
         )

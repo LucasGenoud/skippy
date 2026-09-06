@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/saved_view.dart';
-import '../state/settings_store.dart';
+import '../state/notes_store.dart';
+import '../state/settings_store.dart' show PaletteEntry;
 import '../util/label_style.dart';
 import '../util/search_query.dart';
 import 'drag_reorder_list.dart';
@@ -31,11 +32,11 @@ class SavedViewDialog extends StatefulWidget {
     String? savedViewId,
     String initialQuery = '',
   }) {
-    final settings = context.read<SettingsStore>();
+    final store = context.read<NotesStore>();
     return showFormDialog<SavedView>(
       context,
       builder: (_) => ChangeNotifierProvider.value(
-        value: settings,
+        value: store,
         child: SavedViewDialog(
           savedViewId: savedViewId,
           initialQuery: initialQuery,
@@ -55,15 +56,17 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
   String? _icon;
   String? _nameError;
   String? _queryError;
+  String? _workspaceId;
 
   bool get _isNew => widget.savedViewId == null;
 
   @override
   void initState() {
     super.initState();
+    _workspaceId = context.read<NotesStore>().activeWorkspaceId;
     final existing = widget.savedViewId == null
         ? null
-        : context.read<SettingsStore>().savedViewById(widget.savedViewId!);
+        : context.read<NotesStore>().savedViewById(widget.savedViewId!);
     _name = TextEditingController(text: existing?.name ?? '');
     _query = TextEditingController(
       text: existing?.query ?? widget.initialQuery.trim(),
@@ -80,10 +83,16 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
   }
 
   void _save() {
-    final settings = context.read<SettingsStore>();
+    final store = context.read<NotesStore>();
+    if (_workspaceId == null ||
+        store.activeWorkspaceId != _workspaceId ||
+        (!_isNew && store.savedViewById(widget.savedViewId!) == null)) {
+      setState(() => _nameError = 'This smart view is no longer available');
+      return;
+    }
     final name = _name.text.trim();
     final query = _query.text.trim();
-    final nameError = _nameProblem(settings, name);
+    final nameError = _nameProblem(store, name);
     // An empty query would pin a view that just repeats the grid, and one made
     // only of unusable operators can never match, so neither is worth saving.
     final queryError = query.isEmpty
@@ -98,28 +107,28 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
     }
     final SavedView saved;
     if (_isNew) {
-      saved = settings.addSavedView(
+      saved = store.addSavedView(
         name: name,
         query: query,
         icon: _icon,
         color: _color,
       );
     } else {
-      settings.updateSavedView(
+      store.updateSavedView(
         widget.savedViewId!,
         name: name,
         query: query,
         icon: _icon,
         color: _color,
       );
-      saved = settings.savedViewById(widget.savedViewId!)!;
+      saved = store.savedViewById(widget.savedViewId!)!;
     }
     Navigator.of(context).pop(saved);
   }
 
-  String? _nameProblem(SettingsStore settings, String name) {
+  String? _nameProblem(NotesStore store, String name) {
     if (name.isEmpty) return 'Enter a name';
-    final clash = settings.savedViews.any(
+    final clash = store.savedViews.any(
       (v) =>
           v.id != widget.savedViewId &&
           v.name.toLowerCase() == name.toLowerCase(),
@@ -134,7 +143,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
   }
 
   Future<void> _delete() async {
-    final settings = context.read<SettingsStore>();
+    final store = context.read<NotesStore>();
     final navigator = Navigator.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -156,7 +165,9 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
       ),
     );
     if (confirmed != true) return;
-    settings.removeSavedView(widget.savedViewId!);
+    if (store.activeWorkspaceId == _workspaceId) {
+      store.removeSavedView(widget.savedViewId!);
+    }
     navigator.pop();
   }
 
@@ -262,11 +273,11 @@ class EditSmartViewsDialog extends StatelessWidget {
   const EditSmartViewsDialog({super.key});
 
   static Future<void> show(BuildContext context) {
-    final settings = context.read<SettingsStore>();
+    final store = context.read<NotesStore>();
     return showFormDialog<void>(
       context,
       builder: (_) => ChangeNotifierProvider.value(
-        value: settings,
+        value: store,
         child: const EditSmartViewsDialog(),
       ),
     );
@@ -274,8 +285,8 @@ class EditSmartViewsDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.watch<SettingsStore>();
-    final views = settings.savedViews;
+    final store = context.watch<NotesStore>();
+    final views = store.savedViews;
     final scheme = Theme.of(context).colorScheme;
     return FormDialog(
       title: const Text('Edit smart views'),
@@ -292,7 +303,7 @@ class EditSmartViewsDialog extends StatelessWidget {
           DragReorderList<SavedView>(
             items: views,
             idOf: (view) => view.id,
-            onReorder: (id, newIndex) => settings.reorderSavedViews(
+            onReorder: (id, newIndex) => store.reorderSavedViews(
               views.indexWhere((v) => v.id == id),
               newIndex,
             ),
@@ -320,7 +331,7 @@ class EditSmartViewsDialog extends StatelessWidget {
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Delete smart view',
-                  onPressed: () => settings.removeSavedView(view.id),
+                  onPressed: () => store.removeSavedView(view.id),
                 ),
               ),
             ),

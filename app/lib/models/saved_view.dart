@@ -5,14 +5,10 @@
 /// opened. That is the whole point, "Overdue work" stays right as notes change
 /// without anything having to file them anywhere.
 ///
-/// Saved views live in the per-user settings document rather than in the
-/// database, so they sync across a user's devices, like the palette and the
-/// grid presets. They are deliberately not workspace-scoped: the query is
-/// resolved against whichever workspace is open, so "is:pinned has:reminder"
-/// is useful in all of them, and a `label:` term simply matches nothing in a
-/// workspace with no label by that name.
+/// Definitions belong to a workspace and are shared with its members.
 class SavedView {
   final String id;
+  final double position;
   final String name;
 
   /// The search string this view stands for, operators included.
@@ -27,6 +23,7 @@ class SavedView {
 
   const SavedView({
     required this.id,
+    this.position = 0,
     required this.name,
     required this.query,
     this.icon,
@@ -34,12 +31,14 @@ class SavedView {
   });
 
   SavedView copyWith({
+    double? position,
     String? name,
     String? query,
     String? icon,
     String? color,
   }) => SavedView(
     id: id,
+    position: position ?? this.position,
     name: name ?? this.name,
     query: query ?? this.query,
     // Null clears, so an edit that removes the icon or colour sticks.
@@ -49,6 +48,7 @@ class SavedView {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'position': position,
     'name': name,
     'query': query,
     if (icon != null) 'icon': icon,
@@ -66,6 +66,7 @@ class SavedView {
     if (query == null || query.isEmpty) return null;
     return SavedView(
       id: id,
+      position: (json['position'] as num?)?.toDouble() ?? 0,
       name: name,
       query: query,
       icon: (json['icon'] as String?)?.trim().isNotEmpty == true
@@ -81,11 +82,12 @@ class SavedView {
   bool operator ==(Object other) =>
       other is SavedView &&
       other.id == id &&
+      other.position == position &&
       other.name == name &&
       other.query == query &&
       other.icon == icon &&
       other.color == color;
 
   @override
-  int get hashCode => Object.hash(id, name, query, icon, color);
+  int get hashCode => Object.hash(id, name, query, icon, color, position);
 }

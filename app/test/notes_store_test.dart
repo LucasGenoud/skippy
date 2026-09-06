@@ -77,6 +77,77 @@ NotesStore testStore(
 );
 
 void main() {
+  test('refresh cannot replace edits completed during its snapshot', () async {
+    final api = FakeApi()..notes['n1'] = serverNote('n1');
+    final store = testStore(api);
+    await store.load();
+    final gate = api.fetchHistoryGate = Completer<void>();
+    final refresh = store.refresh();
+    await pumpEventQueue();
+    store.togglePin('n1');
+    await settle();
+    gate.complete();
+    await refresh;
+    final pinned = store.noteById('n1')!.pinned;
+    store.dispose();
+    expect(pinned, isTrue);
+  });
+
+  test('smart views are isolated, durable and ordered per workspace', () async {
+    final api = FakeApi();
+    final cache = MemoryLocalCache();
+    final store = testStore(api, cache: cache);
+    await store.load();
+    final view = store.addSavedView(
+      name: 'Pinned',
+      query: 'is:pinned',
+      icon: 'work',
+    );
+    final second = store.addSavedView(name: 'Open', query: 'is:open');
+    store.reorderSavedViews(1, 0);
+    expect(store.savedViews.map((v) => v.id), [second.id, view.id]);
+    store.updateSavedView(view.id, name: 'Work', query: 'label:work');
+    expect(store.savedViewById(view.id)!.icon, isNull);
+    await settle();
+    final work = store.createWorkspace('Work');
+    expect(store.savedViews, isEmpty);
+    store.addSavedView(name: 'Pinned', query: 'is:pinned');
+    await settle();
+    store.setActiveWorkspace('w-default');
+    expect(store.savedViews.map((v) => v.name), ['Open', 'Work']);
+    api.failWith = Exception('offline');
+    store.removeSavedView(second.id);
+    store.flushForBackground();
+    await pumpEventQueue();
+    store.dispose();
+    final restored = testStore(api, cache: cache);
+    await restored.load();
+    expect(restored.savedViews.map((v) => v.name), ['Work']);
+    api.failWith = null;
+    await restored.refresh();
+    await settle();
+    expect(api.workspaces['w-default']!.savedViews.map((v) => v.name), [
+      'Work',
+    ]);
+    restored.setActiveWorkspace(work.id);
+    expect(restored.savedViews.single.name, 'Pinned');
+    restored.dispose();
+  });
+
+  test('reload starts independent reads together', () async {
+    final api = FakeApi();
+    final store = testStore(api);
+    final gate = Completer<void>();
+    api.fetchLabelsGate = gate;
+    final loading = store.load();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final historyStarted = api.log.contains('fetchHistory');
+    gate.complete();
+    await loading;
+    store.dispose();
+    expect(historyStarted, isTrue);
+  });
+
   late FakeApi api;
   late NotesStore store;
 
@@ -1241,7 +1312,7 @@ void main() {
 
   group('session lifecycle', () {
     test(
-      'dispose stops an in-flight load before it makes another request',
+      'dispose discards an in-flight snapshot without further requests',
       () async {
         final gatedApi = FakeApi();
         final gate = gatedApi.fetchWorkspacesGate = Completer<void>();
@@ -1253,7 +1324,17 @@ void main() {
         gate.complete();
         await loading;
 
-        expect(gatedApi.log, ['fetchWorkspaces']);
+        expect(
+          gatedApi.log,
+          unorderedEquals([
+            'fetchWorkspaces',
+            'fetchNotes',
+            'fetchLabels',
+            'fetchStages',
+            'fetchHistory',
+          ]),
+        );
+        expect(s.workspaces, isEmpty);
       },
     );
 

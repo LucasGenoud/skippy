@@ -23,7 +23,7 @@ class AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
-    final savedViews = context.watch<SettingsStore>().savedViews;
+    final savedViews = store.savedViews;
     final workspace = store.activeWorkspace;
 
     final primaryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
@@ -225,7 +225,7 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
-    final savedViews = context.watch<SettingsStore>().savedViews;
+    final savedViews = store.savedViews;
     final workspace = store.activeWorkspace;
     final scheme = Theme.of(context).colorScheme;
 
