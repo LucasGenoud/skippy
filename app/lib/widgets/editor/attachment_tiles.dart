@@ -27,6 +27,65 @@ class ImageAttachmentTile extends StatelessWidget {
       attachment.mime == 'image/svg+xml' ||
       attachment.mime.toLowerCase().contains('svg');
 
+  void _openViewer(BuildContext context) {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close image',
+      barrierColor: Colors.black,
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (context, animation, secondaryAnimation) => Scaffold(
+        key: const Key('image-viewer'),
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Close image',
+                  color: Colors.white,
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 5,
+                    child: SizedBox.expand(child: _fullImage(context)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fullImage(BuildContext context) {
+    if (_isSvg) {
+      return SvgPicture.network(
+        url,
+        key: Key('full-image-${attachment.id}'),
+        fit: BoxFit.contain,
+        placeholderBuilder: (_) =>
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+    return Image(
+      key: Key('full-image-${attachment.id}'),
+      image: AttachmentImage(attachmentId: attachment.id, url: url),
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stack) => const Center(
+        child: Icon(Icons.broken_image_outlined, color: Colors.white, size: 40),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -35,52 +94,67 @@ class ImageAttachmentTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(kRadius),
         child: Stack(
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 320),
-              child: SizedBox(
-                width: double.infinity,
-                child: _isSvg
-                    ? SvgPicture.network(
-                        url,
-                        width: double.infinity,
-                        fit: BoxFit.contain,
-                        placeholderBuilder: (context) => Container(
-                          height: 80,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerHighest,
-                        ),
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          // Decode at (bucketed) display size, see the note
-                          // card's image strip for the rationale.
-                          final dpr = MediaQuery.devicePixelRatioOf(context);
-                          final width = constraints.maxWidth.isFinite
-                              ? constraints.maxWidth * dpr
-                              : 1360.0;
-                          return Image(
-                            image: ResizeImage.resizeIfNeeded(
-                              ((width / 320).ceil() * 320)
-                                  .clamp(320, 2048)
-                                  .toInt(),
-                              null,
-                              AttachmentImage(
-                                attachmentId: attachment.id,
-                                url: url,
-                              ),
-                            ),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stack) => Container(
+            Semantics(
+              button: true,
+              label:
+                  'View ${attachment.filename.isEmpty ? 'image' : attachment.filename}',
+              child: GestureDetector(
+                key: Key('open-image-${attachment.id}'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openViewer(context),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: _isSvg
+                        ? SvgPicture.network(
+                            url,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
+                            placeholderBuilder: (context) => Container(
                               height: 80,
                               color: Theme.of(
                                 context,
                               ).colorScheme.surfaceContainerHighest,
-                              child: const Icon(Icons.broken_image_outlined),
                             ),
-                          );
-                        },
-                      ),
+                          )
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              // Decode at (bucketed) display size, see the note
+                              // card's image strip for the rationale.
+                              final dpr = MediaQuery.devicePixelRatioOf(
+                                context,
+                              );
+                              final width = constraints.maxWidth.isFinite
+                                  ? constraints.maxWidth * dpr
+                                  : 1360.0;
+                              return Image(
+                                image: ResizeImage.resizeIfNeeded(
+                                  ((width / 320).ceil() * 320)
+                                      .clamp(320, 2048)
+                                      .toInt(),
+                                  null,
+                                  AttachmentImage(
+                                    attachmentId: attachment.id,
+                                    url: url,
+                                  ),
+                                ),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stack) =>
+                                    Container(
+                                      height: 80,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
+                                      child: const Icon(
+                                        Icons.broken_image_outlined,
+                                      ),
+                                    ),
+                              );
+                            },
+                          ),
+                  ),
+                ),
               ),
             ),
             // A single square-cornered overlay bar (matching the app's [kRadius]
@@ -232,9 +306,7 @@ class UploadingAttachmentTile extends StatelessWidget {
                     ),
                     Text(
                       'Uploading… ${formatBytes(file.bytes.length)}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelSmall?.copyWith(
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
