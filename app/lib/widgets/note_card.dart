@@ -1,3 +1,4 @@
+import 'collection_controls.dart';
 import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -592,6 +593,19 @@ class _NoteCardContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (context.watch<NotesStore>().activeWorkspaceId ==
+                    note.workspaceId)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      context
+                              .read<NotesStore>()
+                              .collectionById(note.collectionId)
+                              ?.name ??
+                          'Inbox',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
                 if (note.title.isNotEmpty)
                   Padding(
                     // Always reserve room for the pin button (it appears
@@ -1152,12 +1166,16 @@ class _NoteActions extends StatelessWidget {
                     onMenuClosed();
                     if (value == 'share' ||
                         value == 'move' ||
+                        value == 'collection' ||
                         value == 'stage') {
                       await Motion.waitForMenuDismissal(context);
                       if (!context.mounted) return;
                     }
                     if (value == 'share') onShare();
                     if (value == 'duplicate') onDuplicate();
+                    if (value == 'collection') {
+                      moveToCollection(context, [note.id]);
+                    }
                     if (value == 'move') onMoveToWorkspace();
                     if (value == 'stage') onMoveToStage();
                     if (value == 'clipboard') onCopyToClipboard();
@@ -1202,6 +1220,14 @@ class _NoteActions extends StatelessWidget {
                       child: ListTile(
                         leading: Icon(Icons.content_copy_outlined),
                         title: Text('Copy to clipboard'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'collection',
+                      child: ListTile(
+                        leading: Icon(Icons.folder_outlined),
+                        title: Text('Move to collection'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),

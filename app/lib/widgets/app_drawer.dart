@@ -1,3 +1,4 @@
+import 'collection_controls.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'app_logo.dart';
@@ -24,27 +25,16 @@ class AppDrawer extends StatelessWidget {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
     final savedViews = store.savedViews;
-    final workspace = store.activeWorkspace;
 
     final primaryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
-      if (workspace?.notesEnabled ?? true)
-        (
-          ViewSelection.notes,
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.sticky_note_2_outlined),
-            selectedIcon: Icon(Icons.sticky_note_2),
-            label: Text('Notes'),
-          ),
+      (
+        ViewSelection.notes,
+        const NavigationDrawerDestination(
+          icon: Icon(Icons.sticky_note_2_outlined),
+          selectedIcon: Icon(Icons.sticky_note_2),
+          label: Text('All notes'),
         ),
-      if (workspace?.boardEnabled ?? true)
-        (
-          ViewSelection.board,
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.view_kanban_outlined),
-            selectedIcon: Icon(Icons.view_kanban),
-            label: Text('Board'),
-          ),
-        ),
+      ),
       (
         ViewSelection.reminders,
         const NavigationDrawerDestination(
@@ -109,8 +99,24 @@ class AppDrawer extends StatelessWidget {
         ),
       ),
     ];
+    final collectionDestinations =
+        <(ViewSelection, NavigationDrawerDestination)>[
+          for (final c in store.collections)
+            (
+              store.collectionSelection(c.id),
+              NavigationDrawerDestination(
+                icon: Icon(
+                  c.layout == 'board'
+                      ? Icons.view_kanban_outlined
+                      : Icons.folder_outlined,
+                ),
+                label: Text(c.name),
+              ),
+            ),
+        ];
     final destinations = [
       ...primaryDestinations,
+      ...collectionDestinations,
       ...labelDestinations,
       ...smartDestinations,
       ...libraryDestinations,
@@ -159,6 +165,20 @@ class AppDrawer extends StatelessWidget {
           ),
         ),
         for (final destination in primaryDestinations) destination.$2,
+        const _DrawerSectionHeader('Collections'),
+        for (final destination in collectionDestinations) destination.$2,
+        _DrawerAction(
+          icon: Icons.create_new_folder_outlined,
+          label: 'New collection',
+          onTap: () async {
+            final navigator = Navigator.of(context);
+            navigator.pop();
+            final c = await editCollection(navigator.context);
+            if (c != null) {
+              onSelect(store.collectionSelection(c.id));
+            }
+          },
+        ),
         const Padding(
           padding: EdgeInsets.fromLTRB(28, 12, 28, 8),
           child: Divider(height: 1),
@@ -226,7 +246,6 @@ class AppSidebar extends StatelessWidget {
     final store = context.watch<NotesStore>();
     final labels = store.labels;
     final savedViews = store.savedViews;
-    final workspace = store.activeWorkspace;
     final scheme = Theme.of(context).colorScheme;
 
     // Only the width is implicitly animated. Handing the fill to
@@ -256,24 +275,14 @@ class AppSidebar extends StatelessWidget {
               // No divider: the switcher's own border already separates it
               // from the views below.
               const SizedBox(height: 8),
-              if (workspace?.notesEnabled ?? true)
-                _SidebarItem(
-                  icon: Icons.sticky_note_2_outlined,
-                  selectedIcon: Icons.sticky_note_2,
-                  label: 'Notes',
-                  isSelected: selection == ViewSelection.notes,
-                  isOpen: isOpen,
-                  onTap: () => onSelect(ViewSelection.notes),
-                ),
-              if (workspace?.boardEnabled ?? true)
-                _SidebarItem(
-                  icon: Icons.view_kanban_outlined,
-                  selectedIcon: Icons.view_kanban,
-                  label: 'Board',
-                  isSelected: selection == ViewSelection.board,
-                  isOpen: isOpen,
-                  onTap: () => onSelect(ViewSelection.board),
-                ),
+              _SidebarItem(
+                icon: Icons.sticky_note_2_outlined,
+                selectedIcon: Icons.sticky_note_2,
+                label: 'All notes',
+                isSelected: selection == ViewSelection.notes,
+                isOpen: isOpen,
+                onTap: () => onSelect(ViewSelection.notes),
+              ),
               _SidebarItem(
                 icon: Icons.notifications_outlined,
                 selectedIcon: Icons.notifications,
@@ -285,6 +294,32 @@ class AppSidebar extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Divider(height: 1, indent: 16, endIndent: 16),
+              ),
+              _SidebarSectionHeader(label: 'COLLECTIONS', isOpen: isOpen),
+              for (final c in store.collections)
+                _SidebarItem(
+                  icon: c.layout == 'board'
+                      ? Icons.view_kanban_outlined
+                      : Icons.folder_outlined,
+                  selectedIcon: Icons.folder,
+                  label: c.name,
+                  isSelected: selection.collectionId == c.id,
+                  isOpen: isOpen,
+                  onTap: () => onSelect(store.collectionSelection(c.id)),
+                  onAcceptNote: (id) => store.moveToCollection(id, c.id),
+                ),
+              _SidebarItem(
+                icon: Icons.create_new_folder_outlined,
+                selectedIcon: Icons.create_new_folder,
+                label: 'New collection',
+                isSelected: false,
+                isOpen: isOpen,
+                onTap: () async {
+                  final c = await editCollection(context);
+                  if (c != null) {
+                    onSelect(store.collectionSelection(c.id));
+                  }
+                },
               ),
               _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
               if (labels.isNotEmpty) ...[

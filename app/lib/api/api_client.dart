@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import '../models/saved_view.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -214,10 +215,13 @@ abstract class Api {
 
   // stages (board columns), deliberately parallel to labels rather than
   // sharing an abstraction with them; the two are independent systems.
+  Future<void> putCollection(String workspaceId, NoteCollection collection);
+  Future<void> deleteCollection(String workspaceId, String id);
   Future<List<Stage>> fetchStages();
   Future<void> createStage(
     String id,
     String name, {
+    String collectionId = 'inbox',
     required String workspaceId,
     String? color,
     double? position,
@@ -605,6 +609,7 @@ class ApiClient extends _ApiTransport implements Api {
         body: jsonEncode({
           'id': note.id,
           if (note.workspaceId.isNotEmpty) 'workspace_id': note.workspaceId,
+          'collection_id': note.collectionId,
           'kind': note.kind.wire,
           'title': note.title,
           'content': note.content,
@@ -863,6 +868,30 @@ class ApiClient extends _ApiTransport implements Api {
   // -- stages ---------------------------------------------------------------
 
   @override
+  Future<void> putCollection(
+    String workspaceId,
+    NoteCollection collection,
+  ) async {
+    _decode(
+      await _client.put(
+        _uri('/workspaces/$workspaceId/collections/${collection.id}'),
+        headers: _headers(),
+        body: jsonEncode(collection.toJson()),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteCollection(String workspaceId, String id) async {
+    _decode(
+      await _client.delete(
+        _uri('/workspaces/$workspaceId/collections/$id'),
+        headers: _headers(),
+      ),
+    );
+  }
+
+  @override
   Future<List<Stage>> fetchStages() async {
     final data =
         _decode(await _client.get(_uri('/stages'), headers: _headers()))
@@ -874,6 +903,7 @@ class ApiClient extends _ApiTransport implements Api {
   Future<void> createStage(
     String id,
     String name, {
+    String collectionId = 'inbox',
     required String workspaceId,
     String? color,
     double? position,
@@ -885,6 +915,7 @@ class ApiClient extends _ApiTransport implements Api {
         // Empty string clears the colour server-side; an omitted position
         // appends the column to the right of the board.
         body: jsonEncode({
+          'collection_id': collectionId,
           'id': id,
           if (workspaceId.isNotEmpty) 'workspace_id': workspaceId,
           'name': name,

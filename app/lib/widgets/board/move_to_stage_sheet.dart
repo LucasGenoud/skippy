@@ -64,7 +64,20 @@ class MoveToStageSheet extends StatelessWidget {
               selected: stageIds.length == 1 && current == null,
               onTap: () => _move(context, store, null),
             ),
-            for (final stage in store.stages)
+            for (final stage
+                in store
+                    .stagesInWorkspace(store.activeWorkspaceId)
+                    .where(
+                      (s) => noteIds.every(
+                        (id) =>
+                            store.noteById(id)?.collectionId ==
+                                s.collectionId &&
+                            (store.noteById(id)?.workspaceId.isEmpty == true
+                                    ? store.defaultWorkspace?.id
+                                    : store.noteById(id)?.workspaceId) ==
+                                s.workspaceId,
+                      ),
+                    ))
               _StageOption(
                 label: stage.name,
                 color: PaletteEntry.hexToColor(stage.color),

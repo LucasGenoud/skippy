@@ -498,6 +498,7 @@ mod tests {
     fn note_prompt_text_keeps_checklist_state() {
         use crate::models::ChecklistItem;
         let record = NoteRecord {
+            collection_id: "inbox".into(),
             workspace_id: "w1".to_string(),
             id: "n1".into(),
             created_by: Some("u1".into()),

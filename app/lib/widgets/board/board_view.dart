@@ -84,7 +84,7 @@ class _BoardViewState extends State<BoardView> {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final board = buildBoard(
-      notes: store.notesInActiveWorkspace,
+      notes: store.notesInCollection,
       stages: store.stages,
       scope: store.workspaceScope,
       query: widget.query,
@@ -93,7 +93,13 @@ class _BoardViewState extends State<BoardView> {
       rankedIds: widget.rankedIds,
     );
 
-    if (board.hasNoStages) return _NoStagesYet(hasNotes: !board.isEmpty);
+    // A board with notes but no configured columns still has a useful
+    // unassigned lane. Only show the setup state when the collection is empty;
+    // otherwise notes must remain visible and can be filed after a column is
+    // added.
+    if (board.hasNoStages && board.isEmpty) {
+      return const _NoStagesYet();
+    }
 
     final paged = !ScreenWidth.isAtLeast(context, BoardView.pagedBreakpoint);
     return paged ? _buildPaged(board) : _buildColumns(board);
@@ -564,9 +570,7 @@ class _StageChip extends StatelessWidget {
 /// Shown when the workspace has no columns: the board exists but has never
 /// been set up, which is a different thing from an empty board.
 class _NoStagesYet extends StatelessWidget {
-  final bool hasNotes;
-
-  const _NoStagesYet({required this.hasNotes});
+  const _NoStagesYet();
 
   @override
   Widget build(BuildContext context) {

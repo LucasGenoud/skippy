@@ -127,6 +127,7 @@ pub struct Workspace {
 /// display names.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceView {
+    pub collections: Vec<NoteCollection>,
     pub smart_views: Vec<SavedView>,
     pub id: String,
     pub name: String,
@@ -142,6 +143,8 @@ pub struct WorkspaceView {
 /// A shared search definition, ordered within its workspace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedView {
+    #[serde(default)]
+    pub collection_ids: Vec<String>,
     pub id: String,
     pub name: String,
     pub query: String,
@@ -292,6 +295,7 @@ pub struct OcrJob {
 /// A note as stored, without the per-viewer decorations.
 #[derive(Debug, Clone)]
 pub struct NoteRecord {
+    pub collection_id: String,
     pub id: String,
     /// The workspace owns the note and controls its lifecycle. Everyone in
     /// that workspace can see and edit it; per-note collaborators are an
@@ -355,6 +359,7 @@ pub struct NoteView {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct NoteFields {
+    pub collection_id: String,
     pub id: String,
     pub workspace_id: String,
     pub kind: String,
@@ -378,6 +383,7 @@ pub struct NoteFields {
 impl NoteRecord {
     pub fn fields(&self) -> NoteFields {
         NoteFields {
+            collection_id: self.collection_id.clone(),
             id: self.id.clone(),
             workspace_id: self.workspace_id.clone(),
             kind: self.kind.clone(),
@@ -444,6 +450,7 @@ pub struct Label {
 /// Nothing here references labels, and nothing in labels references stages.
 #[derive(Debug, Clone, Serialize)]
 pub struct Stage {
+    pub collection_id: String,
     pub id: String,
     pub workspace_id: String,
     pub name: String,
@@ -591,6 +598,7 @@ pub struct HistoryEntry {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct CreateNote {
+    pub collection_id: Option<String>,
     /// Client-generated id, so optimistic UIs can create notes before the
     /// request round-trips. Server generates one when absent.
     #[serde(default)]
@@ -650,6 +658,7 @@ pub struct CreateNote {
 /// while an absent key leaves it untouched.
 #[derive(Debug, Deserialize, Default)]
 pub struct UpdateNote {
+    pub collection_id: Option<String>,
     /// Moves the note to another workspace (owner only, and only into a
     /// workspace they belong to).
     pub workspace_id: Option<String>,
@@ -685,6 +694,7 @@ impl UpdateNote {
         // Exhaustive destructuring: adding a field to UpdateNote without
         // deciding how it patches the record fails to compile.
         let UpdateNote {
+            collection_id,
             workspace_id,
             kind,
             title,
@@ -701,6 +711,9 @@ impl UpdateNote {
             stage_id,
             stage_position,
         } = self;
+        if let Some(v) = collection_id {
+            record.collection_id = v;
+        }
         if let Some(v) = workspace_id {
             record.workspace_id = v;
         }
@@ -804,6 +817,7 @@ pub struct LabelPayload {
 /// stage is appended to the board) and present when columns are reordered.
 #[derive(Debug, Deserialize)]
 pub struct StagePayload {
+    pub collection_id: Option<String>,
     #[serde(default)]
     pub id: Option<String>,
     /// Which workspace the stage belongs to. Absent means the caller's default
@@ -884,4 +898,14 @@ mod tests {
             serde_json::from_str(r#"{"id":"a","text":"Milk","done":false}"#).unwrap();
         assert_eq!(item.depth, 0);
     }
+}
+
+/// A named set of notes within one workspace. Inbox is created with the workspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteCollection {
+    pub id: String,
+    pub name: String,
+    pub layout: String,
+    #[serde(default)]
+    pub position: f64,
 }

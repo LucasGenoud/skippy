@@ -13,6 +13,7 @@ import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/form_dialog.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
+import 'package:skippy/widgets/app_drawer.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
@@ -559,6 +560,8 @@ void main() {
     testWidgets('from the drawer on a phone', (tester) async {
       await setViewport(tester, const Size(390, 780));
       await store.load();
+      store.putCollection(store.collections.first.copyWith(layout: 'board'));
+      await store.refresh();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
@@ -566,7 +569,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(NavigationDrawer), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Board'));
+      await tester.tap(
+        find.widgetWithText(NavigationDrawerDestination, 'Inbox'),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsOneWidget);
       await flushTimers(tester);
@@ -575,10 +580,17 @@ void main() {
     testWidgets('from the sidebar on a wide screen', (tester) async {
       await setViewport(tester, const Size(1200, 900));
       await store.load();
+      store.putCollection(store.collections.first.copyWith(layout: 'board'));
+      await store.refresh();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Board'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppSidebar),
+          matching: find.text('Inbox'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsOneWidget);
       await flushTimers(tester);

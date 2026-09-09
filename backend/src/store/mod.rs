@@ -145,6 +145,19 @@ pub trait AccountRepository: Send + Sync {
 /// Workspace lifecycle, membership, and roster views.
 #[async_trait]
 pub trait WorkspaceRepository: Send + Sync {
+    async fn put_collection(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        collection: &NoteCollection,
+    ) -> RepoResult<bool>;
+    async fn delete_collection(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        id: &str,
+    ) -> RepoResult<bool>;
+
     async fn put_smart_view(
         &self,
         user_id: &str,

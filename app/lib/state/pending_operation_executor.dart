@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import '../api/api_client.dart';
 import '../models/note.dart';
 import '../models/saved_view.dart';
@@ -23,7 +24,17 @@ class PendingOperationExecutor {
     switch (op.kind) {
       case PendingOpKind.create:
         final note = noteById(op.id!);
-        return note == null ? Future.value() : api.createNote(note);
+        return note == null
+            ? Future.value()
+            : api.createNote(
+                op.data.containsKey('collection_id')
+                    ? note.copyWith(
+                        workspaceId: op.data['workspace_id'] as String,
+                        collectionId: op.data['collection_id'] as String,
+                        stageId: op.data['stage_id'] as String?,
+                      )
+                    : note,
+              );
       case PendingOpKind.patch:
         return api.patchNote(op.id!, op.data);
       case PendingOpKind.delete:
@@ -49,10 +60,20 @@ class PendingOperationExecutor {
         );
       case PendingOpKind.labelDelete:
         return api.deleteLabel(op.id!);
+      case PendingOpKind.collectionPut:
+        return api.putCollection(
+          op.data['workspaceId'] as String,
+          NoteCollection.fromJson(
+            (op.data['collection'] as Map).cast<String, dynamic>(),
+          ),
+        );
+      case PendingOpKind.collectionDelete:
+        return api.deleteCollection(op.data['workspaceId'] as String, op.id!);
       case PendingOpKind.stageCreate:
         return api.createStage(
           op.id!,
           op.data['name'] as String,
+          collectionId: op.data['collectionId'] as String? ?? 'inbox',
           workspaceId: op.data['workspaceId'] as String? ?? '',
           color: op.data['color'] as String?,
           position: (op.data['position'] as num?)?.toDouble(),

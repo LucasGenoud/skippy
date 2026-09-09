@@ -6,6 +6,7 @@ pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let items_json: String = row.get("items");
     let position: f64 = row.get("position");
     NoteRecord {
+        collection_id: row.get("collection_id"),
         id: row.get("id"),
         workspace_id: row.get("workspace_id"),
         created_by: row.get("created_by"),

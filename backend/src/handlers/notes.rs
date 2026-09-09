@@ -212,6 +212,9 @@ pub async fn create_note_for_user(
         ));
     }
     let workspace_id = resolve_workspace(state, user_id, body.workspace_id.as_deref()).await?;
+    let collection_id =
+        super::resolve_collection(state, user_id, &workspace_id, body.collection_id.as_deref())
+            .await?;
     let stage_id = match body.stage_id.filter(|id| !id.trim().is_empty()) {
         Some(stage_id)
             if state
@@ -219,7 +222,11 @@ pub async fn create_note_for_user(
                 .stages_for_user(user_id)
                 .await?
                 .into_iter()
-                .any(|stage| stage.id == stage_id && stage.workspace_id == workspace_id) =>
+                .any(|stage| {
+                    stage.id == stage_id
+                        && stage.workspace_id == workspace_id
+                        && stage.collection_id == collection_id
+                }) =>
         {
             Some(stage_id)
         }
@@ -240,6 +247,7 @@ pub async fn create_note_for_user(
     let created_at = restored_created.unwrap_or_else(|| ts.clone());
     let updated_at = restored_updated.unwrap_or_else(|| ts.clone());
     let record = NoteRecord {
+        collection_id,
         id: id.clone(),
         workspace_id,
         created_by: Some(user_id.to_string()),
@@ -381,6 +389,20 @@ pub async fn apply_note_update(
         }
         _ => None,
     };
+    let target_workspace = moving_to.as_deref().unwrap_or(&record.workspace_id);
+    if moving_to.is_some() && body.collection_id.is_none() {
+        body.collection_id = Some("inbox".into());
+    }
+    if let Some(collection_id) = body.collection_id.as_deref() {
+        super::resolve_collection(state, user_id, target_workspace, Some(collection_id)).await?;
+    }
+    let collection_changed = body
+        .collection_id
+        .as_ref()
+        .is_some_and(|id| *id != record.collection_id);
+    if collection_changed {
+        record.stage_id = None;
+    }
     // A move takes the note out of one roster and into another, so the people
     // losing sight of it have to be told before that happens.
     let audience_before_move = match moving_to {
@@ -395,7 +417,12 @@ pub async fn apply_note_update(
             .stages_for_user(user_id)
             .await?
             .into_iter()
-            .any(|stage| stage.id == *stage_id && stage.workspace_id == record.workspace_id);
+            .any(|stage| {
+                stage.id == *stage_id
+                    && stage.workspace_id == record.workspace_id
+                    && stage.collection_id
+                        == *body.collection_id.as_ref().unwrap_or(&record.collection_id)
+            });
         if !valid {
             body.stage_id = Some(None);
         }

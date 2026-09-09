@@ -1,3 +1,4 @@
+import 'package:skippy/models/collection.dart';
 import 'package:skippy/models/saved_view.dart';
 import 'dart:async';
 
@@ -359,6 +360,7 @@ class FakeApi implements Api {
               ]
             : null,
         workspaceId: fields['workspace_id'] as String?,
+        collectionId: fields['collection_id'] as String?,
         color: fields['color'] as String?,
         pinned: fields['pinned'] as bool?,
         archived: fields['archived'] as bool?,
@@ -661,6 +663,37 @@ class FakeApi implements Api {
   });
 
   @override
+  Future<void> putCollection(String workspaceId, NoteCollection collection) =>
+      _run('putCollection:$workspaceId:${collection.id}', () {
+        final workspace = workspaces[workspaceId]!;
+        workspaces[workspaceId] = workspace.copyWith(
+          collections: [
+            for (final c in workspace.collections)
+              if (c.id != collection.id) c,
+            collection,
+          ],
+        );
+      });
+  @override
+  Future<void> deleteCollection(String workspaceId, String id) =>
+      _run('deleteCollection:$workspaceId:$id', () {
+        if (id == 'inbox') {
+          throw ApiException(400, 'Inbox cannot be deleted');
+        }
+        final workspace = workspaces[workspaceId]!;
+        workspaces[workspaceId] = workspace.copyWith(
+          collections: workspace.collections.where((c) => c.id != id).toList(),
+        );
+        for (final n in notes.values.toList()) {
+          if (n.workspaceId == workspaceId && n.collectionId == id) {
+            notes[n.id] = n.copyWith(collectionId: 'inbox', stageId: null);
+          }
+        }
+        stages.removeWhere(
+          (_, s) => s.workspaceId == workspaceId && s.collectionId == id,
+        );
+      });
+  @override
   Future<List<Stage>> fetchStages() => _run('fetchStages', () {
     final list = stages.values.toList()
       ..sort((a, b) => a.position.compareTo(b.position));
@@ -671,11 +704,13 @@ class FakeApi implements Api {
   Future<void> createStage(
     String id,
     String name, {
+    String collectionId = 'inbox',
     required String workspaceId,
     String? color,
     double? position,
   }) => _run('createStage:$name', () {
     stages[id] = Stage(
+      collectionId: collectionId,
       id: id,
       workspaceId: workspaceId,
       name: name,
@@ -705,6 +740,7 @@ class FakeApi implements Api {
     stages[id] = Stage(
       id: id,
       workspaceId: existing?.workspaceId ?? '',
+      collectionId: existing?.collectionId ?? 'inbox',
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       position: position ?? existing?.position ?? 0,

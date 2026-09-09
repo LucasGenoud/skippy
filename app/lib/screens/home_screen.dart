@@ -1,3 +1,4 @@
+import '../widgets/collection_controls.dart';
 import '../widgets/form_dialog.dart';
 import 'dart:async';
 
@@ -180,7 +181,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectView(ViewSelection selection) {
-    context.read<NotesStore>().rememberWorkspaceView(selection);
+    final store = context.read<NotesStore>();
+    store.selectCollection(selection.collectionId);
+    final layout = store.collectionById(selection.collectionId)?.layout;
+    if (layout != null) {
+      _listMode = layout == 'list';
+    }
+    store.rememberWorkspaceView(selection);
     setState(() {
       _selection = selection;
       _query = '';
@@ -386,6 +393,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// view exposes every member's notes, so it stays the owner's call, which
   /// the server enforces independently.
   PublicLinkTarget? _shareViewTarget(NotesStore store) {
+    if (_selection.collectionId != null) {
+      return null;
+    }
     final workspace = store.activeWorkspace;
     if (workspace == null) return null;
     if (!workspace.isOwnedBy(store.currentUserId)) return null;
@@ -438,7 +448,13 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Saves [query] as a smart view and opens it, so the sidebar entry the user
   /// just made is the thing they end up looking at.
   Future<void> _saveSearchAsView(String query) async {
-    final saved = await SavedViewDialog.show(context, initialQuery: query);
+    final saved = await SavedViewDialog.show(
+      context,
+      initialQuery: query,
+      initialCollectionIds: [
+        if (_selection.collectionId != null) _selection.collectionId!,
+      ],
+    );
     if (!mounted || saved == null) return;
     _selectView(ViewSelection.smart(saved.id));
     showAppSnack('Smart view saved', icon: Icons.bookmark_added_outlined);
@@ -446,7 +462,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _viewTitle(NotesStore store) => switch (_selection.view) {
     NoteView.notes => '',
-    NoteView.board => 'Board',
+    NoteView.board =>
+      store.collectionById(_selection.collectionId)?.name ?? 'Inbox',
     NoteView.reminders => 'Reminders',
     NoteView.archive => 'Archive',
     NoteView.trash => 'Trash',
@@ -527,15 +544,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  ViewSelection _primaryView(NotesStore store) =>
-      store.activeWorkspace?.notesEnabled ?? true
-      ? ViewSelection.notes
-      : ViewSelection.board;
+  ViewSelection _primaryView(NotesStore store) => ViewSelection.notes;
 
   bool _viewIsAvailable(ViewSelection selection, NotesStore store) =>
+      (selection.collectionId == null ||
+          store.collectionById(selection.collectionId) != null) &&
       switch (selection.view) {
-        NoteView.notes => store.activeWorkspace?.notesEnabled ?? true,
-        NoteView.board => store.activeWorkspace?.boardEnabled ?? true,
+        NoteView.notes => true,
+        NoteView.board => selection.collectionId != null,
         NoteView.label => store.labels.any(
           (label) => label.id == selection.labelId,
         ),
@@ -559,7 +575,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ? remembered
         : _selection;
     final target = _viewIsAvailable(candidate, store)
-        ? candidate
+        ? (candidate.collectionId == null
+              ? candidate
+              : store.collectionSelection(candidate.collectionId!))
         : _primaryView(store);
     _shownWorkspaceId = workspace.id;
     if (target == _selection) {
@@ -576,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || store.activeWorkspaceId != workspace.id) return;
       store.rememberWorkspaceView(target);
-      setState(() => _selection = target);
+      _selectView(target);
     });
   }
 
@@ -585,6 +603,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();
     _reconcileWorkspaceView(store);
+    final collectionLayout = store
+        .collectionById(_selection.collectionId)
+        ?.layout;
+    if (collectionLayout != null) {
+      _listMode = collectionLayout == 'list';
+    }
     final wideLayout = ScreenWidth.isAtLeast(context, 600);
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.
@@ -722,8 +746,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             onShareView: _shareViewTarget(store) == null
                                 ? null
                                 : () => _shareCurrentView(store),
-                            onToggleLayout: () =>
-                                setState(() => _listMode = !_listMode),
+                            onToggleLayout: () {
+                              final c = store.collectionById(
+                                _selection.collectionId,
+                              );
+                              if (c != null) {
+                                store.putCollection(
+                                  c.copyWith(
+                                    layout: _listMode ? 'masonry' : 'list',
+                                  ),
+                                );
+                                _selectView(store.collectionSelection(c.id));
+                              } else {
+                                setState(() => _listMode = !_listMode);
+                              }
+                            },
                             onToggleSidebar: _toggleSidebar,
                             selectionMode: _selectionMode,
                             selectedCount: _selectedNoteIds.length,
@@ -767,6 +804,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                    CollectionControls(
+                      selection: _selection,
+                      onSelect: _selectView,
+                      title: _viewTitle(store),
+                      selectedIds: _selectedNoteIds,
+                    ),
                     Divider(
                       height: 1,
                       thickness: 1,
@@ -795,6 +838,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   if (_selection.view == NoteView.board)
                                     Positioned.fill(
                                       child: BoardView(
+                                        key: ValueKey(_selection.collectionId),
                                         query: _query,
                                         rankedIds:
                                             semanticActive &&

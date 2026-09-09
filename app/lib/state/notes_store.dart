@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../models/collection.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../models/workspace.dart';
@@ -22,6 +23,8 @@ import 'workspace_reconciliation.dart';
 
 export 'note_collection.dart'
     show NoteSections, NoteView, SortMode, ViewSelection, WorkspaceScope;
+
+part 'notes_store_collections.dart';
 
 /// Coarse connectivity/sync state surfaced on the top-bar avatar.
 ///
@@ -76,6 +79,7 @@ class NotesStore extends ChangeNotifier {
   /// The workspace the UI is showing. Null until the first load resolves one
   /// (the cached choice, or the default workspace).
   String? _activeWorkspaceId;
+  String? _activeCollectionId;
 
   /// The last drawer/sidebar destination used in each workspace. This is
   /// device-local navigation state, like [_activeWorkspaceId], rather than a
@@ -192,7 +196,9 @@ class NotesStore extends ChangeNotifier {
   /// Board columns of the open workspace, left to right. Like [labels] these
   /// are workspace state, but an independent one: a note has any number of
   /// labels and at most one stage.
-  List<Stage> get stages => stagesInWorkspace(_activeWorkspaceId);
+  List<Stage> get stages => stagesInWorkspace(
+    _activeWorkspaceId,
+  ).where((s) => s.collectionId == composeCollectionId).toList();
 
   /// Board columns of [workspaceId], left to right.
   List<Stage> stagesInWorkspace(String? workspaceId) {
@@ -273,6 +279,7 @@ class NotesStore extends ChangeNotifier {
   void setActiveWorkspace(String id) {
     if (_activeWorkspaceId == id || workspaceById(id) == null) return;
     _activeWorkspaceId = id;
+    _activeCollectionId = null;
     notifyListeners();
     _persistNow();
   }
@@ -484,6 +491,12 @@ class NotesStore extends ChangeNotifier {
         await api.deleteStage(stage.id);
         onProgress?.call(++completed, totalSteps);
       }
+      for (final collection
+          in defaultWorkspace?.collections ?? const <NoteCollection>[]) {
+        if (collection.id != 'inbox') {
+          await api.deleteCollection(defaultId!, collection.id);
+        }
+      }
       for (final workspace in nonDefaultOwned) {
         await api.deleteWorkspace(workspace.id);
         onProgress?.call(++completed, totalSteps);
@@ -520,6 +533,9 @@ class NotesStore extends ChangeNotifier {
           );
         }
 
+        for (final collection in backupWorkspace.collections) {
+          await api.putCollection(targetWorkspaceId, collection);
+        }
         for (final view in backupWorkspace.savedViews) {
           await api.putSavedView(targetWorkspaceId, view);
         }
@@ -545,6 +561,7 @@ class NotesStore extends ChangeNotifier {
           await api.createStage(
             id,
             backupStage.name,
+            collectionId: backupStage.collectionId,
             workspaceId: targetWorkspaceId,
             color: backupStage.color,
             position: backupStage.position,
@@ -570,6 +587,7 @@ class NotesStore extends ChangeNotifier {
           final note = Note(
             id: noteId,
             workspaceId: targetWorkspaceId,
+            collectionId: backupNote.collectionId,
             kind: backupNote.kind,
             title: backupNote.title,
             content: backupNote.content,
@@ -853,6 +871,17 @@ class NotesStore extends ChangeNotifier {
       }
     }
     if (view == null) return null;
+    final collectionId = value['collection_id'];
+    if (collectionId is String) {
+      return ViewSelection.collection(collectionId, layout: view);
+    }
+    final savedId = value['saved_view_id'];
+    if (view == NoteView.smart && savedId is String) {
+      return ViewSelection.smart(savedId);
+    }
+    if (view == NoteView.smart) {
+      return null;
+    }
     final labelId = value['label_id'];
     if (view == NoteView.label && (labelId is! String || labelId.isEmpty)) {
       return null;
@@ -964,6 +993,8 @@ class NotesStore extends ChangeNotifier {
         for (final entry in _lastWorkspaceViews.entries)
           entry.key: {
             'view': entry.value.view.name,
+            'collection_id': entry.value.collectionId,
+            'saved_view_id': entry.value.savedViewId,
             if (entry.value.labelId != null) 'label_id': entry.value.labelId,
           },
       },
@@ -1086,7 +1117,12 @@ class NotesStore extends ChangeNotifier {
   // Filtering & sorting
 
   NoteSections notesFor(ViewSelection selection, String query) => selectNotes(
-    notes: _notes,
+    notes: _notes.where((n) {
+      final ids =
+          savedViewById(selection.savedViewId ?? '')?.collectionIds ??
+          const <String>[];
+      return ids.isEmpty || ids.contains(workspaceScope.collectionOf(n));
+    }),
     labels: _labels,
     selection: selection,
     query: query,
@@ -1116,6 +1152,7 @@ class NotesStore extends ChangeNotifier {
     final note = Note(
       id: _uuid.v4(),
       workspaceId: workspaceId,
+      collectionId: composeCollectionId,
       kind: kind,
       position: _frontPosition(),
       labelIds: labelIds,
@@ -1326,7 +1363,13 @@ class NotesStore extends ChangeNotifier {
     final note = noteById(id);
     if (note == null || note.canAutoDiscard) return;
     _drafts.remove(id);
-    _enqueue(PendingOp(PendingOpKind.create, id: id));
+    _enqueue(
+      PendingOp(
+        PendingOpKind.create,
+        id: id,
+        data: _creationScope(noteById(id)!),
+      ),
+    );
   }
 
   void _replace(Note updated) {
@@ -1558,6 +1601,7 @@ class NotesStore extends ChangeNotifier {
     final copy = Note(
       id: _uuid.v4(),
       workspaceId: source.workspaceId,
+      collectionId: source.collectionId,
       kind: source.kind,
       title: copyTitle(source.title),
       content: source.content,
@@ -1575,7 +1619,9 @@ class NotesStore extends ChangeNotifier {
     _notes.insert(0, copy);
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
-    _enqueue(PendingOp(PendingOpKind.create, id: copy.id));
+    _enqueue(
+      PendingOp(PendingOpKind.create, id: copy.id, data: _creationScope(copy)),
+    );
     if (copy.labelIds.isNotEmpty) {
       _enqueue(
         PendingOp(
@@ -1600,7 +1646,13 @@ class NotesStore extends ChangeNotifier {
     if (_drafts.contains(id)) {
       if (retainEmpty) {
         _drafts.remove(id);
-        _enqueue(PendingOp(PendingOpKind.create, id: id));
+        _enqueue(
+          PendingOp(
+            PendingOpKind.create,
+            id: id,
+            data: _creationScope(noteById(id)!),
+          ),
+        );
       } else {
         _materializeIfNeeded(id);
       }
@@ -1644,6 +1696,7 @@ class NotesStore extends ChangeNotifier {
   SavedView addSavedView({
     required String name,
     required String query,
+    List<String> collectionIds = const [],
     String? icon,
     String? color,
   }) {
@@ -1651,6 +1704,7 @@ class NotesStore extends ChangeNotifier {
       id: _uuid.v4(),
       name: name.trim(),
       query: query.trim(),
+      collectionIds: collectionIds,
       icon: icon,
       color: color,
       position: savedViews.isEmpty ? 1024 : savedViews.last.position + 1024,
@@ -1663,6 +1717,7 @@ class NotesStore extends ChangeNotifier {
     String id, {
     required String name,
     required String query,
+    List<String>? collectionIds,
     String? icon,
     String? color,
   }) {
@@ -1674,6 +1729,7 @@ class NotesStore extends ChangeNotifier {
       view.copyWith(
         name: name.trim(),
         query: query.trim(),
+        collectionIds: collectionIds,
         icon: icon,
         color: color,
       ),
@@ -1754,6 +1810,7 @@ class NotesStore extends ChangeNotifier {
     );
     _workspaces = [..._workspaces, workspace];
     _activeWorkspaceId = workspace.id;
+    _activeCollectionId = null;
     notifyListeners();
     _enqueue(
       PendingOp(
@@ -1902,9 +1959,16 @@ class NotesStore extends ChangeNotifier {
       for (final id in note.labelIds)
         if (labelById(id)?.workspaceId == workspaceId) id,
     };
-    _patch(noteId, note.copyWith(workspaceId: workspaceId, labelIds: kept), {
-      'workspace_id': workspaceId,
-    });
+    _patch(
+      noteId,
+      note.copyWith(
+        workspaceId: workspaceId,
+        collectionId: 'inbox',
+        stageId: null,
+        labelIds: kept,
+      ),
+      {'workspace_id': workspaceId},
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -2258,6 +2322,7 @@ class NotesStore extends ChangeNotifier {
     final stage = Stage(
       id: _uuid.v4(),
       workspaceId: workspaceId,
+      collectionId: composeCollectionId,
       name: name.trim(),
       color: color,
       position: _nextStagePosition(workspaceId),
@@ -2274,6 +2339,7 @@ class NotesStore extends ChangeNotifier {
           'workspaceId': workspaceId,
           'color': color,
           'position': stage.position,
+          'collectionId': stage.collectionId,
         },
       ),
     );
@@ -2301,6 +2367,7 @@ class NotesStore extends ChangeNotifier {
     _stages[i] = Stage(
       id: id,
       workspaceId: _stages[i].workspaceId,
+      collectionId: _stages[i].collectionId,
       name: newName,
       color: color,
       position: position ?? _stages[i].position,
@@ -2371,6 +2438,15 @@ class NotesStore extends ChangeNotifier {
     if (note == null) return;
     // A no-op reposition still has to be filtered out, or every drop that
     // lands where the card already was would queue a write.
+    if (stageId != null &&
+        !_stages.any(
+          (s) =>
+              s.id == stageId &&
+              s.workspaceId == _effectiveWorkspaceId(note) &&
+              s.collectionId == note.collectionId,
+        )) {
+      return;
+    }
     if (note.stageId == stageId && position == null) return;
     final target = position ?? _endOfStage(stageId, note.workspaceId);
     if (note.stageId == stageId && note.stagePosition == target) return;

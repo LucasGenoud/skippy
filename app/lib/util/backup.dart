@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -9,7 +10,7 @@ import '../models/workspace.dart';
 import 'mime.dart';
 
 const _backupFormat = 'skippy-backup';
-const _backupVersion = 2;
+const _backupVersion = 3;
 const maxBackupArchiveBytes = 512 * 1024 * 1024;
 const _maxManifestBytes = 8 * 1024 * 1024;
 const _maxWorkspaces = 1000;
@@ -43,6 +44,7 @@ class BackupBundle {
 }
 
 class BackupWorkspace {
+  final List<NoteCollection> collections;
   final List<SavedView> savedViews;
   final String id;
   final String name;
@@ -54,6 +56,7 @@ class BackupWorkspace {
   final List<BackupNote> notes;
 
   const BackupWorkspace({
+    this.collections = const [NoteCollection.inbox],
     this.savedViews = const [],
     required this.id,
     required this.name,
@@ -112,12 +115,14 @@ class BackupLabel {
 }
 
 class BackupStage {
+  final String collectionId;
   final String id;
   final String name;
   final String? color;
   final double position;
 
   const BackupStage({
+    this.collectionId = 'inbox',
     required this.id,
     required this.name,
     this.color,
@@ -126,6 +131,7 @@ class BackupStage {
 }
 
 class BackupNote {
+  final String collectionId;
   final String id;
   final NoteKind kind;
   final String title;
@@ -152,6 +158,7 @@ class BackupNote {
   final List<BackupAttachment> attachments;
 
   const BackupNote({
+    this.collectionId = 'inbox',
     required this.id,
     required this.kind,
     required this.title,
@@ -281,6 +288,7 @@ Future<Uint8List> createBackupArchive({
         'archived': note.archived,
         'trashed': note.trashed,
         'position': note.position,
+        'collection_id': note.collectionId,
         'stage_id': note.stageId,
         'stage_position': note.stagePosition,
         'reminder_at': note.reminderAt?.toUtc().toIso8601String(),
@@ -301,6 +309,7 @@ Future<Uint8List> createBackupArchive({
       'is_default': workspace.isDefault,
       'notes_enabled': workspace.notesEnabled,
       'board_enabled': workspace.boardEnabled,
+      'collections': [for (final c in workspace.collections) c.toJson()],
       'smart_views': [for (final view in workspace.savedViews) view.toJson()],
       'labels': [
         for (final label in workspaceLabels)
@@ -315,6 +324,7 @@ Future<Uint8List> createBackupArchive({
       'stages': [
         for (final stage in workspaceStages)
           {
+            'collection_id': stage.collectionId,
             'id': stage.id,
             'name': stage.name,
             'color': stage.color,
@@ -380,7 +390,7 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
   if (version == 1) {
     return _parseLegacyBackup(manifest, entries);
   }
-  if (version != _backupVersion) {
+  if (version != 2 && version != _backupVersion) {
     throw const FormatException('Unsupported Skippy backup version');
   }
 
@@ -425,6 +435,20 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
       usedFiles,
       legacy: false,
     );
+    final collections = _readCollections(map['collections']);
+    final collectionIds = collections.map((c) => c.id).toSet();
+    final stageCollections = {
+      for (final stage in parsed.stages) stage.id: stage.collectionId,
+    };
+    if (parsed.stages.any((s) => !collectionIds.contains(s.collectionId)) ||
+        parsed.notes.any(
+          (n) =>
+              !collectionIds.contains(n.collectionId) ||
+              (n.stageId != null &&
+                  stageCollections[n.stageId] != n.collectionId),
+        )) {
+      throw const FormatException('Foreign collection or board column');
+    }
     noteCount += parsed.notes.length;
     labelCount += parsed.labels.length;
     stageCount += parsed.stages.length;
@@ -442,6 +466,7 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
         isDefault: isDefault,
         notesEnabled: notesEnabled,
         boardEnabled: boardEnabled,
+        collections: _readCollections(map['collections']),
         savedViews: _readSavedViews(map['smart_views']),
         labels: parsed.labels,
         stages: parsed.stages,
@@ -535,6 +560,8 @@ BackupWorkspace _parseWorkspaceContents(
     }
     stages.add(
       BackupStage(
+        collectionId:
+            _optionalString(stage['collection_id'], max: 200) ?? 'inbox',
         id: id,
         name: name,
         color: _optionalString(stage['color'], max: 32),
@@ -588,6 +615,8 @@ BackupWorkspace _parseWorkspaceContents(
     final stageId = _optionalString(note['stage_id'], max: 200);
     notes.add(
       BackupNote(
+        collectionId:
+            _optionalString(note['collection_id'], max: 200) ?? 'inbox',
         id: _requiredString(note, 'id', max: 200),
         kind: NoteKind.fromWire(rawKind),
         title: _string(note['title'], max: 100000),
@@ -721,4 +750,42 @@ SavedView _readSavedView(dynamic entry, Set<String> ids) {
     throw const FormatException('Invalid smart view');
   }
   return view;
+}
+
+List<NoteCollection> _readCollections(Object? raw) {
+  if (raw == null) {
+    return const [NoteCollection.inbox];
+  }
+  final entries = _list(raw, 'collections');
+  if (entries.length > 1000) {
+    throw const FormatException('Too many collections');
+  }
+  final ids = <String>{};
+  final names = <String>{};
+  final result = <NoteCollection>[];
+  for (final entry in entries) {
+    final map = _map(entry, 'collection');
+    final id = _requiredString(map, 'id', max: 200);
+    final name = _requiredString(map, 'name', max: 60).trim();
+    final layout = _requiredString(map, 'layout', max: 20);
+    if (name.isEmpty ||
+        !ids.add(id) ||
+        !names.add(name.toLowerCase()) ||
+        !['masonry', 'list', 'board'].contains(layout) ||
+        (id == 'inbox' && name != 'Inbox')) {
+      throw const FormatException('Invalid collection');
+    }
+    result.add(
+      NoteCollection(
+        id: id,
+        name: name,
+        layout: layout,
+        position: _number(map['position'], 0),
+      ),
+    );
+  }
+  if (!ids.contains('inbox')) {
+    throw const FormatException('Missing Inbox');
+  }
+  return result;
 }

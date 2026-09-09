@@ -367,11 +367,33 @@ them live in the account's settings document, so any platform can set one and
 the phone arms it on its next sync. The reminder picker says as much wherever
 the device itself is not the one watching.
 
-Smart views are named searches shared by a workspace's members. Switching
-workspaces switches the sidebar's smart views; every member can create, edit,
-reorder or delete them. Existing personal smart views are imported once into
-their owner's default workspace on server startup. Personal appearance,
-notification accounts and saved locations remain user settings.
+Workspaces define shared access and ownership. Inside a workspace, named
+collections hold independent sets of notes. Every workspace starts with an
+Inbox; quick captures go there unless another destination is selected. A
+collection remembers its masonry, list, or board layout. Board columns belong
+to a collection, so separate projects can use different workflows (and reuse
+column names).
+
+Labels remain workspace-wide. The sidebar's labels and All notes span all
+collections; search filters inside a collection stay within that collection.
+Smart views are named searches shared by workspace members and can search all
+collections or selected collections. Aggregate views use masonry or list.
+Notes can be moved between collections without losing labels; their previous
+board column is cleared. Deleting a collection moves its notes to Inbox and
+removes its columns. Inbox cannot be deleted. Every workspace member may
+organize collections; per-note sharing does not grant that permission.
+
+Collections, their layouts, and smart-view scopes sync through the offline
+write queue and are included in workspace backups. Personal appearance,
+notification accounts and saved locations remain user settings. A smart view
+scoped to a deleted collection retains that scope until edited, so deletion
+never silently expands a saved search to the whole workspace.
+
+This schema revision adds collections and collection-scoped columns. Existing
+installations should export their workspace backups with the previous build,
+then restore them into a fresh database on the new build. Version 1 and 2
+backups remain readable; their notes and columns restore into Inbox. No
+in-place database migration is provided.
 
 ## User backups
 
@@ -409,6 +431,7 @@ defaults; S3-compatible storage is also supported.
 Authenticated JSON endpoints live under `/api`. The main groups are:
 
 - `/auth`, `/workspaces`, `/notes`, `/labels`, and `/stages`
+- `/workspaces/{id}/collections/{collection_id}` (member-scoped PUT and DELETE; deleting files notes in Inbox)
 - `/workspaces/{id}/smart-views/{view_id}` (member-scoped PUT and DELETE)
 - `/auth/forgot-password` and `/auth/reset-password`, unauthenticated on
   purpose and available only where the server can send mail

@@ -7,6 +7,8 @@ enum PendingOpKind {
   labelCreate('labelCreate'),
   labelUpdate('labelUpdate'),
   labelDelete('labelDelete'),
+  collectionPut('collectionPut'),
+  collectionDelete('collectionDelete'),
   stageCreate('stageCreate'),
   stageUpdate('stageUpdate'),
   stageDelete('stageDelete'),
