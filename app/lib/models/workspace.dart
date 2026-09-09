@@ -1,4 +1,3 @@
-import 'collection.dart';
 import 'note.dart';
 import 'saved_view.dart';
 
@@ -6,7 +5,6 @@ import 'saved_view.dart';
 /// and may create more; members are invited per workspace and see every note
 /// it holds. Its labels are a shared taxonomy rather than personal ones.
 class Workspace {
-  final List<NoteCollection> collections;
   final String id;
   final List<SavedView> savedViews;
   final String name;
@@ -25,7 +23,6 @@ class Workspace {
   final bool isDefault;
 
   const Workspace({
-    this.collections = const [NoteCollection.inbox],
     required this.id,
     this.savedViews = const [],
     required this.name,
@@ -42,14 +39,12 @@ class Workspace {
   bool get isShared => members.isNotEmpty;
 
   Workspace copyWith({
-    List<NoteCollection>? collections,
     List<SavedView>? savedViews,
     String? name,
     bool? notesEnabled,
     bool? boardEnabled,
     List<UserRef>? members,
   }) => Workspace(
-    collections: collections ?? this.collections,
     id: id,
     savedViews: savedViews ?? this.savedViews,
     name: name ?? this.name,
@@ -61,12 +56,6 @@ class Workspace {
   );
 
   factory Workspace.fromJson(Map<String, dynamic> json) => Workspace(
-    collections: json['collections'] == null
-        ? const [NoteCollection.inbox]
-        : [
-            for (final entry in json['collections'] as List)
-              NoteCollection.fromJson((entry as Map).cast<String, dynamic>()),
-          ],
     id: json['id'] as String,
     savedViews: [
       for (final entry in json['smart_views'] as List? ?? const [])
@@ -86,7 +75,6 @@ class Workspace {
   );
 
   Map<String, dynamic> toJson() => {
-    'collections': [for (final c in collections) c.toJson()],
     'id': id,
     'smart_views': [for (final view in savedViews) view.toJson()],
     'name': name,

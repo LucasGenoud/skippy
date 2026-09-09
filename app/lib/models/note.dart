@@ -221,7 +221,6 @@ class Note {
   /// The workspace holding this note. Everyone in that workspace can see it;
   /// per-note collaborators are an additional, narrower grant.
   final String workspaceId;
-  final String collectionId;
   final NoteKind kind;
   final String title;
   final String content;
@@ -263,7 +262,6 @@ class Note {
   const Note({
     required this.id,
     this.workspaceId = '',
-    this.collectionId = 'inbox',
     this.kind = NoteKind.text,
     this.title = '',
     this.content = '',
@@ -327,7 +325,6 @@ class Note {
 
   Note copyWith({
     String? workspaceId,
-    String? collectionId,
     NoteKind? kind,
     String? title,
     String? content,
@@ -351,7 +348,6 @@ class Note {
     return Note(
       id: id,
       workspaceId: workspaceId ?? this.workspaceId,
-      collectionId: collectionId ?? this.collectionId,
       kind: kind ?? this.kind,
       title: title ?? this.title,
       content: content ?? this.content,
@@ -384,7 +380,6 @@ class Note {
     return Note(
       id: json['id'] as String,
       workspaceId: json['workspace_id'] as String? ?? '',
-      collectionId: json['collection_id'] as String? ?? 'inbox',
       kind: NoteKind.fromWire(json['kind'] as String?),
       title: json['title'] as String? ?? '',
       content: json['content'] as String? ?? '',
@@ -438,7 +433,6 @@ class Note {
   Map<String, dynamic> toJson() => {
     'id': id,
     'workspace_id': workspaceId,
-    'collection_id': collectionId,
     'kind': kind.wire,
     'title': title,
     'content': content,
@@ -629,7 +623,6 @@ class Label {
 class Stage {
   final String id;
   final String workspaceId;
-  final String collectionId;
   final String name;
 
   /// Hex colour (`#RRGGBB`) for the column header, or null for the theme
@@ -643,7 +636,6 @@ class Stage {
     required this.id,
     required this.name,
     this.workspaceId = '',
-    this.collectionId = 'inbox',
     this.color,
     this.position = 0,
   });
@@ -651,7 +643,6 @@ class Stage {
   factory Stage.fromJson(Map<String, dynamic> json) => Stage(
     id: json['id'] as String,
     workspaceId: json['workspace_id'] as String? ?? '',
-    collectionId: json['collection_id'] as String? ?? 'inbox',
     name: json['name'] as String,
     color: json['color'] as String?,
     position: (json['position'] as num?)?.toDouble() ?? 0,
@@ -660,7 +651,6 @@ class Stage {
   Map<String, dynamic> toJson() => {
     'id': id,
     'workspace_id': workspaceId,
-    'collection_id': collectionId,
     'name': name,
     if (color != null) 'color': color,
     'position': position,
@@ -669,7 +659,6 @@ class Stage {
   Stage copyWith({String? name, String? color, double? position}) => Stage(
     id: id,
     workspaceId: workspaceId,
-    collectionId: collectionId,
     name: name ?? this.name,
     color: color ?? this.color,
     position: position ?? this.position,

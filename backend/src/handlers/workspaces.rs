@@ -266,11 +266,6 @@ pub async fn put_smart_view(
         || view.query.len() > 4096
         || view.icon.as_ref().is_some_and(|v| v.len() > 128)
         || view.color.as_ref().is_some_and(|v| v.len() > 32)
-        || view.collection_ids.len() > 1000
-        || view
-            .collection_ids
-            .iter()
-            .any(|id| id.is_empty() || id.len() > 200)
         || !view.position.is_finite()
     {
         return Err(ApiError::BadRequest("invalid smart view".to_string()));
@@ -298,64 +293,6 @@ pub async fn delete_smart_view(
     {
         return Err(ApiError::NotFound);
     }
-    notify_workspace(&state, &workspace_id).await;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// Member-scoped collection writes use the same snapshot and fan-out as smart views.
-pub async fn put_collection(
-    State(state): State<AppState>,
-    AuthUser(user_id): AuthUser,
-    Path((workspace_id, id)): Path<(String, String)>,
-    Json(mut body): Json<NoteCollection>,
-) -> ApiResult<StatusCode> {
-    require_member(&state, &workspace_id, &user_id).await?;
-    body.id = id;
-    body.name = validate_name(&body.name)?;
-    if body.id.trim().is_empty()
-        || body.id.len() > 200
-        || !["masonry", "list", "board"].contains(&body.layout.as_str())
-        || !body.position.is_finite()
-    {
-        return Err(ApiError::BadRequest("invalid collection".into()));
-    }
-    if body.id == "inbox" {
-        body.name = "Inbox".into();
-    }
-    if !state
-        .repo
-        .put_collection(&user_id, &workspace_id, &body)
-        .await?
-    {
-        return Err(ApiError::NotFound);
-    }
-    notify_workspace(&state, &workspace_id).await;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub async fn delete_collection(
-    State(state): State<AppState>,
-    AuthUser(user_id): AuthUser,
-    Path((workspace_id, id)): Path<(String, String)>,
-) -> ApiResult<StatusCode> {
-    require_member(&state, &workspace_id, &user_id).await?;
-    if id == "inbox" {
-        return Err(ApiError::BadRequest("Inbox cannot be deleted".into()));
-    }
-    let mut audience = Vec::new();
-    for note in state.repo.notes_for_user(&user_id).await? {
-        if note.note.workspace_id == workspace_id && note.note.collection_id == id {
-            audience.extend(state.repo.participant_ids(&note.note.id).await?);
-        }
-    }
-    if !state
-        .repo
-        .delete_collection(&user_id, &workspace_id, &id)
-        .await?
-    {
-        return Err(ApiError::NotFound);
-    }
-    state.hub.notify(&audience, CHANGED_MSG);
     notify_workspace(&state, &workspace_id).await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,4 +1,3 @@
-import 'package:skippy/models/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -456,7 +455,7 @@ void main() {
     });
 
     testWidgets(
-      'collections remain available independently of legacy workspace view flags',
+      'disabled workspace views disappear and the open view falls back',
       (tester) async {
         tester.view.physicalSize = const Size(1200, 900);
         tester.view.devicePixelRatio = 1.0;
@@ -466,7 +465,6 @@ void main() {
           id: work,
           name: 'Work',
           notesEnabled: false,
-          collections: [NoteCollection.inbox],
           owner: UserRef(id: 'u-me', name: 'Me Example'),
         );
         api.notes['b'] = noteIn(work, 'b', title: 'board only');
@@ -479,14 +477,14 @@ void main() {
 
         final sidebar = find.byType(AppSidebar);
         expect(
-          find.descendant(of: sidebar, matching: find.text('All notes')),
-          findsOneWidget,
+          find.descendant(of: sidebar, matching: find.text('Notes')),
+          findsNothing,
         );
         expect(
-          find.descendant(of: sidebar, matching: find.text('Inbox')),
+          find.descendant(of: sidebar, matching: find.text('Board')),
           findsOneWidget,
         );
-        expect(find.byType(BoardView), findsNothing);
+        expect(find.byType(BoardView), findsOneWidget);
         store.dispose();
       },
     );
@@ -497,16 +495,12 @@ void main() {
       addTearDown(tester.view.reset);
 
       await store.load();
-      store.putCollection(store.collections.first.copyWith(layout: 'board'));
-      store.setActiveWorkspace(work);
-      store.putCollection(store.collections.first.copyWith(layout: 'board'));
-      store.setActiveWorkspace('w-default');
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
       final sidebar = find.byType(AppSidebar);
       await tester.tap(
-        find.descendant(of: sidebar, matching: find.text('Inbox')),
+        find.descendant(of: sidebar, matching: find.text('Board')),
       );
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsOneWidget);
@@ -517,7 +511,7 @@ void main() {
       expect(find.byType(BoardView), findsOneWidget);
 
       await tester.tap(
-        find.descendant(of: sidebar, matching: find.text('All notes')),
+        find.descendant(of: sidebar, matching: find.text('Notes')),
       );
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsNothing);
@@ -677,11 +671,7 @@ void main() {
       api.notes['a'] = noteIn(work, 'a', title: 'work note');
       api.notes['b'] = noteIn(work, 'b', title: 'other note');
       api.notes['gone'] = noteIn(work, 'gone', title: 'binned', trashed: true);
-      api.labels['l1'] = const Label(
-        id: 'l1',
-        name: 'urgent',
-        workspaceId: work,
-      );
+      api.labels['l1'] = const Label(id: 'l1', name: 'urgent', workspaceId: work);
       await store.load();
       store.setActiveWorkspace(work);
       await openSettings(tester, store);
@@ -715,10 +705,8 @@ void main() {
         find.widgetWithText(SwitchListTile, 'Notes'),
       );
       expect(notesSwitch.onChanged, isNull);
-      expect(
-        find.text('Only the owner can change workspace views.'),
-        findsOneWidget,
-      );
+      expect(find.text('Only the owner can change workspace views.'),
+          findsOneWidget);
       expect(find.text('Invite people by email'), findsNothing);
       // Leaving, not deleting: the notes are not this member's to remove.
       expect(find.text('Delete workspace'), findsNothing);
@@ -814,11 +802,7 @@ void main() {
         name: 'a label with a fairly long name',
         workspaceId: work,
       );
-      api.stages['s1'] = const Stage(
-        id: 's1',
-        name: 'Doing',
-        workspaceId: work,
-      );
+      api.stages['s1'] = const Stage(id: 's1', name: 'Doing', workspaceId: work);
       await store.load();
       store.setActiveWorkspace(work);
 

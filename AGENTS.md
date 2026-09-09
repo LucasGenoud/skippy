@@ -205,40 +205,9 @@ Labels are a workspace's shared taxonomy, not personal state: every member sees 
 
 Stages (board columns) are shared workspace state too, and are deliberately a separate system from labels: a note carries any number of labels via `note_labels` and at most one stage via `notes.stage_id`, so the exclusivity a board needs is a schema fact rather than a rule the client maintains. The two must stay independent. Do not merge `handlers/stages.rs` into `handlers/labels.rs` or introduce a shared "workspace taxonomy" abstraction, they read alike, and the duplication is the cheaper side of that trade. A patch carrying `stage_id` must never write `note_labels`, and one carrying `label_ids` must never write `stage_id`; `backend/tests/api/stages.rs` pins both directions. Shared code between the two is allowed only over primitives (both resolve a hex colour through `PaletteEntry.hexToColor`), never over each other's types.
 
-A note's stage must belong to the note's workspace and collection. `prune_foreign_stage` is the single-stage counterpart of `prune_foreign_labels` and is what stops a stray or foreign stage id from sticking; a workspace move clears the stage for the same reason it drops the old labels. `stage_position` orders cards within a column and is separate from `position` on purpose, so arranging the board never reshuffles the grid. A move is one patch carrying both `stage_id` and `stage_position`, not a stage change chased by a reorder.
+A note's stage must belong to the note's workspace. `prune_foreign_stage` is the single-stage counterpart of `prune_foreign_labels` and is what stops a stray or foreign stage id from sticking; a workspace move clears the stage for the same reason it drops the old labels. `stage_position` orders cards within a column and is separate from `position` on purpose, so arranging the board never reshuffles the grid. A move is one patch carrying both `stage_id` and `stage_position`, not a stage change chased by a reorder.
 
 Recheck the entire permission matrix when adding a note-related endpoint. Do not fetch a raw row first and bolt on an inconsistent permission check if an existing participant-scoped repository method can express the operation.
-
-### Collections
-
-Collections organize notes within a workspace without changing access. Every
-workspace creates an `inbox` collection through its insert trigger. Each note
-and stage carries `collection_id`; composite foreign keys enforce membership
-in the workspace and prevent cross-collection stage assignments. Column names
-are unique within a collection. Labels remain workspace-wide.
-
-Collection PUT/DELETE operations are member-scoped. Deleting a collection
-atomically moves notes to Inbox, clears their stages, and deletes its columns;
-it never deletes notes. Inbox cannot be deleted. Collection moves preserve
-labels and skip content pipelines. Workspace moves reset collection to Inbox
-unless the request supplies a destination, and clear stage as before.
-
-The client keeps collection operations in `state/notes_store_collections.dart`.
-Collections travel with the workspace snapshot/cache; their writes use the
-durable queue. Queued note creates capture their original destination so later
-moves cannot refer to a collection before its queued creation. Smart views
-carry `collection_ids` (empty means all), and retain deleted IDs rather than
-silently broadening their scope. Layout belongs to each collection; aggregate
-views use masonry/list. Backup version 3 preserves collections and scopes;
-versions 1 and 2 restore their notes and columns into Inbox.
-
-Collection coverage lives in `backend/tests/api/collections.rs` and
-`app/test/collections_test.dart`/`collection_widgets_test.dart`. Keep tests for
-member authorization, invalid or foreign collection references, label
-preservation on moves, board-column isolation, offline queue ordering, and
-backup/model round trips when changing this contract.
-An empty board collection may show setup guidance, but a collection with notes
-and no stages must keep those notes visible in its unassigned lane.
 
 ### Smart views and ownership boundaries
 

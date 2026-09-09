@@ -22,14 +22,8 @@ class SavedViewDialog extends StatefulWidget {
   /// Seeds the query field when creating, so "save this search" arrives with
   /// what the box already holds.
   final String initialQuery;
-  final List<String> initialCollectionIds;
 
-  const SavedViewDialog({
-    super.key,
-    this.savedViewId,
-    this.initialQuery = '',
-    this.initialCollectionIds = const [],
-  });
+  const SavedViewDialog({super.key, this.savedViewId, this.initialQuery = ''});
 
   /// Returns the view that was created or edited, or null if the dialog was
   /// dismissed or the view deleted, so the caller can open what it saved.
@@ -37,7 +31,6 @@ class SavedViewDialog extends StatefulWidget {
     BuildContext context, {
     String? savedViewId,
     String initialQuery = '',
-    List<String> initialCollectionIds = const [],
   }) {
     final store = context.read<NotesStore>();
     return showFormDialog<SavedView>(
@@ -47,7 +40,6 @@ class SavedViewDialog extends StatefulWidget {
         child: SavedViewDialog(
           savedViewId: savedViewId,
           initialQuery: initialQuery,
-          initialCollectionIds: initialCollectionIds,
         ),
       ),
     );
@@ -65,7 +57,6 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
   String? _nameError;
   String? _queryError;
   String? _workspaceId;
-  Set<String> _collectionIds = {};
 
   bool get _isNew => widget.savedViewId == null;
 
@@ -80,8 +71,6 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
     _query = TextEditingController(
       text: existing?.query ?? widget.initialQuery.trim(),
     );
-    _collectionIds =
-        existing?.collectionIds.toSet() ?? widget.initialCollectionIds.toSet();
     _color = existing?.color;
     _icon = existing?.icon;
   }
@@ -121,7 +110,6 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
       saved = store.addSavedView(
         name: name,
         query: query,
-        collectionIds: _collectionIds.toList(),
         icon: _icon,
         color: _color,
       );
@@ -130,7 +118,6 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
         widget.savedViewId!,
         name: name,
         query: query,
-        collectionIds: _collectionIds.toList(),
         icon: _icon,
         color: _color,
       );
@@ -222,26 +209,6 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
               if (_queryError != null) setState(() => _queryError = null);
             },
             onSubmitted: (_) => _save(),
-          ),
-          const SizedBox(height: 20),
-          _sectionLabel(context, 'Collections'),
-          const Text('None selected means all collections'),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final c in context.watch<NotesStore>().collections)
-                FilterChip(
-                  label: Text(c.name),
-                  selected: _collectionIds.contains(c.id),
-                  onSelected: (selected) => setState(() {
-                    if (selected) {
-                      _collectionIds.add(c.id);
-                    } else {
-                      _collectionIds.remove(c.id);
-                    }
-                  }),
-                ),
-            ],
           ),
           const SizedBox(height: 20),
           _sectionLabel(context, 'Color'),

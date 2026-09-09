@@ -7,7 +7,6 @@
 ///
 /// Definitions belong to a workspace and are shared with its members.
 class SavedView {
-  final List<String> collectionIds;
   final String id;
   final double position;
   final String name;
@@ -23,7 +22,6 @@ class SavedView {
   final String? color;
 
   const SavedView({
-    this.collectionIds = const [],
     required this.id,
     this.position = 0,
     required this.name,
@@ -33,14 +31,12 @@ class SavedView {
   });
 
   SavedView copyWith({
-    List<String>? collectionIds,
     double? position,
     String? name,
     String? query,
     String? icon,
     String? color,
   }) => SavedView(
-    collectionIds: collectionIds ?? this.collectionIds,
     id: id,
     position: position ?? this.position,
     name: name ?? this.name,
@@ -51,7 +47,6 @@ class SavedView {
   );
 
   Map<String, dynamic> toJson() => {
-    'collection_ids': collectionIds,
     'id': id,
     'position': position,
     'name': name,
@@ -70,8 +65,6 @@ class SavedView {
     if (name == null || name.isEmpty) return null;
     if (query == null || query.isEmpty) return null;
     return SavedView(
-      collectionIds: (json['collection_ids'] as List? ?? const [])
-          .cast<String>(),
       id: id,
       position: (json['position'] as num?)?.toDouble() ?? 0,
       name: name,
@@ -88,7 +81,6 @@ class SavedView {
   @override
   bool operator ==(Object other) =>
       other is SavedView &&
-      other.collectionIds.join('|') == collectionIds.join('|') &&
       other.id == id &&
       other.position == position &&
       other.name == name &&
@@ -97,13 +89,5 @@ class SavedView {
       other.color == color;
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    name,
-    query,
-    icon,
-    color,
-    position,
-    Object.hashAll(collectionIds),
-  );
+  int get hashCode => Object.hash(id, name, query, icon, color, position);
 }

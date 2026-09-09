@@ -49,30 +49,14 @@ CREATE TABLE IF NOT EXISTS smart_views (
     PRIMARY KEY (workspace_id, id)
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS collections (
-    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    id TEXT NOT NULL,
-    name TEXT NOT NULL CHECK (trim(name) <> ''),
-    layout TEXT NOT NULL DEFAULT 'masonry' CHECK (layout IN ('masonry', 'list', 'board')),
-    position REAL NOT NULL DEFAULT 0,
-    PRIMARY KEY (workspace_id, id),
-    UNIQUE (workspace_id, name COLLATE NOCASE)
-) STRICT;
-
-CREATE TRIGGER IF NOT EXISTS workspace_inbox AFTER INSERT ON workspaces BEGIN
-    INSERT INTO collections (workspace_id, id, name) VALUES (NEW.id, 'inbox', 'Inbox');
-END;
-
 CREATE TABLE IF NOT EXISTS stages (
-    collection_id TEXT NOT NULL DEFAULT 'inbox',
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL CHECK (trim(name) <> ''),
     color TEXT,
     position REAL NOT NULL DEFAULT 0,
-    UNIQUE (workspace_id, collection_id, name COLLATE NOCASE),
-    UNIQUE (id, workspace_id, collection_id),
-    FOREIGN KEY (workspace_id, collection_id) REFERENCES collections(workspace_id, id)
+    UNIQUE (workspace_id, name COLLATE NOCASE),
+    UNIQUE (id, workspace_id)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS labels (
@@ -87,7 +71,6 @@ CREATE TABLE IF NOT EXISTS labels (
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS notes (
-    collection_id TEXT NOT NULL DEFAULT 'inbox',
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -116,9 +99,8 @@ CREATE TABLE IF NOT EXISTS notes (
     stage_id TEXT,
     stage_position REAL NOT NULL DEFAULT 0,
     UNIQUE (id, workspace_id),
-    FOREIGN KEY (workspace_id, collection_id) REFERENCES collections(workspace_id, id),
-    FOREIGN KEY (stage_id, workspace_id, collection_id)
-        REFERENCES stages(id, workspace_id, collection_id),
+    FOREIGN KEY (stage_id, workspace_id)
+        REFERENCES stages(id, workspace_id),
     CHECK (reminder_repeat IS NULL OR reminder_at IS NOT NULL),
     CHECK (
         (trashed = 0 AND trashed_at IS NULL) OR

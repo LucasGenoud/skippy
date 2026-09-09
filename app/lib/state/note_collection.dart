@@ -1,8 +1,9 @@
 import '../models/note.dart';
 import '../util/search_query.dart';
 
-/// [board] renders the selected collection's columns. Aggregate destinations
-/// use masonry or list because collections have independent column systems.
+/// [board] is a view like the others rather than a third state of the
+/// grid/list toggle: it is incompatible with trash, archive, reminders and
+/// label views, and has its own empty state and compose target.
 ///
 /// [smart] is a saved search (see `models/saved_view.dart`). It shows the same
 /// notes the grid does, narrowed by the view's stored query, which the home
@@ -12,30 +13,20 @@ enum NoteView { notes, board, reminders, archive, trash, label, smart }
 enum SortMode { custom, edited, newest, oldest }
 
 class ViewSelection {
-  final String? collectionId;
   final NoteView view;
   final String? labelId;
 
   /// Which saved view is open, for [NoteView.smart]. The query itself lives in
-  /// the workspace, not here: a selection stays a pointer, so renaming
+  /// the settings document, not here: a selection stays a pointer, so renaming
   /// or editing a smart view takes effect without re-selecting it.
   final String? savedViewId;
 
-  const ViewSelection(this.view, [this.labelId])
-    : savedViewId = null,
-      collectionId = null;
+  const ViewSelection(this.view, [this.labelId]) : savedViewId = null;
 
   const ViewSelection.smart(String id)
-    : collectionId = null,
-      view = NoteView.smart,
+    : view = NoteView.smart,
       labelId = null,
       savedViewId = id;
-
-  const ViewSelection.collection(String id, {NoteView layout = NoteView.notes})
-    : collectionId = id,
-      view = layout,
-      labelId = null,
-      savedViewId = null;
 
   static const notes = ViewSelection(NoteView.notes);
   static const board = ViewSelection(NoteView.board);
@@ -46,13 +37,12 @@ class ViewSelection {
   @override
   bool operator ==(Object other) =>
       other is ViewSelection &&
-      other.collectionId == collectionId &&
       other.view == view &&
       other.labelId == labelId &&
       other.savedViewId == savedViewId;
 
   @override
-  int get hashCode => Object.hash(view, labelId, savedViewId, collectionId);
+  int get hashCode => Object.hash(view, labelId, savedViewId);
 }
 
 /// Which workspace's notes a view shows.
@@ -84,11 +74,6 @@ class WorkspaceScope {
     : workspaceId = null,
       isDefault = false,
       known = const {};
-
-  String collectionOf(Note note) =>
-      isDefault && !known.contains(note.workspaceId)
-      ? 'inbox'
-      : note.collectionId;
 
   bool contains(Note note) => containsWorkspace(note.workspaceId);
 
@@ -183,8 +168,6 @@ List<Note> filterNotes({
       .where(
         (note) =>
             scope.contains(note) &&
-            (selection.collectionId == null ||
-                scope.collectionOf(note) == selection.collectionId) &&
             _isInView(note, selection, currentUserId, override) &&
             query.matches(note, context),
       )

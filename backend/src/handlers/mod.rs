@@ -18,7 +18,7 @@ mod stages;
 mod unfurl;
 mod versions;
 mod workspaces;
-pub use workspaces::{delete_collection, delete_smart_view, put_collection, put_smart_view};
+pub use workspaces::{delete_smart_view, put_smart_view};
 mod writing;
 
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
@@ -206,23 +206,4 @@ pub async fn managed_settings(
     AuthUser(_user_id): AuthUser,
 ) -> Json<serde_json::Value> {
     Json(state.managed.public_view())
-}
-
-async fn resolve_collection(
-    state: &AppState,
-    user_id: &str,
-    workspace_id: &str,
-    id: Option<&str>,
-) -> ApiResult<String> {
-    let id = id.unwrap_or("inbox");
-    let valid = state
-        .repo
-        .workspaces_for_user(user_id)
-        .await?
-        .iter()
-        .any(|w| w.id == workspace_id && w.collections.iter().any(|c| c.id == id));
-    if !valid {
-        return Err(ApiError::NotFound);
-    }
-    Ok(id.to_string())
 }

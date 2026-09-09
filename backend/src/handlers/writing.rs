@@ -93,7 +93,6 @@ pub async fn rewrite_note(
             .collect()
     });
     let body = UpdateNote {
-        collection_id: None,
         workspace_id: None,
         kind: None,
         title: Some(title),
@@ -129,9 +128,7 @@ fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::C
         KIND_CHECKLIST => {
             "This is a checklist: return the title and every item as plain text only, without Markdown syntax or formatting."
         }
-        _ => {
-            "This is a plain-text note: return the title and content as plain text only, without Markdown syntax or formatting."
-        }
+        _ => "This is a plain-text note: return the title and content as plain text only, without Markdown syntax or formatting.",
     };
     let language_instruction = "Keep every part of the note in its original language. Never translate it or switch languages; for mixed-language notes, preserve the language of each title, paragraph, and checklist item.";
     let note = if record.kind == KIND_CHECKLIST {
