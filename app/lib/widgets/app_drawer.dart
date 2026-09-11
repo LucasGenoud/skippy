@@ -181,7 +181,7 @@ class AppSidebar extends StatelessWidget {
               onTap: showLabels,
             ),
             const Divider(height: 24, indent: 16, endIndent: 16),
-            _SidebarSectionHeader(label: 'SAVED FILTERS', isOpen: isOpen),
+            _SidebarSectionHeader(label: 'SMART VIEWS', isOpen: isOpen),
             for (final view in store.savedViews)
               _SidebarItem(
                 icon: view.icon == null
@@ -204,8 +204,8 @@ class AppSidebar extends StatelessWidget {
               icon: Icons.edit_outlined,
               selectedIcon: Icons.edit,
               label: store.savedViews.isEmpty
-                  ? 'Create saved filter'
-                  : 'Manage saved filters',
+                  ? 'Create a smart view'
+                  : 'Manage smart views',
               isSelected: false,
               isOpen: isOpen,
               onTap: showSavedFilters,

@@ -118,7 +118,7 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Structure only'),
                   subtitle: const Text(
-                    'Collections, layouts, columns, labels and saved filters.',
+                    'Collections, layouts, columns, labels and smart views.',
                   ),
                 ),
                 RadioListTile<WorkspaceCopyContent>(
