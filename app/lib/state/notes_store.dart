@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -77,6 +78,132 @@ class NotesStore extends ChangeNotifier {
   /// (the cached choice, or the default workspace).
   String? _activeWorkspaceId;
 
+  final Map<String, String> _collectionChoices = {};
+  List<NoteCollection> get collections =>
+      activeWorkspace?.collections ?? const [];
+  NoteCollection? get activeCollection {
+    final id = _collectionChoices[_activeWorkspaceId];
+    for (final c in collections) {
+      if (c.id == id) {
+        return c;
+      }
+    }
+    return collections.isEmpty ? null : collections.first;
+  }
+
+  void selectCollection(String id) {
+    if (!collections.any((c) => c.id == id)) {
+      return;
+    }
+    _collectionChoices[_activeWorkspaceId!] = id;
+    notifyListeners();
+    _persistSoon();
+  }
+
+  WorkspaceScope get collectionScope => WorkspaceScope(
+    workspaceId: _activeWorkspaceId,
+    isDefault: workspaceScope.isDefault,
+    known: workspaceScope.known,
+    collectionId: activeCollection?.id,
+  );
+
+  Future<void> duplicateWorkspace(
+    String id,
+    String name,
+    WorkspaceCopyContent content, {
+    bool reminders = false,
+  }) async {
+    flushForBackground();
+    await _drainQueue();
+    if (_connectionDown || _queue.isNotEmpty) {
+      throw StateError(
+        'Connect and finish syncing before duplicating a workspace',
+      );
+    }
+    final copy = await api.duplicateWorkspace(
+      id,
+      name,
+      content,
+      reminders: reminders,
+    );
+    await refresh();
+    setActiveWorkspace(copy.id);
+  }
+
+  void saveCollection(NoteCollection collection) {
+    _collectionSorts.remove(collection.id);
+    _workspaces = [
+      for (final w in _workspaces)
+        if (w.id == collection.workspaceId)
+          w.copyWith(
+            collections: [
+              ...w.collections.where((c) => c.id != collection.id),
+              collection,
+            ]..sort((a, b) => a.position.compareTo(b.position)),
+          )
+        else
+          w,
+    ];
+    _enqueue(
+      PendingOp(
+        PendingOpKind.collectionPut,
+        id: collection.id,
+        data: collection.toJson(),
+      ),
+    );
+    notifyListeners();
+  }
+
+  void deleteCollection(String id) {
+    final workspaceId = _workspaces
+        .where((w) => w.collections.any((c) => c.id == id))
+        .firstOrNull
+        ?.id;
+    if (workspaceId == null) {
+      return;
+    }
+    _workspaces = [
+      for (final w in _workspaces)
+        if (w.id == workspaceId)
+          w.copyWith(
+            collections: w.collections.where((c) => c.id != id).toList(),
+          )
+        else
+          w,
+    ];
+    _notes = [
+      for (final n in _notes)
+        if (n.collectionId == id)
+          n.copyWith(trashed: true, stageId: null)
+        else
+          n,
+    ];
+    _stages.removeWhere((s) => s.collectionId == id);
+    _enqueue(
+      PendingOp(
+        PendingOpKind.collectionDelete,
+        id: id,
+        data: {'workspaceId': workspaceId},
+      ),
+    );
+    notifyListeners();
+  }
+
+  void moveToCollection(String noteId, String collectionId) {
+    final note = noteById(noteId);
+    if (note == null ||
+        !(workspaceById(
+              note.workspaceId,
+            )?.collections.any((c) => c.id == collectionId) ??
+            false)) {
+      return;
+    }
+    _patch(noteId, note.copyWith(collectionId: collectionId, stageId: null), {
+      'collection_id': collectionId,
+      'stage_id': null,
+    });
+  }
+
   /// The last drawer/sidebar destination used in each workspace. This is
   /// device-local navigation state, like [_activeWorkspaceId], rather than a
   /// shared workspace setting.
@@ -104,7 +231,22 @@ class NotesStore extends ChangeNotifier {
   /// True while a manual [refresh] is re-pulling from the server. Distinct
   /// from [loading], the first load.
   bool refreshing = false;
-  SortMode sortMode = SortMode.custom;
+  SortMode _sortMode = SortMode.custom;
+  final Map<String, SortMode> _collectionSorts = {};
+  SortMode get sortMode =>
+      _collectionSorts[activeCollection?.id] ??
+      (activeCollection == null
+          ? _sortMode
+          : SortMode.values.firstWhere(
+              (v) => v.name == activeCollection?.sort,
+              orElse: () => SortMode.custom,
+            ));
+  set sortMode(SortMode mode) {
+    _sortMode = mode;
+    if (activeCollection case final c?) {
+      _collectionSorts[c.id] = mode;
+    }
+  }
 
   final List<PendingOp> _queue = [];
   late final PendingOperationExecutor _pendingOperations;
@@ -192,7 +334,13 @@ class NotesStore extends ChangeNotifier {
   /// Board columns of the open workspace, left to right. Like [labels] these
   /// are workspace state, but an independent one: a note has any number of
   /// labels and at most one stage.
-  List<Stage> get stages => stagesInWorkspace(_activeWorkspaceId);
+  List<Stage> get stages => stagesInWorkspace(_activeWorkspaceId)
+      .where(
+        (s) =>
+            (s.collectionId ?? '${s.workspaceId}-general') ==
+            activeCollection?.id,
+      )
+      .toList();
 
   /// Board columns of [workspaceId], left to right.
   List<Stage> stagesInWorkspace(String? workspaceId) {
@@ -201,6 +349,19 @@ class NotesStore extends ChangeNotifier {
       for (final stage in _stages)
         if (scope.containsWorkspace(stage.workspaceId)) stage,
     ]);
+  }
+
+  /// Column choices follow the note even when opened from workspace trash or archive.
+  List<Stage> stagesForNote(Note? note) {
+    if (note == null) return const [];
+    final workspaceId = _effectiveWorkspaceId(note);
+    return stagesInWorkspace(workspaceId)
+        .where(
+          (s) =>
+              (s.collectionId ?? '$workspaceId-general') ==
+              (note.collectionId ?? '$workspaceId-general'),
+        )
+        .toList();
   }
 
   Stage? stageById(String? id) {
@@ -520,6 +681,33 @@ class NotesStore extends ChangeNotifier {
           );
         }
 
+        final currentTargets = await api.fetchWorkspaces();
+        for (final target in currentTargets.where(
+          (w) => w.id == targetWorkspaceId,
+        )) {
+          for (final collection in target.collections) {
+            await api.deleteCollection(targetWorkspaceId, collection.id);
+          }
+        }
+        final sourceCollections =
+            backupWorkspace.collections.isEmpty &&
+                (backupWorkspace.notes.isNotEmpty ||
+                    backupWorkspace.stages.isNotEmpty)
+            ? [NoteCollection.general(backupWorkspace.id)]
+            : backupWorkspace.collections;
+        final collectionMap = <String, String>{};
+        for (var i = 0; i < sourceCollections.length; i++) {
+          final old = sourceCollections[i];
+          final id = _uuid.v4();
+          collectionMap[old.id] = id;
+          await api.putCollection(
+            NoteCollection.fromJson({
+              ...old.toJson(),
+              'id': id,
+              'workspace_id': targetWorkspaceId,
+            }),
+          );
+        }
         for (final view in backupWorkspace.savedViews) {
           await api.putSavedView(targetWorkspaceId, view);
         }
@@ -545,6 +733,9 @@ class NotesStore extends ChangeNotifier {
           await api.createStage(
             id,
             backupStage.name,
+            collectionId:
+                collectionMap[backupStage.collectionId] ??
+                collectionMap.values.first,
             workspaceId: targetWorkspaceId,
             color: backupStage.color,
             position: backupStage.position,
@@ -570,6 +761,9 @@ class NotesStore extends ChangeNotifier {
           final note = Note(
             id: noteId,
             workspaceId: targetWorkspaceId,
+            collectionId:
+                collectionMap[backupNote.collectionId] ??
+                collectionMap.values.first,
             kind: backupNote.kind,
             title: backupNote.title,
             content: backupNote.content,
@@ -901,6 +1095,9 @@ class NotesStore extends ChangeNotifier {
             Workspace.fromJson((j as Map).cast<String, dynamic>()),
         ];
         _activeWorkspaceId = doc['active_workspace'] as String?;
+        _collectionChoices.addAll(
+          (doc['collection_choices'] as Map? ?? {}).cast<String, String>(),
+        );
         _reconcileActiveWorkspace();
         _lastWorkspaceViews.clear();
         for (final entry
@@ -960,6 +1157,7 @@ class NotesStore extends ChangeNotifier {
       // Which workspace to reopen in. Deliberately local rather than a synced
       // setting: it is where this device was, not a preference.
       'active_workspace': _activeWorkspaceId,
+      'collection_choices': _collectionChoices,
       'workspace_views': {
         for (final entry in _lastWorkspaceViews.entries)
           entry.key: {
@@ -1092,7 +1290,12 @@ class NotesStore extends ChangeNotifier {
     query: query,
     sortMode: sortMode,
     currentUserId: currentUserId,
-    scope: workspaceScope,
+    scope:
+        selection.view == NoteView.trash ||
+            selection.view == NoteView.archive ||
+            selection.view == NoteView.reminders
+        ? workspaceScope
+        : collectionScope,
   );
 
   void setSortMode(SortMode mode) {
@@ -1113,9 +1316,20 @@ class NotesStore extends ChangeNotifier {
   }) {
     final now = DateTime.now();
     final workspaceId = _activeWorkspaceId ?? '';
+    // Share-sheet intake and file drops can compose into an empty workspace.
+    if (activeWorkspace != null && activeCollection == null) {
+      saveCollection(
+        NoteCollection(
+          id: _uuid.v4(),
+          workspaceId: workspaceId,
+          name: 'General',
+        ),
+      );
+    }
     final note = Note(
       id: _uuid.v4(),
       workspaceId: workspaceId,
+      collectionId: activeCollection?.id,
       kind: kind,
       position: _frontPosition(),
       labelIds: labelIds,
@@ -1322,11 +1536,24 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
+  // Keep filing at its queue position: a later move may target a collection,
+  // label or column that has not been created when this operation runs.
+  PendingOp _createOp(Note note) => PendingOp(
+    PendingOpKind.create,
+    id: note.id,
+    data: {
+      'workspace_id': note.workspaceId,
+      'collection_id': note.collectionId,
+      'stage_id': note.stageId,
+      'label_ids': note.labelIds.toList(),
+    },
+  );
+
   void _materializeIfNeeded(String id) {
     final note = noteById(id);
     if (note == null || note.canAutoDiscard) return;
     _drafts.remove(id);
-    _enqueue(PendingOp(PendingOpKind.create, id: id));
+    _enqueue(_createOp(note));
   }
 
   void _replace(Note updated) {
@@ -1479,10 +1706,13 @@ class NotesStore extends ChangeNotifier {
     });
   }
 
-  void restoreFromTrash(String id) {
+  void restoreFromTrash(String id, {String? collectionId}) {
     final note = noteById(id);
     if (note == null) return;
-    _patch(id, note.copyWith(trashed: false), {'trashed': false});
+    _patch(id, note.copyWith(trashed: false, collectionId: collectionId), {
+      'trashed': false,
+      'collection_id': ?collectionId,
+    });
   }
 
   void deleteForever(String id) {
@@ -1558,6 +1788,7 @@ class NotesStore extends ChangeNotifier {
     final copy = Note(
       id: _uuid.v4(),
       workspaceId: source.workspaceId,
+      collectionId: source.collectionId,
       kind: source.kind,
       title: copyTitle(source.title),
       content: source.content,
@@ -1575,7 +1806,7 @@ class NotesStore extends ChangeNotifier {
     _notes.insert(0, copy);
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
-    _enqueue(PendingOp(PendingOpKind.create, id: copy.id));
+    _enqueue(_createOp(copy));
     if (copy.labelIds.isNotEmpty) {
       _enqueue(
         PendingOp(
@@ -1600,7 +1831,7 @@ class NotesStore extends ChangeNotifier {
     if (_drafts.contains(id)) {
       if (retainEmpty) {
         _drafts.remove(id);
-        _enqueue(PendingOp(PendingOpKind.create, id: id));
+        _enqueue(_createOp(note));
       } else {
         _materializeIfNeeded(id);
       }
@@ -1745,8 +1976,10 @@ class NotesStore extends ChangeNotifier {
   /// Create a workspace and switch to it. Optimistic like note creation: the
   /// switch happens now and the write drains through the queue.
   Workspace createWorkspace(String name) {
+    final id = _uuid.v4();
     final workspace = Workspace(
-      id: _uuid.v4(),
+      id: id,
+      collections: [NoteCollection.general(id)],
       name: name.trim(),
       owner: currentUserId == null
           ? null
@@ -1902,9 +2135,25 @@ class NotesStore extends ChangeNotifier {
       for (final id in note.labelIds)
         if (labelById(id)?.workspaceId == workspaceId) id,
     };
-    _patch(noteId, note.copyWith(workspaceId: workspaceId, labelIds: kept), {
-      'workspace_id': workspaceId,
-    });
+    final collections = workspaceById(workspaceId)!.collections;
+    if (collections.isEmpty) {
+      return;
+    }
+    final collectionId = collections.first.id;
+    _patch(
+      noteId,
+      note.copyWith(
+        workspaceId: workspaceId,
+        collectionId: collectionId,
+        labelIds: kept,
+        stageId: null,
+      ),
+      {
+        'workspace_id': workspaceId,
+        'collection_id': collectionId,
+        'stage_id': null,
+      },
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -2258,6 +2507,7 @@ class NotesStore extends ChangeNotifier {
     final stage = Stage(
       id: _uuid.v4(),
       workspaceId: workspaceId,
+      collectionId: activeCollection?.id,
       name: name.trim(),
       color: color,
       position: _nextStagePosition(workspaceId),
@@ -2272,6 +2522,7 @@ class NotesStore extends ChangeNotifier {
         data: {
           'name': stage.name,
           'workspaceId': workspaceId,
+          'collectionId': activeCollection?.id,
           'color': color,
           'position': stage.position,
         },

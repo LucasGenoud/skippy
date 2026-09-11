@@ -1,3 +1,5 @@
+import '../widgets/duplicate_workspace_dialog.dart';
+import '../widgets/collection_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +7,8 @@ import '../api/api_client.dart';
 import '../models/workspace.dart';
 import '../state/notes_store.dart';
 import '../util/motion.dart';
+import '../util/label_style.dart';
+import '../state/settings_store.dart' show PaletteEntry;
 import '../util/snack.dart';
 import '../util/workspace_stats.dart';
 import '../widgets/empty_state.dart';
@@ -77,9 +81,37 @@ class WorkspaceSettingsScreen extends StatelessWidget {
                     : null,
               ),
               const Divider(height: 32),
-              const SectionHeader('Views'),
-              _ViewsSection(workspace: workspace, isOwner: isOwner),
+              const SectionHeader('Collections'),
+              for (final c in workspace.collections)
+                ListTile(
+                  leading: Icon(
+                    c.icon == null
+                        ? Icons.folder_outlined
+                        : labelIconFor(c.icon),
+                    color: PaletteEntry.hexToColor(c.color),
+                  ),
+                  title: Text(c.name, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(switch (c.layout) {
+                    'board' => 'Board',
+                    'list' => 'List',
+                    _ => 'Masonry',
+                  }),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => CollectionSettings.show(context, collection: c),
+                ),
+              ListTile(
+                leading: const Icon(Icons.add),
+                title: const Text('New collection'),
+                onTap: () =>
+                    CollectionSettings.show(context, workspaceId: workspace.id),
+              ),
               const Divider(height: 32),
+              ListTile(
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Duplicate workspace'),
+                subtitle: const Text('Copy structure, or structure and notes'),
+                onTap: () => DuplicateWorkspaceDialog.show(context, workspace),
+              ),
               const SectionHeader('Statistics'),
               _StatisticsTile(workspaceId: workspace.id),
               const Divider(height: 32),
@@ -117,67 +149,6 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-class _ViewsSection extends StatelessWidget {
-  final Workspace workspace;
-  final bool isOwner;
-
-  const _ViewsSection({required this.workspace, required this.isOwner});
-
-  @override
-  Widget build(BuildContext context) {
-    final store = context.read<NotesStore>();
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SwitchListTile(
-          secondary: const Icon(Icons.sticky_note_2_outlined),
-          title: const Text('Notes'),
-          subtitle: const Text('Grid and list view'),
-          value: workspace.notesEnabled,
-          // The last enabled view can't be switched off, so a workspace always
-          // has somewhere to show its notes.
-          onChanged:
-              isOwner && (!workspace.notesEnabled || workspace.boardEnabled)
-              ? (value) => store.updateWorkspaceViews(
-                  id: workspace.id,
-                  notesEnabled: value,
-                  boardEnabled: workspace.boardEnabled,
-                )
-              : null,
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.view_kanban_outlined),
-          title: const Text('Board'),
-          subtitle: const Text('Kanban view with columns'),
-          value: workspace.boardEnabled,
-          onChanged:
-              isOwner && (!workspace.boardEnabled || workspace.notesEnabled)
-              ? (value) => store.updateWorkspaceViews(
-                  id: workspace.id,
-                  notesEnabled: workspace.notesEnabled,
-                  boardEnabled: value,
-                )
-              : null,
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Text(
-            isOwner
-                ? 'At least one view must stay enabled.'
-                : 'Only the owner can change workspace views.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Opens the statistics page, summarizing what it will show so the row is
-/// worth reading even when nobody taps it.
 class _StatisticsTile extends StatelessWidget {
   final String workspaceId;
 

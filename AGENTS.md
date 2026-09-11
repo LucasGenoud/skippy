@@ -105,6 +105,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/attachments.rs`: multipart upload, signed serving, ranges, transcription trigger, deletion.
 - `backend/src/handlers/sharing.rs`: collaborator lookup, add/remove, and permission rules.
 - `backend/src/handlers/workspaces.rs`: workspace CRUD, membership, and the default workspace every account starts with.
+- `backend/src/handlers/collections.rs`: member-managed collection settings and deletion to trash.
+- `backend/src/handlers/workspace_copy.rs`: structure/full workspace copies with independent attachments and durable rollback.
 - `backend/src/handlers/labels.rs`: workspace labels and note-label membership.
 - `backend/src/handlers/stages.rs`: workspace board columns. A near-copy of `labels.rs` on purpose; see the stages/labels contract below before merging the two.
 - `backend/src/handlers/settings.rs`: opaque per-user settings document and managed descriptors.
@@ -203,11 +205,33 @@ Repository queries are participant-scoped. A non-participant should normally rec
 
 Labels are a workspace's shared taxonomy, not personal state: every member sees and applies the same set. Someone who reached a note through a direct share is not in its workspace, so they see none of its labels and their `label_ids` patch is ignored rather than clearing what members attached. Pin, archive, reminder, color, and custom ordering are shared note state.
 
-Stages (board columns) are shared workspace state too, and are deliberately a separate system from labels: a note carries any number of labels via `note_labels` and at most one stage via `notes.stage_id`, so the exclusivity a board needs is a schema fact rather than a rule the client maintains. The two must stay independent. Do not merge `handlers/stages.rs` into `handlers/labels.rs` or introduce a shared "workspace taxonomy" abstraction, they read alike, and the duplication is the cheaper side of that trade. A patch carrying `stage_id` must never write `note_labels`, and one carrying `label_ids` must never write `stage_id`; `backend/tests/api/stages.rs` pins both directions. Shared code between the two is allowed only over primitives (both resolve a hex colour through `PaletteEntry.hexToColor`), never over each other's types.
+Stages (board columns) belong to collections and inherit workspace membership, and are deliberately a separate system from labels: a note carries any number of labels via `note_labels` and at most one stage via `notes.stage_id`, so the exclusivity a board needs is a schema fact rather than a rule the client maintains. The two must stay independent. Do not merge `handlers/stages.rs` into `handlers/labels.rs` or introduce a shared "workspace taxonomy" abstraction, they read alike, and the duplication is the cheaper side of that trade. A patch carrying `stage_id` must never write `note_labels`, and one carrying `label_ids` must never write `stage_id`; `backend/tests/api/stages.rs` pins both directions. Shared code between the two is allowed only over primitives (both resolve a hex colour through `PaletteEntry.hexToColor`), never over each other's types.
 
-A note's stage must belong to the note's workspace. `prune_foreign_stage` is the single-stage counterpart of `prune_foreign_labels` and is what stops a stray or foreign stage id from sticking; a workspace move clears the stage for the same reason it drops the old labels. `stage_position` orders cards within a column and is separate from `position` on purpose, so arranging the board never reshuffles the grid. A move is one patch carrying both `stage_id` and `stage_position`, not a stage change chased by a reorder.
+A note's stage must belong to the note's collection (and workspace). `prune_foreign_stage` is the single-stage counterpart of `prune_foreign_labels` and is what stops a stray or foreign stage id from sticking; a workspace move clears the stage for the same reason it drops the old labels. `stage_position` orders cards within a column and is separate from `position` on purpose, so arranging the board never reshuffles the grid. A move is one patch carrying both `stage_id` and `stage_position`, not a stage change chased by a reorder.
 
 Recheck the entire permission matrix when adding a note-related endpoint. Do not fetch a raw row first and bolt on an inconsistent permission check if an existing participant-scoped repository method can express the operation.
+
+### Collections
+
+Every note is filed in one collection inside its owning workspace. Collections
+share membership permissions; all members can change settings, move notes
+between collections, delete collections and duplicate workspaces. A collection
+move preserves labels and clears the stage. Deleting a collection tombstones
+it and sends its notes to workspace trash; restore requires a live destination.
+Workspace deletion and permanent note deletion retain their owner-only rules.
+General is an ordinary, renameable and deletable base collection. The upgrade
+files existing workspace notes and stages into General without rewriting IDs.
+
+Collection layout, icon, color and default sort are shared settings. Active
+collection and temporary sort choices are local navigation state. Labels and
+smart views remain workspace-wide definitions, applied within the collection.
+Archive, reminders and trash retain workspace scope. Queued note creates keep
+their original filing fields so later moves cannot overtake collection creation.
+
+Workspace duplication copies structure or structure plus non-trashed notes,
+including attachments, without memberships, shares, links or history. Reminders
+are opt-in. `workspace_copies` marks hidden incomplete destinations; errors and
+startup recovery delete them through durable cleanup. It is not a job scheduler.
 
 ### Smart views and ownership boundaries
 
@@ -298,7 +322,7 @@ Decide first whether it is workspace state (shared by every member, like labels)
 4. Update the Dart model, copy/JSON methods, local cache, API payloads, and `FakeApi`.
 5. Update store/UI behavior and both focused and cross-layer tests.
 
-The current workspace-owned schema is a clean break and has no in-place migration layer. Schema changes must update fresh-database creation and compatible backup validation. Never rewrite or delete a developer's local database as part of a code change.
+The workspace-owned schema includes a transactional, one-time collections migration in `sqlite_schema.rs`. Schema changes must preserve that upgrade path, fresh-database creation and compatible backup validation (currently backup v3, importing v1/v2). Never rewrite or delete a developer's local database as part of a code change.
 
 ### Add a setting or optional capability
 

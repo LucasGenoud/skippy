@@ -212,6 +212,13 @@ pub async fn create_note_for_user(
         ));
     }
     let workspace_id = resolve_workspace(state, user_id, body.workspace_id.as_deref()).await?;
+    let collection_id = super::collections::resolve_collection(
+        state,
+        user_id,
+        &workspace_id,
+        body.collection_id.as_deref(),
+    )
+    .await?;
     let stage_id = match body.stage_id.filter(|id| !id.trim().is_empty()) {
         Some(stage_id)
             if state
@@ -219,7 +226,11 @@ pub async fn create_note_for_user(
                 .stages_for_user(user_id)
                 .await?
                 .into_iter()
-                .any(|stage| stage.id == stage_id && stage.workspace_id == workspace_id) =>
+                .any(|stage| {
+                    stage.id == stage_id
+                        && stage.workspace_id == workspace_id
+                        && stage.collection_id.as_deref() == Some(&collection_id)
+                }) =>
         {
             Some(stage_id)
         }
@@ -242,6 +253,7 @@ pub async fn create_note_for_user(
     let record = NoteRecord {
         id: id.clone(),
         workspace_id,
+        collection_id: Some(collection_id),
         created_by: Some(user_id.to_string()),
         kind,
         title: body.title,
@@ -361,7 +373,22 @@ pub async fn apply_note_update(
     let mut record = require_participant(state, id, user_id).await?;
     let old_items = record.items.clone();
     let is_owner = is_note_workspace_owner(state, &record, user_id).await?;
-    validate_update(&record, is_owner, &body)?;
+    if !is_owner
+        && body
+            .workspace_id
+            .as_ref()
+            .is_some_and(|id| *id != record.workspace_id)
+    {
+        return Err(ApiError::Forbidden(
+            "only the owner can move a note to another workspace",
+        ));
+    }
+    let restoring_member = body.trashed == Some(false)
+        && state
+            .repo
+            .is_workspace_member(&record.workspace_id, user_id)
+            .await?;
+    validate_update(&record, is_owner || restoring_member, &body)?;
     // A move must land in a workspace the mover belongs to; anything else is
     // treated as a stray id rather than a way to file notes out of reach.
     let moving_to = match &body.workspace_id {
@@ -387,6 +414,29 @@ pub async fn apply_note_update(
         Some(_) => state.repo.participant_ids(id).await?,
         None => Vec::new(),
     };
+    if body.collection_id.is_some()
+        || moving_to.is_some()
+        || (record.trashed && body.trashed == Some(false))
+    {
+        let target_workspace = moving_to.as_deref().unwrap_or(&record.workspace_id);
+        let target = super::collections::resolve_collection(
+            state,
+            user_id,
+            target_workspace,
+            body.collection_id.as_deref().or_else(|| {
+                if moving_to.is_none() {
+                    record.collection_id.as_deref()
+                } else {
+                    None
+                }
+            }),
+        )
+        .await?;
+        if record.collection_id.as_deref() != Some(&target) {
+            body.stage_id = Some(None);
+        }
+        body.collection_id = Some(target);
+    }
     if moving_to.is_none()
         && let Some(Some(stage_id)) = body.stage_id.as_ref()
     {
@@ -395,7 +445,11 @@ pub async fn apply_note_update(
             .stages_for_user(user_id)
             .await?
             .into_iter()
-            .any(|stage| stage.id == *stage_id && stage.workspace_id == record.workspace_id);
+            .any(|stage| {
+                stage.id == *stage_id
+                    && stage.workspace_id == record.workspace_id
+                    && stage.collection_id == record.collection_id
+            });
         if !valid {
             body.stage_id = Some(None);
         }

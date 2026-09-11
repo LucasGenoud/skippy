@@ -14,6 +14,7 @@ class PublicLinkTarget {
   final ShareTarget target;
   final String? noteId;
   final String? workspaceId;
+  final String? collectionId;
   final String? labelId;
 
   /// What is being shared, in the user's words ("Focaccia", "Work board").
@@ -30,6 +31,7 @@ class PublicLinkTarget {
     required this.scopeDescription,
     this.noteId,
     this.workspaceId,
+    this.collectionId,
     this.labelId,
   });
 
@@ -37,6 +39,7 @@ class PublicLinkTarget {
       link.target == target &&
       link.noteId == noteId &&
       link.workspaceId == workspaceId &&
+      link.collectionId == collectionId &&
       link.labelId == labelId;
 
   static PublicLinkTarget note(String noteId, String title) => PublicLinkTarget(
@@ -130,6 +133,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
         target: widget.target.target,
         noteId: widget.target.noteId,
         workspaceId: widget.target.workspaceId,
+        collectionId: widget.target.collectionId,
         labelId: widget.target.labelId,
         expiresAt: span == null ? null : DateTime.now().add(span),
       );

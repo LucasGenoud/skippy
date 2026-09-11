@@ -1,3 +1,4 @@
+import 'package:skippy/models/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -237,10 +238,10 @@ void main() {
       await setViewport(tester, const Size(1200, 900));
       api.notes['n1'] = serverNote('n1', title: 'card one');
       for (final (index, id) in ['a', 'b'].indexed) {
-        api.notes[id] = serverNote(id, title: 'card $id').copyWith(
-          stageId: 'todo',
-          stagePosition: (index + 1) * 1024,
-        );
+        api.notes[id] = serverNote(
+          id,
+          title: 'card $id',
+        ).copyWith(stageId: 'todo', stagePosition: (index + 1) * 1024);
       }
       await store.load();
       await tester.pumpWidget(boardApp(store));
@@ -348,10 +349,10 @@ void main() {
   ) async {
     await setViewport(tester, const Size(1200, 900));
     for (final (index, id) in ['a', 'b', 'c'].indexed) {
-      api.notes[id] = serverNote(id, title: 'card $id').copyWith(
-        stageId: 'todo',
-        stagePosition: (index + 1) * 1024,
-      );
+      api.notes[id] = serverNote(
+        id,
+        title: 'card $id',
+      ).copyWith(stageId: 'todo', stagePosition: (index + 1) * 1024);
     }
     await store.load();
     await tester.pumpWidget(boardApp(store));
@@ -447,10 +448,10 @@ void main() {
   ) async {
     await setViewport(tester, const Size(1200, 900));
     for (final (index, id) in ['a', 'b', 'c'].indexed) {
-      api.notes[id] = serverNote(id, title: 'card $id').copyWith(
-        stageId: 'todo',
-        stagePosition: (index + 1) * 1024,
-      );
+      api.notes[id] = serverNote(
+        id,
+        title: 'card $id',
+      ).copyWith(stageId: 'todo', stagePosition: (index + 1) * 1024);
     }
     await store.load();
     await tester.pumpWidget(boardApp(store));
@@ -558,15 +559,26 @@ void main() {
   group('reaching the board from the menus', () {
     testWidgets('from the drawer on a phone', (tester) async {
       await setViewport(tester, const Size(390, 780));
+      api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+        collections: [
+          NoteCollection.general('w-default'),
+          const NoteCollection(
+            id: 'projects',
+            workspaceId: 'w-default',
+            name: 'Projects',
+            layout: 'board',
+          ),
+        ],
+      );
       await store.load();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationDrawer), findsOneWidget);
+      expect(find.byType(Drawer), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(NavigationDrawerDestination, 'Board'));
+      await tester.tap(find.text('Projects'));
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsOneWidget);
       await flushTimers(tester);
@@ -574,11 +586,22 @@ void main() {
 
     testWidgets('from the sidebar on a wide screen', (tester) async {
       await setViewport(tester, const Size(1200, 900));
+      api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+        collections: [
+          NoteCollection.general('w-default'),
+          const NoteCollection(
+            id: 'projects',
+            workspaceId: 'w-default',
+            name: 'Projects',
+            layout: 'board',
+          ),
+        ],
+      );
       await store.load();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Board'));
+      await tester.tap(find.text('Projects'));
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsOneWidget);
       await flushTimers(tester);
@@ -629,10 +652,7 @@ void main() {
 
       expect(selected, {'n1'});
       // And the card now renders in its selected state.
-      expect(
-        tester.widget<NoteTile>(find.byType(NoteTile)).selected,
-        isTrue,
-      );
+      expect(tester.widget<NoteTile>(find.byType(NoteTile)).selected, isTrue);
       await flushTimers(tester);
     });
 
@@ -650,10 +670,10 @@ void main() {
       await tester.pumpWidget(boardApp(store));
       await tester.pumpAndSettle();
 
-      MoveToStageSheet.showForNotes(
-        tester.element(find.byType(BoardView)),
-        ['a', 'b'],
-      );
+      MoveToStageSheet.showForNotes(tester.element(find.byType(BoardView)), [
+        'a',
+        'b',
+      ]);
       await tester.pumpAndSettle();
       expect(find.text('Move 2 notes to column'), findsOneWidget);
 
@@ -673,14 +693,14 @@ void main() {
     tester,
   ) async {
     await setViewport(tester, const Size(1200, 900));
-    api.notes['hit'] = serverNote('hit', title: 'wifi password').copyWith(
-      stageId: 'todo',
-      stagePosition: 2048,
-    );
-    api.notes['also'] = serverNote('also', title: 'router notes').copyWith(
-      stageId: 'todo',
-      stagePosition: 1024,
-    );
+    api.notes['hit'] = serverNote(
+      'hit',
+      title: 'wifi password',
+    ).copyWith(stageId: 'todo', stagePosition: 2048);
+    api.notes['also'] = serverNote(
+      'also',
+      title: 'router notes',
+    ).copyWith(stageId: 'todo', stagePosition: 1024);
     api.notes['miss'] = serverNote('miss', title: 'buy milk');
     await store.load();
 
@@ -817,23 +837,20 @@ void main() {
       testWidgets('in ${brightness.name} mode', (tester) async {
         await setViewport(tester, const Size(1600, 900));
         await store.load();
-        await tester.pumpWidget(
-          boardApp(store, theme: buildTheme(brightness)),
-        );
+        await tester.pumpWidget(boardApp(store, theme: buildTheme(brightness)));
         await tester.pumpAndSettle();
 
-        final fill =
-            tester
-                    .widgetList<Container>(
-                      find.ancestor(
-                        of: find.byType(BoardColumnView).first,
-                        matching: find.byType(Container),
-                      ),
-                    )
-                    .map((c) => c.decoration)
-                    .whereType<BoxDecoration>()
-                    .firstWhere((d) => d.color != null)
-                    .color;
+        final fill = tester
+            .widgetList<Container>(
+              find.ancestor(
+                of: find.byType(BoardColumnView).first,
+                matching: find.byType(Container),
+              ),
+            )
+            .map((c) => c.decoration)
+            .whereType<BoxDecoration>()
+            .firstWhere((d) => d.color != null)
+            .color;
         final canvas = Theme.of(
           tester.element(find.byType(BoardView)),
         ).scaffoldBackgroundColor;

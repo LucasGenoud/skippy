@@ -31,6 +31,7 @@ class ShareLink {
   final ShareTarget target;
   final String? noteId;
   final String? workspaceId;
+  final String? collectionId;
   final String? labelId;
 
   /// Server-resolved name of what the link points at.
@@ -45,6 +46,7 @@ class ShareLink {
     required this.createdAt,
     this.noteId,
     this.workspaceId,
+    this.collectionId,
     this.labelId,
     this.expiresAt,
   });
@@ -59,6 +61,7 @@ class ShareLink {
     target: ShareTarget.fromWire(json['target'] as String?) ?? ShareTarget.note,
     noteId: json['note_id'] as String?,
     workspaceId: json['workspace_id'] as String?,
+    collectionId: json['collection_id'] as String?,
     labelId: json['label_id'] as String?,
     title: json['title'] as String? ?? '',
     createdAt:

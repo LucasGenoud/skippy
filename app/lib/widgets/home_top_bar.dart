@@ -30,7 +30,6 @@ enum _SelectionAction { stage, label, share, color, pin }
 class HomeTopBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
-  final bool listMode;
   final bool semantic;
   final bool semanticAvailable;
   final bool semanticBusy;
@@ -45,7 +44,6 @@ class HomeTopBar extends StatelessWidget {
   /// is not something that can be published (trash, archive, reminders, a
   /// smart view, or a workspace this user does not own).
   final VoidCallback? onShareView;
-  final VoidCallback onToggleLayout;
   final VoidCallback onToggleSidebar;
   final bool selectionMode;
   final int selectedCount;
@@ -74,7 +72,6 @@ class HomeTopBar extends StatelessWidget {
     super.key,
     required this.controller,
     required this.focusNode,
-    required this.listMode,
     required this.semantic,
     required this.semanticAvailable,
     required this.semanticBusy,
@@ -82,7 +79,6 @@ class HomeTopBar extends StatelessWidget {
     required this.onToggleSemantic,
     required this.onOpenFilters,
     required this.onShareView,
-    required this.onToggleLayout,
     required this.onToggleSidebar,
     required this.selectionMode,
     required this.selectedCount,
@@ -219,15 +215,6 @@ class HomeTopBar extends StatelessWidget {
                     onPressed: onShareView,
                   ),
                 const _SortButton(),
-                IconButton(
-                  icon: Icon(
-                    listMode
-                        ? Icons.grid_view_outlined
-                        : Icons.view_agenda_outlined,
-                  ),
-                  tooltip: listMode ? 'Grid view' : 'List view',
-                  onPressed: onToggleLayout,
-                ),
                 IconButton(
                   // The sun/moon rotates in as the theme flips, a nod to the
                   // day/night metaphor without slowing the switch down.
@@ -379,15 +366,6 @@ class HomeTopBar extends StatelessWidget {
                           tooltip: 'Chat with your notes',
                           onPressed: () => ChatScreen.open(context),
                         ),
-                      IconButton(
-                        icon: Icon(
-                          listMode
-                              ? Icons.grid_view_outlined
-                              : Icons.view_agenda_outlined,
-                        ),
-                        tooltip: listMode ? 'Grid view' : 'List view',
-                        onPressed: onToggleLayout,
-                      ),
                       _UserAvatarMenu(onShareView: onShareView),
                       const SizedBox(width: 6),
                     ],
@@ -1024,10 +1002,7 @@ class _SyncBadgeState extends State<_SyncBadge>
           // carries its own soft shadow instead: enough to hold its edge
           // against the avatar's fill, invisible against the bar.
           shadows: [
-            Shadow(
-              color: Colors.black.withValues(alpha: 0.28),
-              blurRadius: 2,
-            ),
+            Shadow(color: Colors.black.withValues(alpha: 0.28), blurRadius: 2),
           ],
         ),
       ),

@@ -27,6 +27,7 @@ class NoteActionsButton extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onDuplicate;
   final VoidCallback? onMoveToWorkspace;
+  final VoidCallback? onMoveToCollection;
   final VoidCallback? onMoveToStage;
   final VoidCallback? onHistory;
   final VoidCallback? onAddToHomeScreen;
@@ -45,6 +46,7 @@ class NoteActionsButton extends StatelessWidget {
     this.onDelete,
     this.onDuplicate,
     this.onMoveToWorkspace,
+    this.onMoveToCollection,
     this.onMoveToStage,
     this.onHistory,
     this.onAddToHomeScreen,
@@ -93,6 +95,12 @@ class NoteActionsButton extends StatelessWidget {
         icon: Icons.view_kanban_outlined,
         label: 'Move to column',
       ),
+    if (onMoveToCollection != null)
+      const _NoteAction(
+        value: 'collection',
+        icon: Icons.folder_outlined,
+        label: 'Move to collection',
+      ),
     if (onMoveToWorkspace != null)
       const _NoteAction(
         value: 'move',
@@ -132,6 +140,9 @@ class NoteActionsButton extends StatelessWidget {
     if (value == 'delete') onDelete?.call();
     if (value == 'duplicate') onDuplicate?.call();
     if (value == 'move') onMoveToWorkspace?.call();
+    if (value == 'collection') {
+      onMoveToCollection?.call();
+    }
     if (value == 'stage') onMoveToStage?.call();
     if (value == 'history') onHistory?.call();
     if (value == 'homescreen') onAddToHomeScreen?.call();
@@ -217,17 +228,17 @@ class _NoteActionsSheet extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text(
-                  'Note actions',
-                  style: theme.textTheme.titleMedium,
-                ),
+                child: Text('Note actions', style: theme.textTheme.titleMedium),
               ),
               if (offersRewrite)
                 _ChipRow(
                   title: 'Rewrite with AI',
                   chips: [
                     ActionChip(
-                      avatar: const Icon(Icons.auto_fix_high_outlined, size: 18),
+                      avatar: const Icon(
+                        Icons.auto_fix_high_outlined,
+                        size: 18,
+                      ),
                       label: const Text('Make concise'),
                       onPressed: rewriting
                           ? null

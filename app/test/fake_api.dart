@@ -1,3 +1,4 @@
+import 'package:skippy/models/collection.dart';
 import 'package:skippy/models/saved_view.dart';
 import 'dart:async';
 
@@ -14,6 +15,111 @@ import 'package:skippy/models/workspace.dart';
 /// to exercise the store (patch merging, label sets, history), with failure
 /// injection for offline/retry paths.
 class FakeApi implements Api {
+  @override
+  Future<Workspace> duplicateWorkspace(
+    String id,
+    String name,
+    WorkspaceCopyContent content, {
+    bool reminders = false,
+  }) => _run('duplicateWorkspace:$id', () {
+    final source = workspaces[id]!;
+    final targetId = 'copy-${workspaces.length}';
+    final target = Workspace(
+      id: targetId,
+      name: name,
+      owner: UserRef(id: account.id, name: account.name),
+      savedViews: [
+        for (final v in source.savedViews)
+          SavedView.fromJson({...v.toJson(), 'id': '$targetId-${v.id}'})!,
+      ],
+      collections: [
+        for (final c in source.collections)
+          NoteCollection.fromJson({
+            ...c.toJson(),
+            'id': '$targetId-${c.id}',
+            'workspace_id': targetId,
+          }),
+      ],
+    );
+    final labelMap = <String, String>{};
+    for (final label
+        in labels.values.where((l) => l.workspaceId == id).toList()) {
+      final newId = '$targetId-${label.id}';
+      labelMap[label.id] = newId;
+      labels[newId] = Label.fromJson({
+        ...label.toJson(),
+        'id': newId,
+        'workspace_id': targetId,
+      });
+    }
+    for (final stage
+        in stages.values.where((s) => s.workspaceId == id).toList()) {
+      final newId = '$targetId-${stage.id}';
+      stages[newId] = Stage.fromJson({
+        ...stage.toJson(),
+        'id': newId,
+        'workspace_id': targetId,
+        'collection_id': '$targetId-${stage.collectionId ?? '$id-general'}',
+      });
+    }
+    if (content == WorkspaceCopyContent.notes) {
+      for (final n
+          in notes.values
+              .where((n) => _workspaceOf(n) == id && !n.trashed)
+              .toList()) {
+        final newId = '$targetId-${n.id}';
+        notes[newId] = Note.fromJson({
+          ...n.toJson(),
+          'id': newId,
+          'workspace_id': targetId,
+          'collection_id': '$targetId-${n.collectionId ?? '$id-general'}',
+          'stage_id': n.stageId == null ? null : '$targetId-${n.stageId}',
+          'label_ids': [
+            for (final label in n.labelIds)
+              if (labelMap[label] != null) labelMap[label],
+          ],
+          'owner': {'id': account.id, 'name': account.name},
+          'collaborators': [],
+          if (!reminders) ...{
+            'reminder_at': null,
+            'reminder_repeat': null,
+            'item_reminders': [],
+          },
+          'attachments': [
+            for (final a in n.attachments)
+              {...a.toJson(), 'id': '$targetId-${a.id}', 'url': null},
+          ],
+        });
+      }
+    }
+    workspaces[targetId] = target;
+    return target;
+  });
+
+  @override
+  Future<void> putCollection(NoteCollection c) =>
+      _run('putCollection:${c.id}', () {
+        final w = workspaces[c.workspaceId]!;
+        workspaces[c.workspaceId] = w.copyWith(
+          collections: [...w.collections.where((v) => v.id != c.id), c],
+        );
+      });
+
+  @override
+  Future<void> deleteCollection(String workspaceId, String id) =>
+      _run('deleteCollection:$id', () {
+        final w = workspaces[workspaceId]!;
+        workspaces[workspaceId] = w.copyWith(
+          collections: w.collections.where((c) => c.id != id).toList(),
+        );
+        stages.removeWhere((_, stage) => stage.collectionId == id);
+        for (final n in notes.values.toList()) {
+          if (n.collectionId == id) {
+            notes[n.id] = n.copyWith(trashed: true, stageId: null);
+          }
+        }
+      });
+
   @override
   final String baseUrl;
 
@@ -56,6 +162,13 @@ class FakeApi implements Api {
   final Map<String, Workspace> workspaces = {
     'w-default': const Workspace(
       id: 'w-default',
+      collections: [
+        NoteCollection(
+          id: 'w-default-general',
+          workspaceId: 'w-default',
+          name: 'General',
+        ),
+      ],
       name: 'My notes',
       owner: UserRef(id: 'u-me', name: 'Me Example'),
       isDefault: true,
@@ -247,6 +360,7 @@ class FakeApi implements Api {
       _run('createWorkspace:$name', () {
         final workspace = Workspace(
           id: id,
+          collections: [NoteCollection.general(id)],
           name: name,
           owner: UserRef(id: account.id, name: account.name),
         );
@@ -359,6 +473,7 @@ class FakeApi implements Api {
               ]
             : null,
         workspaceId: fields['workspace_id'] as String?,
+        collectionId: fields['collection_id'] as String?,
         color: fields['color'] as String?,
         pinned: fields['pinned'] as bool?,
         archived: fields['archived'] as bool?,
@@ -548,6 +663,7 @@ class FakeApi implements Api {
     required ShareTarget target,
     String? noteId,
     String? workspaceId,
+    String? collectionId,
     String? labelId,
     DateTime? expiresAt,
   }) => _run('createShareLink', () {
@@ -557,6 +673,7 @@ class FakeApi implements Api {
       if (link.target == target &&
           link.noteId == noteId &&
           link.workspaceId == workspaceId &&
+          link.collectionId == collectionId &&
           link.labelId == labelId) {
         return link;
       }
@@ -566,6 +683,7 @@ class FakeApi implements Api {
       target: target,
       noteId: noteId,
       workspaceId: workspaceId,
+      collectionId: collectionId,
       labelId: labelId,
       title: noteId != null ? (notes[noteId]?.title ?? '') : 'Shared view',
       createdAt: DateTime(2026, 1, 1),
@@ -672,12 +790,14 @@ class FakeApi implements Api {
     String id,
     String name, {
     required String workspaceId,
+    String? collectionId,
     String? color,
     double? position,
   }) => _run('createStage:$name', () {
     stages[id] = Stage(
       id: id,
       workspaceId: workspaceId,
+      collectionId: collectionId,
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       position: position ?? _nextStagePosition(workspaceId),
@@ -705,6 +825,7 @@ class FakeApi implements Api {
     stages[id] = Stage(
       id: id,
       workspaceId: existing?.workspaceId ?? '',
+      collectionId: existing?.collectionId,
       name: name,
       color: (color ?? '').isEmpty ? null : color,
       position: position ?? existing?.position ?? 0,

@@ -145,6 +145,17 @@ pub trait AccountRepository: Send + Sync {
 /// Workspace lifecycle, membership, and roster views.
 #[async_trait]
 pub trait WorkspaceRepository: Send + Sync {
+    async fn insert_workspace_copy(&self, workspace: &Workspace) -> RepoResult<()>;
+    async fn finish_workspace_copy(&self, id: &str) -> RepoResult<()>;
+    async fn collections_for_user(&self, user_id: &str) -> RepoResult<Vec<Collection>>;
+    async fn put_collection(&self, user_id: &str, collection: &Collection) -> RepoResult<bool>;
+    async fn delete_collection(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        id: &str,
+    ) -> RepoResult<Option<Vec<String>>>;
+
     async fn put_smart_view(
         &self,
         user_id: &str,
@@ -315,6 +326,7 @@ pub trait SharingRepository: Send + Sync {
         note_id: Option<&str>,
         workspace_id: Option<&str>,
         label_id: Option<&str>,
+        collection_id: Option<&str>,
     ) -> RepoResult<Option<ShareLink>>;
     /// Revoke. Scoped to the owner, so a token alone cannot delete a link.
     async fn delete_share_link(&self, user_id: &str, token: &str) -> RepoResult<bool>;

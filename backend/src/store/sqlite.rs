@@ -50,7 +50,7 @@ pub(super) async fn enqueue_cleanup_tx(
 
 /// Every column of a share link, so the three lookups select the same shape.
 pub(super) const SHARE_LINK_COLUMNS: &str =
-    "SELECT token, created_by, target, note_id, workspace_id, label_id, created_at, expires_at
+    "SELECT token, created_by, target, note_id, workspace_id, collection_id, label_id, created_at, expires_at
      FROM share_links";
 
 fn session_token_digest(token: &str) -> String {
@@ -75,7 +75,17 @@ impl SqliteRepository {
             .connect_with(options)
             .await?;
         sqlite_schema::initialize(&pool).await?;
-        Ok(Self { pool })
+        let repo = Self { pool };
+        // Only unfinished copies are reclaimed, never source workspaces.
+        let copies: Vec<String> = sqlx::query_scalar("SELECT workspace_id FROM workspace_copies")
+            .fetch_all(&repo.pool)
+            .await?;
+        for id in copies {
+            repo.delete_workspace(&id)
+                .await
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+        }
+        Ok(repo)
     }
 }
 
@@ -365,6 +375,68 @@ impl AccountRepository for SqliteRepository {
 
 #[async_trait]
 impl WorkspaceRepository for SqliteRepository {
+    async fn insert_workspace_copy(&self, workspace: &Workspace) -> RepoResult<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT INTO workspaces(id,owner_id,name,created_at) VALUES(?,?,?,?)")
+            .bind(&workspace.id)
+            .bind(&workspace.owner_id)
+            .bind(&workspace.name)
+            .bind(&workspace.created_at)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO workspace_copies(workspace_id) VALUES(?)")
+            .bind(&workspace.id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+    async fn finish_workspace_copy(&self, id: &str) -> RepoResult<()> {
+        sqlx::query("DELETE FROM workspace_copies WHERE workspace_id=?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn collections_for_user(&self, user_id: &str) -> RepoResult<Vec<Collection>> {
+        Ok(sqlx::query_as::<_, Collection>(&format!("SELECT * FROM collections WHERE deleted=0 AND workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies) ORDER BY position,id"))
+            .bind(user_id).bind(user_id).fetch_all(&self.pool).await?)
+    }
+
+    async fn put_collection(&self, user_id: &str, c: &Collection) -> RepoResult<bool> {
+        let result = sqlx::query(&format!("INSERT INTO collections(id,workspace_id,name,icon,color,layout,sort,position)
+            SELECT ?,id,?,?,?,?,?,? FROM workspaces WHERE id=? AND id IN ({MY_WORKSPACES})
+            ON CONFLICT(id) DO UPDATE SET name=excluded.name,icon=excluded.icon,color=excluded.color,
+            layout=excluded.layout,sort=excluded.sort,position=excluded.position
+            WHERE collections.workspace_id=excluded.workspace_id AND collections.deleted=0"))
+            .bind(&c.id).bind(&c.name).bind(&c.icon).bind(&c.color).bind(&c.layout).bind(&c.sort).bind(c.position)
+            .bind(&c.workspace_id).bind(user_id).bind(user_id).execute(&self.pool).await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn delete_collection(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+        id: &str,
+    ) -> RepoResult<Option<Vec<String>>> {
+        let mut tx = self.pool.begin().await?;
+        let result = sqlx::query(&format!("UPDATE collections SET deleted=1 WHERE id=? AND workspace_id=? AND workspace_id IN ({MY_WORKSPACES})"))
+            .bind(id).bind(workspace_id).bind(user_id).bind(user_id).execute(&mut *tx).await?;
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+        let ids = sqlx::query_scalar::<_, String>("SELECT id FROM notes WHERE collection_id=?")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE notes SET trashed=1,stage_id=NULL,trashed_at=COALESCE(trashed_at,?),updated_at=? WHERE collection_id=?")
+            .bind(now()).bind(now()).bind(id).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(Some(ids))
+    }
+
     async fn put_smart_view(
         &self,
         user_id: &str,
@@ -403,7 +475,7 @@ impl WorkspaceRepository for SqliteRepository {
     async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>> {
         let rows = sqlx::query(&format!(
             "SELECT w.*, u.name AS owner_name FROM workspaces w
-             JOIN users u ON u.id = w.owner_id WHERE w.id IN ({MY_WORKSPACES})
+             JOIN users u ON u.id = w.owner_id WHERE w.id IN ({MY_WORKSPACES}) AND w.id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY w.is_default DESC, w.created_at ASC"
         ))
         .bind(user_id)
@@ -434,6 +506,7 @@ impl WorkspaceRepository for SqliteRepository {
             views.entry(row.get("workspace_id")).or_default()
                 .push(serde_json::from_str(row.get::<&str, _>("data"))?);
         }
+        let collections = self.collections_for_user(user_id).await?;
         let mut members_by_workspace: HashMap<String, Vec<UserPublic>> = HashMap::new();
         for row in sqlx::query(&format!(
             "SELECT m.workspace_id, u.id, u.name FROM workspace_members m
@@ -461,6 +534,11 @@ impl WorkspaceRepository for SqliteRepository {
                     .unwrap_or_default();
                 members.sort_by(|a, b| a.name.cmp(&b.name));
                 WorkspaceView {
+                    collections: collections
+                        .iter()
+                        .filter(|c| c.workspace_id == workspace.id)
+                        .cloned()
+                        .collect(),
                     smart_views: views.remove(&workspace.id).unwrap_or_default(),
                     owner: owners[&workspace.id].clone(),
                     members,
@@ -649,7 +727,7 @@ impl WorkspaceRepository for SqliteRepository {
 impl NoteRepository for SqliteRepository {
     async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>> {
         let rows = sqlx::query(&format!(
-            "SELECT * FROM notes WHERE {} ORDER BY position ASC",
+            "SELECT * FROM notes WHERE {} AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies) ORDER BY position ASC",
             visible_notes("notes")
         ))
         .bind(user_id)
@@ -704,9 +782,9 @@ impl NoteRepository for SqliteRepository {
             "INSERT OR IGNORE INTO notes
              (id, workspace_id, created_by, kind, title, content, items, color, pinned, archived,
               trashed, position, reminder_at, reminder_repeat, reminder_fired_at, created_at, updated_at, trashed_at,
-              stage_id, stage_position)
+              stage_id, stage_position, collection_id, transcript_status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                     CASE WHEN ? THEN ? ELSE NULL END, ?, ?)",
+                     CASE WHEN ? THEN ? ELSE NULL END, ?, ?, ?, ?)",
         )
         .bind(&note.id)
         .bind(&note.workspace_id)
@@ -729,6 +807,8 @@ impl NoteRepository for SqliteRepository {
         .bind(now())
         .bind(&note.stage_id)
         .bind(note.stage_position)
+        .bind(&note.collection_id)
+        .bind(&note.transcript_status)
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
@@ -755,7 +835,7 @@ impl NoteRepository for SqliteRepository {
             "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
              color = ?, pinned = ?, archived = ?, position = ?, reminder_at = ?,
              reminder_repeat = ?, reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
-             stage_id = ?, stage_position = ?,
+             stage_id = ?, stage_position = ?, collection_id = ?,
              trashed_at = CASE
                  WHEN ? AND trashed = 0 THEN ?
                  WHEN NOT ? THEN NULL
@@ -780,6 +860,7 @@ impl NoteRepository for SqliteRepository {
         .bind(&note.last_editor_id)
         .bind(&note.stage_id)
         .bind(note.stage_position)
+        .bind(&note.collection_id)
         .bind(note.trashed as i64)
         .bind(now())
         .bind(note.trashed as i64)
@@ -1182,7 +1263,7 @@ impl TaxonomyRepository for SqliteRepository {
     async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>> {
         let rows = sqlx::query(&format!(
             "SELECT id, workspace_id, name, color, icon, position FROM labels
-             WHERE workspace_id IN ({MY_WORKSPACES})
+             WHERE workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY position, name COLLATE NOCASE"
         ))
         .bind(user_id)
@@ -1309,8 +1390,8 @@ impl TaxonomyRepository for SqliteRepository {
 
     async fn stages_for_user(&self, user_id: &str) -> RepoResult<Vec<Stage>> {
         let rows = sqlx::query(&format!(
-            "SELECT id, workspace_id, name, color, position FROM stages
-             WHERE workspace_id IN ({MY_WORKSPACES})
+            "SELECT id, workspace_id, collection_id, name, color, position FROM stages
+             WHERE collection_id IN (SELECT id FROM collections WHERE deleted=0) AND workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY position, name COLLATE NOCASE"
         ))
         .bind(user_id)
@@ -1322,6 +1403,7 @@ impl TaxonomyRepository for SqliteRepository {
             .map(|r| Stage {
                 id: r.get("id"),
                 workspace_id: r.get("workspace_id"),
+                collection_id: r.get("collection_id"),
                 name: r.get("name"),
                 color: r.get("color"),
                 position: r.get("position"),
@@ -1331,14 +1413,15 @@ impl TaxonomyRepository for SqliteRepository {
 
     async fn insert_stage(&self, stage: &Stage) -> RepoResult<()> {
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO stages (id, workspace_id, name, color, position)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO stages (id, workspace_id, name, color, position, collection_id)
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&stage.id)
         .bind(&stage.workspace_id)
         .bind(&stage.name)
         .bind(&stage.color)
         .bind(stage.position)
+        .bind(&stage.collection_id)
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
@@ -1419,7 +1502,7 @@ impl TaxonomyRepository for SqliteRepository {
             "UPDATE notes SET stage_id = NULL
              WHERE id = ? AND stage_id IS NOT NULL AND stage_id NOT IN (
                  SELECT s.id FROM stages s
-                 JOIN notes n ON n.workspace_id = s.workspace_id
+                 JOIN notes n ON n.workspace_id = s.workspace_id AND n.collection_id = s.collection_id
                  WHERE n.id = ?
              )",
         )

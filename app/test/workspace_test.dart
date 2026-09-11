@@ -1,3 +1,5 @@
+import 'package:skippy/models/collection.dart';
+import 'package:skippy/widgets/collection_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -54,6 +56,13 @@ void main() {
     api = FakeApi();
     api.workspaces[work] = const Workspace(
       id: work,
+      collections: [
+        NoteCollection(
+          id: 'w-work-general',
+          workspaceId: work,
+          name: 'General',
+        ),
+      ],
       name: 'Work',
       owner: UserRef(id: 'u-me', name: 'Me Example'),
     );
@@ -437,7 +446,7 @@ void main() {
       // that navigates.
       await tester.tap(
         find.descendant(
-          of: find.byType(AppSidebar),
+          of: find.byType(CollectionHeader),
           matching: find.text('Home'),
         ),
       );
@@ -454,75 +463,80 @@ void main() {
       store.dispose();
     });
 
-    testWidgets(
-      'disabled workspace views disappear and the open view falls back',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 900);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.reset);
-
-        api.workspaces[work] = const Workspace(
-          id: work,
-          name: 'Work',
-          notesEnabled: false,
-          owner: UserRef(id: 'u-me', name: 'Me Example'),
-        );
-        api.notes['b'] = noteIn(work, 'b', title: 'board only');
-        await store.load();
-        await tester.pumpWidget(homeApp(store));
-        await tester.pumpAndSettle();
-
-        store.setActiveWorkspace(work);
-        await tester.pumpAndSettle();
-
-        final sidebar = find.byType(AppSidebar);
-        expect(
-          find.descendant(of: sidebar, matching: find.text('Notes')),
-          findsNothing,
-        );
-        expect(
-          find.descendant(of: sidebar, matching: find.text('Board')),
-          findsOneWidget,
-        );
-        expect(find.byType(BoardView), findsOneWidget);
-        store.dispose();
-      },
-    );
-
-    testWidgets('each workspace reopens its own last view', (tester) async {
+    testWidgets('collection layout selects its renderer', (tester) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
+      api.workspaces[work] = const Workspace(
+        id: work,
+        name: 'Work',
+        collections: [
+          NoteCollection(
+            id: 'w-work-general',
+            workspaceId: work,
+            name: 'General',
+            layout: 'board',
+          ),
+        ],
+        owner: UserRef(id: 'u-me', name: 'Me Example'),
+      );
+      api.notes['b'] = noteIn(work, 'b', title: 'board only');
       await store.load();
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      final sidebar = find.byType(AppSidebar);
-      await tester.tap(
-        find.descendant(of: sidebar, matching: find.text('Board')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(BoardView), findsOneWidget);
-
-      // An unseen workspace inherits the current destination.
       store.setActiveWorkspace(work);
       await tester.pumpAndSettle();
-      expect(find.byType(BoardView), findsOneWidget);
 
-      await tester.tap(
+      final sidebar = find.byType(AppSidebar);
+      expect(
         find.descendant(of: sidebar, matching: find.text('Notes')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: sidebar, matching: find.text('General')),
+        findsOneWidget,
+      );
+      expect(find.byType(BoardView), findsOneWidget);
+      store.dispose();
+    });
+
+    testWidgets('each workspace reopens its own collection', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+        collections: [
+          NoteCollection.general('w-default'),
+          const NoteCollection(
+            id: 'projects',
+            workspaceId: 'w-default',
+            name: 'Projects',
+            layout: 'board',
+          ),
+        ],
+      );
+      api.workspaces[work] = api.workspaces[work]!.copyWith(
+        collections: [NoteCollection.general(work)],
+      );
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppSidebar),
+          matching: find.text('Projects'),
+        ),
       );
       await tester.pumpAndSettle();
+      expect(find.byType(BoardView), findsOneWidget);
+      store.setActiveWorkspace(work);
+      await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsNothing);
-
       store.setActiveWorkspace('w-default');
       await tester.pumpAndSettle();
       expect(find.byType(BoardView), findsOneWidget);
-
-      store.setActiveWorkspace(work);
-      await tester.pumpAndSettle();
-      expect(find.byType(BoardView), findsNothing);
       store.dispose();
     });
 
@@ -565,14 +579,14 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationDrawer), findsOneWidget);
+      expect(find.byType(Drawer), findsOneWidget);
 
       await tester.tap(find.byType(WorkspaceMenu));
       await tester.pumpAndSettle();
       await tester.tap(find.text('New workspace'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(NavigationDrawer), findsNothing);
+      expect(find.byType(Drawer), findsNothing);
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.widgetWithText(AppBar, 'New workspace'), findsOneWidget);
 
@@ -604,6 +618,11 @@ void main() {
       await tester.tap(find.text('Workspace settings'));
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(
+        find.text('Delete workspace'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.tap(find.text('Delete workspace'));
       await tester.pumpAndSettle();
 
@@ -671,15 +690,19 @@ void main() {
       api.notes['a'] = noteIn(work, 'a', title: 'work note');
       api.notes['b'] = noteIn(work, 'b', title: 'other note');
       api.notes['gone'] = noteIn(work, 'gone', title: 'binned', trashed: true);
-      api.labels['l1'] = const Label(id: 'l1', name: 'urgent', workspaceId: work);
+      api.labels['l1'] = const Label(
+        id: 'l1',
+        name: 'urgent',
+        workspaceId: work,
+      );
       await store.load();
       store.setActiveWorkspace(work);
       await openSettings(tester, store);
 
       expect(find.widgetWithText(AppBar, 'Work'), findsOneWidget);
       expect(find.text('Owned by you'), findsOneWidget);
-      expect(find.widgetWithText(SwitchListTile, 'Notes'), findsOneWidget);
-      expect(find.widgetWithText(SwitchListTile, 'Board'), findsOneWidget);
+      expect(find.text('New collection'), findsOneWidget);
+      expect(find.text('Duplicate workspace'), findsOneWidget);
       expect(find.text('Ada'), findsOneWidget);
       // The summary counts live notes only, and agrees with the grid.
       expect(find.text('2 notes · 1 label'), findsOneWidget);
@@ -700,13 +723,8 @@ void main() {
       await openSettings(tester, store);
 
       expect(find.text('Owned by Ada'), findsOneWidget);
-      // View switches are the owner's to change.
-      final notesSwitch = tester.widget<SwitchListTile>(
-        find.widgetWithText(SwitchListTile, 'Notes'),
-      );
-      expect(notesSwitch.onChanged, isNull);
-      expect(find.text('Only the owner can change workspace views.'),
-          findsOneWidget);
+      expect(find.text('New collection'), findsOneWidget);
+      expect(find.text('Duplicate workspace'), findsOneWidget);
       expect(find.text('Invite people by email'), findsNothing);
       // Leaving, not deleting: the notes are not this member's to remove.
       expect(find.text('Delete workspace'), findsNothing);
@@ -802,7 +820,11 @@ void main() {
         name: 'a label with a fairly long name',
         workspaceId: work,
       );
-      api.stages['s1'] = const Stage(id: 's1', name: 'Doing', workspaceId: work);
+      api.stages['s1'] = const Stage(
+        id: 's1',
+        name: 'Doing',
+        workspaceId: work,
+      );
       await store.load();
       store.setActiveWorkspace(work);
 

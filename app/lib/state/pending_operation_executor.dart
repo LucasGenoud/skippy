@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import '../api/api_client.dart';
 import '../models/note.dart';
 import '../models/saved_view.dart';
@@ -17,13 +18,19 @@ class PendingOperationExecutor {
   final PendingNoteLookup noteById;
 
   /// Execute one queued write. Creates re-read the freshest note so edits made
-  /// after enqueuing still go up; a create for a note deleted in the meantime
+  /// after enqueuing still go up, while filing follows queue order; a create for a note deleted in the meantime
   /// is a no-op (a trailing delete/404 tidies the server side).
   Future<void> run(PendingOp op) {
     switch (op.kind) {
+      case PendingOpKind.collectionPut:
+        return api.putCollection(NoteCollection.fromJson(op.data));
+      case PendingOpKind.collectionDelete:
+        return api.deleteCollection(op.data['workspaceId'] as String, op.id!);
       case PendingOpKind.create:
         final note = noteById(op.id!);
-        return note == null ? Future.value() : api.createNote(note);
+        return note == null
+            ? Future.value()
+            : api.createNote(Note.fromJson({...note.toJson(), ...op.data}));
       case PendingOpKind.patch:
         return api.patchNote(op.id!, op.data);
       case PendingOpKind.delete:
@@ -54,6 +61,7 @@ class PendingOperationExecutor {
           op.id!,
           op.data['name'] as String,
           workspaceId: op.data['workspaceId'] as String? ?? '',
+          collectionId: op.data['collectionId'] as String?,
           color: op.data['color'] as String?,
           position: (op.data['position'] as num?)?.toDouble(),
         );

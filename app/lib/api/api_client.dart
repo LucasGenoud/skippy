@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import '../models/saved_view.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -86,6 +87,8 @@ class ManagedSetting {
 }
 
 /// Everything the stores need from the backend. Tests swap in a fake.
+enum WorkspaceCopyContent { structure, notes }
+
 abstract class Api {
   /// Lightweight reachability probe used by the sync indicator. Implementors
   /// must fail promptly when the server cannot be reached.
@@ -127,6 +130,14 @@ abstract class Api {
     required bool notesEnabled,
     required bool boardEnabled,
   });
+  Future<Workspace> duplicateWorkspace(
+    String id,
+    String name,
+    WorkspaceCopyContent content, {
+    bool reminders = false,
+  });
+  Future<void> putCollection(NoteCollection collection);
+  Future<void> deleteCollection(String workspaceId, String id);
   Future<void> putSavedView(String workspaceId, SavedView view);
   Future<void> deleteSavedView(String workspaceId, String id);
   Future<void> deleteWorkspace(String id);
@@ -182,6 +193,7 @@ abstract class Api {
     required ShareTarget target,
     String? noteId,
     String? workspaceId,
+    String? collectionId,
     String? labelId,
     DateTime? expiresAt,
   });
@@ -219,6 +231,7 @@ abstract class Api {
     String id,
     String name, {
     required String workspaceId,
+    String? collectionId,
     String? color,
     double? position,
   });
@@ -540,6 +553,50 @@ class ApiClient extends _ApiTransport implements Api {
   }
 
   @override
+  Future<Workspace> duplicateWorkspace(
+    String id,
+    String name,
+    WorkspaceCopyContent content, {
+    bool reminders = false,
+  }) async {
+    final data = _decode(
+      await _uploadClient.post(
+        _uri('/workspaces/$id/duplicate'),
+        headers: _headers(),
+        body: jsonEncode({
+          'name': name,
+          'content': content.name,
+          'reminders': reminders,
+        }),
+      ),
+    );
+    return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> putCollection(NoteCollection collection) async {
+    _decode(
+      await _client.put(
+        _uri(
+          '/workspaces/${collection.workspaceId}/collections/${collection.id}',
+        ),
+        headers: _headers(),
+        body: jsonEncode(collection.toJson()),
+      ),
+    );
+  }
+
+  @override
+  Future<void> deleteCollection(String workspaceId, String id) async {
+    _decode(
+      await _client.delete(
+        _uri('/workspaces/$workspaceId/collections/$id'),
+        headers: _headers(),
+      ),
+    );
+  }
+
+  @override
   Future<void> putSavedView(String workspaceId, SavedView view) async {
     _decode(
       await _client.put(
@@ -605,6 +662,7 @@ class ApiClient extends _ApiTransport implements Api {
         body: jsonEncode({
           'id': note.id,
           if (note.workspaceId.isNotEmpty) 'workspace_id': note.workspaceId,
+          'collection_id': note.collectionId,
           'kind': note.kind.wire,
           'title': note.title,
           'content': note.content,
@@ -758,6 +816,7 @@ class ApiClient extends _ApiTransport implements Api {
     required ShareTarget target,
     String? noteId,
     String? workspaceId,
+    String? collectionId,
     String? labelId,
     DateTime? expiresAt,
   }) async {
@@ -769,6 +828,7 @@ class ApiClient extends _ApiTransport implements Api {
           'target': target.wire,
           'note_id': ?noteId,
           'workspace_id': ?workspaceId,
+          'collection_id': ?collectionId,
           'label_id': ?labelId,
           'expires_at': ?expiresAt?.toUtc().toIso8601String(),
         }),
@@ -875,6 +935,7 @@ class ApiClient extends _ApiTransport implements Api {
     String id,
     String name, {
     required String workspaceId,
+    String? collectionId,
     String? color,
     double? position,
   }) async {
@@ -887,6 +948,7 @@ class ApiClient extends _ApiTransport implements Api {
         body: jsonEncode({
           'id': id,
           if (workspaceId.isNotEmpty) 'workspace_id': workspaceId,
+          'collection_id': collectionId,
           'name': name,
           'color': color ?? '',
           'position': ?position,

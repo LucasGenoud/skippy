@@ -1,13 +1,8 @@
 import '../models/note.dart';
 import '../util/search_query.dart';
 
-/// [board] is a view like the others rather than a third state of the
-/// grid/list toggle: it is incompatible with trash, archive, reminders and
-/// label views, and has its own empty state and compose target.
-///
-/// [smart] is a saved search (see `models/saved_view.dart`). It shows the same
-/// notes the grid does, narrowed by the view's stored query, which the home
-/// screen supplies alongside whatever is typed in the search box.
+/// Notes/board select the collection renderer; labels and smart views narrow
+/// that collection. Reminders, archive and trash span the current workspace.
 enum NoteView { notes, board, reminders, archive, trash, label, smart }
 
 enum SortMode { custom, edited, newest, oldest }
@@ -17,7 +12,7 @@ class ViewSelection {
   final String? labelId;
 
   /// Which saved view is open, for [NoteView.smart]. The query itself lives in
-  /// the settings document, not here: a selection stays a pointer, so renaming
+  /// the workspace, not here: a selection stays a pointer, so renaming
   /// or editing a smart view takes effect without re-selecting it.
   final String? savedViewId;
 
@@ -53,6 +48,7 @@ class ViewSelection {
 class WorkspaceScope {
   /// The open workspace, or null to show every note the user can see.
   final String? workspaceId;
+  final String? collectionId;
 
   /// Whether [workspaceId] is the user's default workspace, which also
   /// collects notes from workspaces they don't belong to.
@@ -64,6 +60,7 @@ class WorkspaceScope {
 
   const WorkspaceScope({
     required this.workspaceId,
+    this.collectionId,
     required this.isDefault,
     required this.known,
   });
@@ -71,11 +68,18 @@ class WorkspaceScope {
   /// No filtering, used by exports, search, and tests that predate
   /// workspaces.
   const WorkspaceScope.all()
-    : workspaceId = null,
+    : collectionId = null,
+      workspaceId = null,
       isDefault = false,
       known = const {};
 
-  bool contains(Note note) => containsWorkspace(note.workspaceId);
+  bool contains(Note note) =>
+      containsWorkspace(note.workspaceId) &&
+      (collectionId == null ||
+          note.collectionId == collectionId ||
+          (note.collectionId == null &&
+              collectionId == '${note.workspaceId}-general') ||
+          (isDefault && !known.contains(note.workspaceId)));
 
   /// Whether content filed in [id] shows in this scope. Content from a
   /// workspace the user doesn't belong to, a directly shared note, or a
@@ -168,7 +172,13 @@ List<Note> filterNotes({
       .where(
         (note) =>
             scope.contains(note) &&
-            _isInView(note, selection, currentUserId, override) &&
+            _isInView(
+              note,
+              selection,
+              currentUserId,
+              override,
+              scope.known.contains(note.workspaceId),
+            ) &&
             query.matches(note, context),
       )
       .toList();
@@ -179,6 +189,7 @@ bool _isInView(
   ViewSelection selection,
   String? currentUserId,
   StateOverride? override,
+  bool workspaceMember,
 ) {
   // Views that show live notes hand their state filter over to an explicit
   // `is:` operator. Archive and trash already are that state, and reminders
@@ -192,7 +203,8 @@ bool _isInView(
     final passesState = switch (override) {
       // Collaborators never see a trashed note (see the trash view below), so
       // an override cannot reveal one either.
-      StateOverride.trashed => note.trashed && note.isOwnedBy(currentUserId),
+      StateOverride.trashed =>
+        note.trashed && (note.isOwnedBy(currentUserId) || workspaceMember),
       StateOverride.archived => note.archived && !note.trashed,
     };
     if (!passesState) return false;
@@ -212,7 +224,8 @@ bool _isInView(
     NoteView.archive => note.archived && !note.trashed,
     // Collaborators cannot trash notes. If an owner trashes a shared note,
     // it disappears for collaborators instead of entering their trash.
-    NoteView.trash => note.trashed && note.isOwnedBy(currentUserId),
+    NoteView.trash =>
+      note.trashed && (note.isOwnedBy(currentUserId) || workspaceMember),
     NoteView.label =>
       !note.trashed && note.labelIds.contains(selection.labelId),
   };

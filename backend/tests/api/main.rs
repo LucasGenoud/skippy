@@ -2,6 +2,7 @@
 //! The shared harness (in-memory app, request helpers, fakes) lives in
 //! [`helpers`].
 
+mod collections;
 mod helpers;
 
 mod attachments;

@@ -60,13 +60,6 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const AccentColorTile(),
-              SwitchListTile(
-                secondary: const Icon(Icons.view_agenda_outlined),
-                title: const Text('Open in single-column list'),
-                subtitle: const Text('Default layout when the app starts'),
-                value: settings.defaultListMode,
-                onChanged: settings.setDefaultListMode,
-              ),
               const GridLayoutSection(),
               const Divider(height: 32),
               const _SectionHeader('Features'),

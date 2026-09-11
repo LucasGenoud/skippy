@@ -72,8 +72,8 @@ impl SharingRepository for SqliteRepository {
     async fn insert_share_link(&self, link: &ShareLink) -> RepoResult<()> {
         sqlx::query(
             "INSERT INTO share_links
-                (token, created_by, target, note_id, workspace_id, label_id, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (token, created_by, target, note_id, workspace_id, label_id, created_at, expires_at, collection_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&link.token)
         .bind(&link.created_by)
@@ -83,6 +83,7 @@ impl SharingRepository for SqliteRepository {
         .bind(&link.label_id)
         .bind(&link.created_at)
         .bind(&link.expires_at)
+        .bind(&link.collection_id)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -113,17 +114,19 @@ impl SharingRepository for SqliteRepository {
         note_id: Option<&str>,
         workspace_id: Option<&str>,
         label_id: Option<&str>,
+        collection_id: Option<&str>,
     ) -> RepoResult<Option<ShareLink>> {
         let row = sqlx::query(&format!(
             "{SHARE_LINK_COLUMNS}
              WHERE created_by = ? AND target = ?
-               AND note_id IS ? AND workspace_id IS ? AND label_id IS ?"
+               AND note_id IS ? AND workspace_id IS ? AND label_id IS ? AND collection_id IS ?"
         ))
         .bind(user_id)
         .bind(target)
         .bind(note_id)
         .bind(workspace_id)
         .bind(label_id)
+        .bind(collection_id)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.as_ref().map(share_link_from_row))

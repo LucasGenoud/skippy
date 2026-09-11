@@ -1,5 +1,7 @@
 /// The backend write represented by a persisted queue entry.
 enum PendingOpKind {
+  collectionPut('collectionPut'),
+  collectionDelete('collectionDelete'),
   create('create'),
   patch('patch'),
   delete('delete'),

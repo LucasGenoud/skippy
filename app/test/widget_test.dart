@@ -1,3 +1,4 @@
+import 'package:skippy/models/collection.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -60,7 +61,11 @@ Widget harness(NotesStore store, Widget child, {SettingsStore? settings}) {
 /// The full home screen, as the app builds it. The top bar's avatar menu
 /// watches an [AuthStore], which only supports the concrete [ApiClient]; a
 /// signed-out store over a dummy client renders fine and never talks to it.
-Widget homeApp(NotesStore store, {SettingsStore? settings}) => MultiProvider(
+Widget homeApp(
+  NotesStore store, {
+  SettingsStore? settings,
+  Brightness brightness = Brightness.light,
+}) => MultiProvider(
   providers: [
     ChangeNotifierProvider.value(value: store),
     if (settings == null)
@@ -72,7 +77,8 @@ Widget homeApp(NotesStore store, {SettingsStore? settings}) => MultiProvider(
     ),
   ],
   child: MaterialApp(
-    theme: buildTheme(Brightness.light),
+    debugShowCheckedModeBanner: false,
+    theme: buildTheme(brightness),
     scaffoldMessengerKey: scaffoldMessengerKey,
     builder: (context, child) => ScreenWidth(child: child ?? const SizedBox()),
     home: const HomeScreen(),
@@ -3199,21 +3205,21 @@ void main() {
       await tester.pumpWidget(homeApp(store));
       await tester.pump();
 
-      // Branding and the sort icon leave the bar (drawer / avatar menu
-      // carry them); the essentials stay.
+      // Branding, sort, and search filters leave the idle bar (drawer /
+      // avatar menu and focused search carry them).
       expect(find.text('Skippy'), findsNothing);
       expect(find.byIcon(Icons.swap_vert), findsNothing);
       expect(find.byIcon(Icons.menu), findsOneWidget);
-      expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.tune), findsNothing);
       expect(find.byType(CircleAvatar), findsOneWidget);
 
-      // Focusing the field collapses the trailing shortcuts (layout/avatar)
-      // into search mode, even before anything is typed. Settle first: the
+      // Focusing the field collapses the trailing avatar into search mode,
+      // even before anything is typed. Settle first: the
       // two control sets cross-fade, so the outgoing icons linger a few
       // frames.
       await tester.tap(find.byType(TextField).first);
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.view_agenda_outlined), findsNothing);
+      expect(find.byIcon(Icons.tune), findsOneWidget);
       expect(find.byType(CircleAvatar), findsNothing);
 
       // Typing then shows the clear button.
@@ -3223,10 +3229,10 @@ void main() {
       await tester.tap(find.byIcon(Icons.close));
       await tester.pump();
 
-      // Dropping focus brings the shortcuts back.
+      // Dropping focus brings the avatar back and hides search controls.
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.view_agenda_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.tune), findsNothing);
 
       // Sort now lives in the avatar menu, opening a bottom sheet.
       await tester.tap(find.byType(CircleAvatar).first);
@@ -3243,7 +3249,7 @@ void main() {
       // old Scaffold.of(context) lookup threw above the Scaffold).
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
-      expect(find.byType(NavigationDrawer), findsOneWidget);
+      expect(find.byType(Drawer), findsOneWidget);
     });
 
     testWidgets('the search field is centred on the bar, not on the gap', (
@@ -3531,15 +3537,17 @@ void main() {
       expect(find.text('Keyboard shortcuts'), findsNothing);
     });
 
-    testWidgets('Ctrl+G toggles the grid/list layout', (tester) async {
+    testWidgets('Ctrl+G opens collection settings', (tester) async {
       await pumpHome(tester);
 
-      expect(find.byTooltip('List view'), findsOneWidget); // grid active
+      expect(find.text('Collection settings'), findsNothing);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pump();
-      expect(find.byTooltip('Grid view'), findsOneWidget); // list active
+      await tester.pumpAndSettle();
+      expect(find.text('Collection settings'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
     });
   });
 
@@ -3652,8 +3660,16 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Loose thought'), findsOneWidget);
 
-        // The sidebar carries the view; opening it runs the saved query.
-        await tester.tap(find.text('Pinned'));
+        await tester.tap(find.byTooltip('Filter notes'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is CheckedPopupMenuItem &&
+                widget.child is Text &&
+                (widget.child as Text).data == 'Pinned',
+          ),
+        );
         await tester.pumpAndSettle();
         expect(find.text('Pinned report'), findsOneWidget);
         expect(find.text('Pinned recipe'), findsOneWidget);
@@ -3847,16 +3863,20 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('dropping a note on a label adds the label', (tester) async {
-      api.labels['l1'] = const Label(id: 'l1', name: 'work');
-      api.notes['n1'] = serverNote('n1', title: 'a');
+    testWidgets('dropping a note on a collection moves it', (tester) async {
+      api.notes['n1'] = serverNote('n1', title: 'a', workspaceId: 'w-default');
       await store.load();
+      store.saveCollection(
+        const NoteCollection(
+          id: 'reading',
+          workspaceId: 'w-default',
+          name: 'Reading',
+        ),
+      );
       await tester.pumpWidget(dragHarness(store));
       await tester.pumpAndSettle();
-
-      await dropOn(tester, find.text('work'));
-
-      expect(store.noteById('n1')!.labelIds, contains('l1'));
+      await dropOn(tester, find.text('Reading'));
+      expect(store.noteById('n1')!.collectionId, 'reading');
       await flushTimers(tester);
     });
 

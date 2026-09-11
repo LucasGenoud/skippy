@@ -64,13 +64,20 @@ class MoveToStageSheet extends StatelessWidget {
               selected: stageIds.length == 1 && current == null,
               onTap: () => _move(context, store, null),
             ),
-            for (final stage in store.stages)
-              _StageOption(
-                label: stage.name,
-                color: PaletteEntry.hexToColor(stage.color),
-                selected: current == stage.id,
-                onTap: () => _move(context, store, stage.id),
-              ),
+            for (final stage in store.stagesForNote(
+              store.noteById(noteIds.first),
+            ))
+              if (noteIds.every(
+                (id) => store
+                    .stagesForNote(store.noteById(id))
+                    .any((s) => s.id == stage.id),
+              ))
+                _StageOption(
+                  label: stage.name,
+                  color: PaletteEntry.hexToColor(stage.color),
+                  selected: current == stage.id,
+                  onTap: () => _move(context, store, stage.id),
+                ),
             const SizedBox(height: 8),
           ],
         ),

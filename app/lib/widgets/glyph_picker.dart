@@ -79,11 +79,13 @@ class ColorDot extends StatelessWidget {
 class IconGrid extends StatelessWidget {
   final String? selected;
   final Color tint;
+  final IconData defaultIcon;
   final ValueChanged<String?> onSelect;
   const IconGrid({
     super.key,
     required this.selected,
     required this.tint,
+    this.defaultIcon = kDefaultLabelIcon,
     required this.onSelect,
   });
 
@@ -125,7 +127,7 @@ class IconGrid extends StatelessWidget {
       runSpacing: 8,
       children: [
         // Default slot: clears any custom icon.
-        cell(key: null, icon: kDefaultLabelIcon),
+        cell(key: null, icon: defaultIcon),
         for (final entry in kLabelIcons.entries)
           cell(key: entry.key, icon: entry.value),
       ],

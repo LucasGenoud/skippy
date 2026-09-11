@@ -2,6 +2,10 @@
 //! [`crate::build_app`]; every handler is re-exported here so routes and tests
 //! keep addressing them as `handlers::name` regardless of submodule.
 
+mod workspace_copy;
+pub use workspace_copy::duplicate_workspace;
+mod collections;
+pub use collections::{delete_collection, put_collection};
 mod attachments;
 mod auth;
 mod background;

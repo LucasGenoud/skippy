@@ -148,6 +148,36 @@ pub async fn create_share_link(
         _ => unreachable!("target was checked against SHARE_TARGETS"),
     };
 
+    let collection_id = if target == SHARE_TARGET_NOTE {
+        None
+    } else {
+        body.collection_id
+    };
+    if let Some(id) = &collection_id {
+        let collection = state
+            .repo
+            .collections_for_user(&user_id)
+            .await?
+            .into_iter()
+            .find(|c| c.id == *id)
+            .ok_or(ApiError::NotFound)?;
+        let scope = match &workspace_id {
+            Some(w) => w.clone(),
+            None => {
+                state
+                    .repo
+                    .labels_for_user(&user_id)
+                    .await?
+                    .into_iter()
+                    .find(|l| Some(&l.id) == label_id.as_ref())
+                    .ok_or(ApiError::NotFound)?
+                    .workspace_id
+            }
+        };
+        if collection.workspace_id != scope {
+            return Err(ApiError::NotFound);
+        }
+    }
     // Publishing the same thing twice hands back the link that already exists.
     // Minting a second one would leave the first live and unlisted next to it,
     // and "share" reads as an idempotent action, not as "make another URL".
@@ -159,6 +189,7 @@ pub async fn create_share_link(
             note_id.as_deref(),
             workspace_id.as_deref(),
             label_id.as_deref(),
+            collection_id.as_deref(),
         )
         .await?
     {
@@ -181,6 +212,7 @@ pub async fn create_share_link(
         target,
         note_id,
         workspace_id,
+        collection_id,
         label_id,
         created_at: now(),
         expires_at: body.expires_at,
@@ -229,6 +261,18 @@ pub async fn public_share(
     // which is what keeps a public page from ever outrunning its owner's own
     // access: lose access to a note, and it drops out of the page too.
     let mut visible = state.repo.notes_for_user(&link.created_by).await?;
+    if let Some(id) = &link.collection_id {
+        if !state
+            .repo
+            .collections_for_user(&link.created_by)
+            .await?
+            .iter()
+            .any(|c| c.id == *id)
+        {
+            return Err(ApiError::NotFound);
+        }
+        visible.retain(|n| n.note.collection_id.as_ref() == Some(id));
+    }
     state.sign_views(&mut visible);
     let labels = state.repo.labels_for_user(&link.created_by).await?;
 
@@ -266,7 +310,13 @@ pub async fn public_share(
                 .stages_for_user(&link.created_by)
                 .await?
                 .into_iter()
-                .filter(|stage| stage.workspace_id == workspace_id)
+                .filter(|stage| {
+                    stage.workspace_id == workspace_id
+                        && link
+                            .collection_id
+                            .as_ref()
+                            .is_none_or(|id| stage.collection_id.as_ref() == Some(id))
+                })
                 .collect();
             (
                 workspace.name,
@@ -299,6 +349,18 @@ pub async fn public_share(
         .filter(|label| used.contains(&label.id))
         .collect();
 
+    let title = if let Some(id) = &link.collection_id {
+        state
+            .repo
+            .collections_for_user(&link.created_by)
+            .await?
+            .into_iter()
+            .find(|c| c.id == *id)
+            .map(|c| c.name)
+            .unwrap_or(title)
+    } else {
+        title
+    };
     let share = PublicShare {
         target: link.target.clone(),
         title,
@@ -439,11 +501,24 @@ async fn view_of(state: &AppState, link: &ShareLink) -> ApiResult<ShareLinkView>
             None => "Label".to_string(),
         },
     };
+    let title = if let Some(id) = &link.collection_id {
+        state
+            .repo
+            .collections_for_user(&link.created_by)
+            .await?
+            .into_iter()
+            .find(|c| c.id == *id)
+            .map(|c| c.name)
+            .unwrap_or(title)
+    } else {
+        title
+    };
     Ok(ShareLinkView {
         token: public_token(&state.file_secret, &link.token),
         target: link.target.clone(),
         note_id: link.note_id.clone(),
         workspace_id: link.workspace_id.clone(),
+        collection_id: link.collection_id.clone(),
         label_id: link.label_id.clone(),
         title,
         created_at: link.created_at.clone(),

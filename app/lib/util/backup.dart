@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -9,7 +10,7 @@ import '../models/workspace.dart';
 import 'mime.dart';
 
 const _backupFormat = 'skippy-backup';
-const _backupVersion = 2;
+const _backupVersion = 3;
 const maxBackupArchiveBytes = 512 * 1024 * 1024;
 const _maxManifestBytes = 8 * 1024 * 1024;
 const _maxWorkspaces = 1000;
@@ -43,6 +44,7 @@ class BackupBundle {
 }
 
 class BackupWorkspace {
+  final List<NoteCollection> collections;
   final List<SavedView> savedViews;
   final String id;
   final String name;
@@ -54,6 +56,7 @@ class BackupWorkspace {
   final List<BackupNote> notes;
 
   const BackupWorkspace({
+    this.collections = const [],
     this.savedViews = const [],
     required this.id,
     required this.name,
@@ -112,12 +115,14 @@ class BackupLabel {
 }
 
 class BackupStage {
+  final String? collectionId;
   final String id;
   final String name;
   final String? color;
   final double position;
 
   const BackupStage({
+    this.collectionId,
     required this.id,
     required this.name,
     this.color,
@@ -126,6 +131,7 @@ class BackupStage {
 }
 
 class BackupNote {
+  final String? collectionId;
   final String id;
   final NoteKind kind;
   final String title;
@@ -152,6 +158,7 @@ class BackupNote {
   final List<BackupAttachment> attachments;
 
   const BackupNote({
+    this.collectionId,
     required this.id,
     required this.kind,
     required this.title,
@@ -269,6 +276,7 @@ Future<Uint8List> createBackupArchive({
       }
       noteDocs.add({
         'id': note.id,
+        'collection_id': note.collectionId,
         'kind': note.kind.wire,
         'title': note.title,
         'content': note.content,
@@ -301,6 +309,7 @@ Future<Uint8List> createBackupArchive({
       'is_default': workspace.isDefault,
       'notes_enabled': workspace.notesEnabled,
       'board_enabled': workspace.boardEnabled,
+      'collections': [for (final c in workspace.collections) c.toJson()],
       'smart_views': [for (final view in workspace.savedViews) view.toJson()],
       'labels': [
         for (final label in workspaceLabels)
@@ -316,6 +325,7 @@ Future<Uint8List> createBackupArchive({
         for (final stage in workspaceStages)
           {
             'id': stage.id,
+            'collection_id': stage.collectionId,
             'name': stage.name,
             'color': stage.color,
             'position': stage.position,
@@ -380,7 +390,7 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
   if (version == 1) {
     return _parseLegacyBackup(manifest, entries);
   }
-  if (version != _backupVersion) {
+  if (version != 2 && version != _backupVersion) {
     throw const FormatException('Unsupported Skippy backup version');
   }
 
@@ -425,6 +435,36 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
       usedFiles,
       legacy: false,
     );
+    final collections = _readCollections(
+      map['collections'],
+      id,
+      notesEnabled ? 'masonry' : 'board',
+    );
+    final collectionIds = collections.map((c) => c.id).toSet();
+    for (final stage in parsed.stages) {
+      if (stage.collectionId != null &&
+          !collectionIds.contains(stage.collectionId)) {
+        throw const FormatException(
+          'Board column belongs to a missing collection',
+        );
+      }
+    }
+    for (final note in parsed.notes) {
+      if (!note.trashed &&
+          note.collectionId != null &&
+          !collectionIds.contains(note.collectionId)) {
+        throw const FormatException('Note belongs to a missing collection');
+      }
+      if (note.stageId != null &&
+          note.collectionId != null &&
+          parsed.stages.any(
+            (s) => s.id == note.stageId && s.collectionId != note.collectionId,
+          )) {
+        throw const FormatException(
+          'Board column belongs to a different collection',
+        );
+      }
+    }
     noteCount += parsed.notes.length;
     labelCount += parsed.labels.length;
     stageCount += parsed.stages.length;
@@ -443,6 +483,7 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
         notesEnabled: notesEnabled,
         boardEnabled: boardEnabled,
         savedViews: _readSavedViews(map['smart_views']),
+        collections: collections,
         labels: parsed.labels,
         stages: parsed.stages,
         notes: parsed.notes,
@@ -535,6 +576,7 @@ BackupWorkspace _parseWorkspaceContents(
     }
     stages.add(
       BackupStage(
+        collectionId: _optionalString(stage['collection_id'], max: 200),
         id: id,
         name: name,
         color: _optionalString(stage['color'], max: 32),
@@ -588,6 +630,7 @@ BackupWorkspace _parseWorkspaceContents(
     final stageId = _optionalString(note['stage_id'], max: 200);
     notes.add(
       BackupNote(
+        collectionId: _optionalString(note['collection_id'], max: 200),
         id: _requiredString(note, 'id', max: 200),
         kind: NoteKind.fromWire(rawKind),
         title: _string(note['title'], max: 100000),
@@ -721,4 +764,38 @@ SavedView _readSavedView(dynamic entry, Set<String> ids) {
     throw const FormatException('Invalid smart view');
   }
   return view;
+}
+
+List<NoteCollection> _readCollections(
+  Object? raw,
+  String workspaceId,
+  String legacyLayout,
+) {
+  if (raw == null) {
+    return [NoteCollection.general(workspaceId, layout: legacyLayout)];
+  }
+  if (raw is! List || raw.length > 1000) {
+    throw const FormatException('Invalid collections');
+  }
+  final ids = <String>{};
+  return [
+    for (final value in raw)
+      (() {
+        final map = _map(value, 'collection');
+        final c = NoteCollection.fromJson({
+          ...map,
+          'workspace_id': workspaceId,
+        });
+        if (c.id.isEmpty ||
+            !ids.add(c.id) ||
+            c.name.trim().isEmpty ||
+            c.name.length > 60 ||
+            !['masonry', 'list', 'board'].contains(c.layout) ||
+            !['custom', 'edited', 'newest', 'oldest'].contains(c.sort) ||
+            !c.position.isFinite) {
+          throw const FormatException('Invalid collection settings');
+        }
+        return c;
+      })(),
+  ];
 }

@@ -8,6 +8,7 @@ pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     NoteRecord {
         id: row.get("id"),
         workspace_id: row.get("workspace_id"),
+        collection_id: row.get("collection_id"),
         created_by: row.get("created_by"),
         kind: row.get("kind"),
         title: row.get("title"),
@@ -92,6 +93,7 @@ pub(super) fn share_link_from_row(row: &SqliteRow) -> ShareLink {
         target: row.get("target"),
         note_id: row.get("note_id"),
         workspace_id: row.get("workspace_id"),
+        collection_id: row.get("collection_id"),
         label_id: row.get("label_id"),
         created_at: row.get("created_at"),
         expires_at: row.get("expires_at"),

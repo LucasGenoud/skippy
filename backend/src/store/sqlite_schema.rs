@@ -267,8 +267,88 @@ CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
+    migrate_collections(pool).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS workspace_copies (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE) STRICT").execute(pool).await?;
     import_personal_views(pool).await?;
     Ok(())
+}
+
+// Run once, atomically, on both fresh and existing workspace schemas.
+async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
+    let mut conn = pool.acquire().await?;
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await?;
+    let result = async {
+        use sqlx::Acquire;
+        let mut tx = conn.begin().await?;
+        let done: i64 = sqlx::query_scalar("SELECT count(*) FROM app_meta WHERE key = 'collections_v1'")
+            .fetch_one(&mut *tx).await?;
+        if done == 0 {
+            sqlx::raw_sql(r#"
+                CREATE TABLE collections (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL CHECK (trim(name) <> ''),
+                    icon TEXT, color TEXT,
+                    layout TEXT NOT NULL DEFAULT 'masonry' CHECK (layout IN ('masonry','list','board')),
+                    sort TEXT NOT NULL DEFAULT 'custom' CHECK (sort IN ('custom','edited','newest','oldest')),
+                    position REAL NOT NULL DEFAULT 0,
+                    deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0,1)),
+                    UNIQUE(id, workspace_id)
+                ) STRICT;
+                INSERT INTO collections (id,workspace_id,name,layout)
+                    SELECT id || '-general',id,'General',CASE WHEN notes_enabled = 0 THEN 'board' ELSE 'masonry' END FROM workspaces;
+                ALTER TABLE notes ADD COLUMN collection_id TEXT REFERENCES collections(id);
+                UPDATE notes SET collection_id = workspace_id || '-general';
+                CREATE TABLE stages_new (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                    collection_id TEXT REFERENCES collections(id),
+                    name TEXT NOT NULL CHECK (trim(name) <> ''),
+                    color TEXT, position REAL NOT NULL DEFAULT 0,
+                    UNIQUE(collection_id,name COLLATE NOCASE), UNIQUE(id,workspace_id)
+                ) STRICT;
+                INSERT INTO stages_new SELECT id,workspace_id,workspace_id || '-general',name,color,position FROM stages;
+                DROP TABLE stages;
+                ALTER TABLE stages_new RENAME TO stages;
+                CREATE INDEX idx_notes_collection ON notes(collection_id,position);
+                CREATE TRIGGER workspace_general AFTER INSERT ON workspaces BEGIN
+                    INSERT INTO collections(id,workspace_id,name) VALUES(NEW.id || '-general',NEW.id,'General');
+                END;
+                CREATE TRIGGER note_collection_insert AFTER INSERT ON notes WHEN NEW.collection_id IS NULL BEGIN
+                    UPDATE notes SET collection_id = (SELECT id FROM collections WHERE workspace_id=NEW.workspace_id AND deleted=0 ORDER BY position,id LIMIT 1) WHERE id=NEW.id;
+                END;
+                CREATE TRIGGER stage_collection_insert AFTER INSERT ON stages WHEN NEW.collection_id IS NULL BEGIN
+                    UPDATE stages SET collection_id = (SELECT id FROM collections WHERE workspace_id=NEW.workspace_id AND deleted=0 ORDER BY position,id LIMIT 1) WHERE id=NEW.id;
+                END;
+                CREATE TRIGGER note_collection_check BEFORE UPDATE OF collection_id,workspace_id,trashed ON notes BEGIN
+                    SELECT RAISE(ABORT,'invalid collection') WHERE NEW.collection_id IS NOT NULL AND NOT EXISTS (
+                        SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND (deleted=0 OR NEW.trashed=1));
+                END;
+                CREATE TRIGGER note_collection_create BEFORE INSERT ON notes WHEN NEW.collection_id IS NOT NULL BEGIN
+                    SELECT RAISE(ABORT,'invalid collection') WHERE NOT EXISTS (
+                        SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND (deleted=0 OR NEW.trashed=1));
+                END;
+                CREATE TRIGGER stage_collection_check BEFORE INSERT ON stages WHEN NEW.collection_id IS NOT NULL BEGIN
+                    SELECT RAISE(ABORT,'invalid collection') WHERE NOT EXISTS (
+                        SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND deleted=0);
+                END;
+                ALTER TABLE share_links ADD COLUMN collection_id TEXT REFERENCES collections(id);
+                DROP INDEX uq_share_links_workspace_target;
+                DROP INDEX uq_share_links_label_target;
+                CREATE UNIQUE INDEX uq_share_links_workspace_target ON share_links(created_by,target,workspace_id,COALESCE(collection_id,'')) WHERE target IN ('notes','board');
+                CREATE UNIQUE INDEX uq_share_links_label_target ON share_links(created_by,label_id,COALESCE(collection_id,'')) WHERE target='label';
+                INSERT INTO app_meta VALUES('collections_v1','1');
+            "#).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok::<_, anyhow::Error>(())
+    }.await;
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&mut *conn)
+        .await?;
+    result
 }
 
 /// Claim old personal definitions only once, in their owner's default
@@ -330,6 +410,95 @@ mod tests {
     use crate::models::User;
     use crate::store::AccountRepository;
     use crate::store::sqlite::SqliteRepository;
+
+    #[tokio::test]
+    async fn incomplete_copies_are_reclaimed() {
+        use crate::models::Workspace;
+        use crate::store::{InfrastructureRepository, WorkspaceRepository};
+        let path = std::env::temp_dir().join(format!("skippy-copy-{}.db", Uuid::new_v4()));
+        let repo = SqliteRepository::connect(path.to_str().unwrap())
+            .await
+            .unwrap();
+        repo.create_user(&User {
+            id: "u".into(),
+            name: "User".into(),
+            email: "u@test".into(),
+            password_hash: "hash".into(),
+        })
+        .await
+        .unwrap();
+        let original = Workspace {
+            id: "original".into(),
+            owner_id: "u".into(),
+            name: "Original".into(),
+            notes_enabled: true,
+            board_enabled: true,
+            is_default: true,
+            created_at: "now".into(),
+        };
+        repo.insert_workspace(&original).await.unwrap();
+        let copy = Workspace {
+            id: "copy".into(),
+            is_default: false,
+            ..original
+        };
+        repo.insert_workspace_copy(&copy).await.unwrap();
+        sqlx::raw_sql("INSERT INTO notes(id,workspace_id,created_at,updated_at) VALUES('n','copy','now','now');
+            INSERT INTO attachments(id,note_id,mime,created_at) VALUES('blob','n','image/png','now');")
+            .execute(&repo.pool).await.unwrap();
+        assert_eq!(repo.workspaces_for_user("u").await.unwrap().len(), 1);
+        repo.pool.close().await;
+        let repo = SqliteRepository::connect(path.to_str().unwrap())
+            .await
+            .unwrap();
+        assert!(repo.workspace("copy").await.unwrap().is_none());
+        assert!(repo.workspace("original").await.unwrap().is_some());
+        assert!(repo.cleanup_stats().await.unwrap().pending > 0);
+        repo.pool.close().await;
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn collections_migrate_without_loss() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::raw_sql(super::SCHEMA).execute(&pool).await.unwrap();
+        sqlx::raw_sql("INSERT INTO users VALUES ('u','User','u@test','hash','now');
+            INSERT INTO workspaces(id,owner_id,name,notes_enabled,board_enabled,created_at) VALUES('w','u','Work',0,1,'now');
+            INSERT INTO stages(id,workspace_id,name) VALUES('s','w','Doing');
+            INSERT INTO notes(id,workspace_id,title,stage_id,created_at,updated_at) VALUES('n','w','Keep me','s','now','now');")
+            .execute(&pool).await.unwrap();
+        super::initialize(&pool).await.unwrap();
+        super::initialize(&pool).await.unwrap();
+        let name: String = sqlx::query_scalar(
+            "SELECT title FROM notes WHERE id='n' AND stage_id='s' AND collection_id='w-general'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(name, "Keep me");
+        let layout: String =
+            sqlx::query_scalar("SELECT layout FROM collections WHERE id='w-general'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(layout, "board");
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM collections")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        assert!(
+            sqlx::query("PRAGMA foreign_key_check")
+                .fetch_all(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[tokio::test]
     async fn legacy_views_move_once() {

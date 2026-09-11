@@ -86,7 +86,7 @@ class _BoardViewState extends State<BoardView> {
     final board = buildBoard(
       notes: store.notesInActiveWorkspace,
       stages: store.stages,
-      scope: store.workspaceScope,
+      scope: store.collectionScope,
       query: widget.query,
       labels: store.labels,
       showAllUnassigned: _showAllUnassigned,

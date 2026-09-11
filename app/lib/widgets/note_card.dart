@@ -1,3 +1,4 @@
+import 'collection_settings.dart';
 import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -1151,10 +1152,21 @@ class _NoteActions extends StatelessWidget {
                   onSelected: (value) async {
                     onMenuClosed();
                     if (value == 'share' ||
+                        value == 'collection' ||
                         value == 'move' ||
                         value == 'stage') {
                       await Motion.waitForMenuDismissal(context);
                       if (!context.mounted) return;
+                    }
+                    if (value == 'collection') {
+                      final store = context.read<NotesStore>();
+                      final target = await CollectionPicker.show(
+                        context,
+                        note.workspaceId,
+                      );
+                      if (target != null) {
+                        store.moveToCollection(note.id, target);
+                      }
                     }
                     if (value == 'share') onShare();
                     if (value == 'duplicate') onDuplicate();
@@ -1221,6 +1233,18 @@ class _NoteActions extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
+                    if (context.read<NotesStore>().workspaceById(
+                          note.workspaceId,
+                        ) !=
+                        null)
+                      const PopupMenuItem(
+                        value: 'collection',
+                        child: ListTile(
+                          leading: Icon(Icons.folder_outlined),
+                          title: Text('Move to collection'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     if (canMove)
                       const PopupMenuItem(
                         value: 'move',

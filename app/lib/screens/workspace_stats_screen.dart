@@ -112,7 +112,7 @@ class WorkspaceStatsScreen extends StatelessWidget {
                 const SectionHeader('Labels'),
                 staggered(_Labels(stats: stats)),
               ],
-              if (workspace.boardEnabled && stats.byStage.isNotEmpty) ...[
+              if (stats.byStage.isNotEmpty) ...[
                 const Divider(height: 32),
                 const SectionHeader('Board'),
                 staggered(_Board(stats: stats)),
@@ -483,12 +483,16 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final foreground = emphasized ? scheme.onPrimaryContainer : scheme.onSurface;
+    final foreground = emphasized
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
     return Container(
       width: 140,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: emphasized ? scheme.primaryContainer : scheme.surfaceContainerLow,
+        color: emphasized
+            ? scheme.primaryContainer
+            : scheme.surfaceContainerLow,
         borderRadius: kBorderRadius,
         border: Border.all(
           color: emphasized ? Colors.transparent : scheme.outlineVariant,
@@ -594,7 +598,9 @@ class _Breakdown extends StatelessWidget {
                           1,
                           1 << 30,
                         ),
-                        child: ColoredBox(color: scheme.surfaceContainerHighest),
+                        child: ColoredBox(
+                          color: scheme.surfaceContainerHighest,
+                        ),
                       ),
                   ],
                 ),
@@ -676,7 +682,8 @@ class _MonthBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final fraction = busiest == 0 || activity.created == 0
         ? 0.0
-        : ((activity.created / busiest).clamp(0.0, 1.0) * (1 - _floor)) + _floor;
+        : ((activity.created / busiest).clamp(0.0, 1.0) * (1 - _floor)) +
+              _floor;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -685,9 +692,9 @@ class _MonthBar extends StatelessWidget {
         children: [
           Text(
             activity.created == 0 ? '' : '${activity.created}',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 4),
           // The bar takes whatever the labels leave, and is sized as a
@@ -723,9 +730,9 @@ class _MonthBar extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             _initials[activity.month.month - 1],
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
       ),

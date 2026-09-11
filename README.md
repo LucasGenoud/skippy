@@ -7,7 +7,7 @@ persistence and optimistic, offline-capable edits.
 ## Features
 
 - Text, Markdown, checklist, audio, and attachment notes
-- Grid, list, and kanban board views with drag-to-reorder
+- Independent collections with shared grid, list, or kanban layouts and drag-to-reorder
 - Workspaces, shared smart views, labels, stages, archive, trash, time and location reminders,
   search, and exports
 - Reminders on a whole note or on a single checklist item, pushed through ntfy,
@@ -141,8 +141,11 @@ To build the image yourself rather than pull it:
 docker build -t ghcr.io/lucasgenoud/skippy:latest .
 ```
 
-The current database schema has no in-place migration path. Start with a new
-database when installing a schema revision.
+The collections upgrade migrates the current workspace-owned database in place
+on startup. Each workspace's existing notes and board columns go into a regular
+**General** collection; board-only workspaces keep a board layout. The migration
+is transactional and runs once. Older schemas from before workspace ownership
+still require a compatible workspace backup or a fresh installation.
 
 The full stack requires `GARAGE_RPC_SECRET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`,
 `GARAGE_DEFAULT_ACCESS_KEY`, and
@@ -367,16 +370,36 @@ them live in the account's settings document, so any platform can set one and
 the phone arms it on its next sync. The reminder picker says as much wherever
 the device itself is not the one watching.
 
-Smart views are named searches shared by a workspace's members. Switching
-workspaces switches the sidebar's smart views; every member can create, edit,
-reorder or delete them. Existing personal smart views are imported once into
+Each workspace contains independent collections. Every note belongs to one
+collection, whose settings define its name, icon, color, default sorting and
+masonry, list or board layout. Workspace members share those settings and may
+create, edit or delete collections. Columns belong to a collection; moving a
+note to another collection clears its column and keeps its workspace labels.
+
+General is an ordinary collection, not an inbox. Deleting a collection sends
+its notes to workspace trash for the existing seven-day retention period.
+Restoring those notes requires choosing an existing collection. Archive,
+reminders and trash still span the workspace.
+
+Labels and smart views are workspace-wide filters applied inside the current
+collection. Every member can create, edit, reorder or delete smart views. Existing personal smart views are imported once into
 their owner's default workspace on server startup. Personal appearance,
 notification accounts and saved locations remain user settings.
+
+Workspace settings offer duplication to every member: copy the structure
+(collections, layouts, columns, labels and smart filters), or include notes and
+attachments too. Archived notes are included; trash, version history, members,
+direct shares and public links are excluded. Reminders are optional and off by
+default. The person making the copy owns it. Duplication requires a connection
+and completed synchronization. Incomplete copies remain hidden and are cleaned
+up after an error or server restart.
 
 ## User backups
 
 Settings lets each user create and restore a portable backup of their own
-workspaces. This remains separate from the server and Docker deployment.
+workspaces. Version 3 backups preserve collections and each note's placement;
+versions 1 and 2 remain importable into a General collection. This remains
+separate from the server and Docker deployment.
 
 ## Tests
 
@@ -409,6 +432,9 @@ defaults; S3-compatible storage is also supported.
 Authenticated JSON endpoints live under `/api`. The main groups are:
 
 - `/auth`, `/workspaces`, `/notes`, `/labels`, and `/stages`
+- `/workspaces/{id}/collections/{collection_id}` (member-scoped PUT and DELETE)
+- `/workspaces/{id}/duplicate` (POST with `name`, `content`: `structure` or
+  `notes`, and optional `reminders`)
 - `/workspaces/{id}/smart-views/{view_id}` (member-scoped PUT and DELETE)
 - `/auth/forgot-password` and `/auth/reset-password`, unauthenticated on
   purpose and available only where the server can send mail

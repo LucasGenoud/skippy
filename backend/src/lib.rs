@@ -222,6 +222,14 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
                 .delete(handlers::delete_account),
         )
         .route(
+            "/workspaces/{id}/duplicate",
+            post(handlers::duplicate_workspace),
+        )
+        .route(
+            "/workspaces/{id}/collections/{collection_id}",
+            put(handlers::put_collection).delete(handlers::delete_collection),
+        )
+        .route(
             "/workspaces",
             get(handlers::list_workspaces).post(handlers::create_workspace),
         )

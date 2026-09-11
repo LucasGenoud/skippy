@@ -1,479 +1,151 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
-import 'app_logo.dart';
 import 'package:provider/provider.dart';
-
-import '../models/note.dart';
+import '../theme.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
-import '../util/snack.dart';
-import 'labels_sheet.dart';
-import 'saved_view_dialog.dart';
+import 'collection_settings.dart';
 import 'workspace_menu.dart';
 
 class AppDrawer extends StatelessWidget {
   final ViewSelection selection;
   final ValueChanged<ViewSelection> onSelect;
-
   const AppDrawer({super.key, required this.selection, required this.onSelect});
-
   @override
-  Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
-    final labels = store.labels;
-    final savedViews = store.savedViews;
-    final workspace = store.activeWorkspace;
-
-    final primaryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
-      if (workspace?.notesEnabled ?? true)
-        (
-          ViewSelection.notes,
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.sticky_note_2_outlined),
-            selectedIcon: Icon(Icons.sticky_note_2),
-            label: Text('Notes'),
-          ),
-        ),
-      if (workspace?.boardEnabled ?? true)
-        (
-          ViewSelection.board,
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.view_kanban_outlined),
-            selectedIcon: Icon(Icons.view_kanban),
-            label: Text('Board'),
-          ),
-        ),
-      (
-        ViewSelection.reminders,
-        const NavigationDrawerDestination(
-          icon: Icon(Icons.notifications_outlined),
-          selectedIcon: Icon(Icons.notifications),
-          label: Text('Reminders'),
-        ),
+  Widget build(BuildContext context) => Drawer(
+    child: SafeArea(
+      child: AppSidebar(
+        inDrawer: true,
+        isOpen: true,
+        selection: selection,
+        onSelect: (v) {
+          Navigator.pop(context);
+          onSelect(v);
+        },
       ),
-    ];
-    final labelDestinations = <(ViewSelection, NavigationDrawerDestination)>[
-      for (final label in labels)
-        (
-          ViewSelection(NoteView.label, label.id),
-          NavigationDrawerDestination(
-            // The label's icon + colour (matching its chips). A null colour
-            // falls back to the drawer's selection-aware theming; the default
-            // (no custom icon) keeps the outline/filled pair.
-            icon: Icon(
-              label.icon != null ? labelIcon(label) : Icons.label_outline,
-              color: labelColorOrNull(label),
-            ),
-            selectedIcon: Icon(
-              label.icon != null ? labelIcon(label) : Icons.label,
-              color: labelColorOrNull(label),
-            ),
-            label: Text(label.name, overflow: TextOverflow.ellipsis),
-          ),
-        ),
-    ];
-    final smartDestinations = <(ViewSelection, NavigationDrawerDestination)>[
-      for (final view in savedViews)
-        (
-          ViewSelection.smart(view.id),
-          NavigationDrawerDestination(
-            icon: Icon(
-              labelIconFor(view.icon),
-              color: PaletteEntry.hexToColor(view.color),
-            ),
-            selectedIcon: Icon(
-              labelIconFor(view.icon),
-              color: PaletteEntry.hexToColor(view.color),
-            ),
-            label: Text(view.name, overflow: TextOverflow.ellipsis),
-          ),
-        ),
-    ];
-    final libraryDestinations = <(ViewSelection, NavigationDrawerDestination)>[
-      (
-        ViewSelection.archive,
-        const NavigationDrawerDestination(
-          icon: Icon(Icons.archive_outlined),
-          selectedIcon: Icon(Icons.archive),
-          label: Text('Archive'),
-        ),
-      ),
-      (
-        ViewSelection.trash,
-        const NavigationDrawerDestination(
-          icon: Icon(Icons.delete_outline),
-          selectedIcon: Icon(Icons.delete),
-          label: Text('Trash'),
-        ),
-      ),
-    ];
-    final destinations = [
-      ...primaryDestinations,
-      ...labelDestinations,
-      ...smartDestinations,
-      ...libraryDestinations,
-    ];
-
-    final selectedIndex = destinations.indexWhere((d) => d.$1 == selection);
-
-    return NavigationDrawer(
-      selectedIndex: selectedIndex < 0 ? null : selectedIndex,
-      onDestinationSelected: (index) {
-        Navigator.of(context).pop();
-        onSelect(destinations[index].$1);
-      },
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(28, 20, 16, 12),
-          child: Row(
-            children: [
-              const AppLogo(size: 30),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Skippy',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Padding(
-          // The switcher brings its own horizontal inset (it draws a card, and
-          // that card lines up with the destination pills below).
-          padding: const EdgeInsets.only(bottom: 8),
-          // Finish the drawer transition before presenting another route.
-          child: WorkspaceMenu(
-            onBeforeAction: () async {
-              final closeDuration = Motion.reduced(context)
-                  ? Duration.zero
-                  : Motion.slow;
-              Navigator.of(context).pop();
-              await Future<void>.delayed(closeDuration);
-            },
-          ),
-        ),
-        for (final destination in primaryDestinations) destination.$2,
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 12, 28, 8),
-          child: Divider(height: 1),
-        ),
-        const _DrawerSectionHeader('Labels'),
-        for (final destination in labelDestinations) destination.$2,
-        _DrawerAction(
-          icon: Icons.edit_outlined,
-          label: labels.isEmpty ? 'Create labels' : 'Edit labels',
-          onTap: () {
-            final navigator = Navigator.of(context);
-            navigator.pop();
-            EditLabelsDialog.show(navigator.context);
-          },
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 8, 28, 12),
-          child: Divider(height: 1),
-        ),
-        const _DrawerSectionHeader('Smart views'),
-        for (final destination in smartDestinations) destination.$2,
-        _DrawerAction(
-          icon: savedViews.isEmpty
-              ? Icons.bookmark_add_outlined
-              : Icons.edit_outlined,
-          label: savedViews.isEmpty
-              ? 'Create a smart view'
-              : 'Edit smart views',
-          onTap: () {
-            final navigator = Navigator.of(context);
-            navigator.pop();
-            if (savedViews.isEmpty) {
-              SavedViewDialog.show(navigator.context);
-            } else {
-              EditSmartViewsDialog.show(navigator.context);
-            }
-          },
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(28, 8, 28, 12),
-          child: Divider(height: 1),
-        ),
-        const _DrawerSectionHeader('Library'),
-        for (final destination in libraryDestinations) destination.$2,
-        const SizedBox(height: 16),
-      ],
-    );
-  }
+    ),
+  );
 }
 
 class AppSidebar extends StatelessWidget {
   final bool isOpen;
+  final bool inDrawer;
   final ViewSelection selection;
   final ValueChanged<ViewSelection> onSelect;
-
   const AppSidebar({
     super.key,
+    this.inDrawer = false,
     required this.isOpen,
     required this.selection,
     required this.onSelect,
   });
-
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
-    final labels = store.labels;
-    final savedViews = store.savedViews;
-    final workspace = store.activeWorkspace;
     final scheme = Theme.of(context).colorScheme;
-
-    // Only the width is implicitly animated. Handing the fill to
-    // AnimatedContainer too made light/dark switches visibly drag: the theme
-    // itself cross-fades over kThemeAnimationDuration, so the target colour
-    // moves every frame and the container keeps restarting a 250ms tween
-    // toward it, the rail finished long after the rest of the app. Painted
-    // straight from the scheme, it lands exactly with everything else.
-    //
-    // The trailing seam matches the drawer's on narrow layouts and the top
-    // bar's underline. DecoratedBox, not Container: a bordered Container
-    // insets its child, which would fight the width animation.
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.surface,
         border: Border(right: BorderSide(color: hairlineColor(scheme))),
       ),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOutCubic,
+        duration: Motion.base,
         width: isOpen ? 268 : 72,
-        child: ClipRect(
-          child: ListView(
-            padding: const EdgeInsets.only(top: 12, bottom: 24),
-            children: [
-              WorkspaceMenu(compact: !isOpen),
-              // No divider: the switcher's own border already separates it
-              // from the views below.
-              const SizedBox(height: 8),
-              if (workspace?.notesEnabled ?? true)
-                _SidebarItem(
-                  icon: Icons.sticky_note_2_outlined,
-                  selectedIcon: Icons.sticky_note_2,
-                  label: 'Notes',
-                  isSelected: selection == ViewSelection.notes,
-                  isOpen: isOpen,
-                  onTap: () => onSelect(ViewSelection.notes),
-                ),
-              if (workspace?.boardEnabled ?? true)
-                _SidebarItem(
-                  icon: Icons.view_kanban_outlined,
-                  selectedIcon: Icons.view_kanban,
-                  label: 'Board',
-                  isSelected: selection == ViewSelection.board,
-                  isOpen: isOpen,
-                  onTap: () => onSelect(ViewSelection.board),
-                ),
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            WorkspaceMenu(
+              compact: !isOpen,
+              onBeforeAction: !inDrawer
+                  ? null
+                  : () async {
+                      Navigator.of(context).pop();
+                      await Future<void>.delayed(Motion.slow);
+                    },
+            ),
+            const SizedBox(height: 16),
+            _SidebarSectionHeader(label: 'COLLECTIONS', isOpen: isOpen),
+            for (final c in store.collections)
               _SidebarItem(
-                icon: Icons.notifications_outlined,
-                selectedIcon: Icons.notifications,
-                label: 'Reminders',
-                isSelected: selection == ViewSelection.reminders,
+                icon: c.icon == null
+                    ? Icons.folder_outlined
+                    : labelIconFor(c.icon),
+                selectedIcon: c.icon == null
+                    ? Icons.folder
+                    : labelIconFor(c.icon),
+                iconColor: PaletteEntry.hexToColor(c.color),
+                label: c.name,
                 isOpen: isOpen,
-                onTap: () => onSelect(ViewSelection.reminders),
+                isSelected:
+                    store.activeCollection?.id == c.id &&
+                    ![
+                      NoteView.archive,
+                      NoteView.trash,
+                      NoteView.reminders,
+                    ].contains(selection.view),
+                onTap: () {
+                  store.selectCollection(c.id);
+                  onSelect(
+                    c.layout == 'board'
+                        ? ViewSelection.board
+                        : ViewSelection.notes,
+                  );
+                },
+                willAcceptNote: (id) =>
+                    store.noteById(id)?.workspaceId == c.workspaceId,
+                onAcceptNote: (id) => store.moveToCollection(id, c.id),
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Divider(height: 1, indent: 16, endIndent: 16),
+            _SidebarItem(
+              icon: Icons.add,
+              selectedIcon: Icons.add,
+              label: 'New collection',
+              isSelected: false,
+              isOpen: isOpen,
+              onTap: () async {
+                if (inDrawer) {
+                  Navigator.of(context).pop();
+                  await Future<void>.delayed(Motion.slow);
+                  if (!context.mounted) return;
+                }
+                CollectionSettings.show(context);
+              },
+            ),
+            const Divider(height: 32, indent: 16, endIndent: 16),
+            for (final entry in [
+              (
+                ViewSelection.reminders,
+                Icons.notifications_outlined,
+                'Reminders',
               ),
-              _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
-              if (labels.isNotEmpty) ...[
-                for (final label in labels)
-                  _SidebarItem(
-                    // Reuse the label's own icon + colour (matching its chips);
-                    // a custom icon has no filled variant so it's used for both
-                    // states, while the default keeps the outline/filled pair.
-                    icon: label.icon != null
-                        ? labelIcon(label)
-                        : Icons.label_outline,
-                    selectedIcon: label.icon != null
-                        ? labelIcon(label)
-                        : Icons.label,
-                    iconColor: labelColorOrNull(label),
-                    label: label.name,
-                    isSelected:
-                        selection == ViewSelection(NoteView.label, label.id),
-                    isOpen: isOpen,
-                    onTap: () =>
-                        onSelect(ViewSelection(NoteView.label, label.id)),
-                    onAcceptNote: (noteId) =>
-                        _dropOnLabel(context, noteId, label),
-                  ),
-              ],
+              (ViewSelection.archive, Icons.archive_outlined, 'Archive'),
+              (ViewSelection.trash, Icons.delete_outline, 'Trash'),
+            ])
               _SidebarItem(
-                icon: Icons.edit_outlined,
-                selectedIcon: Icons.edit,
-                label: labels.isEmpty ? 'Create labels' : 'Edit labels',
-                isSelected: false,
+                icon: entry.$2,
+                selectedIcon: entry.$2,
+                label: entry.$3,
+                isSelected: selection == entry.$1,
                 isOpen: isOpen,
-                onTap: () => EditLabelsDialog.show(context),
+                onTap: () => onSelect(entry.$1),
+                willAcceptNote: (id) =>
+                    entry.$1 == ViewSelection.archive ||
+                    (entry.$1 == ViewSelection.trash && store.canTrash(id)),
+                onAcceptNote: entry.$1 == ViewSelection.reminders
+                    ? null
+                    : (id) {
+                        if (entry.$1 == ViewSelection.archive) {
+                          store.setArchived(id, true);
+                        } else {
+                          store.moveToTrash(id);
+                        }
+                      },
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Divider(height: 1, indent: 16, endIndent: 16),
-              ),
-              _SidebarSectionHeader(label: 'SMART VIEWS', isOpen: isOpen),
-              for (final view in savedViews)
-                _SidebarItem(
-                  // A saved view has one glyph, not an outline/filled pair:
-                  // its identity is the query, and switching icons on
-                  // selection would read as a different view.
-                  icon: labelIconFor(view.icon),
-                  selectedIcon: labelIconFor(view.icon),
-                  iconColor: PaletteEntry.hexToColor(view.color),
-                  label: view.name,
-                  isSelected: selection == ViewSelection.smart(view.id),
-                  isOpen: isOpen,
-                  onTap: () => onSelect(ViewSelection.smart(view.id)),
-                ),
-              _SidebarItem(
-                icon: savedViews.isEmpty
-                    ? Icons.bookmark_add_outlined
-                    : Icons.edit_outlined,
-                selectedIcon: savedViews.isEmpty
-                    ? Icons.bookmark_add
-                    : Icons.edit,
-                label: savedViews.isEmpty
-                    ? 'Create a smart view'
-                    : 'Edit smart views',
-                isSelected: false,
-                isOpen: isOpen,
-                onTap: () => savedViews.isEmpty
-                    ? SavedViewDialog.show(context)
-                    : EditSmartViewsDialog.show(context),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Divider(height: 1, indent: 16, endIndent: 16),
-              ),
-              _SidebarSectionHeader(label: 'LIBRARY', isOpen: isOpen),
-              _SidebarItem(
-                icon: Icons.archive_outlined,
-                selectedIcon: Icons.archive,
-                label: 'Archive',
-                isSelected: selection == ViewSelection.archive,
-                isOpen: isOpen,
-                onTap: () => onSelect(ViewSelection.archive),
-                onAcceptNote: (noteId) => _dropOnArchive(context, noteId),
-              ),
-              _SidebarItem(
-                icon: Icons.delete_outline,
-                selectedIcon: Icons.delete,
-                label: 'Trash',
-                isSelected: selection == ViewSelection.trash,
-                isOpen: isOpen,
-                onTap: () => onSelect(ViewSelection.trash),
-                onAcceptNote: (noteId) => _dropOnTrash(context, noteId),
-                willAcceptNote: (noteId) =>
-                    context.read<NotesStore>().canTrash(noteId),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
-
-  void _dropOnLabel(BuildContext context, String noteId, Label label) {
-    final store = context.read<NotesStore>();
-    store.addLabelToNote(noteId, label.id);
-  }
-
-  void _dropOnArchive(BuildContext context, String noteId) {
-    final store = context.read<NotesStore>();
-    final note = store.noteById(noteId);
-    if (note == null || note.archived) return;
-    store.setArchived(noteId, true);
-    showAppSnack(
-      'Note archived',
-      icon: Icons.archive_outlined,
-      actionLabel: 'Undo',
-      onAction: () => store.setArchived(noteId, false),
-    );
-  }
-
-  void _dropOnTrash(BuildContext context, String noteId) {
-    final store = context.read<NotesStore>();
-    if (!store.canTrash(noteId)) return;
-    store.moveToTrash(noteId);
-    showAppSnack(
-      'Note moved to trash',
-      icon: Icons.delete_outline,
-      kind: SnackKind.danger,
-      actionLabel: 'Undo',
-      onAction: () => store.restoreFromTrash(noteId),
-    );
-  }
-}
-
-/// A tappable row in the drawer that isn't a destination: "Edit labels",
-/// "Edit smart views". Matches the destinations' inset so the list reads as
-/// one column.
-class _DrawerAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _DrawerAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 22,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 14),
-          // Expanded, not a bare Text: the drawer is only ~250px wide on a
-          // phone and these labels are long enough to overflow the row.
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _DrawerSectionHeader extends StatelessWidget {
-  final String label;
-  const _DrawerSectionHeader(this.label);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(28, 4, 28, 8),
-    child: Text(
-      label.toUpperCase(),
-      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        letterSpacing: 1.1,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-    ),
-  );
 }
 
 class _SidebarSectionHeader extends StatelessWidget {

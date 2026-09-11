@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:archive/archive.dart';
+import 'package:skippy/models/collection.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +22,7 @@ void main() {
       final note = Note(
         id: 'note-old',
         workspaceId: 'w-travel',
+        collectionId: 'reading',
         kind: NoteKind.checklist,
         title: 'Packing',
         items: const [
@@ -57,6 +61,16 @@ void main() {
           Workspace(id: 'w-default', name: 'My notes', isDefault: true),
           Workspace(
             id: 'w-travel',
+            collections: [
+              NoteCollection(
+                id: 'reading',
+                workspaceId: 'w-travel',
+                name: 'Reading',
+                icon: 'book',
+                color: '#00897B',
+                layout: 'board',
+              ),
+            ],
             name: 'Travel',
             notesEnabled: false,
             savedViews: [
@@ -83,6 +97,7 @@ void main() {
         stages: const [
           Stage(
             id: 'stage-old',
+            collectionId: 'reading',
             workspaceId: 'w-travel',
             name: 'Ready',
             color: '#abcdef',
@@ -99,6 +114,9 @@ void main() {
         'Travel',
       ]);
       final travel = restored.workspaces.last;
+      expect(travel.collections.single.layout, 'board');
+      expect(travel.notes.single.collectionId, 'reading');
+      expect(travel.stages.single.collectionId, 'reading');
       expect(travel.savedViews.single.query, 'is:pinned');
       expect(travel.notesEnabled, isFalse);
       expect(travel.boardEnabled, isTrue);
@@ -137,6 +155,34 @@ void main() {
       );
     },
   );
+
+  test('version 2 backup migrates board-only workspaces into General', () {
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.string(
+          'backup.json',
+          jsonEncode({
+            'format': 'skippy-backup',
+            'version': 2,
+            'workspaces': [
+              {
+                'id': 'old',
+                'name': 'Old',
+                'is_default': true,
+                'notes_enabled': false,
+                'board_enabled': true,
+                'notes': [],
+                'labels': [],
+                'stages': [],
+              },
+            ],
+          }),
+        ),
+      );
+    final backup = parseBackupArchive(ZipEncoder().encodeBytes(archive));
+    expect(backup.workspaces.single.collections.single.name, 'General');
+    expect(backup.workspaces.single.collections.single.layout, 'board');
+  });
 
   test('invalid archives are rejected before restore', () {
     expect(
@@ -217,6 +263,14 @@ void main() {
         workspaces: [
           BackupWorkspace(
             id: 'backup-default',
+            collections: const [
+              NoteCollection(
+                id: 'reading',
+                workspaceId: 'backup-default',
+                name: 'Reading',
+                layout: 'board',
+              ),
+            ],
             savedViews: const [
               SavedView(id: 'v', name: 'Open', query: 'is:open'),
             ],
@@ -226,11 +280,17 @@ void main() {
               BackupLabel(id: 'old-travel', name: 'Travel', position: 10),
             ],
             stages: const [
-              BackupStage(id: 'old-ready', name: 'Ready', position: 20),
+              BackupStage(
+                id: 'old-ready',
+                collectionId: 'reading',
+                name: 'Ready',
+                position: 20,
+              ),
             ],
             notes: [
               BackupNote(
                 id: 'backup-home-note',
+                collectionId: 'reading',
                 kind: NoteKind.text,
                 title: 'Home',
                 content: 'Restored',
@@ -299,6 +359,19 @@ void main() {
       );
 
       expect(api.workspaces['w-default']!.savedViews.single.query, 'is:open');
+      final restoredCollection =
+          api.workspaces['w-default']!.collections.single;
+      expect(restoredCollection.id, isNot('reading'));
+      expect(restoredCollection.name, 'Reading');
+      expect(restoredCollection.layout, 'board');
+      expect(
+        api.notes.values.singleWhere((n) => n.title == 'Home').collectionId,
+        restoredCollection.id,
+      );
+      expect(
+        api.stages.values.singleWhere((s) => s.name == 'Ready').collectionId,
+        restoredCollection.id,
+      );
       expect(result.workspaces, 2);
       expect(result.notes, 2);
       expect(result.attachments, 1);

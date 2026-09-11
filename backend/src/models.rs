@@ -127,6 +127,7 @@ pub struct Workspace {
 /// display names.
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceView {
+    pub collections: Vec<Collection>,
     pub smart_views: Vec<SavedView>,
     pub id: String,
     pub name: String,
@@ -137,6 +138,19 @@ pub struct WorkspaceView {
     pub members: Vec<UserPublic>,
     pub is_default: bool,
     pub created_at: String,
+}
+
+/// A member-managed container. Deleted containers remain as trash provenance.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Collection {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub layout: String,
+    pub sort: String,
+    pub position: f64,
 }
 
 /// A shared search definition, ordered within its workspace.
@@ -297,6 +311,7 @@ pub struct NoteRecord {
     /// that workspace can see and edit it; per-note collaborators are an
     /// additional, narrower grant.
     pub workspace_id: String,
+    pub collection_id: Option<String>,
     /// Creator attribution only. It is nullable so a note in somebody else's
     /// workspace survives when its creator deletes their account.
     pub created_by: Option<String>,
@@ -357,6 +372,7 @@ pub struct NoteView {
 pub struct NoteFields {
     pub id: String,
     pub workspace_id: String,
+    pub collection_id: Option<String>,
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -380,6 +396,7 @@ impl NoteRecord {
         NoteFields {
             id: self.id.clone(),
             workspace_id: self.workspace_id.clone(),
+            collection_id: self.collection_id.clone(),
             kind: self.kind.clone(),
             title: self.title.clone(),
             content: self.content.clone(),
@@ -446,6 +463,7 @@ pub struct Label {
 pub struct Stage {
     pub id: String,
     pub workspace_id: String,
+    pub collection_id: Option<String>,
     pub name: String,
     /// Hex colour (`#RRGGBB`) for the column header, or `None` for the theme
     /// default. Purely presentational, the server never interprets it.
@@ -490,6 +508,7 @@ pub struct ShareLink {
     pub target: String,
     pub note_id: Option<String>,
     pub workspace_id: Option<String>,
+    pub collection_id: Option<String>,
     pub label_id: Option<String>,
     pub created_at: String,
     /// RFC3339 instant after which the link stops resolving, or `None` for a
@@ -507,6 +526,7 @@ pub struct ShareLinkView {
     pub note_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+    pub collection_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label_id: Option<String>,
     /// What the link is called in the UI: the note's title, the workspace's
@@ -525,6 +545,7 @@ pub struct CreateShareLink {
     pub note_id: Option<String>,
     #[serde(default)]
     pub workspace_id: Option<String>,
+    pub collection_id: Option<String>,
     #[serde(default)]
     pub label_id: Option<String>,
     /// RFC3339. Absent means the link lasts until it is revoked.
@@ -600,6 +621,7 @@ pub struct CreateNote {
     /// path and by any caller that has no workspace in hand.
     #[serde(default)]
     pub workspace_id: Option<String>,
+    pub collection_id: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
@@ -653,6 +675,7 @@ pub struct UpdateNote {
     /// Moves the note to another workspace (owner only, and only into a
     /// workspace they belong to).
     pub workspace_id: Option<String>,
+    pub collection_id: Option<String>,
     pub kind: Option<String>,
     pub title: Option<String>,
     pub content: Option<String>,
@@ -686,6 +709,7 @@ impl UpdateNote {
         // deciding how it patches the record fails to compile.
         let UpdateNote {
             workspace_id,
+            collection_id,
             kind,
             title,
             content,
@@ -701,6 +725,9 @@ impl UpdateNote {
             stage_id,
             stage_position,
         } = self;
+        if let Some(v) = collection_id {
+            record.collection_id = Some(v);
+        }
         if let Some(v) = workspace_id {
             record.workspace_id = v;
         }
@@ -810,6 +837,7 @@ pub struct StagePayload {
     /// workspace, mirroring note and label creation.
     #[serde(default)]
     pub workspace_id: Option<String>,
+    pub collection_id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub color: Option<String>,

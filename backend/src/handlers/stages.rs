@@ -37,6 +37,13 @@ pub async fn create_stage(
         return Err(ApiError::BadRequest("stage name is empty".to_string()));
     }
     let workspace_id = resolve_workspace(&state, &user_id, body.workspace_id.as_deref()).await?;
+    let collection_id = super::collections::resolve_collection(
+        &state,
+        &user_id,
+        &workspace_id,
+        body.collection_id.as_deref(),
+    )
+    .await?;
     // A new column goes to the right of the board unless the caller places it.
     let position = match body.position {
         Some(p) => p,
@@ -48,6 +55,7 @@ pub async fn create_stage(
             .filter(|id| !id.trim().is_empty())
             .unwrap_or_else(new_id),
         workspace_id,
+        collection_id: Some(collection_id),
         name,
         color: clean(body.color),
         position,

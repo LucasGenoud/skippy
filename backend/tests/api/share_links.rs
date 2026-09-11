@@ -610,6 +610,7 @@ async fn an_expired_link_reads_as_missing() {
         target: "note".to_string(),
         note_id: Some(note["id"].as_str().unwrap().to_string()),
         workspace_id: None,
+        collection_id: None,
         label_id: None,
         created_at: "2020-01-01T00:00:00Z".to_string(),
         expires_at: Some("2020-01-02T00:00:00Z".to_string()),

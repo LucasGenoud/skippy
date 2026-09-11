@@ -1,3 +1,4 @@
+import '../widgets/collection_settings.dart';
 import '../widgets/form_dialog.dart';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
@@ -1034,9 +1035,11 @@ class _EditorScreenState extends State<EditorScreen> {
             IconButton(
               icon: const Icon(Icons.restore_from_trash_outlined),
               tooltip: 'Restore',
-              onPressed: () {
-                _store.restoreFromTrash(note!.id);
-                Navigator.of(context).pop();
+              onPressed: () async {
+                await CollectionPicker.restore(context, note!.id);
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
               },
             ),
             IconButton(
@@ -1085,6 +1088,20 @@ class _EditorScreenState extends State<EditorScreen> {
             onDuplicate: trashed || note == null || note.isEmpty
                 ? null
                 : _duplicateNote,
+            onMoveToCollection:
+                note == null ||
+                    trashed ||
+                    _store.workspaceById(note.workspaceId) == null
+                ? null
+                : () async {
+                    final target = await CollectionPicker.show(
+                      context,
+                      note.workspaceId,
+                    );
+                    if (target != null) {
+                      _store.moveToCollection(note.id, target);
+                    }
+                  },
             onMoveToWorkspace:
                 trashed ||
                     note == null ||
@@ -1101,7 +1118,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     trashed ||
                     note == null ||
                     note.isEmpty ||
-                    _store.stages.isEmpty
+                    _store.stagesForNote(note).isEmpty
                 ? null
                 : () => MoveToStageSheet.show(context, note.id),
             onHistory: note == null || note.isEmpty
