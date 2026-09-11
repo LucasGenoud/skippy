@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/collection.dart';
 import '../theme.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
@@ -43,6 +42,20 @@ class AppSidebar extends StatelessWidget {
     required this.selection,
     required this.onSelect,
   });
+
+  Future<void> _afterDrawer(
+    BuildContext context,
+    void Function(BuildContext context) show,
+  ) async {
+    final navigator = Navigator.of(context);
+    if (inDrawer) {
+      navigator.pop();
+      await Future<void>.delayed(Motion.slow);
+      if (!navigator.mounted) return;
+    }
+    show(navigator.context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
@@ -51,36 +64,10 @@ class AppSidebar extends StatelessWidget {
     final baseSelection = activeCollection?.layout == 'board'
         ? ViewSelection.board
         : ViewSelection.notes;
-
-    Future<void> showCollectionSettings([NoteCollection? collection]) async {
-      final navigator = Navigator.of(context);
-      if (inDrawer) {
-        navigator.pop();
-        await Future<void>.delayed(Motion.slow);
-        if (!navigator.mounted) return;
-      }
-      CollectionSettings.show(navigator.context, collection: collection);
-    }
-
-    Future<void> showLabels() async {
-      final navigator = Navigator.of(context);
-      if (inDrawer) {
-        navigator.pop();
-        await Future<void>.delayed(Motion.slow);
-        if (!navigator.mounted) return;
-      }
-      EditLabelsDialog.show(navigator.context);
-    }
-
-    Future<void> showSavedFilters() async {
-      final navigator = Navigator.of(context);
-      if (inDrawer) {
-        navigator.pop();
-        await Future<void>.delayed(Motion.slow);
-        if (!navigator.mounted) return;
-      }
-      EditSmartViewsDialog.show(navigator.context);
-    }
+    final collectionScopeVisible =
+        selection.view != NoteView.archive &&
+        selection.view != NoteView.trash &&
+        selection.view != NoteView.reminders;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -90,157 +77,162 @@ class AppSidebar extends StatelessWidget {
       child: AnimatedContainer(
         duration: Motion.base,
         width: isOpen ? 268 : 72,
-        child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          children: [
-            WorkspaceMenu(
-              compact: !isOpen,
-              onBeforeAction: !inDrawer
-                  ? null
-                  : () async {
-                      Navigator.of(context).pop();
-                      await Future<void>.delayed(Motion.slow);
-                    },
-            ),
-            const SizedBox(height: 16),
-            _SidebarSectionHeader(label: 'COLLECTIONS', isOpen: isOpen),
-            for (final c in store.collections)
-              _SidebarItem(
-                icon: c.icon == null
-                    ? Icons.folder_outlined
-                    : labelIconFor(c.icon),
-                selectedIcon: c.icon == null
-                    ? Icons.folder
-                    : labelIconFor(c.icon),
-                iconColor: PaletteEntry.hexToColor(c.color),
-                label: c.name,
-                isOpen: isOpen,
-                isSelected:
-                    store.activeCollection?.id == c.id &&
-                    ![
-                      NoteView.archive,
-                      NoteView.trash,
-                      NoteView.reminders,
-                    ].contains(selection.view),
-                onTap: () {
-                  store.selectCollection(c.id);
-                  onSelect(
-                    c.layout == 'board'
-                        ? ViewSelection.board
-                        : ViewSelection.notes,
-                  );
-                },
-                trailing: store.activeCollection?.id == c.id
-                    ? IconButton(
-                        tooltip: 'Collection settings',
-                        icon: const Icon(Icons.more_horiz, size: 20),
-                        onPressed: () => showCollectionSettings(c),
-                      )
-                    : null,
-                willAcceptNote: (id) =>
-                    store.noteById(id)?.workspaceId == c.workspaceId,
-                onAcceptNote: (id) => store.moveToCollection(id, c.id),
-              ),
-            _SidebarItem(
-              icon: Icons.add,
-              selectedIcon: Icons.add,
-              label: 'New collection',
-              isSelected: false,
-              isOpen: isOpen,
-              onTap: showCollectionSettings,
-            ),
-            const Divider(height: 32, indent: 16, endIndent: 16),
-            _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
-            for (final label in store.labels)
-              _SidebarItem(
-                icon: label.icon == null
-                    ? Icons.label_outline
-                    : labelIcon(label),
-                selectedIcon: label.icon == null
-                    ? Icons.label
-                    : labelIcon(label),
-                iconColor: labelColorOrNull(label),
-                label: label.name,
-                isSelected: selection.labelId == label.id,
-                isOpen: isOpen,
-                onTap: () => onSelect(
-                  selection.labelId == label.id
-                      ? baseSelection
-                      : ViewSelection(NoteView.label, label.id),
-                ),
-                willAcceptNote: (id) =>
-                    store.noteById(id)?.workspaceId == store.activeWorkspaceId,
-                onAcceptNote: (id) => store.addLabelToNote(id, label.id),
-              ),
-            _SidebarItem(
-              icon: Icons.edit_outlined,
-              selectedIcon: Icons.edit,
-              label: store.labels.isEmpty ? 'Create labels' : 'Manage labels',
-              isSelected: false,
-              isOpen: isOpen,
-              onTap: showLabels,
-            ),
-            const Divider(height: 24, indent: 16, endIndent: 16),
-            _SidebarSectionHeader(label: 'SMART VIEWS', isOpen: isOpen),
-            for (final view in store.savedViews)
-              _SidebarItem(
-                icon: view.icon == null
-                    ? Icons.bookmark_outline
-                    : labelIconFor(view.icon),
-                selectedIcon: view.icon == null
-                    ? Icons.bookmark
-                    : labelIconFor(view.icon),
-                iconColor: PaletteEntry.hexToColor(view.color),
-                label: view.name,
-                isSelected: selection.savedViewId == view.id,
-                isOpen: isOpen,
-                onTap: () => onSelect(
-                  selection.savedViewId == view.id
-                      ? baseSelection
-                      : ViewSelection.smart(view.id),
-                ),
-              ),
-            _SidebarItem(
-              icon: Icons.edit_outlined,
-              selectedIcon: Icons.edit,
-              label: store.savedViews.isEmpty
-                  ? 'Create a smart view'
-                  : 'Manage smart views',
-              isSelected: false,
-              isOpen: isOpen,
-              onTap: showSavedFilters,
-            ),
-            const Divider(height: 32, indent: 16, endIndent: 16),
-            for (final entry in [
-              (
-                ViewSelection.reminders,
-                Icons.notifications_outlined,
-                'Reminders',
-              ),
-              (ViewSelection.archive, Icons.archive_outlined, 'Archive'),
-              (ViewSelection.trash, Icons.delete_outline, 'Trash'),
-            ])
-              _SidebarItem(
-                icon: entry.$2,
-                selectedIcon: entry.$2,
-                label: entry.$3,
-                isSelected: selection == entry.$1,
-                isOpen: isOpen,
-                onTap: () => onSelect(entry.$1),
-                willAcceptNote: (id) =>
-                    entry.$1 == ViewSelection.archive ||
-                    (entry.$1 == ViewSelection.trash && store.canTrash(id)),
-                onAcceptNote: entry.$1 == ViewSelection.reminders
+        child: ClipRect(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            children: [
+              WorkspaceMenu(
+                compact: !isOpen,
+                onBeforeAction: !inDrawer
                     ? null
-                    : (id) {
-                        if (entry.$1 == ViewSelection.archive) {
-                          store.setArchived(id, true);
-                        } else {
-                          store.moveToTrash(id);
-                        }
+                    : () async {
+                        Navigator.of(context).pop();
+                        await Future<void>.delayed(Motion.slow);
                       },
               ),
-          ],
+              const SizedBox(height: 16),
+              _SidebarSectionHeader(label: 'COLLECTIONS', isOpen: isOpen),
+              for (final c in store.collections)
+                _SidebarItem(
+                  icon: c.icon == null
+                      ? Icons.folder_outlined
+                      : labelIconFor(c.icon),
+                  selectedIcon: c.icon == null
+                      ? Icons.folder
+                      : labelIconFor(c.icon),
+                  iconColor: PaletteEntry.hexToColor(c.color),
+                  label: c.name,
+                  isOpen: isOpen,
+                  isSelected:
+                      activeCollection?.id == c.id && collectionScopeVisible,
+                  onTap: () {
+                    store.selectCollection(c.id);
+                    onSelect(
+                      c.layout == 'board'
+                          ? ViewSelection.board
+                          : ViewSelection.notes,
+                    );
+                  },
+                  trailing: activeCollection?.id == c.id
+                      ? IconButton(
+                          tooltip: 'Collection settings',
+                          icon: const Icon(Icons.more_horiz, size: 20),
+                          onPressed: () => _afterDrawer(
+                            context,
+                            (context) =>
+                                CollectionSettings.show(context, collection: c),
+                          ),
+                        )
+                      : null,
+                  willAcceptNote: (id) =>
+                      store.noteById(id)?.workspaceId == c.workspaceId,
+                  onAcceptNote: (id) => store.moveToCollection(id, c.id),
+                ),
+              _SidebarItem(
+                icon: Icons.add,
+                selectedIcon: Icons.add,
+                label: 'New collection',
+                isSelected: false,
+                isOpen: isOpen,
+                onTap: () => _afterDrawer(
+                  context,
+                  (context) => CollectionSettings.show(context),
+                ),
+              ),
+              const Divider(height: 32, indent: 16, endIndent: 16),
+              _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
+              for (final label in store.labels)
+                _SidebarItem(
+                  icon: label.icon == null
+                      ? Icons.label_outline
+                      : labelIcon(label),
+                  selectedIcon: label.icon == null
+                      ? Icons.label
+                      : labelIcon(label),
+                  iconColor: labelColorOrNull(label),
+                  label: label.name,
+                  isSelected: selection.labelId == label.id,
+                  isOpen: isOpen,
+                  onTap: () => onSelect(
+                    selection.labelId == label.id
+                        ? baseSelection
+                        : ViewSelection(NoteView.label, label.id),
+                  ),
+                  willAcceptNote: (id) =>
+                      store.noteById(id)?.workspaceId ==
+                      store.activeWorkspaceId,
+                  onAcceptNote: (id) => store.addLabelToNote(id, label.id),
+                ),
+              _SidebarItem(
+                icon: Icons.edit_outlined,
+                selectedIcon: Icons.edit,
+                label: store.labels.isEmpty ? 'Create labels' : 'Manage labels',
+                isSelected: false,
+                isOpen: isOpen,
+                onTap: () => _afterDrawer(context, EditLabelsDialog.show),
+              ),
+              const Divider(height: 24, indent: 16, endIndent: 16),
+              _SidebarSectionHeader(label: 'SMART VIEWS', isOpen: isOpen),
+              for (final view in store.savedViews)
+                _SidebarItem(
+                  icon: view.icon == null
+                      ? Icons.bookmark_outline
+                      : labelIconFor(view.icon),
+                  selectedIcon: view.icon == null
+                      ? Icons.bookmark
+                      : labelIconFor(view.icon),
+                  iconColor: PaletteEntry.hexToColor(view.color),
+                  label: view.name,
+                  isSelected: selection.savedViewId == view.id,
+                  isOpen: isOpen,
+                  onTap: () => onSelect(
+                    selection.savedViewId == view.id
+                        ? baseSelection
+                        : ViewSelection.smart(view.id),
+                  ),
+                ),
+              _SidebarItem(
+                icon: Icons.edit_outlined,
+                selectedIcon: Icons.edit,
+                label: store.savedViews.isEmpty
+                    ? 'Create a smart view'
+                    : 'Manage smart views',
+                isSelected: false,
+                isOpen: isOpen,
+                onTap: () => _afterDrawer(context, EditSmartViewsDialog.show),
+              ),
+              const Divider(height: 32, indent: 16, endIndent: 16),
+              for (final entry in [
+                (
+                  ViewSelection.reminders,
+                  Icons.notifications_outlined,
+                  'Reminders',
+                ),
+                (ViewSelection.archive, Icons.archive_outlined, 'Archive'),
+                (ViewSelection.trash, Icons.delete_outline, 'Trash'),
+              ])
+                _SidebarItem(
+                  icon: entry.$2,
+                  selectedIcon: entry.$2,
+                  label: entry.$3,
+                  isSelected: selection == entry.$1,
+                  isOpen: isOpen,
+                  onTap: () => onSelect(entry.$1),
+                  willAcceptNote: (id) =>
+                      entry.$1 == ViewSelection.archive ||
+                      (entry.$1 == ViewSelection.trash && store.canTrash(id)),
+                  onAcceptNote: entry.$1 == ViewSelection.reminders
+                      ? null
+                      : (id) {
+                          if (entry.$1 == ViewSelection.archive) {
+                            store.setArchived(id, true);
+                          } else {
+                            store.moveToTrash(id);
+                          }
+                        },
+                ),
+            ],
+          ),
         ),
       ),
     );
