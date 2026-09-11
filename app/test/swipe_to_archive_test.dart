@@ -245,17 +245,13 @@ void main() {
       expect(store.noteById('n1')!.archived, isFalse);
     }, variant: phone);
 
-    testWidgets(
-      'a mouse drag still belongs to the reorder',
-      (tester) async {
-        await pumpCard(tester);
+    testWidgets('a mouse drag still belongs to the reorder', (tester) async {
+      await pumpCard(tester);
 
-        await swipe(tester, 140);
+      await swipe(tester, 140);
 
-        expect(store.noteById('n1')!.archived, isFalse);
-      },
-      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
-    );
+      expect(store.noteById('n1')!.archived, isFalse);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   });
 
   group('in the grid', () {

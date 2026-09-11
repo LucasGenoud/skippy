@@ -56,7 +56,9 @@ class _DeviceNotificationsTileState extends State<DeviceNotificationsTile> {
     }
     if (_requesting) return;
     setState(() => _requesting = true);
-    final granted = await context.read<LocalNotifications>().requestPermission();
+    final granted = await context
+        .read<LocalNotifications>()
+        .requestPermission();
     if (!mounted) return;
     setState(() => _requesting = false);
     if (!granted) {
@@ -123,11 +125,7 @@ class _SyncDisclaimer extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.info_outline,
-              size: 20,
-              color: scheme.onSurfaceVariant,
-            ),
+            Icon(Icons.info_outline, size: 20, color: scheme.onSurfaceVariant),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -137,9 +135,9 @@ class _SyncDisclaimer extends StatelessWidget {
                 'after it was due, it will not ring. Add a notification '
                 'channel above for delivery that does not depend on this '
                 'device.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
           ],

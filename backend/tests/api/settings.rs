@@ -29,7 +29,14 @@ async fn settings_roundtrip_scoped_and_validated() {
     assert_eq!(body, json!({}));
 
     // Non-objects are rejected; auth is required.
-    let (status, _) = send(&app, "PUT", "/api/settings", Some(&ada), Some(json!([1, 2]))).await;
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&ada),
+        Some(json!([1, 2])),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = send(&app, "GET", "/api/settings", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);

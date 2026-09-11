@@ -38,12 +38,18 @@ void main() {
     test('columns follow stage position, unassigned first', () {
       final board = buildBoard(
         notes: const [],
-        stages: [stage('done', 3072), stage('todo', 1024), stage('doing', 2048)],
+        stages: [
+          stage('done', 3072),
+          stage('todo', 1024),
+          stage('doing', 2048),
+        ],
       );
-      expect(
-        board.columns.map((c) => c.title),
-        ['Unassigned', 'todo', 'doing', 'done'],
-      );
+      expect(board.columns.map((c) => c.title), [
+        'Unassigned',
+        'todo',
+        'doing',
+        'done',
+      ]);
     });
 
     test('groups notes by stage and orders them by stage position', () {

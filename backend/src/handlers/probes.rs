@@ -3,8 +3,8 @@
 //! before saving, and both report failure as a *result* (`ok: false`), not an
 //! HTTP error.
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Deserialize;
 
 use crate::AppState;
@@ -30,7 +30,11 @@ pub async fn llm_test(
     // "Test connection" works even when the endpoint, model, or key is pinned
     // via env and never sent by the client.
     let pick = |key: &str, body: &str| {
-        state.managed.text(key).map(str::to_string).unwrap_or_else(|| body.trim().to_string())
+        state
+            .managed
+            .text(key)
+            .map(str::to_string)
+            .unwrap_or_else(|| body.trim().to_string())
     };
     let cfg = crate::llm::LlmConfig {
         base_url: pick("llm_base_url", &body.base_url),
@@ -38,9 +42,13 @@ pub async fn llm_test(
         model: pick("llm_model", &body.model),
     };
     if cfg.base_url.is_empty() || cfg.model.is_empty() {
-        return Err(ApiError::BadRequest("base_url and model are required".to_string()));
+        return Err(ApiError::BadRequest(
+            "base_url and model are required".to_string(),
+        ));
     }
-    let probe = state.llm.complete(&cfg, vec![crate::llm::ChatMessage::user("Say OK")]);
+    let probe = state
+        .llm
+        .complete(&cfg, vec![crate::llm::ChatMessage::user("Say OK")]);
     let result = match tokio::time::timeout(std::time::Duration::from_secs(20), probe).await {
         Ok(Ok(_)) => serde_json::json!({"ok": true}),
         Ok(Err(e)) => serde_json::json!({"ok": false, "error": format!("{e:#}")}),

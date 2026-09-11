@@ -163,9 +163,7 @@ void main() {
       ],
     );
     await store.load();
-    platform.queued = const [
-      WidgetOp(noteId: 'n1', itemId: 'i1', done: true),
-    ];
+    platform.queued = const [WidgetOp(noteId: 'n1', itemId: 'i1', done: true)];
 
     bridge = buildBridge()..start();
     await settleBridge();
@@ -186,9 +184,7 @@ void main() {
     );
     await store.load();
     final before = store.noteById('n1')!.updatedAt;
-    platform.queued = const [
-      WidgetOp(noteId: 'n1', itemId: 'i1', done: true),
-    ];
+    platform.queued = const [WidgetOp(noteId: 'n1', itemId: 'i1', done: true)];
 
     bridge = buildBridge()..start();
     await settleBridge();

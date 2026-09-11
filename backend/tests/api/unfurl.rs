@@ -9,9 +9,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use axum::Router;
 use axum::response::Html;
 use axum::routing::get;
-use axum::Router;
 
 use crate::helpers::*;
 
@@ -96,7 +96,14 @@ async fn unfurl_serves_the_second_request_from_cache() {
 #[tokio::test]
 async fn unfurl_requires_auth() {
     let app = app().await;
-    let (status, _) = send(&app, "GET", "/api/unfurl?url=https://example.com", None, None).await;
+    let (status, _) = send(
+        &app,
+        "GET",
+        "/api/unfurl?url=https://example.com",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 

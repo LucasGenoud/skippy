@@ -33,22 +33,82 @@ pub struct ManagedKey {
 /// The registry. Keep the `key` strings in sync with the settings-document
 /// contract shared with the app's `SettingsStore` (see [`crate::assist`]).
 pub const MANAGED_KEYS: &[ManagedKey] = &[
-    ManagedKey { env: "LLM_BASE_URL", key: "llm_base_url", secret: false, kind: Kind::Text },
-    ManagedKey { env: "LLM_API_KEY", key: "llm_api_key", secret: true, kind: Kind::Text },
-    ManagedKey { env: "LLM_MODEL", key: "llm_model", secret: false, kind: Kind::Text },
-    ManagedKey { env: "LLM_LABELING", key: "llm_labeling", secret: false, kind: Kind::Bool },
-    ManagedKey { env: "LLM_CHAT", key: "llm_chat", secret: false, kind: Kind::Bool },
-    ManagedKey { env: "LLM_WRITING", key: "llm_writing", secret: false, kind: Kind::Bool },
+    ManagedKey {
+        env: "LLM_BASE_URL",
+        key: "llm_base_url",
+        secret: false,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "LLM_API_KEY",
+        key: "llm_api_key",
+        secret: true,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "LLM_MODEL",
+        key: "llm_model",
+        secret: false,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "LLM_LABELING",
+        key: "llm_labeling",
+        secret: false,
+        kind: Kind::Bool,
+    },
+    ManagedKey {
+        env: "LLM_CHAT",
+        key: "llm_chat",
+        secret: false,
+        kind: Kind::Bool,
+    },
+    ManagedKey {
+        env: "LLM_WRITING",
+        key: "llm_writing",
+        secret: false,
+        kind: Kind::Bool,
+    },
     // The mail server belongs to whoever runs the deployment, so pinning it
     // leaves each user only `smtp_to` (their own address) to fill in. Nothing
     // here is required: a server that pins none of it still lets a user bring
     // their own SMTP details.
-    ManagedKey { env: "SMTP_HOST", key: "smtp_host", secret: false, kind: Kind::Text },
-    ManagedKey { env: "SMTP_PORT", key: "smtp_port", secret: false, kind: Kind::Text },
-    ManagedKey { env: "SMTP_SECURITY", key: "smtp_security", secret: false, kind: Kind::Text },
-    ManagedKey { env: "SMTP_USERNAME", key: "smtp_username", secret: false, kind: Kind::Text },
-    ManagedKey { env: "SMTP_PASSWORD", key: "smtp_password", secret: true, kind: Kind::Text },
-    ManagedKey { env: "SMTP_FROM", key: "smtp_from", secret: false, kind: Kind::Text },
+    ManagedKey {
+        env: "SMTP_HOST",
+        key: "smtp_host",
+        secret: false,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "SMTP_PORT",
+        key: "smtp_port",
+        secret: false,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "SMTP_SECURITY",
+        key: "smtp_security",
+        secret: false,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "SMTP_USERNAME",
+        key: "smtp_username",
+        secret: false,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "SMTP_PASSWORD",
+        key: "smtp_password",
+        secret: true,
+        kind: Kind::Text,
+    },
+    ManagedKey {
+        env: "SMTP_FROM",
+        key: "smtp_from",
+        secret: false,
+        kind: Kind::Text,
+    },
 ];
 
 /// A resolved managed value plus whether it should be hidden from the frontend.
@@ -84,7 +144,9 @@ impl ManagedSettings {
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
         let mut values = HashMap::new();
         for spec in MANAGED_KEYS {
-            let Some(raw) = lookup(spec.env) else { continue };
+            let Some(raw) = lookup(spec.env) else {
+                continue;
+            };
             let value = match spec.kind {
                 Kind::Text => {
                     let trimmed = raw.trim();
@@ -98,7 +160,13 @@ impl ManagedSettings {
                     None => continue,
                 },
             };
-            values.insert(spec.key.to_string(), ManagedEntry { value, secret: spec.secret });
+            values.insert(
+                spec.key.to_string(),
+                ManagedEntry {
+                    value,
+                    secret: spec.secret,
+                },
+            );
         }
         Self { values }
     }
@@ -153,7 +221,11 @@ impl ManagedSettings {
     pub fn public_view(&self) -> Value {
         let mut out = serde_json::Map::new();
         for (key, entry) in &self.values {
-            let value = if entry.secret { Value::Null } else { entry.value.clone() };
+            let value = if entry.secret {
+                Value::Null
+            } else {
+                entry.value.clone()
+            };
             out.insert(
                 key.clone(),
                 serde_json::json!({ "secret": entry.secret, "value": value }),
@@ -168,8 +240,10 @@ mod tests {
     use super::*;
 
     fn managed(pairs: &[(&str, &str)]) -> ManagedSettings {
-        let map: HashMap<String, String> =
-            pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         ManagedSettings::from_lookup(|k| map.get(k).cloned())
     }
 
@@ -221,10 +295,19 @@ mod tests {
             ("LLM_LABELING", "true"),
         ]);
         let view = m.public_view();
-        assert_eq!(view["llm_base_url"], serde_json::json!({"secret": false, "value": "http://x/v1"}));
-        assert_eq!(view["llm_labeling"], serde_json::json!({"secret": false, "value": true}));
+        assert_eq!(
+            view["llm_base_url"],
+            serde_json::json!({"secret": false, "value": "http://x/v1"})
+        );
+        assert_eq!(
+            view["llm_labeling"],
+            serde_json::json!({"secret": false, "value": true})
+        );
         // Secret: present (so the field locks) but value never leaks.
-        assert_eq!(view["llm_api_key"], serde_json::json!({"secret": true, "value": null}));
+        assert_eq!(
+            view["llm_api_key"],
+            serde_json::json!({"secret": true, "value": null})
+        );
         let s = view.to_string();
         assert!(!s.contains("sk-secret"), "secret value leaked: {s}");
     }

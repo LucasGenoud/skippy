@@ -1,4 +1,4 @@
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -273,6 +273,29 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn table_exists(tx: &mut Transaction<'_, Sqlite>, table: &str) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
+    )
+    .bind(table)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+async fn table_has_column(
+    tx: &mut Transaction<'_, Sqlite>,
+    table: &str,
+    column: &str,
+) -> anyhow::Result<bool> {
+    Ok(
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pragma_table_info(?) WHERE name=?)")
+            .bind(table)
+            .bind(column)
+            .fetch_one(&mut **tx)
+            .await?,
+    )
+}
+
 // Run once, atomically, on both fresh and existing workspace schemas.
 async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
     const CREATE_COLLECTIONS: &str = r#"
@@ -332,23 +355,13 @@ async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
         let done: i64 = sqlx::query_scalar("SELECT count(*) FROM app_meta WHERE key = 'collections_v1'")
             .fetch_one(&mut *tx).await?;
         if done == 0 {
-            let old_collections: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='collections'",
-            )
-            .fetch_one(&mut *tx)
-            .await?;
-            let notes_have_collection: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM pragma_table_info('notes') WHERE name='collection_id'",
-            )
-            .fetch_one(&mut *tx)
-            .await?;
-            let stages_have_collection: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM pragma_table_info('stages') WHERE name='collection_id'",
-            )
-            .fetch_one(&mut *tx)
-            .await?;
+            let old_collections = table_exists(&mut tx, "collections").await?;
+            let notes_have_collection =
+                table_has_column(&mut tx, "notes", "collection_id").await?;
+            let stages_have_collection =
+                table_has_column(&mut tx, "stages", "collection_id").await?;
 
-            if old_collections == 0 {
+            if !old_collections {
                 sqlx::raw_sql(CREATE_COLLECTIONS).execute(&mut *tx).await?;
                 sqlx::raw_sql(r#"
                 INSERT INTO collections (id,workspace_id,name,layout)
@@ -368,12 +381,10 @@ async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
                 ALTER TABLE stages_new RENAME TO stages;
                 "#).execute(&mut *tx).await?;
             } else {
-                let current_shape: i64 = sqlx::query_scalar(
-                    "SELECT count(*) FROM pragma_table_info('collections') WHERE name='deleted'",
-                )
-                .fetch_one(&mut *tx)
-                .await?;
-                anyhow::ensure!(current_shape == 0, "collections migration marker is missing");
+                anyhow::ensure!(
+                    !table_has_column(&mut tx, "collections", "deleted").await?,
+                    "collections migration marker is missing"
+                );
                 anyhow::ensure!(
                     notes_have_collection == stages_have_collection,
                     "cancelled collections migration has inconsistent note and stage tables"
@@ -398,7 +409,7 @@ async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
                             SELECT 1 FROM collections c WHERE c.workspace_id=w.id);
                 "#).execute(&mut *tx).await?;
 
-                if notes_have_collection == 0 {
+                if !notes_have_collection {
                     sqlx::raw_sql(r#"
                         ALTER TABLE notes ADD COLUMN collection_id TEXT REFERENCES collections(id);
                         UPDATE notes SET collection_id=(SELECT id FROM collections

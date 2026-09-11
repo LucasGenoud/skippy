@@ -58,7 +58,11 @@ pub fn parse_llm_settings(settings_json: Option<&str>) -> LlmSettings {
 /// after the server overlays its env-managed keys (see [`crate::config`]).
 pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
     let text = |key: &str| {
-        value[key].as_str().map(str::trim).unwrap_or_default().to_string()
+        value[key]
+            .as_str()
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string()
     };
     let base_url = text("llm_base_url");
     let model = text("llm_model");
@@ -122,7 +126,9 @@ pub fn map_label_names(names: &[String], labels: &[Label]) -> Vec<String> {
     let mut ids = Vec::new();
     for name in names {
         let wanted = name.trim().to_lowercase();
-        let Some(label) = labels.iter().find(|l| l.name.trim().to_lowercase() == wanted)
+        let Some(label) = labels
+            .iter()
+            .find(|l| l.name.trim().to_lowercase() == wanted)
         else {
             continue;
         };
@@ -249,9 +255,18 @@ const WRITE_ITEM_CHARS: usize = 200;
 #[derive(Debug, PartialEq)]
 pub enum WriteAction {
     /// Make a brand-new note. `kind` is always "text" or "checklist".
-    Create { kind: String, title: String, content: String, items: Vec<String> },
+    Create {
+        kind: String,
+        title: String,
+        content: String,
+        items: Vec<String>,
+    },
     /// Add to an existing note; `note_id` is one of the retrieved candidates.
-    Append { note_id: String, content: String, items: Vec<String> },
+    Append {
+        note_id: String,
+        content: String,
+        items: Vec<String>,
+    },
 }
 
 /// Prompt asking the model to turn a create/append request into one structured
@@ -285,7 +300,11 @@ pub fn write_plan_messages(
         context.push_str("\n(none)");
     }
     for (id, title, text) in candidates {
-        let title = if title.trim().is_empty() { "Untitled" } else { title.trim() };
+        let title = if title.trim().is_empty() {
+            "Untitled"
+        } else {
+            title.trim()
+        };
         context.push_str(&format!("\n\n[id={id}] {title}\n{text}"));
     }
     with_conversation(vec![ChatMessage::system(context)], history, message)
@@ -314,7 +333,11 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
     let start = reply.find('{')?;
     let end = reply.rfind('}').filter(|&e| e > start)?;
     let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
-    let content = value["content"].as_str().map(str::trim).unwrap_or_default().to_string();
+    let content = value["content"]
+        .as_str()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
     let items = string_list(&value, "items");
     match value["action"].as_str()?.trim() {
         "create" => {
@@ -323,14 +346,22 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
                 _ => "text",
             }
             .to_string();
-            let title =
-                value["title"].as_str().map(str::trim).unwrap_or_default().to_string();
+            let title = value["title"]
+                .as_str()
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
             // A checklist with no items but some content is fine; a wholly
             // empty create is not worth a note.
             if title.is_empty() && content.is_empty() && items.is_empty() {
                 return None;
             }
-            Some(WriteAction::Create { kind, title, content, items })
+            Some(WriteAction::Create {
+                kind,
+                title,
+                content,
+                items,
+            })
         }
         "append" => {
             let note_id = value["note_id"].as_str()?.trim().to_string();
@@ -340,7 +371,11 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
             if content.is_empty() && items.is_empty() {
                 return None;
             }
-            Some(WriteAction::Append { note_id, content, items })
+            Some(WriteAction::Append {
+                note_id,
+                content,
+                items,
+            })
         }
         _ => None,
     }
@@ -360,7 +395,11 @@ pub fn note_prompt_text(record: &NoteRecord) -> String {
         parts.push(content.to_string());
     }
     for item in &record.items {
-        parts.push(format!("- [{}] {}", if item.done { "x" } else { " " }, item.text));
+        parts.push(format!(
+            "- [{}] {}",
+            if item.done { "x" } else { " " },
+            item.text
+        ));
     }
     parts.join("\n")
 }
@@ -369,7 +408,7 @@ pub fn note_prompt_text(record: &NoteRecord) -> String {
 /// then the (capped) history and the new user message. History roles other
 /// than user/assistant are dropped.
 pub fn chat_messages(
-    notes: &[(String, String)], // (title, text)
+    notes: &[(String, String)],   // (title, text)
     history: &[(String, String)], // (role, content)
     message: &str,
 ) -> Vec<ChatMessage> {
@@ -395,7 +434,11 @@ pub fn chat_messages(
         context.push_str("\n(none found)");
     }
     for (n, (title, text)) in notes.iter().enumerate() {
-        let title = if title.trim().is_empty() { "Untitled" } else { title.trim() };
+        let title = if title.trim().is_empty() {
+            "Untitled"
+        } else {
+            title.trim()
+        };
         context.push_str(&format!("\n\n[{}] {}\n{}", n + 1, title, text));
     }
     with_conversation(vec![ChatMessage::system(context)], history, message)
@@ -432,7 +475,9 @@ fn with_conversation(
             _ => {}
         }
     }
-    messages.push(ChatMessage::user(cap(message, CHAT_MESSAGE_CHARS).to_string()));
+    messages.push(ChatMessage::user(
+        cap(message, CHAT_MESSAGE_CHARS).to_string(),
+    ));
     messages
 }
 
@@ -477,11 +522,15 @@ mod tests {
 
     #[test]
     fn label_reply_variants() {
-        assert_eq!(parse_label_reply(r#"["Work","Home"]"#), vec!["Work", "Home"]);
+        assert_eq!(
+            parse_label_reply(r#"["Work","Home"]"#),
+            vec!["Work", "Home"]
+        );
         assert_eq!(parse_label_reply("```json\n[\"Work\"]\n```"), vec!["Work"]);
-        assert_eq!(parse_label_reply("Sure! The labels are: [\"Work\"] hope that helps"), vec![
-            "Work"
-        ]);
+        assert_eq!(
+            parse_label_reply("Sure! The labels are: [\"Work\"] hope that helps"),
+            vec!["Work"]
+        );
         assert!(parse_label_reply("no labels apply").is_empty());
         assert!(parse_label_reply("]").is_empty());
         assert!(parse_label_reply("[not json]").is_empty());
@@ -490,7 +539,12 @@ mod tests {
     #[test]
     fn label_names_map_case_insensitively_and_drop_unknown() {
         let labels = [label("1", "Work"), label("2", "Recipes")];
-        let names = ["work".into(), " RECIPES ".into(), "Nope".into(), "Work".into()];
+        let names = [
+            "work".into(),
+            " RECIPES ".into(),
+            "Nope".into(),
+            "Work".into(),
+        ];
         assert_eq!(map_label_names(&names, &labels), vec!["1", "2"]);
     }
 
@@ -506,8 +560,18 @@ mod tests {
             title: "Groceries".into(),
             content: String::new(),
             items: vec![
-                ChecklistItem { id: "i1".into(), text: "bread".into(), done: true, depth: 0 },
-                ChecklistItem { id: "i2".into(), text: "milk".into(), done: false, depth: 0 },
+                ChecklistItem {
+                    id: "i1".into(),
+                    text: "bread".into(),
+                    done: true,
+                    depth: 0,
+                },
+                ChecklistItem {
+                    id: "i2".into(),
+                    text: "milk".into(),
+                    done: false,
+                    depth: 0,
+                },
             ],
             color: "default".into(),
             pinned: false,
@@ -546,7 +610,10 @@ mod tests {
         let prompt = &messages[0].content;
         // The notes are the tail of the system prompt, so an intact list ends
         // it, anything dropped would have left the truncation marker here.
-        assert!(prompt.trim_end().ends_with("- [ ] item 199"), "tail of the list was cut");
+        assert!(
+            prompt.trim_end().ends_with("- [ ] item 199"),
+            "tail of the list was cut"
+        );
     }
 
     #[test]
@@ -606,7 +673,10 @@ mod tests {
             Some(Write("shopping list".into()))
         );
         // A blank write falls through to the search decision.
-        assert_eq!(parse_route_reply(r#"{"write": "  ", "search": null}"#), Some(Direct));
+        assert_eq!(
+            parse_route_reply(r#"{"write": "  ", "search": null}"#),
+            Some(Direct)
+        );
     }
 
     #[test]
@@ -698,7 +768,10 @@ mod tests {
         ];
         // The follow-up alone would embed to junk; the prior question rides
         // along, oldest first.
-        assert_eq!(retrieval_query(&history, "nice"), "what should I buy?\nnice");
+        assert_eq!(
+            retrieval_query(&history, "nice"),
+            "what should I buy?\nnice"
+        );
     }
 
     #[test]
@@ -727,7 +800,10 @@ mod tests {
     #[test]
     fn chat_messages_shape() {
         let long = "x".repeat(20_000);
-        let notes = [("Groceries".into(), "milk\neggs".into()), ("".into(), long.clone())];
+        let notes = [
+            ("Groceries".into(), "milk\neggs".into()),
+            ("".into(), long.clone()),
+        ];
         let history = [
             ("user".into(), "hi".into()),
             ("assistant".into(), "hello".into()),
@@ -747,8 +823,9 @@ mod tests {
 
     #[test]
     fn chat_history_capped_to_recent_turns() {
-        let history: Vec<(String, String)> =
-            (0..30).map(|i| ("user".to_string(), format!("m{i}"))).collect();
+        let history: Vec<(String, String)> = (0..30)
+            .map(|i| ("user".to_string(), format!("m{i}")))
+            .collect();
         let messages = chat_messages(&[], &history, "q");
         // system + 12 most recent + final user message
         assert_eq!(messages.len(), 14);

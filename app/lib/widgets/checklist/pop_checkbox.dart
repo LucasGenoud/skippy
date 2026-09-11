@@ -32,7 +32,8 @@ class PopCheckbox extends StatefulWidget {
   static double sizeOf(BuildContext context) {
     final theme = Theme.of(context);
     final tapTarget =
-        theme.checkboxTheme.materialTapTargetSize ?? theme.materialTapTargetSize;
+        theme.checkboxTheme.materialTapTargetSize ??
+        theme.materialTapTargetSize;
     final base = switch (tapTarget) {
       MaterialTapTargetSize.padded => kMinInteractiveDimension,
       MaterialTapTargetSize.shrinkWrap => kMinInteractiveDimension - 8.0,

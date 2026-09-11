@@ -73,9 +73,7 @@ fn client(target: &ParsedUrl) -> anyhow::Result<reqwest::Client> {
 /// Whether the SSRF guard is disabled by env. Read per-call so tests can set it.
 pub fn allow_private() -> bool {
     matches!(
-        std::env::var("UNFURL_ALLOW_PRIVATE")
-            .ok()
-            .as_deref(),
+        std::env::var("UNFURL_ALLOW_PRIVATE").ok().as_deref(),
         Some("1") | Some("true") | Some("yes") | Some("on")
     )
 }

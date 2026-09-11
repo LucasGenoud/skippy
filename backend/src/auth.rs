@@ -1,8 +1,8 @@
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
-use rand_core::OsRng;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
+use rand_core::OsRng;
 
 use crate::AppState;
 use crate::error::ApiError;
@@ -27,7 +27,9 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
     };
     // Variant, version and cost all come from the stored PHC string, not from
     // [`hasher`], so hashes written before this pin keep verifying.
-    hasher().verify_password(password.as_bytes(), &parsed).is_ok()
+    hasher()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok()
 }
 
 fn bearer_token(parts: &Parts) -> Option<String> {
@@ -64,6 +66,8 @@ impl FromRequestParts<AppState> for SessionToken {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &AppState) -> Result<Self, ApiError> {
-        bearer_token(parts).map(SessionToken).ok_or(ApiError::Unauthorized)
+        bearer_token(parts)
+            .map(SessionToken)
+            .ok_or(ApiError::Unauthorized)
     }
 }

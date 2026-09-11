@@ -56,18 +56,19 @@ class _WidgetConfigScreenState extends State<WidgetConfigScreen> {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final query = _query.trim().toLowerCase();
-    final notes = [
-      for (final note in store.notesForWidgets)
-        if (!note.trashed &&
-            (query.isEmpty ||
-                widgetDisplayTitle(note).toLowerCase().contains(query)))
-          note,
-    ]..sort((a, b) {
-      // The note they pinned from goes first; everything else newest first.
-      if (a.id == _preselected) return -1;
-      if (b.id == _preselected) return 1;
-      return b.updatedAt.compareTo(a.updatedAt);
-    });
+    final notes =
+        [
+          for (final note in store.notesForWidgets)
+            if (!note.trashed &&
+                (query.isEmpty ||
+                    widgetDisplayTitle(note).toLowerCase().contains(query)))
+              note,
+        ]..sort((a, b) {
+          // The note they pinned from goes first; everything else newest first.
+          if (a.id == _preselected) return -1;
+          if (b.id == _preselected) return 1;
+          return b.updatedAt.compareTo(a.updatedAt);
+        });
 
     return Scaffold(
       appBar: AppBar(

@@ -14,7 +14,11 @@ class StaggeredEntrance extends StatefulWidget {
   final int index;
   final Widget child;
 
-  const StaggeredEntrance({super.key, required this.index, required this.child});
+  const StaggeredEntrance({
+    super.key,
+    required this.index,
+    required this.child,
+  });
 
   @override
   State<StaggeredEntrance> createState() => _StaggeredEntranceState();

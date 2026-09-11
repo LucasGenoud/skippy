@@ -53,7 +53,10 @@ impl Transcriber for WhisperService {
             .mime_str("application/octet-stream")?;
         let form = reqwest::multipart::Form::new().part("audio_file", part);
         // output=txt returns just the transcript as plain text.
-        let url = format!("{}/asr?encode=true&task=transcribe&output=txt", self.base_url);
+        let url = format!(
+            "{}/asr?encode=true&task=transcribe&output=txt",
+            self.base_url
+        );
         let response = self
             .client
             .post(&url)

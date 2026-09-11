@@ -96,12 +96,7 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
             },
           ),
           const SizedBox(height: 16),
-          Text(
-            'Include',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
+          const FormSectionLabel('Include'),
           const SizedBox(height: kSpaceSm),
           RadioGroup<WorkspaceCopyContent>(
             groupValue: _content,

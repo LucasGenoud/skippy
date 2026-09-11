@@ -203,6 +203,24 @@ class FormDialog extends StatelessWidget {
   }
 }
 
+/// A subdued heading shared by grouped controls inside form dialogs.
+class FormSectionLabel extends StatelessWidget {
+  final String text;
+
+  const FormSectionLabel(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      text,
+      style: theme.textTheme.labelMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
 /// Whether the modal around this subtree arrived as a bottom sheet.
 ///
 /// The two presentations need different top padding — a sheet's drag handle

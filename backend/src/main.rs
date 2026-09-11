@@ -148,14 +148,12 @@ fn init_file_store(uploads: &str) -> anyhow::Result<Arc<dyn FileStore>> {
         }
         "s3" => {
             let require = |key: &str| {
-                std::env::var(key).map_err(|_| {
-                    anyhow::anyhow!("STORAGE=s3 requires {key} to be set")
-                })
+                std::env::var(key)
+                    .map_err(|_| anyhow::anyhow!("STORAGE=s3 requires {key} to be set"))
             };
             let cfg = S3Config {
                 url: require("S3_URL")?,
-                region: std::env::var("S3_REGION")
-                    .unwrap_or_else(|_| "garage".to_string()),
+                region: std::env::var("S3_REGION").unwrap_or_else(|_| "garage".to_string()),
                 access_key: require("S3_ACCESS_KEY")?,
                 secret_key: require("S3_SECRET_KEY")?,
                 bucket_prefix: std::env::var("S3_BUCKET_PREFIX")
@@ -213,10 +211,11 @@ async fn init_ocr() -> Option<Arc<dyn ImageOcr>> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if let Some(argument) = std::env::args().nth(1) {
-        anyhow::bail!("sticky-notes-server does not accept command-line arguments (got '{argument}')");
+        anyhow::bail!(
+            "sticky-notes-server does not accept command-line arguments (got '{argument}')"
+        );
     }
-    let db_path =
-        std::env::var("DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
+    let db_path = std::env::var("DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
     let uploads = std::env::var("UPLOADS").unwrap_or_else(|_| "uploads".to_string());
     // Swap point: implement `Repository` for another database and change
     // this constructor.
@@ -306,8 +305,7 @@ async fn main() -> anyhow::Result<()> {
     let mut app = build_app_with_cors_origin(state, cors_origin);
 
     // If the Flutter web build exists, serve it so the whole app runs off one binary.
-    let web_dir =
-        std::env::var("WEB").unwrap_or_else(|_| "../app/build/web".to_string());
+    let web_dir = std::env::var("WEB").unwrap_or_else(|_| "../app/build/web".to_string());
     if Path::new(&web_dir).join("index.html").exists() {
         // A self-hoster can pin the backend URL browsers should use via
         // PUBLIC_URL (e.g. behind a reverse proxy on :443). We

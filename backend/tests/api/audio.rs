@@ -79,15 +79,27 @@ async fn retry_transcription_validates_and_reruns() {
     let id = note["id"].as_str().unwrap().to_string();
 
     // Nothing to transcribe yet.
-    let (status, _) =
-        send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/transcribe"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // With a clip attached, an explicit retry re-runs and lands the transcript.
     upload(&app, &token, &id, "audio/webm", b"hello").await;
     settle_index().await;
-    let (status, _) =
-        send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/transcribe"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::ACCEPTED);
     settle_index().await;
     let refreshed = &list_notes(&app, &token).await[0];
@@ -115,7 +127,13 @@ async fn transcribe_reports_unavailable_when_disabled() {
     let (token, _) = register(&app, "ada").await;
     let note = create_note(&app, &token, json!({"kind": "audio"})).await;
     let id = note["id"].as_str().unwrap().to_string();
-    let (status, _) =
-        send(&app, "POST", &format!("/api/notes/{id}/transcribe"), Some(&token), None).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/transcribe"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }

@@ -118,7 +118,8 @@ class WorkspaceStats {
 
   /// The busiest month in [monthlyCreated], for scaling the chart. Zero when
   /// nothing was created in the window.
-  int get busiestMonth => monthlyCreated.fold(0, (a, m) => a > m.created ? a : m.created);
+  int get busiestMonth =>
+      monthlyCreated.fold(0, (a, m) => a > m.created ? a : m.created);
 }
 
 /// Count what [notes] holds. [notes] must already be narrowed to one workspace
@@ -227,7 +228,8 @@ WorkspaceStats computeWorkspaceStats({
   ]..sort((a, b) => b.count.compareTo(a.count));
 
   final byStage = <StatSlice<Stage?>>[
-    for (final stage in stages) StatSlice<Stage?>(stage, stageCounts[stage.id] ?? 0),
+    for (final stage in stages)
+      StatSlice<Stage?>(stage, stageCounts[stage.id] ?? 0),
     if ((stageCounts[null] ?? 0) > 0)
       StatSlice<Stage?>(null, stageCounts[null]!),
   ];
@@ -252,9 +254,7 @@ WorkspaceStats computeWorkspaceStats({
     checklistDone: checklistDone,
     completedLists: completedLists,
     labelCount: labelList.length,
-    unusedLabels: labelList
-        .where((l) => (labelCounts[l.id] ?? 0) == 0)
-        .length,
+    unusedLabels: labelList.where((l) => (labelCounts[l.id] ?? 0) == 0).length,
     topLabels: topLabels.take(kTopLabels).toList(),
     byStage: byStage,
     // One author is just "the owner", which the People section already says.

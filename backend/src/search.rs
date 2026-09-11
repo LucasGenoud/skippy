@@ -57,8 +57,7 @@ impl EmbedConfig {
             api_key: non_empty_env("EMBED_API_KEY").unwrap_or_default(),
             // Sensible default for a self-hosted Ollama; `ollama pull bge-m3`
             // matches the model the local embedder used to run.
-            model: non_empty_env("EMBED_MODEL")
-                .unwrap_or_else(|| "bge-m3".to_string()),
+            model: non_empty_env("EMBED_MODEL").unwrap_or_else(|| "bge-m3".to_string()),
         })
     }
 }

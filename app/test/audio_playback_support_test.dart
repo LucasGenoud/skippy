@@ -25,18 +25,16 @@ void main() {
     }
   });
 
-  testWidgets(
-    'an unsupported desktop explains itself instead of failing',
-    (tester) async {
-      await tester.pumpWidget(player());
-      await tester.pump();
+  testWidgets('an unsupported desktop explains itself instead of failing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(player());
+    await tester.pump();
 
-      expect(find.textContaining('Playback is not supported'), findsOneWidget);
-      expect(find.byIcon(Icons.music_off_outlined), findsOneWidget);
-      // The play/pause control is what would need the missing engine.
-      expect(find.byType(AnimatedIcon), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
-  );
+    expect(find.textContaining('Playback is not supported'), findsOneWidget);
+    expect(find.byIcon(Icons.music_off_outlined), findsOneWidget);
+    // The play/pause control is what would need the missing engine.
+    expect(find.byType(AnimatedIcon), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 }

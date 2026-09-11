@@ -205,10 +205,7 @@ class _StageEditorDialogState extends State<StageEditorDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _save,
-          child: Text(_isNew ? 'Add' : 'Save'),
-        ),
+        FilledButton(onPressed: _save, child: Text(_isNew ? 'Add' : 'Save')),
       ],
     );
   }

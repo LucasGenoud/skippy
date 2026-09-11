@@ -20,12 +20,7 @@ class DragReorderList<T> extends StatefulWidget {
 
   /// Builds one row. [handle] is the draggable grip, place it wherever the
   /// row wants it (typically leading, beside an icon).
-  final Widget Function(
-    BuildContext context,
-    T item,
-    int index,
-    Widget handle,
-  )
+  final Widget Function(BuildContext context, T item, int index, Widget handle)
   rowBuilder;
 
   /// Called with the dragged item's id and its final resting index, the

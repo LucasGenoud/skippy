@@ -92,9 +92,9 @@ class LocalNotifications {
     // app start (not just for people using reminders), so a slow or wedged
     // platform call here must never hold up the rest of startup.
     try {
-      final launch = await _plugin
-          .getNotificationAppLaunchDetails()
-          .timeout(const Duration(seconds: 2));
+      final launch = await _plugin.getNotificationAppLaunchDetails().timeout(
+        const Duration(seconds: 2),
+      );
       final response = launch?.notificationResponse;
       if ((launch?.didNotificationLaunchApp ?? false) && response != null) {
         _onResponse(response);

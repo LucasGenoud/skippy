@@ -156,26 +156,29 @@ void main() {
     expect(s.checklistProgress, 0.75);
   });
 
-  test('labels rank by use, unused ones are counted, and the list is capped', () {
-    final labels = [for (var i = 0; i < 8; i++) label('l$i')];
-    final s = stats(
-      notes: [
-        for (var i = 0; i < 6; i++)
-          // l5 on every note, l4 on five of them, and so on down to l0 on one.
-          note('n$i', labelIds: {for (var j = 0; j <= i; j++) 'l${5 - j}'}),
-      ],
-      labels: labels,
-    );
-    expect(s.labelCount, 8);
-    expect(s.unusedLabels, 2, reason: 'l6 and l7 are on nothing');
-    expect(s.topLabels.length, kTopLabels);
-    expect(s.topLabels.first.value.id, 'l5');
-    expect(s.topLabels.first.count, 6);
-    // Descending, and the sixth-busiest label (l0, on one note) did not make
-    // the cut.
-    expect(s.topLabels.map((t) => t.count).toList(), [6, 5, 4, 3, 2]);
-    expect(s.topLabels.map((t) => t.value.id), isNot(contains('l0')));
-  });
+  test(
+    'labels rank by use, unused ones are counted, and the list is capped',
+    () {
+      final labels = [for (var i = 0; i < 8; i++) label('l$i')];
+      final s = stats(
+        notes: [
+          for (var i = 0; i < 6; i++)
+            // l5 on every note, l4 on five of them, and so on down to l0 on one.
+            note('n$i', labelIds: {for (var j = 0; j <= i; j++) 'l${5 - j}'}),
+        ],
+        labels: labels,
+      );
+      expect(s.labelCount, 8);
+      expect(s.unusedLabels, 2, reason: 'l6 and l7 are on nothing');
+      expect(s.topLabels.length, kTopLabels);
+      expect(s.topLabels.first.value.id, 'l5');
+      expect(s.topLabels.first.count, 6);
+      // Descending, and the sixth-busiest label (l0, on one note) did not make
+      // the cut.
+      expect(s.topLabels.map((t) => t.count).toList(), [6, 5, 4, 3, 2]);
+      expect(s.topLabels.map((t) => t.value.id), isNot(contains('l0')));
+    },
+  );
 
   test('board columns keep their order and unassigned notes go last', () {
     final s = stats(
@@ -205,19 +208,31 @@ void main() {
     expect(s.byStage.single.value?.id, 'todo');
   });
 
-  test('authors are only broken down once more than one person has written', () {
-    const ada = UserRef(id: 'u1', name: 'Ada');
-    const bob = UserRef(id: 'u2', name: 'Bob');
-    final solo = stats(notes: [note('a', owner: ada), note('b', owner: ada)]);
-    expect(solo.byAuthor, isEmpty);
+  test(
+    'authors are only broken down once more than one person has written',
+    () {
+      const ada = UserRef(id: 'u1', name: 'Ada');
+      const bob = UserRef(id: 'u2', name: 'Bob');
+      final solo = stats(
+        notes: [
+          note('a', owner: ada),
+          note('b', owner: ada),
+        ],
+      );
+      expect(solo.byAuthor, isEmpty);
 
-    final shared = stats(
-      notes: [note('a', owner: ada), note('b', owner: bob), note('c', owner: bob)],
-    );
-    expect(shared.byAuthor.first.value.name, 'Bob');
-    expect(shared.byAuthor.first.count, 2);
-    expect(shared.byAuthor.last.value.name, 'Ada');
-  });
+      final shared = stats(
+        notes: [
+          note('a', owner: ada),
+          note('b', owner: bob),
+          note('c', owner: bob),
+        ],
+      );
+      expect(shared.byAuthor.first.value.name, 'Bob');
+      expect(shared.byAuthor.first.count, 2);
+      expect(shared.byAuthor.last.value.name, 'Ada');
+    },
+  );
 
   test('attachments are counted, sized, and split by kind', () {
     final s = stats(
@@ -276,9 +291,21 @@ void main() {
   test('first and last stamps track the extremes, not the list order', () {
     final s = stats(
       notes: [
-        note('mid', createdAt: DateTime(2026, 3, 1), updatedAt: DateTime(2026, 3, 2)),
-        note('old', createdAt: DateTime(2026, 1, 1), updatedAt: DateTime(2026, 1, 5)),
-        note('new', createdAt: DateTime(2026, 5, 1), updatedAt: DateTime(2026, 7, 9)),
+        note(
+          'mid',
+          createdAt: DateTime(2026, 3, 1),
+          updatedAt: DateTime(2026, 3, 2),
+        ),
+        note(
+          'old',
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 5),
+        ),
+        note(
+          'new',
+          createdAt: DateTime(2026, 5, 1),
+          updatedAt: DateTime(2026, 7, 9),
+        ),
       ],
     );
     expect(s.firstCreated, DateTime(2026, 1, 1));

@@ -209,10 +209,7 @@ void main() {
       final entry = platform.armed.values.single;
       expect(entry.id, reminderNotificationId('n1'));
       expect(entry.title, 'Standup');
-      expect(
-        ScheduledReminder.noteIdFromPayload(entry.payload),
-        'n1',
-      );
+      expect(ScheduledReminder.noteIdFromPayload(entry.payload), 'n1');
 
       // A second pass with nothing changed must not touch the OS again.
       platform.calls.clear();

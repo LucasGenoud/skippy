@@ -46,10 +46,7 @@ void main() {
         widgetDisplayTitle(note('a', content: '\n\n  hello\nworld')),
         'hello',
       );
-      expect(
-        widgetDisplayTitle(note('a', items: [item('i', 'Milk')])),
-        'Milk',
-      );
+      expect(widgetDisplayTitle(note('a', items: [item('i', 'Milk')])), 'Milk');
     });
 
     test('names an empty note rather than returning a blank header', () {
@@ -97,8 +94,9 @@ void main() {
 
       final coloured = buildWidgetNote(
         note('b', color: 'amber'),
-        resolveColor: (key) =>
-            key == 'amber' ? (light: '#FFF6C344', dark: '#FF3A3226') : noColors(key),
+        resolveColor: (key) => key == 'amber'
+            ? (light: '#FFF6C344', dark: '#FF3A3226')
+            : noColors(key),
       );
       expect(coloured['colorLight'], '#FFF6C344');
       expect(coloured['colorDark'], '#FF3A3226');
@@ -106,7 +104,10 @@ void main() {
 
     test('truncates long body text', () {
       final long = 'x' * (kWidgetContentChars + 50);
-      final payload = buildWidgetNote(note('a', content: long), resolveColor: noColors);
+      final payload = buildWidgetNote(
+        note('a', content: long),
+        resolveColor: noColors,
+      );
       expect((payload['content'] as String).length, kWidgetContentChars + 1);
       expect(payload['content'], endsWith('…'));
     });
@@ -114,14 +115,11 @@ void main() {
 
   group('buildWidgetNotesDoc', () {
     test('excludes trashed notes but keeps archived ones', () {
-      final doc = buildWidgetNotesDoc(
-        [
-          note('live'),
-          note('binned', trashed: true),
-          note('filed', archived: true),
-        ],
-        resolveColor: noColors,
-      );
+      final doc = buildWidgetNotesDoc([
+        note('live'),
+        note('binned', trashed: true),
+        note('filed', archived: true),
+      ], resolveColor: noColors);
       expect(notesOf(doc).keys, containsAll(['live', 'filed']));
       expect(notesOf(doc).containsKey('binned'), isFalse);
     });

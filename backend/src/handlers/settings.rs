@@ -1,9 +1,9 @@
 //! Per-user settings: an opaque JSON document owned by the client.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -32,11 +32,15 @@ pub async fn put_settings(
     Json(body): Json<serde_json::Value>,
 ) -> ApiResult<StatusCode> {
     if !body.is_object() {
-        return Err(ApiError::BadRequest("settings must be a JSON object".to_string()));
+        return Err(ApiError::BadRequest(
+            "settings must be a JSON object".to_string(),
+        ));
     }
     let data = body.to_string();
     if data.len() > MAX_SETTINGS_BYTES {
-        return Err(ApiError::BadRequest("settings document too large".to_string()));
+        return Err(ApiError::BadRequest(
+            "settings document too large".to_string(),
+        ));
     }
     state.repo.put_settings(&user_id, &data).await?;
     state.notify_user(&user_id);

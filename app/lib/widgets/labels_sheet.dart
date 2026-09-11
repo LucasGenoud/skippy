@@ -450,7 +450,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
             onSubmitted: (_) => _save(),
           ),
           const SizedBox(height: 20),
-          _sectionLabel(context, 'Color'),
+          const FormSectionLabel('Color'),
           const SizedBox(height: 10),
           Wrap(
             spacing: 10,
@@ -499,7 +499,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
             ),
           ),
           const SizedBox(height: 20),
-          _sectionLabel(context, 'Icon'),
+          const FormSectionLabel('Icon'),
           const SizedBox(height: 10),
           IconGrid(
             selected: _icon,
@@ -517,11 +517,4 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
       ],
     );
   }
-
-  Widget _sectionLabel(BuildContext context, String text) => Text(
-    text,
-    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-    ),
-  );
 }

@@ -40,53 +40,43 @@ void main() {
     }
   });
 
-  testWidgets(
-    'the camera is a choice next to the gallery',
-    (tester) async {
-      usePhoneViewport(tester);
-      await tester.pumpWidget(launcher());
-      await tester.tap(find.text('Add image'));
-      await tester.pumpAndSettle();
+  testWidgets('the camera is a choice next to the gallery', (tester) async {
+    usePhoneViewport(tester);
+    await tester.pumpWidget(launcher());
+    await tester.tap(find.text('Add image'));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Take photo'), findsOneWidget);
-      await tester.tap(find.text('Take photo'));
-      await tester.pumpAndSettle();
+    expect(find.text('Take photo'), findsOneWidget);
+    await tester.tap(find.text('Take photo'));
+    await tester.pumpAndSettle();
 
-      expect(chosen, ImageSource.camera);
-    },
-    variant: TargetPlatformVariant.mobile(),
-  );
+    expect(chosen, ImageSource.camera);
+  }, variant: TargetPlatformVariant.mobile());
 
-  testWidgets(
-    'the gallery stays one tap away in the same sheet',
-    (tester) async {
-      usePhoneViewport(tester);
-      await tester.pumpWidget(launcher());
-      await tester.tap(find.text('Add image'));
-      await tester.pumpAndSettle();
+  testWidgets('the gallery stays one tap away in the same sheet', (
+    tester,
+  ) async {
+    usePhoneViewport(tester);
+    await tester.pumpWidget(launcher());
+    await tester.tap(find.text('Add image'));
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.textContaining('Choose from'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Choose from'));
+    await tester.pumpAndSettle();
 
-      expect(chosen, ImageSource.gallery);
-    },
-    variant: TargetPlatformVariant.mobile(),
-  );
+    expect(chosen, ImageSource.gallery);
+  }, variant: TargetPlatformVariant.mobile());
 
-  testWidgets(
-    'backing out of the sheet picks nothing',
-    (tester) async {
-      usePhoneViewport(tester);
-      await tester.pumpWidget(launcher());
-      await tester.tap(find.text('Add image'));
-      await tester.pumpAndSettle();
+  testWidgets('backing out of the sheet picks nothing', (tester) async {
+    usePhoneViewport(tester);
+    await tester.pumpWidget(launcher());
+    await tester.tap(find.text('Add image'));
+    await tester.pumpAndSettle();
 
-      // The barrier above the sheet.
-      await tester.tapAt(const Offset(195, 40));
-      await tester.pumpAndSettle();
+    // The barrier above the sheet.
+    await tester.tapAt(const Offset(195, 40));
+    await tester.pumpAndSettle();
 
-      expect(chosen, isNull);
-    },
-    variant: TargetPlatformVariant.mobile(),
-  );
+    expect(chosen, isNull);
+  }, variant: TargetPlatformVariant.mobile());
 }

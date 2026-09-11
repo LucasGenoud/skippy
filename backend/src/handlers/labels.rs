@@ -3,9 +3,9 @@
 //! notes happens through the note-update endpoint (`label_ids` on the patch
 //! body), not here.
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -37,7 +37,10 @@ pub async fn create_label(
         None => state.repo.max_label_position(&workspace_id).await? + 1024.0,
     };
     let label = Label {
-        id: body.id.filter(|id| !id.trim().is_empty()).unwrap_or_else(new_id),
+        id: body
+            .id
+            .filter(|id| !id.trim().is_empty())
+            .unwrap_or_else(new_id),
         workspace_id,
         name,
         color: clean(body.color),
@@ -88,7 +91,9 @@ pub async fn update_label(
     {
         return Err(ApiError::NotFound);
     }
-    let label = find_label(&state, &user_id, &id).await?.ok_or(ApiError::NotFound)?;
+    let label = find_label(&state, &user_id, &id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
     notify_workspace(&state, &label.workspace_id).await;
     Ok(Json(label))
 }
@@ -100,7 +105,9 @@ pub async fn delete_label(
 ) -> ApiResult<StatusCode> {
     // Read the workspace before the row goes away, so its members still get
     // told the label is gone.
-    let workspace_id = find_label(&state, &user_id, &id).await?.map(|label| label.workspace_id);
+    let workspace_id = find_label(&state, &user_id, &id)
+        .await?
+        .map(|label| label.workspace_id);
     if !state.repo.delete_label(&user_id, &id).await? {
         return Err(ApiError::NotFound);
     }

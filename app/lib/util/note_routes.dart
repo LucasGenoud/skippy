@@ -33,7 +33,10 @@ class OpenNoteRoutes extends NavigatorObserver {
       return;
     }
     navigator.push(
-      MaterialPageRoute<void>(settings: RouteSettings(name: name), builder: build),
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: name),
+        builder: build,
+      ),
     );
   }
 
