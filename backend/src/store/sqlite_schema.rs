@@ -275,6 +275,53 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
 
 // Run once, atomically, on both fresh and existing workspace schemas.
 async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
+    const CREATE_COLLECTIONS: &str = r#"
+        CREATE TABLE collections (
+            id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+            name TEXT NOT NULL CHECK (trim(name) <> ''),
+            icon TEXT, color TEXT,
+            layout TEXT NOT NULL DEFAULT 'masonry' CHECK (layout IN ('masonry','list','board')),
+            sort TEXT NOT NULL DEFAULT 'custom' CHECK (sort IN ('custom','edited','newest','oldest')),
+            position REAL NOT NULL DEFAULT 0,
+            deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0,1)),
+            UNIQUE(id, workspace_id)
+        ) STRICT;
+    "#;
+    const FINISH_COLLECTIONS: &str = r#"
+        CREATE INDEX IF NOT EXISTS idx_notes_workspace_position ON notes(workspace_id, position);
+        CREATE INDEX IF NOT EXISTS idx_notes_trash_purge ON notes(trashed_at) WHERE trashed = 1;
+        CREATE INDEX IF NOT EXISTS idx_notes_reminders ON notes(reminder_at) WHERE trashed = 0 AND reminder_fired_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_notes_stage ON notes(stage_id) WHERE stage_id IS NOT NULL;
+        CREATE INDEX idx_notes_collection ON notes(collection_id,position);
+        CREATE TRIGGER workspace_general AFTER INSERT ON workspaces BEGIN
+            INSERT INTO collections(id,workspace_id,name) VALUES(NEW.id || '-general',NEW.id,'General');
+        END;
+        CREATE TRIGGER note_collection_insert AFTER INSERT ON notes WHEN NEW.collection_id IS NULL BEGIN
+            UPDATE notes SET collection_id = (SELECT id FROM collections WHERE workspace_id=NEW.workspace_id AND deleted=0 ORDER BY position,id LIMIT 1) WHERE id=NEW.id;
+        END;
+        CREATE TRIGGER stage_collection_insert AFTER INSERT ON stages WHEN NEW.collection_id IS NULL BEGIN
+            UPDATE stages SET collection_id = (SELECT id FROM collections WHERE workspace_id=NEW.workspace_id AND deleted=0 ORDER BY position,id LIMIT 1) WHERE id=NEW.id;
+        END;
+        CREATE TRIGGER note_collection_check BEFORE UPDATE OF collection_id,workspace_id,trashed ON notes BEGIN
+            SELECT RAISE(ABORT,'invalid collection') WHERE NEW.collection_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND (deleted=0 OR NEW.trashed=1));
+        END;
+        CREATE TRIGGER note_collection_create BEFORE INSERT ON notes WHEN NEW.collection_id IS NOT NULL BEGIN
+            SELECT RAISE(ABORT,'invalid collection') WHERE NOT EXISTS (
+                SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND (deleted=0 OR NEW.trashed=1));
+        END;
+        CREATE TRIGGER stage_collection_check BEFORE INSERT ON stages WHEN NEW.collection_id IS NOT NULL BEGIN
+            SELECT RAISE(ABORT,'invalid collection') WHERE NOT EXISTS (
+                SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND deleted=0);
+        END;
+        ALTER TABLE share_links ADD COLUMN collection_id TEXT REFERENCES collections(id);
+        DROP INDEX uq_share_links_workspace_target;
+        DROP INDEX uq_share_links_label_target;
+        CREATE UNIQUE INDEX uq_share_links_workspace_target ON share_links(created_by,target,workspace_id,COALESCE(collection_id,'')) WHERE target IN ('notes','board');
+        CREATE UNIQUE INDEX uq_share_links_label_target ON share_links(created_by,label_id,COALESCE(collection_id,'')) WHERE target='label';
+        INSERT INTO app_meta VALUES('collections_v1','1');
+    "#;
     let mut conn = pool.acquire().await?;
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *conn)
@@ -285,18 +332,25 @@ async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
         let done: i64 = sqlx::query_scalar("SELECT count(*) FROM app_meta WHERE key = 'collections_v1'")
             .fetch_one(&mut *tx).await?;
         if done == 0 {
-            sqlx::raw_sql(r#"
-                CREATE TABLE collections (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL CHECK (trim(name) <> ''),
-                    icon TEXT, color TEXT,
-                    layout TEXT NOT NULL DEFAULT 'masonry' CHECK (layout IN ('masonry','list','board')),
-                    sort TEXT NOT NULL DEFAULT 'custom' CHECK (sort IN ('custom','edited','newest','oldest')),
-                    position REAL NOT NULL DEFAULT 0,
-                    deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0,1)),
-                    UNIQUE(id, workspace_id)
-                ) STRICT;
+            let old_collections: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='collections'",
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            let notes_have_collection: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pragma_table_info('notes') WHERE name='collection_id'",
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+            let stages_have_collection: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pragma_table_info('stages') WHERE name='collection_id'",
+            )
+            .fetch_one(&mut *tx)
+            .await?;
+
+            if old_collections == 0 {
+                sqlx::raw_sql(CREATE_COLLECTIONS).execute(&mut *tx).await?;
+                sqlx::raw_sql(r#"
                 INSERT INTO collections (id,workspace_id,name,layout)
                     SELECT id || '-general',id,'General',CASE WHEN notes_enabled = 0 THEN 'board' ELSE 'masonry' END FROM workspaces;
                 ALTER TABLE notes ADD COLUMN collection_id TEXT REFERENCES collections(id);
@@ -312,35 +366,119 @@ async fn migrate_collections(pool: &SqlitePool) -> anyhow::Result<()> {
                 INSERT INTO stages_new SELECT id,workspace_id,workspace_id || '-general',name,color,position FROM stages;
                 DROP TABLE stages;
                 ALTER TABLE stages_new RENAME TO stages;
-                CREATE INDEX idx_notes_collection ON notes(collection_id,position);
-                CREATE TRIGGER workspace_general AFTER INSERT ON workspaces BEGIN
-                    INSERT INTO collections(id,workspace_id,name) VALUES(NEW.id || '-general',NEW.id,'General');
-                END;
-                CREATE TRIGGER note_collection_insert AFTER INSERT ON notes WHEN NEW.collection_id IS NULL BEGIN
-                    UPDATE notes SET collection_id = (SELECT id FROM collections WHERE workspace_id=NEW.workspace_id AND deleted=0 ORDER BY position,id LIMIT 1) WHERE id=NEW.id;
-                END;
-                CREATE TRIGGER stage_collection_insert AFTER INSERT ON stages WHEN NEW.collection_id IS NULL BEGIN
-                    UPDATE stages SET collection_id = (SELECT id FROM collections WHERE workspace_id=NEW.workspace_id AND deleted=0 ORDER BY position,id LIMIT 1) WHERE id=NEW.id;
-                END;
-                CREATE TRIGGER note_collection_check BEFORE UPDATE OF collection_id,workspace_id,trashed ON notes BEGIN
-                    SELECT RAISE(ABORT,'invalid collection') WHERE NEW.collection_id IS NOT NULL AND NOT EXISTS (
-                        SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND (deleted=0 OR NEW.trashed=1));
-                END;
-                CREATE TRIGGER note_collection_create BEFORE INSERT ON notes WHEN NEW.collection_id IS NOT NULL BEGIN
-                    SELECT RAISE(ABORT,'invalid collection') WHERE NOT EXISTS (
-                        SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND (deleted=0 OR NEW.trashed=1));
-                END;
-                CREATE TRIGGER stage_collection_check BEFORE INSERT ON stages WHEN NEW.collection_id IS NOT NULL BEGIN
-                    SELECT RAISE(ABORT,'invalid collection') WHERE NOT EXISTS (
-                        SELECT 1 FROM collections WHERE id=NEW.collection_id AND workspace_id=NEW.workspace_id AND deleted=0);
-                END;
-                ALTER TABLE share_links ADD COLUMN collection_id TEXT REFERENCES collections(id);
-                DROP INDEX uq_share_links_workspace_target;
-                DROP INDEX uq_share_links_label_target;
-                CREATE UNIQUE INDEX uq_share_links_workspace_target ON share_links(created_by,target,workspace_id,COALESCE(collection_id,'')) WHERE target IN ('notes','board');
-                CREATE UNIQUE INDEX uq_share_links_label_target ON share_links(created_by,label_id,COALESCE(collection_id,'')) WHERE target='label';
-                INSERT INTO app_meta VALUES('collections_v1','1');
-            "#).execute(&mut *tx).await?;
+                "#).execute(&mut *tx).await?;
+            } else {
+                let current_shape: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM pragma_table_info('collections') WHERE name='deleted'",
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+                anyhow::ensure!(current_shape == 0, "collections migration marker is missing");
+                anyhow::ensure!(
+                    notes_have_collection == stages_have_collection,
+                    "cancelled collections migration has inconsistent note and stage tables"
+                );
+
+                sqlx::raw_sql(
+                    "DROP TRIGGER IF EXISTS workspace_inbox;
+                     ALTER TABLE collections RENAME TO collections_legacy;",
+                )
+                .execute(&mut *tx)
+                .await?;
+                sqlx::raw_sql(CREATE_COLLECTIONS).execute(&mut *tx).await?;
+                sqlx::raw_sql(r#"
+                    INSERT INTO collections(id,workspace_id,name,layout,position)
+                        SELECT workspace_id || '-' || id,workspace_id,
+                            CASE WHEN id='inbox' AND name='Inbox' THEN 'General' ELSE name END,
+                            layout,position FROM collections_legacy;
+                    INSERT INTO collections(id,workspace_id,name,layout)
+                        SELECT w.id || '-general',w.id,'General',
+                            CASE WHEN w.notes_enabled=0 THEN 'board' ELSE 'masonry' END
+                        FROM workspaces w WHERE NOT EXISTS (
+                            SELECT 1 FROM collections c WHERE c.workspace_id=w.id);
+                "#).execute(&mut *tx).await?;
+
+                if notes_have_collection == 0 {
+                    sqlx::raw_sql(r#"
+                        ALTER TABLE notes ADD COLUMN collection_id TEXT REFERENCES collections(id);
+                        UPDATE notes SET collection_id=(SELECT id FROM collections
+                            WHERE workspace_id=notes.workspace_id ORDER BY position,id LIMIT 1);
+                        CREATE TABLE stages_new (
+                            id TEXT PRIMARY KEY,
+                            workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                            collection_id TEXT REFERENCES collections(id),
+                            name TEXT NOT NULL CHECK (trim(name) <> ''),
+                            color TEXT, position REAL NOT NULL DEFAULT 0,
+                            UNIQUE(collection_id,name COLLATE NOCASE), UNIQUE(id,workspace_id)
+                        ) STRICT;
+                        INSERT INTO stages_new SELECT id,workspace_id,
+                            (SELECT id FROM collections WHERE workspace_id=stages.workspace_id ORDER BY position,id LIMIT 1),
+                            name,color,position FROM stages;
+                        DROP TABLE stages;
+                        ALTER TABLE stages_new RENAME TO stages;
+                    "#).execute(&mut *tx).await?;
+                } else {
+                    sqlx::raw_sql(r#"
+                        CREATE TABLE stages_new (
+                            id TEXT PRIMARY KEY,
+                            workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                            collection_id TEXT REFERENCES collections(id),
+                            name TEXT NOT NULL CHECK (trim(name) <> ''),
+                            color TEXT, position REAL NOT NULL DEFAULT 0,
+                            UNIQUE(collection_id,name COLLATE NOCASE), UNIQUE(id,workspace_id)
+                        ) STRICT;
+                        INSERT INTO stages_new SELECT id,workspace_id,
+                            CASE WHEN EXISTS(SELECT 1 FROM collections WHERE id=stages.workspace_id || '-' || stages.collection_id)
+                                THEN stages.workspace_id || '-' || stages.collection_id
+                                ELSE (SELECT id FROM collections WHERE workspace_id=stages.workspace_id ORDER BY position,id LIMIT 1) END,
+                            name,color,position FROM stages;
+                        DROP TABLE stages;
+                        ALTER TABLE stages_new RENAME TO stages;
+
+                        CREATE TABLE notes_new (
+                            id TEXT PRIMARY KEY,
+                            workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                            collection_id TEXT REFERENCES collections(id),
+                            created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+                            kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text','markdown','checklist','audio')),
+                            title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '',
+                            items TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(items)),
+                            color TEXT NOT NULL DEFAULT 'default',
+                            pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
+                            archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0,1)),
+                            trashed INTEGER NOT NULL DEFAULT 0 CHECK (trashed IN (0,1)),
+                            position REAL NOT NULL DEFAULT 0,
+                            reminder_at TEXT,
+                            reminder_repeat TEXT CHECK (reminder_repeat IS NULL OR reminder_repeat IN ('daily','weekly','monthly','yearly')),
+                            reminder_fired_at TEXT,
+                            transcript_status TEXT NOT NULL DEFAULT 'none' CHECK (transcript_status IN ('none','pending','done','failed')),
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, trashed_at TEXT,
+                            last_editor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+                            stage_id TEXT, stage_position REAL NOT NULL DEFAULT 0,
+                            UNIQUE(id,workspace_id),
+                            FOREIGN KEY(stage_id,workspace_id) REFERENCES stages(id,workspace_id),
+                            CHECK(reminder_repeat IS NULL OR reminder_at IS NOT NULL),
+                            CHECK((trashed=0 AND trashed_at IS NULL) OR (trashed=1 AND trashed_at IS NOT NULL))
+                        ) STRICT;
+                        INSERT INTO notes_new(id,workspace_id,collection_id,created_by,kind,title,content,items,color,
+                            pinned,archived,trashed,position,reminder_at,reminder_repeat,reminder_fired_at,
+                            transcript_status,created_at,updated_at,trashed_at,last_editor_id,stage_id,stage_position)
+                        SELECT id,workspace_id,
+                            CASE WHEN EXISTS(SELECT 1 FROM collections WHERE id=notes.workspace_id || '-' || notes.collection_id)
+                                THEN notes.workspace_id || '-' || notes.collection_id
+                                ELSE (SELECT id FROM collections WHERE workspace_id=notes.workspace_id ORDER BY position,id LIMIT 1) END,
+                            created_by,kind,title,content,items,color,pinned,archived,trashed,position,reminder_at,
+                            reminder_repeat,reminder_fired_at,transcript_status,created_at,updated_at,trashed_at,
+                            last_editor_id,stage_id,stage_position FROM notes;
+                        DROP TABLE notes;
+                        ALTER TABLE notes_new RENAME TO notes;
+                    "#).execute(&mut *tx).await?;
+                }
+                sqlx::query("DROP TABLE collections_legacy")
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            sqlx::raw_sql(FINISH_COLLECTIONS).execute(&mut *tx).await?;
         }
         tx.commit().await?;
         Ok::<_, anyhow::Error>(())
@@ -491,6 +629,109 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count, 1);
+        assert!(
+            sqlx::query("PRAGMA foreign_key_check")
+                .fetch_all(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_collection_schema_is_upgraded_without_deleting_notes() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::raw_sql(super::SCHEMA).execute(&pool).await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TABLE collections (
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                id TEXT NOT NULL, name TEXT NOT NULL,
+                layout TEXT NOT NULL DEFAULT 'masonry', position REAL NOT NULL DEFAULT 0,
+                PRIMARY KEY(workspace_id,id)
+             ) STRICT;
+             CREATE TRIGGER workspace_inbox AFTER INSERT ON workspaces BEGIN
+                INSERT INTO collections(workspace_id,id,name) VALUES(NEW.id,'inbox','Inbox');
+             END;
+             INSERT INTO users VALUES('u','User','u@test','hash','now');
+             INSERT INTO workspaces(id,owner_id,name,created_at) VALUES('w','u','Work','now');
+             INSERT INTO stages(id,workspace_id,name) VALUES('s','w','Doing');
+             INSERT INTO notes(id,workspace_id,title,stage_id,created_at,updated_at)
+                VALUES('n','w','Keep me','s','now','now');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        super::initialize(&pool).await.unwrap();
+
+        let collection: String = sqlx::query_scalar("SELECT collection_id FROM notes WHERE id='n'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(collection, "w-inbox");
+        let name: String = sqlx::query_scalar("SELECT name FROM collections WHERE id='w-inbox'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(name, "General");
+        assert!(
+            sqlx::query("PRAGMA foreign_key_check")
+                .fetch_all(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn previous_collection_assignments_survive_the_new_schema() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::raw_sql(super::SCHEMA).execute(&pool).await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TABLE collections (
+                workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                id TEXT NOT NULL, name TEXT NOT NULL,
+                layout TEXT NOT NULL DEFAULT 'masonry', position REAL NOT NULL DEFAULT 0,
+                PRIMARY KEY(workspace_id,id)
+             ) STRICT;
+             ALTER TABLE notes ADD COLUMN collection_id TEXT NOT NULL DEFAULT 'inbox';
+             ALTER TABLE stages ADD COLUMN collection_id TEXT NOT NULL DEFAULT 'inbox';
+             INSERT INTO users VALUES('u','User','u@test','hash','now');
+             INSERT INTO workspaces(id,owner_id,name,created_at) VALUES('w','u','Work','now');
+             INSERT INTO collections VALUES('w','inbox','Inbox','masonry',0);
+             INSERT INTO collections VALUES('w','projects','Projects','board',1);
+             INSERT INTO stages(id,workspace_id,name,collection_id) VALUES('s','w','Doing','projects');
+             INSERT INTO notes(id,workspace_id,title,stage_id,created_at,updated_at,collection_id)
+                VALUES('n','w','Keep me','s','now','now','projects');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        super::initialize(&pool).await.unwrap();
+
+        let assignment: (String, String) = sqlx::query_as(
+            "SELECT n.collection_id,s.collection_id FROM notes n JOIN stages s ON s.id=n.stage_id WHERE n.id='n'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(assignment, ("w-projects".into(), "w-projects".into()));
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM collections")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            2
+        );
         assert!(
             sqlx::query("PRAGMA foreign_key_check")
                 .fetch_all(&pool)
