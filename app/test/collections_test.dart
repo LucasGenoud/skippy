@@ -16,6 +16,7 @@ import 'package:skippy/theme.dart';
 import 'package:skippy/widgets/collection_settings.dart';
 import 'package:skippy/widgets/duplicate_workspace_dialog.dart';
 import 'package:skippy/widgets/board/board_view.dart';
+import 'package:skippy/widgets/form_dialog.dart';
 import 'fake_api.dart';
 import 'widget_test.dart' show homeApp;
 
@@ -225,7 +226,29 @@ void main() {
     await tester.tap(find.text('Important'));
     await tester.pumpAndSettle();
     expect(find.text('Important'), findsOneWidget);
-    expect(find.byTooltip('Collection settings'), findsOneWidget);
+    await tester.tap(find.text('Manage collections'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(FormDialog),
+        matching: find.text('Manage collections'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FormDialog),
+        matching: find.text('General'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(FormDialog),
+        matching: find.text('Collection settings'),
+      ),
+      findsOneWidget,
+    );
     store.dispose();
     await tester.pump(const Duration(milliseconds: 700));
   });
@@ -361,11 +384,21 @@ void main() {
           await tester.pumpAndSettle();
           await _capture(tester, key, 'collection-sidebar-$suffix');
         }
-        await tester.tap(find.byTooltip('Collection settings'));
+        await tester.tap(find.text('Manage collections'));
+        await tester.pumpAndSettle();
+        await _capture(tester, key, 'manage-collections-$suffix');
+        await tester.tap(
+          find.descendant(
+            of: find.byType(FormDialog),
+            matching: find.text('Reading'),
+          ),
+        );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         await _capture(tester, key, 'collection-settings-$suffix');
         await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(TextButton, 'Done'));
         await tester.pumpAndSettle();
         unawaited(
           DuplicateWorkspaceDialog.show(
@@ -405,7 +438,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New collection'));
+    await tester.tap(find.text('Manage collections'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create new collection'));
     await tester.pumpAndSettle();
     expect(find.byType(Drawer), findsNothing);
     expect(find.widgetWithText(AppBar, 'New collection'), findsOneWidget);

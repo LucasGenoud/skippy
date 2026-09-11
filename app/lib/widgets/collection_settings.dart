@@ -10,6 +10,66 @@ import 'glyph_picker.dart';
 import 'settings/accent_color.dart' show kAccentPresets;
 import '../theme.dart';
 
+class ManageCollectionsDialog extends StatelessWidget {
+  const ManageCollectionsDialog({super.key});
+
+  static Future<void> show(BuildContext context) {
+    final store = context.read<NotesStore>();
+    return showFormDialog<void>(
+      context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: store,
+        child: const ManageCollectionsDialog(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<NotesStore>();
+    return FormDialog(
+      title: const Text('Manage collections'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.add),
+            title: const Text('Create new collection'),
+            onTap: () => CollectionSettings.show(context),
+          ),
+          const Divider(height: 8),
+          for (final collection in store.collections)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                collection.icon == null
+                    ? Icons.folder_outlined
+                    : labelIconFor(collection.icon),
+                color: PaletteEntry.hexToColor(collection.color),
+              ),
+              title: Text(collection.name, overflow: TextOverflow.ellipsis),
+              subtitle: Text(switch (collection.layout) {
+                'board' => 'Board',
+                'list' => 'List',
+                _ => 'Masonry',
+              }),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () =>
+                  CollectionSettings.show(context, collection: collection),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+}
+
 class CollectionSettings extends StatefulWidget {
   final NoteCollection? collection;
   final String workspaceId;

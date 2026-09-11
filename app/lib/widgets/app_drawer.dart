@@ -117,31 +117,18 @@ class AppSidebar extends StatelessWidget {
                           : ViewSelection.notes,
                     );
                   },
-                  trailing: activeCollection?.id == c.id
-                      ? IconButton(
-                          tooltip: 'Collection settings',
-                          icon: const Icon(Icons.more_horiz, size: 20),
-                          onPressed: () => _afterDrawer(
-                            context,
-                            (context) =>
-                                CollectionSettings.show(context, collection: c),
-                          ),
-                        )
-                      : null,
                   willAcceptNote: (id) =>
                       store.noteById(id)?.workspaceId == c.workspaceId,
                   onAcceptNote: (id) => store.moveToCollection(id, c.id),
                 ),
               _SidebarItem(
-                icon: Icons.add,
-                selectedIcon: Icons.add,
-                label: 'New collection',
+                icon: Icons.edit_outlined,
+                selectedIcon: Icons.edit,
+                label: 'Manage collections',
                 isSelected: false,
                 isOpen: isOpen,
-                onTap: () => _afterDrawer(
-                  context,
-                  (context) => CollectionSettings.show(context),
-                ),
+                onTap: () =>
+                    _afterDrawer(context, ManageCollectionsDialog.show),
               ),
               const Divider(height: 32, indent: 16, endIndent: 16),
               _SidebarSectionHeader(
@@ -306,7 +293,6 @@ class _SidebarItem extends StatelessWidget {
   final bool isSelected;
   final bool isOpen;
   final VoidCallback onTap;
-  final Widget? trailing;
 
   /// Overrides the icon's colour (a label's custom colour). Null keeps the
   /// selection-aware default. Ignored while the item is an active drop target,
@@ -328,7 +314,6 @@ class _SidebarItem extends StatelessWidget {
     required this.isSelected,
     required this.isOpen,
     required this.onTap,
-    this.trailing,
     this.iconColor,
     this.onAcceptNote,
     this.willAcceptNote,
@@ -369,48 +354,42 @@ class _SidebarItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(kRadius),
               child: SizedBox(
                 height: 48,
-                child: LayoutBuilder(
-                  builder: (context, constraints) => OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    minWidth: 48,
-                    maxWidth: constraints.maxWidth < 244
-                        ? 244
-                        : constraints.maxWidth,
-                    maxHeight: 48,
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Icon(
-                            isSelected ? selectedIcon : icon,
-                            size: kStandardIconSize,
-                            // A label's custom colour wins, except while it's a
-                            // drop target (keep the highlight legible).
-                            color: dropTarget
-                                ? foreground
-                                : (iconColor ?? foreground),
-                          ),
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  minWidth: 48,
+                  maxWidth: 244,
+                  maxHeight: 48,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          isSelected ? selectedIcon : icon,
+                          size: kStandardIconSize,
+                          // A label's custom colour wins, except while it's a
+                          // drop target (keep the highlight legible).
+                          color: dropTarget
+                              ? foreground
+                              : (iconColor ?? foreground),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: labelColor,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                ),
-                          ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: labelColor,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
                         ),
-                        if (isOpen && trailing != null)
-                          SizedBox(width: 44, height: 44, child: trailing),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
