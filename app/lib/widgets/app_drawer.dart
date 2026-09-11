@@ -369,44 +369,48 @@ class _SidebarItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(kRadius),
               child: SizedBox(
                 height: 48,
-                child: OverflowBox(
-                  alignment: Alignment.centerLeft,
-                  minWidth: 48,
-                  maxWidth: 244,
-                  maxHeight: 48,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Icon(
-                          isSelected ? selectedIcon : icon,
-                          size: kStandardIconSize,
-                          // A label's custom colour wins, except while it's a
-                          // drop target (keep the highlight legible).
-                          color: dropTarget
-                              ? foreground
-                              : (iconColor ?? foreground),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    minWidth: 48,
+                    maxWidth: constraints.maxWidth < 244
+                        ? 244
+                        : constraints.maxWidth,
+                    maxHeight: 48,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Icon(
+                            isSelected ? selectedIcon : icon,
+                            size: kStandardIconSize,
+                            // A label's custom colour wins, except while it's a
+                            // drop target (keep the highlight legible).
+                            color: dropTarget
+                                ? foreground
+                                : (iconColor ?? foreground),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: labelColor,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                              ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: labelColor,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                ),
+                          ),
                         ),
-                      ),
-                      if (isOpen && trailing != null)
-                        SizedBox(width: 44, height: 44, child: trailing),
-                    ],
+                        if (isOpen && trailing != null)
+                          SizedBox(width: 44, height: 44, child: trailing),
+                      ],
+                    ),
                   ),
                 ),
               ),
