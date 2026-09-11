@@ -3660,16 +3660,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Loose thought'), findsOneWidget);
 
-        await tester.tap(find.byTooltip('Filter notes'));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byWidgetPredicate(
-            (widget) =>
-                widget is CheckedPopupMenuItem &&
-                widget.child is Text &&
-                (widget.child as Text).data == 'Pinned',
-          ),
-        );
+        await tester.tap(find.text('Pinned'));
         await tester.pumpAndSettle();
         expect(find.text('Pinned report'), findsOneWidget);
         expect(find.text('Pinned recipe'), findsOneWidget);

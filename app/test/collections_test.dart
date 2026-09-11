@@ -14,7 +14,6 @@ import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/theme.dart';
 import 'package:skippy/widgets/collection_settings.dart';
-import 'package:skippy/widgets/collection_header.dart';
 import 'package:skippy/widgets/duplicate_workspace_dialog.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'fake_api.dart';
@@ -210,7 +209,9 @@ void main() {
     },
   );
 
-  testWidgets('collection header shows an applied label once', (tester) async {
+  testWidgets('sidebar keeps collection filters and settings together', (
+    tester,
+  ) async {
     final api = FakeApi();
     api.labels['l'] = const Label(
       id: 'l',
@@ -355,6 +356,11 @@ void main() {
         expect(tester.takeException(), isNull);
         final suffix = '${brightness.name}-${size.width.toInt()}';
         await _capture(tester, key, 'collections-$suffix');
+        if (size.width < 600) {
+          await tester.tap(find.byIcon(Icons.menu));
+          await tester.pumpAndSettle();
+          await _capture(tester, key, 'collection-sidebar-$suffix');
+        }
         await tester.tap(find.byTooltip('Collection settings'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
@@ -363,7 +369,7 @@ void main() {
         await tester.pumpAndSettle();
         unawaited(
           DuplicateWorkspaceDialog.show(
-            tester.element(find.byType(CollectionHeader)),
+            tester.element(find.byType(Scaffold).first),
             store.activeWorkspace!,
           ),
         );

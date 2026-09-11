@@ -1,5 +1,4 @@
 import 'package:skippy/models/collection.dart';
-import 'package:skippy/widgets/collection_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -446,7 +445,7 @@ void main() {
       // that navigates.
       await tester.tap(
         find.descendant(
-          of: find.byType(CollectionHeader),
+          of: find.byType(AppSidebar),
           matching: find.text('Home'),
         ),
       );

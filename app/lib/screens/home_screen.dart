@@ -1,5 +1,4 @@
 import '../widgets/collection_settings.dart';
-import '../widgets/collection_header.dart';
 import '../widgets/form_dialog.dart';
 import 'dart:async';
 
@@ -815,11 +814,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             Expanded(
                               child: Column(
                                 children: [
-                                  if (collectionView)
-                                    CollectionHeader(
-                                      selection: _selection,
-                                      onSelect: _selectView,
-                                    ),
                                   Expanded(
                                     child: Stack(
                                       children: [

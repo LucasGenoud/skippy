@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/collection.dart';
 import '../theme.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
 import 'collection_settings.dart';
+import 'labels_sheet.dart';
+import 'saved_view_dialog.dart';
 import 'workspace_menu.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -44,6 +47,41 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
     final scheme = Theme.of(context).colorScheme;
+    final activeCollection = store.activeCollection;
+    final baseSelection = activeCollection?.layout == 'board'
+        ? ViewSelection.board
+        : ViewSelection.notes;
+
+    Future<void> showCollectionSettings([NoteCollection? collection]) async {
+      final navigator = Navigator.of(context);
+      if (inDrawer) {
+        navigator.pop();
+        await Future<void>.delayed(Motion.slow);
+        if (!navigator.mounted) return;
+      }
+      CollectionSettings.show(navigator.context, collection: collection);
+    }
+
+    Future<void> showLabels() async {
+      final navigator = Navigator.of(context);
+      if (inDrawer) {
+        navigator.pop();
+        await Future<void>.delayed(Motion.slow);
+        if (!navigator.mounted) return;
+      }
+      EditLabelsDialog.show(navigator.context);
+    }
+
+    Future<void> showSavedFilters() async {
+      final navigator = Navigator.of(context);
+      if (inDrawer) {
+        navigator.pop();
+        await Future<void>.delayed(Motion.slow);
+        if (!navigator.mounted) return;
+      }
+      EditSmartViewsDialog.show(navigator.context);
+    }
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -92,6 +130,13 @@ class AppSidebar extends StatelessWidget {
                         : ViewSelection.notes,
                   );
                 },
+                trailing: store.activeCollection?.id == c.id
+                    ? IconButton(
+                        tooltip: 'Collection settings',
+                        icon: const Icon(Icons.more_horiz, size: 20),
+                        onPressed: () => showCollectionSettings(c),
+                      )
+                    : null,
                 willAcceptNote: (id) =>
                     store.noteById(id)?.workspaceId == c.workspaceId,
                 onAcceptNote: (id) => store.moveToCollection(id, c.id),
@@ -102,14 +147,68 @@ class AppSidebar extends StatelessWidget {
               label: 'New collection',
               isSelected: false,
               isOpen: isOpen,
-              onTap: () async {
-                if (inDrawer) {
-                  Navigator.of(context).pop();
-                  await Future<void>.delayed(Motion.slow);
-                  if (!context.mounted) return;
-                }
-                CollectionSettings.show(context);
-              },
+              onTap: showCollectionSettings,
+            ),
+            const Divider(height: 32, indent: 16, endIndent: 16),
+            _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
+            for (final label in store.labels)
+              _SidebarItem(
+                icon: label.icon == null
+                    ? Icons.label_outline
+                    : labelIcon(label),
+                selectedIcon: label.icon == null
+                    ? Icons.label
+                    : labelIcon(label),
+                iconColor: labelColorOrNull(label),
+                label: label.name,
+                isSelected: selection.labelId == label.id,
+                isOpen: isOpen,
+                onTap: () => onSelect(
+                  selection.labelId == label.id
+                      ? baseSelection
+                      : ViewSelection(NoteView.label, label.id),
+                ),
+                willAcceptNote: (id) =>
+                    store.noteById(id)?.workspaceId == store.activeWorkspaceId,
+                onAcceptNote: (id) => store.addLabelToNote(id, label.id),
+              ),
+            _SidebarItem(
+              icon: Icons.edit_outlined,
+              selectedIcon: Icons.edit,
+              label: store.labels.isEmpty ? 'Create labels' : 'Manage labels',
+              isSelected: false,
+              isOpen: isOpen,
+              onTap: showLabels,
+            ),
+            const Divider(height: 24, indent: 16, endIndent: 16),
+            _SidebarSectionHeader(label: 'SAVED FILTERS', isOpen: isOpen),
+            for (final view in store.savedViews)
+              _SidebarItem(
+                icon: view.icon == null
+                    ? Icons.bookmark_outline
+                    : labelIconFor(view.icon),
+                selectedIcon: view.icon == null
+                    ? Icons.bookmark
+                    : labelIconFor(view.icon),
+                iconColor: PaletteEntry.hexToColor(view.color),
+                label: view.name,
+                isSelected: selection.savedViewId == view.id,
+                isOpen: isOpen,
+                onTap: () => onSelect(
+                  selection.savedViewId == view.id
+                      ? baseSelection
+                      : ViewSelection.smart(view.id),
+                ),
+              ),
+            _SidebarItem(
+              icon: Icons.edit_outlined,
+              selectedIcon: Icons.edit,
+              label: store.savedViews.isEmpty
+                  ? 'Create saved filter'
+                  : 'Manage saved filters',
+              isSelected: false,
+              isOpen: isOpen,
+              onTap: showSavedFilters,
             ),
             const Divider(height: 32, indent: 16, endIndent: 16),
             for (final entry in [
@@ -187,6 +286,7 @@ class _SidebarItem extends StatelessWidget {
   final bool isSelected;
   final bool isOpen;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   /// Overrides the icon's colour (a label's custom colour). Null keeps the
   /// selection-aware default. Ignored while the item is an active drop target,
@@ -208,6 +308,7 @@ class _SidebarItem extends StatelessWidget {
     required this.isSelected,
     required this.isOpen,
     required this.onTap,
+    this.trailing,
     this.iconColor,
     this.onAcceptNote,
     this.willAcceptNote,
@@ -283,6 +384,8 @@ class _SidebarItem extends StatelessWidget {
                               ),
                         ),
                       ),
+                      if (isOpen && trailing != null)
+                        SizedBox(width: 44, height: 44, child: trailing),
                     ],
                   ),
                 ),
