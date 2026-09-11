@@ -91,7 +91,11 @@ class AppSidebar extends StatelessWidget {
                       },
               ),
               const SizedBox(height: 16),
-              _SidebarSectionHeader(label: 'COLLECTIONS', isOpen: isOpen),
+              _SidebarSectionHeader(
+                icon: Icons.folder_outlined,
+                label: 'COLLECTIONS',
+                isOpen: isOpen,
+              ),
               for (final c in store.collections)
                 _SidebarItem(
                   icon: c.icon == null
@@ -140,7 +144,11 @@ class AppSidebar extends StatelessWidget {
                 ),
               ),
               const Divider(height: 32, indent: 16, endIndent: 16),
-              _SidebarSectionHeader(label: 'LABELS', isOpen: isOpen),
+              _SidebarSectionHeader(
+                icon: Icons.label_outline,
+                label: 'LABELS',
+                isOpen: isOpen,
+              ),
               for (final label in store.labels)
                 _SidebarItem(
                   icon: label.icon == null
@@ -172,7 +180,11 @@ class AppSidebar extends StatelessWidget {
                 onTap: () => _afterDrawer(context, EditLabelsDialog.show),
               ),
               const Divider(height: 24, indent: 16, endIndent: 16),
-              _SidebarSectionHeader(label: 'SMART VIEWS', isOpen: isOpen),
+              _SidebarSectionHeader(
+                icon: Icons.auto_awesome_outlined,
+                label: 'SMART VIEWS',
+                isOpen: isOpen,
+              ),
               for (final view in store.savedViews)
                 _SidebarItem(
                   icon: view.icon == null
@@ -202,6 +214,11 @@ class AppSidebar extends StatelessWidget {
                 onTap: () => _afterDrawer(context, EditSmartViewsDialog.show),
               ),
               const Divider(height: 32, indent: 16, endIndent: 16),
+              _SidebarSectionHeader(
+                icon: Icons.inventory_2_outlined,
+                label: 'LIBRARY',
+                isOpen: isOpen,
+              ),
               for (final entry in [
                 (
                   ViewSelection.reminders,
@@ -240,9 +257,14 @@ class AppSidebar extends StatelessWidget {
 }
 
 class _SidebarSectionHeader extends StatelessWidget {
+  final IconData icon;
   final String label;
   final bool isOpen;
-  const _SidebarSectionHeader({required this.label, required this.isOpen});
+  const _SidebarSectionHeader({
+    required this.icon,
+    required this.label,
+    required this.isOpen,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -255,15 +277,21 @@ class _SidebarSectionHeader extends StatelessWidget {
         curve: Curves.easeInOutCubic,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
-          child: Text(
-            label,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.clip,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              letterSpacing: 1.1,
-              color: scheme.onSurfaceVariant,
-            ),
+          child: Row(
+            children: [
+              Icon(icon, size: 14, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.clip,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  letterSpacing: 1.1,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       ),
