@@ -1,13 +1,11 @@
-use async_trait::async_trait;
 use sqlx::Row;
 
+use super::RepoResult;
 use super::sqlite::{SqliteRepository, now, visible_notes};
-use super::{HistoryRepository, RepoResult};
 use crate::models::HistoryEntry;
 
-#[async_trait]
-impl HistoryRepository for SqliteRepository {
-    async fn record_checked_items(&self, note_id: &str, texts: &[String]) -> RepoResult<()> {
+impl SqliteRepository {
+    pub async fn record_checked_items(&self, note_id: &str, texts: &[String]) -> RepoResult<()> {
         let mut tx = self.pool.begin().await?;
         for text in texts {
             let text = text.trim();
@@ -39,7 +37,7 @@ impl HistoryRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn checklist_history(&self, user_id: &str) -> RepoResult<Vec<HistoryEntry>> {
+    pub async fn checklist_history(&self, user_id: &str) -> RepoResult<Vec<HistoryEntry>> {
         let rows = sqlx::query(&format!(
             "SELECT h.note_id, h.text, h.uses FROM checklist_history h
              JOIN notes n ON n.id = h.note_id

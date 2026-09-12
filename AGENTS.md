@@ -68,7 +68,7 @@ The WebSocket is a change nudge, not a stream of note patches. Multiple notifica
 Normal request flow is:
 
 ```text
-axum route -> feature handler -> Repository/FileStore/service -> response
+axum route -> feature handler -> SqliteRepository/FileStore/service -> response
                                       |
                                       +-> background indexing, labeling,
                                           notification, transcription, or WS nudge
@@ -84,11 +84,10 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 
 - `README.md`: product behavior, local setup, API sketch, and design trade-offs.
 - `Dockerfile`: builds Flutter web, compiles the Rust binary, and produces the full-stack runtime image.
-- `docker-compose.yml`: app, Whisper, and Garage services. It does not define Watchtower.
+- `docker-compose.yml`: base app service; the simple/all overrides add Whisper, Tesseract, and Garage. None defines Watchtower.
 - `garage.toml`: bundled S3-compatible Garage configuration.
 - `.forgejo/workflows/build.yml`: full-stack image build and registry push on the `homeserver-runner` label.
 - `docs/DEPLOY.md`: Forgejo, registry, homeserver, and rollback notes.
-- `docs/superpowers/`: historical feature designs and plans; useful context, not the source of truth when code differs.
 
 ### Backend
 
@@ -116,7 +115,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/unfurl.rs`: authenticated link-preview endpoint and cache integration.
 - `backend/src/handlers/probes.rs`: tests for unsaved LLM and notification configurations.
 - `backend/src/handlers/background.rs`: shared post-write jobs for versions, search, auto-labeling, and notifications.
-- `backend/src/store/mod.rs`: focused account/workspace/note/sharing/taxonomy/history/attachment/infrastructure repository traits, composed as `Repository`. This is the persistence seam and permission-aware query boundary.
+- `backend/src/store/mod.rs`: shared SQLite result and cleanup types.
 - `backend/src/store/sqlite.rs`: SQLite account, workspace, note, and taxonomy implementation plus shared helpers.
 - `backend/src/store/sqlite_attachments.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`: focused SQLite repository implementations.
 - `backend/src/store/sqlite_schema.rs`: current clean-break schema creation.
@@ -153,7 +152,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/models/search_stats.dart`: semantic index diagnostics.
 - `app/lib/state/auth_store.dart`: session restoration, login/register/logout, offline authentication fallback.
 - `app/lib/state/notes_store.dart`: optimistic note domain, sync queue, retry, WebSocket refresh, attachments.
-- `app/lib/state/sync_retry_policy.dart`, `workspace_reconciliation.dart`, `note_attachment_coordinator.dart`: focused retry, workspace-state, and attachment orchestration extracted from `NotesStore`.
+- `app/lib/state/sync_retry_policy.dart`, `workspace_reconciliation.dart`: focused retry and workspace-state rules extracted from `NotesStore`.
 - `app/lib/state/settings_store.dart`: defaults, JSON persistence, managed settings, capabilities, and setting mutations.
 - `app/lib/state/local_cache.dart`: per-user cached notes and persisted pending operations.
 - `app/lib/state/link_preview_cache.dart`: in-memory/client preview cache and fetch coalescing.
@@ -201,7 +200,7 @@ Supported note kinds are `text`, `markdown`, `checklist`, and `audio`. Audio tra
 
 Every note and label belongs to exactly one workspace. The workspace is the note's sole owner; `notes.created_by` is nullable attribution and grants no lifecycle authority. A participant is a direct collaborator or a member (including the owner) of the workspace holding it, so new note-related queries should go through `participant_ids`/`is_participant` rather than reading `note_shares` directly.
 
-Repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. The owning workspace's owner controls destructive sharing and note lifecycle actions, including moving a note between workspaces; members and direct collaborators can edit. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. Deleting a workspace permanently deletes every note and attachment it contains, regardless of creator; leaving or being removed never moves or deletes workspace-owned notes. Deleting an account deletes its owned workspaces but preserves notes it created in other users' workspaces, clearing creator attribution. A user's default workspace can never be deleted or left while the account exists.
+SQLite repository queries are participant-scoped. A non-participant should normally receive not found rather than learning that a note exists. The owning workspace's owner controls destructive sharing and note lifecycle actions, including moving a note between workspaces; members and direct collaborators can edit. Workspaces have an owner plus flat members: only the owner renames, deletes, or changes the roster, and members may leave. Deleting a workspace permanently deletes every note and attachment it contains, regardless of creator; leaving or being removed never moves or deletes workspace-owned notes. Deleting an account deletes its owned workspaces but preserves notes it created in other users' workspaces, clearing creator attribution. A user's default workspace can never be deleted or left while the account exists.
 
 Labels are a workspace's shared taxonomy, not personal state: every member sees and applies the same set. Someone who reached a note through a direct share is not in its workspace, so they see none of its labels and their `label_ids` patch is ignored rather than clearing what members attached. Pin, archive, reminder, color, and custom ordering are shared note state.
 
@@ -318,7 +317,7 @@ Decide first whether it is workspace state (shared by every member, like labels)
 
 1. Update Rust domain and request/update payloads.
 2. Update create/update application logic and side-effect classification.
-3. Update the `Repository` trait, SQLite schema, SQL statements, row decoding, and tests.
+3. Update `SqliteRepository`, the SQLite schema, SQL statements, row decoding, and tests.
 4. Update the Dart model, copy/JSON methods, local cache, API payloads, and `FakeApi`.
 5. Update store/UI behavior and both focused and cross-layer tests.
 
@@ -372,7 +371,7 @@ A bug fix starts with the test. Write it, run it, watch it fail for the reason y
 - Separate logical blocks with a blank line.
 - Comment what a block does and why, in as few words as that takes. Reach for a concrete example, or an ASCII diagram when the shape of a system is the hard part.
 - Fields and functions stay private. Widening visibility is a design change, not an implementation detail: ask before promoting anything to internal or public.
-- Talk to the layer directly below you and no further. A screen or a handler never reaches a raw socket, a SQL query, or a device API; it goes through whatever owns that. Low-level mechanics belong behind an abstraction that speaks in domain terms, the way `Repository`, `FileStore`, and `ApiClient` already do.
+- Talk to the layer directly below you and no further. A screen or a handler never reaches a raw socket, a SQL query, or a device API; it goes through whatever owns that. Low-level mechanics belong behind a domain boundary such as `SqliteRepository`, `FileStore`, or `ApiClient`.
 
 ### Scope of a change
 

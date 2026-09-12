@@ -59,7 +59,7 @@ pub fn verify_file_access(secret: &[u8], attachment_id: &str, exp: i64, sig: &st
 }
 
 /// Attachment blob storage. Kept deliberately separate from
-/// [`crate::store::Repository`]: object storage is its own swap point, and
+/// the relational store: object storage is its own swap point, and
 /// `main` picks the implementation from `STORAGE`.
 ///
 /// Attachment ids are globally unique and relational ownership flows through

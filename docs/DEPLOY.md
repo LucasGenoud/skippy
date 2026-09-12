@@ -58,10 +58,10 @@ printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 Keep `.env` private. Keep matching S3/Garage values unchanged after Garage
 setup. Compose has no default credentials and reports missing values.
 
-Then bring the stack up:
+Then bring the full stack up:
 
 ```
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.simple.yml -f docker-compose.all.yml up -d
 ```
 
 Watchtower is not defined in this repository's `docker-compose.yml`. Configure
@@ -69,14 +69,14 @@ it separately on the homeserver if you want automatic pulls and restarts.
 
 ### 4. GPU transcription (optional)
 
-GPU values are commented in `docker-compose.yml`. For NVIDIA, edit the
-Whisper service to use the GPU image, `large-v3`, `cuda`, and `float16`, then
-uncomment its GPU reservation and use a `900s` health-check start period.
+For NVIDIA, edit the Whisper service in `docker-compose.simple.yml` to use the
+GPU image, `large-v3`, `cuda`, and `float16`, then add its GPU reservation and
+use a `900s` health-check start period.
 Requires the NVIDIA Container Toolkit and a CUDA 12-compatible driver (≥ 525).
 Check `nvidia-smi` first.
 
 ```
-docker compose up -d whisper
+docker compose -f docker-compose.yml -f docker-compose.simple.yml up -d whisper
 ```
 
 ### 5. Image text recognition (optional)
@@ -100,7 +100,7 @@ Watchtower and run that tag directly:
 docker compose run ... # or:
 docker pull forgejo.genoud.dev/lucasgenoud/skippy:<sha>
 docker tag  forgejo.genoud.dev/lucasgenoud/skippy:<sha> forgejo.genoud.dev/lucasgenoud/skippy:latest
-docker compose up -d server
+docker compose -f docker-compose.yml -f docker-compose.simple.yml -f docker-compose.all.yml up -d server
 ```
 
 Watchtower will leave it alone until a newer `:latest` is pushed.

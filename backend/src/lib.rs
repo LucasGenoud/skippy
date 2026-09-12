@@ -31,7 +31,7 @@ use axum::routing::{get, post, put};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::files::FileStore;
-use crate::store::Repository;
+use crate::store::sqlite::SqliteRepository;
 use crate::ws::Hub;
 
 /// Server build identifier shown by the client's Settings page. Docker builds
@@ -56,7 +56,7 @@ pub struct ReindexProgress {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub repo: Arc<dyn Repository>,
+    pub repo: Arc<SqliteRepository>,
     pub hub: Hub,
     /// Attachment blob storage, local disk or S3, chosen in `main` from
     /// `STORAGE`.
@@ -117,7 +117,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(repo: Arc<dyn Repository>, files: Arc<dyn FileStore>) -> Self {
+    pub fn new(repo: Arc<SqliteRepository>, files: Arc<dyn FileStore>) -> Self {
         // Random per-process fallback so file URLs are signed even before a
         // persisted secret is loaded (and in tests, which never persist one).
         let mut secret = vec![0u8; 32];

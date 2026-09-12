@@ -105,12 +105,12 @@ The Compose files in this repository run the same image with every setting
 spelled out:
 
 ```sh
-docker compose -f docker-compose.minimal.yml up -d
-docker compose -f docker-compose.simple.yml up -d
-docker compose -f docker-compose.all.yml up -d
+docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.simple.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.simple.yml -f docker-compose.all.yml up -d
 ```
 
-`docker-compose.minimal.yml` runs Skippy with disk storage.
+`docker-compose.yml` runs Skippy with disk storage.
 `docker-compose.simple.yml` adds Whisper and Tesseract while keeping disk
 storage. `docker-compose.all.yml` is the full stack and uses Garage for S3
 storage.
@@ -420,13 +420,13 @@ widget flows.
 ```text
 backend/  Rust API, SQLite repository, file storage, optional services
 app/      Flutter client, state stores, screens, widgets, platform adapters
-docs/     Deployment notes and historical design documents
+docs/     Deployment notes and screenshots
 ```
 
-The main extension seams are the `Repository` in
-[`backend/src/store/mod.rs`](backend/src/store/mod.rs) and the `FileStore` in
-[`backend/src/files.rs`](backend/src/files.rs). SQLite and local disk are the
-defaults; S3-compatible storage is also supported.
+`SqliteRepository` in [`backend/src/store/sqlite.rs`](backend/src/store/sqlite.rs)
+owns relational persistence. `FileStore` in
+[`backend/src/files.rs`](backend/src/files.rs) selects local disk or
+S3-compatible attachment storage.
 
 ## API overview
 

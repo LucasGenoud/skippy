@@ -9,7 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
   provider: ^6.1.2
   http: ^1.2.0
   http_parser: ^4.0.0

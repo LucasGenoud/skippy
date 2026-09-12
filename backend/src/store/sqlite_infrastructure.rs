@@ -1,14 +1,10 @@
-use async_trait::async_trait;
 use sqlx::Row;
 
 use super::sqlite::{SqliteRepository, now};
-use super::{
-    CleanupJob, CleanupKind, CleanupStats, InfrastructureRepository, RepoError, RepoResult,
-};
+use super::{CleanupJob, CleanupKind, CleanupStats, RepoError, RepoResult};
 
-#[async_trait]
-impl InfrastructureRepository for SqliteRepository {
-    async fn settings_for_user(&self, user_id: &str) -> RepoResult<Option<String>> {
+impl SqliteRepository {
+    pub async fn settings_for_user(&self, user_id: &str) -> RepoResult<Option<String>> {
         let row = sqlx::query("SELECT data FROM user_settings WHERE user_id = ?")
             .bind(user_id)
             .fetch_optional(&self.pool)
@@ -16,7 +12,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(row.map(|row| row.get("data")))
     }
 
-    async fn put_settings(&self, user_id: &str, data: &str) -> RepoResult<()> {
+    pub async fn put_settings(&self, user_id: &str, data: &str) -> RepoResult<()> {
         sqlx::query(
             "INSERT INTO user_settings (user_id, data) VALUES (?, ?)
              ON CONFLICT (user_id) DO UPDATE SET data = excluded.data",
@@ -28,7 +24,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn meta_get(&self, key: &str) -> RepoResult<Option<String>> {
+    pub async fn meta_get(&self, key: &str) -> RepoResult<Option<String>> {
         let row = sqlx::query("SELECT value FROM app_meta WHERE key = ?")
             .bind(key)
             .fetch_optional(&self.pool)
@@ -36,7 +32,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(row.map(|row| row.get("value")))
     }
 
-    async fn meta_set(&self, key: &str, value: &str) -> RepoResult<()> {
+    pub async fn meta_set(&self, key: &str, value: &str) -> RepoResult<()> {
         sqlx::query(
             "INSERT INTO app_meta (key, value) VALUES (?, ?)
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
@@ -48,7 +44,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn enqueue_cleanup(&self, kind: CleanupKind, target_id: &str) -> RepoResult<()> {
+    pub async fn enqueue_cleanup(&self, kind: CleanupKind, target_id: &str) -> RepoResult<()> {
         sqlx::query(
             "INSERT OR IGNORE INTO cleanup_jobs
              (kind, target_id, next_attempt_at, created_at) VALUES (?, ?, 0, ?)",
@@ -61,7 +57,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn due_cleanup_jobs(&self, now: i64, limit: u32) -> RepoResult<Vec<CleanupJob>> {
+    pub async fn due_cleanup_jobs(&self, now: i64, limit: u32) -> RepoResult<Vec<CleanupJob>> {
         let rows = sqlx::query(
             "SELECT id, kind, target_id, attempts FROM cleanup_jobs
              WHERE next_attempt_at <= ? ORDER BY id LIMIT ?",
@@ -84,7 +80,7 @@ impl InfrastructureRepository for SqliteRepository {
             .map_err(RepoError::from)
     }
 
-    async fn complete_cleanup_job(&self, job_id: i64) -> RepoResult<()> {
+    pub async fn complete_cleanup_job(&self, job_id: i64) -> RepoResult<()> {
         sqlx::query("DELETE FROM cleanup_jobs WHERE id = ?")
             .bind(job_id)
             .execute(&self.pool)
@@ -92,7 +88,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn retry_cleanup_job(
+    pub async fn retry_cleanup_job(
         &self,
         job_id: i64,
         error: &str,
@@ -110,7 +106,7 @@ impl InfrastructureRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn cleanup_stats(&self) -> RepoResult<CleanupStats> {
+    pub async fn cleanup_stats(&self) -> RepoResult<CleanupStats> {
         let row = sqlx::query(
             "SELECT COUNT(*) AS pending,
              COALESCE(SUM(CASE WHEN attempts > 0 THEN 1 ELSE 0 END), 0) AS failed

@@ -7,7 +7,9 @@ import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import 'form_dialog.dart';
 import 'glyph_picker.dart';
+import 'drag_reorder_list.dart';
 import 'settings/accent_color.dart' show kAccentPresets;
+import 'staggered_entrance.dart';
 import '../theme.dart';
 
 class ManageCollectionsDialog extends StatelessWidget {
@@ -39,25 +41,45 @@ class ManageCollectionsDialog extends StatelessWidget {
             onTap: () => CollectionSettings.show(context),
           ),
           const Divider(height: 8),
-          for (final collection in store.collections)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                collection.icon == null
-                    ? Icons.folder_outlined
-                    : labelIconFor(collection.icon),
-                color: PaletteEntry.hexToColor(collection.color),
-              ),
-              title: Text(collection.name, overflow: TextOverflow.ellipsis),
-              subtitle: Text(switch (collection.layout) {
-                'board' => 'Board',
-                'list' => 'List',
-                _ => 'Masonry',
-              }),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () =>
-                  CollectionSettings.show(context, collection: collection),
-            ),
+          DragReorderList<NoteCollection>(
+            items: store.collections,
+            idOf: (collection) => collection.id,
+            onReorder: store.moveCollection,
+            rowBuilder: (context, collection, index, handle) =>
+                StaggeredEntrance(
+                  index: index,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        handle,
+                        const SizedBox(width: 4),
+                        Icon(
+                          collection.icon == null
+                              ? Icons.folder_outlined
+                              : labelIconFor(collection.icon),
+                          color: PaletteEntry.hexToColor(collection.color),
+                        ),
+                      ],
+                    ),
+                    title: Text(
+                      collection.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(switch (collection.layout) {
+                      'board' => 'Board',
+                      'list' => 'List',
+                      _ => 'Masonry',
+                    }),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => CollectionSettings.show(
+                      context,
+                      collection: collection,
+                    ),
+                  ),
+                ),
+          ),
         ],
       ),
       actions: [

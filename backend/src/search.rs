@@ -159,34 +159,6 @@ fn parse_embeddings(body: &serde_json::Value) -> anyhow::Result<Vec<Vec<f32>>> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Vector index
-
-#[async_trait]
-pub trait VectorIndex: Send + Sync {
-    async fn upsert(
-        &self,
-        note_id: &str,
-        workspace_id: &str,
-        vector: Vec<f32>,
-    ) -> anyhow::Result<()>;
-    async fn remove(&self, note_id: &str) -> anyhow::Result<()>;
-    async fn remove_workspace(&self, workspace_id: &str) -> anyhow::Result<()>;
-    /// Every note id that currently has at least one vector in the index.
-    /// Lets the startup reindex skip notes already embedded.
-    async fn indexed_note_ids(&self) -> anyhow::Result<HashSet<String>>;
-    /// Top-`limit` note ids from the named workspace collections, best match
-    /// first. Callers remain responsible for relational access checks.
-    async fn search(
-        &self,
-        workspace_ids: &[String],
-        vector: Vec<f32>,
-        limit: usize,
-    ) -> anyhow::Result<Vec<(String, f32)>>;
-}
-
-// -- SQLite (sqlite-vec) --------------------------------------------------------
-
 /// Register sqlite-vec for every SQLite connection opened by this process.
 /// Idempotent (guarded by `Once`); must run before the pool below is created.
 pub fn register_sqlite_vec() {
@@ -332,8 +304,7 @@ fn vector_to_blob(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
-#[async_trait]
-impl VectorIndex for SqliteVectorIndex {
+impl SqliteVectorIndex {
     async fn upsert(
         &self,
         note_id: &str,
@@ -475,12 +446,12 @@ const MAX_CONCURRENT_EMBEDS: usize = 4;
 
 pub struct SearchService {
     embedder: Arc<dyn TextEmbedder>,
-    index: Arc<dyn VectorIndex>,
+    index: Arc<SqliteVectorIndex>,
     embed_slots: tokio::sync::Semaphore,
 }
 
 impl SearchService {
-    pub fn new(embedder: Arc<dyn TextEmbedder>, index: Arc<dyn VectorIndex>) -> Self {
+    pub fn new(embedder: Arc<dyn TextEmbedder>, index: Arc<SqliteVectorIndex>) -> Self {
         Self {
             embedder,
             index,
@@ -551,7 +522,7 @@ impl SearchService {
     }
 
     /// Note ids already present in the vector index (see
-    /// [`VectorIndex::indexed_note_ids`]).
+    /// [`SqliteVectorIndex::indexed_note_ids`]).
     pub async fn indexed_note_ids(&self) -> anyhow::Result<HashSet<String>> {
         self.index.indexed_note_ids().await
     }

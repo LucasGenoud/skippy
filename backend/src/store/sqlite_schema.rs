@@ -557,13 +557,11 @@ mod tests {
     use uuid::Uuid;
 
     use crate::models::User;
-    use crate::store::AccountRepository;
     use crate::store::sqlite::SqliteRepository;
 
     #[tokio::test]
     async fn incomplete_copies_are_reclaimed() {
         use crate::models::Workspace;
-        use crate::store::{InfrastructureRepository, WorkspaceRepository};
         let path = std::env::temp_dir().join(format!("skippy-copy-{}.db", Uuid::new_v4()));
         let repo = SqliteRepository::connect(path.to_str().unwrap())
             .await

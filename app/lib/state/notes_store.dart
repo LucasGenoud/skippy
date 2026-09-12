@@ -15,7 +15,6 @@ import 'local_cache.dart';
 import '../models/saved_view.dart';
 import 'note_collection.dart';
 import 'note_conversion.dart';
-import 'note_attachment_coordinator.dart';
 import 'pending_operation.dart';
 import 'pending_operation_executor.dart';
 import 'sync_retry_policy.dart';
@@ -154,6 +153,34 @@ class NotesStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  void moveCollection(String id, int newIndex) {
+    final workspace = activeWorkspace;
+    if (workspace == null) return;
+    final ordered = List<NoteCollection>.from(workspace.collections);
+    final currentIndex = ordered.indexWhere((c) => c.id == id);
+    if (currentIndex == -1) return;
+    final collection = ordered.removeAt(currentIndex);
+    final target = newIndex.clamp(0, ordered.length);
+    final before = target == 0
+        ? (ordered.isEmpty ? 0.0 : ordered.first.position - 2048)
+        : ordered[target - 1].position;
+    final after = target == ordered.length
+        ? before + 2048
+        : ordered[target].position;
+    saveCollection(
+      NoteCollection(
+        id: collection.id,
+        workspaceId: collection.workspaceId,
+        name: collection.name,
+        icon: collection.icon,
+        color: collection.color,
+        layout: collection.layout,
+        sort: collection.sort,
+        position: (before + after) / 2,
+      ),
+    );
+  }
+
   void deleteCollection(String id) {
     final workspaceId = _workspaces
         .where((w) => w.collections.any((c) => c.id == id))
@@ -250,7 +277,6 @@ class NotesStore extends ChangeNotifier {
 
   final List<PendingOp> _queue = [];
   late final PendingOperationExecutor _pendingOperations;
-  late final NoteAttachmentCoordinator _attachments;
   bool _flushing = false;
   Timer? _retryTimer;
   final Map<String, Timer> _saveDebounce = {};
@@ -308,13 +334,6 @@ class NotesStore extends ChangeNotifier {
     this.offlineGrace = _defaultOfflineGrace,
   }) : cache = cache ?? MemoryLocalCache() {
     _pendingOperations = PendingOperationExecutor(api: api, noteById: noteById);
-    _attachments = NoteAttachmentCoordinator(
-      api: api,
-      noteById: noteById,
-      replace: _replace,
-      ensureMaterialized: _materializeForAttachment,
-      drainQueue: _drainQueue,
-    );
   }
 
   /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
@@ -2248,7 +2267,18 @@ class NotesStore extends ChangeNotifier {
     String mime,
     String filename,
   ) async {
-    await _attachments.upload(noteId, bytes, mime, filename);
+    await _materializeForAttachment(noteId);
+    await _drainQueue();
+    final attachment = await api.uploadAttachment(
+      noteId,
+      bytes,
+      mime,
+      filename,
+    );
+    final note = noteById(noteId);
+    if (note != null) {
+      _replace(note.copyWith(attachments: [...note.attachments, attachment]));
+    }
   }
 
   Future<void> _materializeForAttachment(String noteId) async {
@@ -2298,7 +2328,15 @@ class NotesStore extends ChangeNotifier {
   }
 
   void removeAttachment(String noteId, String attachmentId) {
-    if (!_attachments.removeLocal(noteId, attachmentId)) return;
+    final note = noteById(noteId);
+    if (note == null) return;
+    _replace(
+      note.copyWith(
+        attachments: note.attachments
+            .where((attachment) => attachment.id != attachmentId)
+            .toList(),
+      ),
+    );
     _enqueue(PendingOp(PendingOpKind.deleteAttachment, id: attachmentId));
   }
 

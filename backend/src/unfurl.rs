@@ -3,9 +3,8 @@
 //! render a rich preview card. The Flutter web app can't fetch arbitrary
 //! cross-origin pages itself, hence the server does it.
 //!
-//! Minimal-dependency style (no `url`/`scraper`/`regex` crates): URLs are
-//! hand-parsed and the HTML is scanned with a small tolerant tag reader, the
-//! same hand-rolled approach used for SigV4 in `files.rs` and SSE in `llm.rs`.
+//! HTML is scanned with a small tolerant tag reader; URL parsing and joining
+//! use reqwest's existing URL implementation.
 //!
 //! Because the server fetches user-supplied URLs, `validate_public_http_url`
 //! is an SSRF guard: it rejects loopback/private/link-local addresses (and
@@ -619,98 +618,40 @@ fn decode_entities(s: &str) -> String {
 /// A minimally-parsed absolute http(s) URL.
 #[derive(Debug, Clone)]
 pub struct ParsedUrl {
-    pub scheme: String,
     pub host: String,
-    pub port: u16,
-    /// Absolute request path (leading `/`, may include query/fragment).
+    /// Absolute request path (leading `/`).
     pub path: String,
-    /// Reassembled `scheme://authority/path` used for requests.
     pub full: String,
     /// DNS result checked by the SSRF policy and pinned into reqwest.
     addrs: Vec<SocketAddr>,
 }
 
 impl ParsedUrl {
-    fn authority(&self) -> String {
-        let default = if self.scheme == "https" { 443 } else { 80 };
-        let host = if self.host.contains(':') {
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
-        if self.port == default {
-            host
-        } else {
-            format!("{host}:{}", self.port)
-        }
-    }
-
     /// Resolve a possibly-relative reference against this URL.
     pub fn resolve(&self, href: &str) -> String {
-        let href = href.trim();
-        if href.starts_with("http://") || href.starts_with("https://") {
-            return href.to_string();
-        }
-        if let Some(rest) = href.strip_prefix("//") {
-            return format!("{}://{}", self.scheme, rest);
-        }
-        if href.starts_with('/') {
-            return format!("{}://{}{}", self.scheme, self.authority(), href);
-        }
-        // Relative to the current path's directory.
-        let dir = match self.path.rfind('/') {
-            Some(i) => &self.path[..=i],
-            None => "/",
-        };
-        format!("{}://{}{}{}", self.scheme, self.authority(), dir, href)
+        reqwest::Url::parse(&self.full)
+            .and_then(|base| base.join(href.trim()))
+            .map(String::from)
+            .unwrap_or_else(|_| href.trim().to_string())
     }
 }
 
 /// Parse `raw` as an absolute http(s) URL and, unless `allow_private`, reject
 /// it when the host resolves to any loopback/private/link-local address.
 pub async fn validate_public_http_url(raw: &str, allow_private: bool) -> anyhow::Result<ParsedUrl> {
-    let raw = raw.trim();
-    let (scheme, rest) = raw
-        .split_once("://")
-        .ok_or_else(|| anyhow!("url must be absolute http(s)"))?;
-    let scheme = scheme.to_ascii_lowercase();
-    if scheme != "http" && scheme != "https" {
+    let mut url = reqwest::Url::parse(raw.trim()).context("url must be absolute http(s)")?;
+    if url.scheme() != "http" && url.scheme() != "https" {
         bail!("only http and https URLs are allowed");
     }
-    // authority = up to the first '/', '?' or '#'.
-    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let authority = &rest[..auth_end];
-    let path = &rest[auth_end..];
-    // Strip any userinfo.
-    let hostport = authority
-        .rsplit_once('@')
-        .map(|(_, h)| h)
-        .unwrap_or(authority);
-    if hostport.is_empty() {
-        bail!("url has no host");
-    }
-    // Split host / port, honoring [ipv6] literals.
-    let (host, port) = if let Some(rest) = hostport.strip_prefix('[') {
-        let end = rest.find(']').ok_or_else(|| anyhow!("bad ipv6 literal"))?;
-        let host = &rest[..end];
-        let port = rest[end + 1..]
-            .strip_prefix(':')
-            .and_then(|p| p.parse().ok());
-        (host.to_string(), port)
-    } else if let Some((h, p)) = hostport.rsplit_once(':') {
-        // Only treat the tail as a port if it's numeric (avoids eating IPv6).
-        match p.parse::<u16>() {
-            Ok(port) => (h.to_string(), Some(port)),
-            Err(_) => (hostport.to_string(), None),
-        }
-    } else {
-        (hostport.to_string(), None)
-    };
-    let host = host.to_ascii_lowercase();
-    if host.is_empty() {
-        bail!("url has no host");
-    }
-    let port = port.unwrap_or(if scheme == "https" { 443 } else { 80 });
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow!("url has no host"))?
+        .to_string();
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| anyhow!("url has no port"))?;
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
 
     if !allow_private && (host == "localhost" || host.ends_with(".localhost")) {
         bail!("refusing to fetch a loopback host");
@@ -734,30 +675,10 @@ pub async fn validate_public_http_url(raw: &str, allow_private: bool) -> anyhow:
         bail!("refusing to fetch a private/loopback address");
     }
 
-    let display_host = if host.contains(':') {
-        format!("[{host}]")
-    } else {
-        host.clone()
-    };
-    let full = format!(
-        "{scheme}://{}{}",
-        if port == if scheme == "https" { 443 } else { 80 } {
-            display_host
-        } else {
-            format!("{display_host}:{port}")
-        },
-        if path.is_empty() { "/" } else { path }
-    );
     Ok(ParsedUrl {
-        scheme,
         host,
-        port,
-        path: if path.is_empty() {
-            "/".to_string()
-        } else {
-            path.to_string()
-        },
-        full,
+        path: url.path().to_string(),
+        full: url.into(),
         addrs,
     })
 }
@@ -770,9 +691,7 @@ mod tests {
         // URL-resolution and metadata parsing are pure; keep these tests
         // independent from Tokio and DNS.
         ParsedUrl {
-            scheme: "https".to_string(),
             host: "example.com".to_string(),
-            port: 443,
             path: "/a/b".to_string(),
             full: "https://example.com/a/b".to_string(),
             addrs: Vec::new(),
@@ -839,9 +758,7 @@ mod tests {
         assert!(is_verification_preview(&p));
 
         p = reddit_permalink_preview(&ParsedUrl {
-            scheme: "https".to_string(),
             host: "www.reddit.com".to_string(),
-            port: 443,
             path: "/r/running/comments/usc5o3/does_running_in_warm_weather_like_25_celsius_make/".to_string(),
             full: "https://www.reddit.com/r/running/comments/usc5o3/does_running_in_warm_weather_like_25_celsius_make/".to_string(),
             addrs: Vec::new(),

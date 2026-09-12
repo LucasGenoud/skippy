@@ -1142,6 +1142,12 @@ void main() {
       // must keep it.
       expect(store.finalizeNote(id), isFalse);
       expect(store.noteById(id), isNotNull);
+
+      final removed = note.attachments.first.id;
+      store.removeAttachment(id, removed);
+      await pumpEventQueue();
+      expect(store.noteById(id)!.attachments.single.filename, 'doc.pdf');
+      expect(api.log, contains('deleteAttachment:$removed'));
     });
 
     test('when every upload fails the draft is discarded', () async {

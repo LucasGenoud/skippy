@@ -4,7 +4,6 @@ use crate::helpers::*;
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sticky_notes_server::files::{DiskStore, FileStore};
-use sticky_notes_server::store::InfrastructureRepository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 
 struct FlakyDeleteStore {

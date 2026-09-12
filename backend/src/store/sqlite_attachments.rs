@@ -1,13 +1,15 @@
-use async_trait::async_trait;
 use sqlx::Row;
 
 use super::sqlite::{SqliteRepository, enqueue_cleanup_tx, now};
-use super::{AttachmentRepository, CleanupKind, RepoResult};
+use super::{CleanupKind, RepoResult};
 use crate::models::{Attachment, OcrJob};
 
-#[async_trait]
-impl AttachmentRepository for SqliteRepository {
-    async fn insert_attachment(&self, attachment: &Attachment, note_id: &str) -> RepoResult<()> {
+impl SqliteRepository {
+    pub async fn insert_attachment(
+        &self,
+        attachment: &Attachment,
+        note_id: &str,
+    ) -> RepoResult<()> {
         sqlx::query(
             "INSERT INTO attachments (id, note_id, mime, filename, size, created_at)
              VALUES (?, ?, ?, ?, ?, ?)",
@@ -23,7 +25,7 @@ impl AttachmentRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn attachment_info(
+    pub async fn attachment_info(
         &self,
         attachment_id: &str,
     ) -> RepoResult<Option<(String, Attachment)>> {
@@ -46,7 +48,7 @@ impl AttachmentRepository for SqliteRepository {
         }))
     }
 
-    async fn set_attachment_ocr(&self, attachment_id: &str, text: &str) -> RepoResult<()> {
+    pub async fn set_attachment_ocr(&self, attachment_id: &str, text: &str) -> RepoResult<()> {
         // Re-running recognition (a retried backlog entry) replaces the old
         // reading rather than failing on the primary key.
         sqlx::query(
@@ -61,7 +63,7 @@ impl AttachmentRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn note_ocr_text(&self, note_id: &str) -> RepoResult<Vec<String>> {
+    pub async fn note_ocr_text(&self, note_id: &str) -> RepoResult<Vec<String>> {
         let rows = sqlx::query(
             "SELECT o.text FROM attachment_ocr o
              JOIN attachments a ON a.id = o.attachment_id
@@ -77,7 +79,7 @@ impl AttachmentRepository for SqliteRepository {
             .collect())
     }
 
-    async fn attachments_awaiting_ocr(&self, limit: u32) -> RepoResult<Vec<OcrJob>> {
+    pub async fn attachments_awaiting_ocr(&self, limit: u32) -> RepoResult<Vec<OcrJob>> {
         let rows = sqlx::query(
             "SELECT a.id, a.note_id, a.mime, a.filename FROM attachments a
              WHERE a.mime LIKE 'image/%'
@@ -99,7 +101,7 @@ impl AttachmentRepository for SqliteRepository {
             .collect())
     }
 
-    async fn delete_attachment(&self, attachment_id: &str) -> RepoResult<bool> {
+    pub async fn delete_attachment(&self, attachment_id: &str) -> RepoResult<bool> {
         let mut tx = self.pool.begin().await?;
         let exists: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments WHERE id = ?")
             .bind(attachment_id)

@@ -1,14 +1,12 @@
-use async_trait::async_trait;
 use sqlx::Row;
 
+use super::RepoResult;
 use super::sqlite::{SHARE_LINK_COLUMNS, SqliteRepository};
 use super::sqlite_rows::share_link_from_row;
-use super::{RepoResult, SharingRepository};
 use crate::models::ShareLink;
 
-#[async_trait]
-impl SharingRepository for SqliteRepository {
-    async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>> {
+impl SqliteRepository {
+    pub async fn participant_ids(&self, note_id: &str) -> RepoResult<Vec<String>> {
         let rows = sqlx::query(
             "SELECT user_id AS uid FROM note_shares WHERE note_id = ?
              UNION SELECT w.owner_id AS uid FROM workspaces w
@@ -24,7 +22,7 @@ impl SharingRepository for SqliteRepository {
         Ok(rows.iter().map(|row| row.get("uid")).collect())
     }
 
-    async fn is_participant(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
+    pub async fn is_participant(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
         let allowed: i64 = sqlx::query_scalar(
             "SELECT EXISTS (
                  SELECT 1 FROM notes n
@@ -51,7 +49,7 @@ impl SharingRepository for SqliteRepository {
         Ok(allowed != 0)
     }
 
-    async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()> {
+    pub async fn add_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<()> {
         sqlx::query("INSERT OR IGNORE INTO note_shares (note_id, user_id) VALUES (?, ?)")
             .bind(note_id)
             .bind(user_id)
@@ -60,7 +58,7 @@ impl SharingRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn remove_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
+    pub async fn remove_collaborator(&self, note_id: &str, user_id: &str) -> RepoResult<bool> {
         let result = sqlx::query("DELETE FROM note_shares WHERE note_id = ? AND user_id = ?")
             .bind(note_id)
             .bind(user_id)
@@ -69,7 +67,7 @@ impl SharingRepository for SqliteRepository {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn insert_share_link(&self, link: &ShareLink) -> RepoResult<()> {
+    pub async fn insert_share_link(&self, link: &ShareLink) -> RepoResult<()> {
         sqlx::query(
             "INSERT INTO share_links
                 (token, created_by, target, note_id, workspace_id, label_id, created_at, expires_at, collection_id)
@@ -89,7 +87,7 @@ impl SharingRepository for SqliteRepository {
         Ok(())
     }
 
-    async fn share_link(&self, token: &str) -> RepoResult<Option<ShareLink>> {
+    pub async fn share_link(&self, token: &str) -> RepoResult<Option<ShareLink>> {
         let row = sqlx::query(&format!("{SHARE_LINK_COLUMNS} WHERE token = ?"))
             .bind(token)
             .fetch_optional(&self.pool)
@@ -97,7 +95,7 @@ impl SharingRepository for SqliteRepository {
         Ok(row.as_ref().map(share_link_from_row))
     }
 
-    async fn share_links_for_user(&self, user_id: &str) -> RepoResult<Vec<ShareLink>> {
+    pub async fn share_links_for_user(&self, user_id: &str) -> RepoResult<Vec<ShareLink>> {
         let rows = sqlx::query(&format!(
             "{SHARE_LINK_COLUMNS} WHERE created_by = ? ORDER BY created_at DESC"
         ))
@@ -107,7 +105,7 @@ impl SharingRepository for SqliteRepository {
         Ok(rows.iter().map(share_link_from_row).collect())
     }
 
-    async fn share_link_for_target(
+    pub async fn share_link_for_target(
         &self,
         user_id: &str,
         target: &str,
@@ -132,7 +130,7 @@ impl SharingRepository for SqliteRepository {
         Ok(row.as_ref().map(share_link_from_row))
     }
 
-    async fn delete_share_link(&self, user_id: &str, token: &str) -> RepoResult<bool> {
+    pub async fn delete_share_link(&self, user_id: &str, token: &str) -> RepoResult<bool> {
         let result = sqlx::query("DELETE FROM share_links WHERE token = ? AND created_by = ?")
             .bind(token)
             .bind(user_id)

@@ -7,7 +7,6 @@ use sticky_notes_server::ocr::{ImageOcr, TesseractService};
 use sticky_notes_server::search::{
     ApiEmbedder, EmbedConfig, SearchService, SqliteVectorIndex, TextEmbedder,
 };
-use sticky_notes_server::store::Repository;
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
 use sticky_notes_server::{
@@ -24,7 +23,7 @@ const OCR_BACKLOG_PER_START: u32 = 500;
 /// storing one on first run. Persisting it means signed URLs stay valid across
 /// restarts (a per-process key would invalidate every outstanding URL on
 /// reboot).
-async fn load_file_secret(repo: &dyn Repository) -> anyhow::Result<Vec<u8>> {
+async fn load_file_secret(repo: &SqliteRepository) -> anyhow::Result<Vec<u8>> {
     if let Some(stored) = repo
         .meta_get("file_secret")
         .await
@@ -217,8 +216,6 @@ async fn main() -> anyhow::Result<()> {
     }
     let db_path = std::env::var("DB").unwrap_or_else(|_| "sticky_notes.db".to_string());
     let uploads = std::env::var("UPLOADS").unwrap_or_else(|_| "uploads".to_string());
-    // Swap point: implement `Repository` for another database and change
-    // this constructor.
     let repo = Arc::new(SqliteRepository::connect(&db_path).await?);
     let file_secret = load_file_secret(repo.as_ref()).await?;
     let files = init_file_store(&uploads)?;
