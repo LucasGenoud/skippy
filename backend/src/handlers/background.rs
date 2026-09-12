@@ -328,7 +328,7 @@ impl AppState {
             }
         };
         let names: Vec<String> = labels.iter().map(|l| l.name.clone()).collect();
-        let messages = crate::assist::labeling_messages(&names, &text);
+        let messages = crate::assist::labeling_messages(&names, &text, &llm_settings.prompt);
         let reply = match self.llm.complete(&cfg, messages).await {
             Ok(reply) => reply,
             Err(e) => {

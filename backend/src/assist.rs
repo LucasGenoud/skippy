@@ -42,10 +42,14 @@ pub struct LlmSettings {
     /// Note cleanup and grammar-correction toggle; defaults off because these
     /// actions directly change note content.
     pub writing: bool,
+    /// Optional user instructions shared by every AI feature.
+    pub prompt: String,
+    pub chat_create: bool,
+    pub chat_edit: bool,
+    pub chat_organize: bool,
 }
 
-/// Read `llm_base_url` / `llm_api_key` / `llm_model` / `llm_labeling` /
-/// `llm_chat` / `llm_writing` from a settings JSON document (as stored by
+/// Read the `llm_*` keys from a settings JSON document (as stored by
 /// `put_settings`).
 pub fn parse_llm_settings(settings_json: Option<&str>) -> LlmSettings {
     let value: serde_json::Value = settings_json
@@ -76,6 +80,19 @@ pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
         labeling: value["llm_labeling"] != false,
         chat: value["llm_chat"] != false,
         writing: value["llm_writing"] == true,
+        prompt: text("llm_prompt"),
+        chat_create: value["llm_chat_create"] != false,
+        chat_edit: value["llm_chat_edit"] != false,
+        chat_organize: value["llm_chat_organize"] != false,
+    }
+}
+
+fn custom_prompt(prompt: &str) -> String {
+    let prompt = cap(prompt.trim(), CHAT_MESSAGE_CHARS);
+    if prompt.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nUser's custom AI instructions: {prompt}")
     }
 }
 
@@ -89,14 +106,19 @@ fn cap(text: &str, max: usize) -> &str {
 
 /// Prompt asking the model to pick applicable labels for a note, strictly
 /// from the user's existing label names.
-pub fn labeling_messages(label_names: &[String], note_text: &str) -> Vec<ChatMessage> {
+pub fn labeling_messages(
+    label_names: &[String],
+    note_text: &str,
+    prompt: &str,
+) -> Vec<ChatMessage> {
     vec![
-        ChatMessage::system(
+        ChatMessage::system(format!(
             "You assign labels to sticky notes. Reply with a JSON array of the \
              label names that clearly apply to the note, chosen only from the \
              provided list. Reply [] if none apply. Output the JSON array and \
-             nothing else.",
-        ),
+             nothing else.{}",
+            custom_prompt(prompt)
+        )),
         ChatMessage::user(format!(
             "Available labels: {}\n\nNote:\n{}",
             serde_json::to_string(label_names).unwrap_or_else(|_| "[]".into()),
@@ -160,7 +182,11 @@ pub enum RouteDecision {
 /// query works even when the message alone carries no subject. Kept as a
 /// plain JSON-reply prompt (like labeling) rather than native tool calls so
 /// it works on any OpenAI-compatible server and model.
-pub fn route_messages(history: &[(String, String)], message: &str) -> Vec<ChatMessage> {
+pub fn route_messages(
+    history: &[(String, String)],
+    message: &str,
+    prompt: &str,
+) -> Vec<ChatMessage> {
     let mut conversation = String::new();
     let skip = history.len().saturating_sub(ROUTE_HISTORY_TURNS);
     for (role, content) in &history[skip..] {
@@ -173,22 +199,23 @@ pub fn route_messages(history: &[(String, String)], message: &str) -> Vec<ChatMe
     }
     conversation.push_str(&format!("User: {}", cap(message, ROUTE_MESSAGE_CHARS)));
     vec![
-        ChatMessage::system(
+        ChatMessage::system(format!(
             "You route messages for an assistant over the user's personal \
              sticky notes. Decide what the LAST user message needs. Reply with \
              ONLY a JSON object, no other text:\n\
-             {\"search\": \"<query>\"}, when answering needs their notes; \
+             {{\"search\": \"<query>\"}}, when answering needs their notes; \
              write a short standalone search query for what to look up, \
              resolving any references from the conversation.\n\
-             {\"search\": null}, when the message needs no lookup (greetings, \
+             {{\"search\": null}}, when the message needs no lookup (greetings, \
              thanks, chit-chat, or questions already answered in the \
              conversation).\n\
-             {\"write\": \"<topic>\"}, when the user asks to CREATE a new note \
-             or ADD something to a note (\"make a list\", \"add milk to my \
-             groceries\", \"save this as a note\", \"note down …\"); set topic \
+             {{\"write\": \"<topic>\"}}, when the user asks to CHANGE notes: \
+             create, edit, append, pin, archive, trash, color, or schedule one \
+             (\"make a list\", \"add milk\", \"pin my grocery list\"); set topic \
              to a few words describing the note's subject so an existing note \
-             to add to can be found.",
-        ),
+             to change can be found.{}",
+            custom_prompt(prompt)
+        )),
         ChatMessage::user(conversation),
     ]
 }
@@ -267,6 +294,26 @@ pub enum WriteAction {
         content: String,
         items: Vec<String>,
     },
+    /// Replace editable text and/or change note organization.
+    Update {
+        note_id: String,
+        title: Option<String>,
+        content: Option<String>,
+        items: Option<Vec<String>>,
+        color: Option<String>,
+        pinned: Option<bool>,
+        archived: Option<bool>,
+        trashed: Option<bool>,
+        reminder_at: Option<Option<String>>,
+        reminder_repeat: Option<Option<String>>,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WritePermissions {
+    pub create: bool,
+    pub edit: bool,
+    pub organize: bool,
 }
 
 /// Prompt asking the model to turn a create/append request into one structured
@@ -278,12 +325,14 @@ pub fn write_plan_messages(
     candidates: &[(String, String, String)], // (id, title, text)
     history: &[(String, String)],
     message: &str,
+    permissions: WritePermissions,
+    prompt: &str,
 ) -> Vec<ChatMessage> {
     let mut context = String::from(
         "You turn the user's request into a single change to their sticky \
          notes. Reply with ONLY one JSON object, no other text.\n\
          To create a new note:\n\
-         {\"action\":\"create\",\"kind\":\"text\"|\"checklist\",\"title\":\"…\",\
+         {\"action\":\"create\",\"kind\":\"text\"|\"markdown\"|\"checklist\",\"title\":\"…\",\
          \"content\":\"…\",\"items\":[\"…\"]}\n\
          Use \"checklist\" with an \"items\" array for a list of things (to-dos, \
          shopping, steps); use \"text\" with \"content\" for prose. Keep \
@@ -294,8 +343,21 @@ pub fn write_plan_messages(
          Only append when the user clearly means one of the existing notes; put \
          new checklist entries in \"items\" and new prose in \"content\". If in \
          doubt, create a new note instead.\n\n\
-         Existing notes you may add to:",
+         To change an existing note:\n\
+         {\"action\":\"update\",\"note_id\":\"<id>\",\"title\":\"…\",\"content\":\"…\",\
+         \"items\":[\"…\"],\"pinned\":true|false,\"archived\":true|false,\
+         \"trashed\":true|false,\"color\":\"…\",\"reminder_at\":\"RFC3339\"|null,\
+         \"reminder_repeat\":\"daily\"|\"weekly\"|\"monthly\"|\"yearly\"|null}\n\
+         Include only fields the user requested. The items array is the full \
+         replacement checklist. Never invent a note id.\n\n\
+         Existing notes you may change:",
     );
+    context.push_str(&format!(
+        "\n\nCurrent UTC time: {}.\nAllowed changes: create={}, edit content={}, organize={}. Never plan a disabled change.",
+        chrono::Utc::now().to_rfc3339(),
+        permissions.create, permissions.edit, permissions.organize,
+    ));
+    context.push_str(&custom_prompt(prompt));
     if candidates.is_empty() {
         context.push_str("\n(none)");
     }
@@ -329,7 +391,11 @@ fn string_list(value: &serde_json::Value, key: &str) -> Vec<String> {
 /// `None` means the reply was unusable (unparseable, unknown action, an
 /// append to an unknown note, or an edit that adds nothing), the caller then
 /// falls back to answering rather than writing something unintended.
-pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteAction> {
+pub fn parse_write_action(
+    reply: &str,
+    valid_ids: &[String],
+    permissions: WritePermissions,
+) -> Option<WriteAction> {
     let start = reply.find('{')?;
     let end = reply.rfind('}').filter(|&e| e > start)?;
     let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
@@ -341,8 +407,12 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
     let items = string_list(&value, "items");
     match value["action"].as_str()?.trim() {
         "create" => {
+            if !permissions.create {
+                return None;
+            }
             let kind = match value["kind"].as_str().map(str::trim) {
                 Some("checklist") => "checklist",
+                Some("markdown") => "markdown",
                 _ => "text",
             }
             .to_string();
@@ -364,6 +434,9 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
             })
         }
         "append" => {
+            if !permissions.edit {
+                return None;
+            }
             let note_id = value["note_id"].as_str()?.trim().to_string();
             if !valid_ids.iter().any(|id| id == &note_id) {
                 return None; // hallucinated target, don't touch a random note
@@ -375,6 +448,71 @@ pub fn parse_write_action(reply: &str, valid_ids: &[String]) -> Option<WriteActi
                 note_id,
                 content,
                 items,
+            })
+        }
+        "update" => {
+            let note_id = value["note_id"].as_str()?.trim().to_string();
+            if !valid_ids.iter().any(|id| id == &note_id) {
+                return None;
+            }
+            let text = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_string);
+            let title = text("title");
+            let content = text("content");
+            let items = value
+                .get("items")
+                .and_then(serde_json::Value::as_array)
+                .filter(|items| items.iter().all(serde_json::Value::is_string))
+                .map(|_| string_list(&value, "items"));
+            if !permissions.edit && (title.is_some() || content.is_some() || items.is_some()) {
+                return None;
+            }
+            let color = text("color");
+            let pinned = value.get("pinned").and_then(|v| v.as_bool());
+            let archived = value.get("archived").and_then(|v| v.as_bool());
+            let trashed = value.get("trashed").and_then(|v| v.as_bool());
+            let reminder_at = match value.get("reminder_at") {
+                Some(serde_json::Value::Null) => Some(None),
+                Some(serde_json::Value::String(v)) => Some(Some(v.clone())),
+                _ => None,
+            };
+            let reminder_repeat = match value.get("reminder_repeat") {
+                Some(serde_json::Value::Null) => Some(None),
+                Some(serde_json::Value::String(v)) => Some(Some(v.clone())),
+                _ => None,
+            };
+            if !permissions.organize
+                && (color.is_some()
+                    || pinned.is_some()
+                    || archived.is_some()
+                    || trashed.is_some()
+                    || reminder_at.is_some()
+                    || reminder_repeat.is_some())
+            {
+                return None;
+            }
+            if title.is_none()
+                && content.is_none()
+                && items.is_none()
+                && color.is_none()
+                && pinned.is_none()
+                && archived.is_none()
+                && trashed.is_none()
+                && reminder_at.is_none()
+                && reminder_repeat.is_none()
+            {
+                return None;
+            }
+            Some(WriteAction::Update {
+                note_id,
+                title,
+                content,
+                items,
+                color,
+                pinned,
+                archived,
+                trashed,
+                reminder_at,
+                reminder_repeat,
             })
         }
         _ => None,
@@ -411,6 +549,7 @@ pub fn chat_messages(
     notes: &[(String, String)],   // (title, text)
     history: &[(String, String)], // (role, content)
     message: &str,
+    prompt: &str,
 ) -> Vec<ChatMessage> {
     // The notes are looked up per turn against that turn's query, so they
     // must read as *possible* context, never as the whole collection,
@@ -441,20 +580,26 @@ pub fn chat_messages(
         };
         context.push_str(&format!("\n\n[{}] {}\n{}", n + 1, title, text));
     }
+    context.push_str(&custom_prompt(prompt));
     with_conversation(vec![ChatMessage::system(context)], history, message)
 }
 
 /// The no-lookup variant: the routing call decided this turn needs no notes,
 /// so the model answers from the conversation alone (and must not pretend it
 /// consulted anything).
-pub fn chat_messages_direct(history: &[(String, String)], message: &str) -> Vec<ChatMessage> {
+pub fn chat_messages_direct(
+    history: &[(String, String)],
+    message: &str,
+    prompt: &str,
+) -> Vec<ChatMessage> {
     with_conversation(
-        vec![ChatMessage::system(
+        vec![ChatMessage::system(format!(
             "You are an assistant for the user's personal sticky notes app. \
              This turn needs no note lookup: answer from the conversation so \
              far. Anything you told the user earlier remains valid. Be \
-             concise.",
-        )],
+             concise.{}",
+            custom_prompt(prompt)
+        ))],
         history,
         message,
     )
@@ -484,6 +629,14 @@ fn with_conversation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn all_writes() -> WritePermissions {
+        WritePermissions {
+            create: true,
+            edit: true,
+            organize: true,
+        }
+    }
 
     fn label(id: &str, name: &str) -> Label {
         Label {
@@ -606,7 +759,12 @@ mod tests {
         // 200 items is well past the old 1_500-char cap and still lands whole.
         let list: Vec<String> = (0..200).map(|n| format!("- [ ] item {n}")).collect();
         let text = list.join("\n");
-        let messages = chat_messages(&[("Groceries".into(), text.clone())], &[], "what's left?");
+        let messages = chat_messages(
+            &[("Groceries".into(), text.clone())],
+            &[],
+            "what's left?",
+            "",
+        );
         let prompt = &messages[0].content;
         // The notes are the tail of the system prompt, so an intact list ends
         // it, anything dropped would have left the truncation marker here.
@@ -623,7 +781,7 @@ mod tests {
             ("assistant".to_string(), "Bread and milk.".to_string()),
             ("system".to_string(), "dropped".to_string()),
         ];
-        let messages = route_messages(&history, "and the plants?");
+        let messages = route_messages(&history, "and the plants?", "");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert!(messages[0].content.contains(r#"{"search":"#));
@@ -683,7 +841,7 @@ mod tests {
     fn write_plan_messages_list_candidates_and_conversation() {
         let candidates = [("abc".into(), "Groceries".into(), "- [ ] milk".into())];
         let history = [("user".to_string(), "hi".to_string())];
-        let messages = write_plan_messages(&candidates, &history, "add bread");
+        let messages = write_plan_messages(&candidates, &history, "add bread", all_writes(), "");
         assert_eq!(messages[0].role, "system");
         assert!(messages[0].content.contains("[id=abc] Groceries"));
         assert!(messages[0].content.contains("\"action\":\"append\""));
@@ -697,6 +855,7 @@ mod tests {
             parse_write_action(
                 r#"{"action":"create","kind":"checklist","title":"Groceries","items":["milk","eggs"]}"#,
                 &[],
+                all_writes(),
             ),
             Some(Create {
                 kind: "checklist".into(),
@@ -710,6 +869,7 @@ mod tests {
             parse_write_action(
                 "```json\n{\"action\":\"create\",\"kind\":\"audio\",\"content\":\"remember this\"}\n```",
                 &[],
+                all_writes(),
             ),
             Some(Create {
                 kind: "text".into(),
@@ -719,7 +879,10 @@ mod tests {
             })
         );
         // A wholly empty create is rejected.
-        assert_eq!(parse_write_action(r#"{"action":"create"}"#, &[]), None);
+        assert_eq!(
+            parse_write_action(r#"{"action":"create"}"#, &[], all_writes()),
+            None
+        );
     }
 
     #[test]
@@ -730,6 +893,7 @@ mod tests {
             parse_write_action(
                 r#"{"action":"append","note_id":"abc","items":["bread"]}"#,
                 &ids,
+                all_writes(),
             ),
             Some(Append {
                 note_id: "abc".into(),
@@ -739,22 +903,66 @@ mod tests {
         );
         // Hallucinated target id -> no write.
         assert_eq!(
-            parse_write_action(r#"{"action":"append","note_id":"zzz","items":["x"]}"#, &ids),
+            parse_write_action(
+                r#"{"action":"append","note_id":"zzz","items":["x"]}"#,
+                &ids,
+                all_writes(),
+            ),
             None
         );
         // Append that adds nothing -> no write.
         assert_eq!(
-            parse_write_action(r#"{"action":"append","note_id":"abc"}"#, &ids),
+            parse_write_action(r#"{"action":"append","note_id":"abc"}"#, &ids, all_writes(),),
             None
         );
-        assert_eq!(parse_write_action("not json", &ids), None);
-        assert_eq!(parse_write_action(r#"{"action":"delete"}"#, &ids), None);
+        assert_eq!(parse_write_action("not json", &ids, all_writes()), None);
+        assert_eq!(
+            parse_write_action(r#"{"action":"delete"}"#, &ids, all_writes()),
+            None
+        );
+    }
+
+    #[test]
+    fn write_action_update_respects_change_permissions() {
+        use WriteAction::*;
+        let ids = ["abc".to_string()];
+        assert_eq!(
+            parse_write_action(
+                r#"{"action":"update","note_id":"abc","title":"New","pinned":true}"#,
+                &ids,
+                all_writes(),
+            ),
+            Some(Update {
+                note_id: "abc".into(),
+                title: Some("New".into()),
+                content: None,
+                items: None,
+                color: None,
+                pinned: Some(true),
+                archived: None,
+                trashed: None,
+                reminder_at: None,
+                reminder_repeat: None,
+            })
+        );
+        assert_eq!(
+            parse_write_action(
+                r#"{"action":"update","note_id":"abc","pinned":true}"#,
+                &ids,
+                WritePermissions {
+                    create: true,
+                    edit: true,
+                    organize: false,
+                },
+            ),
+            None
+        );
     }
 
     #[test]
     fn direct_chat_messages_have_no_notes_section() {
         let history = [("user".to_string(), "hi".to_string())];
-        let messages = chat_messages_direct(&history, "thanks!");
+        let messages = chat_messages_direct(&history, "thanks!", "");
         assert_eq!(messages.len(), 3);
         assert!(!messages[0].content.contains("Notes:"));
         assert_eq!(messages[2].content, "thanks!");
@@ -809,7 +1017,7 @@ mod tests {
             ("assistant".into(), "hello".into()),
             ("system".into(), "ignore me".into()),
         ];
-        let messages = chat_messages(&notes, &history, "what do I need to buy?");
+        let messages = chat_messages(&notes, &history, "what do I need to buy?", "");
         assert_eq!(messages.len(), 4); // system + 2 history + user
         assert_eq!(messages[0].role, "system");
         assert!(messages[0].content.contains("[1] Groceries"));
@@ -826,7 +1034,7 @@ mod tests {
         let history: Vec<(String, String)> = (0..30)
             .map(|i| ("user".to_string(), format!("m{i}")))
             .collect();
-        let messages = chat_messages(&[], &history, "q");
+        let messages = chat_messages(&[], &history, "q", "");
         // system + 12 most recent + final user message
         assert_eq!(messages.len(), 14);
         assert_eq!(messages[1].content, "m18");

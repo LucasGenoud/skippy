@@ -229,6 +229,10 @@ class SettingsStore extends ChangeNotifier {
   bool llmLabelingEnabled = true;
   bool llmChatEnabled = true;
   bool llmWritingEnabled = false;
+  String llmPrompt = '';
+  bool llmChatCreateEnabled = true;
+  bool llmChatEditEnabled = true;
+  bool llmChatOrganizeEnabled = true;
 
   // Settings keys the self-hoster pinned via server env vars (backend
   // `config.rs`). A present key is locked in the UI and its value is
@@ -430,6 +434,10 @@ class SettingsStore extends ChangeNotifier {
     llmLabelingEnabled = json['llm_labeling'] != false;
     llmChatEnabled = json['llm_chat'] != false;
     llmWritingEnabled = json['llm_writing'] == true;
+    llmPrompt = ((json['llm_prompt'] as String?) ?? '').trim();
+    llmChatCreateEnabled = json['llm_chat_create'] != false;
+    llmChatEditEnabled = json['llm_chat_edit'] != false;
+    llmChatOrganizeEnabled = json['llm_chat_organize'] != false;
     // Taken here rather than in [_applyManaged], which also runs on a load that
     // skipped this method (a local save still in flight) and would then snapshot
     // the previous overlay instead of the user's own values.
@@ -507,6 +515,10 @@ class SettingsStore extends ChangeNotifier {
     'llm_labeling': llmLabelingEnabled,
     'llm_chat': llmChatEnabled,
     'llm_writing': llmWritingEnabled,
+    'llm_prompt': llmPrompt,
+    'llm_chat_create': llmChatCreateEnabled,
+    'llm_chat_edit': llmChatEditEnabled,
+    'llm_chat_organize': llmChatOrganizeEnabled,
     // toJson rebuilds the whole settings document, so every notify key must
     // appear here or a save from this device would erase it.
     for (final key in kNotifyFieldKeys) key: notifyValues[key] ?? '',
@@ -597,6 +609,17 @@ class SettingsStore extends ChangeNotifier {
   void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
   void setLlmWritingEnabled(bool value) =>
       _mutate(() => llmWritingEnabled = value);
+  void setLlmBehavior({
+    required String prompt,
+    required bool create,
+    required bool edit,
+    required bool organize,
+  }) => _mutate(() {
+    llmPrompt = prompt.trim();
+    llmChatCreateEnabled = create;
+    llmChatEditEnabled = edit;
+    llmChatOrganizeEnabled = organize;
+  });
 
   void setNotifyValues(Map<String, String> values) => _mutate(() {
     notifyValues = {

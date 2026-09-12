@@ -38,6 +38,8 @@ struct TurnContext<'a> {
     user_id: &'a str,
     cfg: &'a crate::llm::LlmConfig,
     workspace_id: Option<&'a str>,
+    prompt: &'a str,
+    permissions: crate::assist::WritePermissions,
 }
 
 #[derive(Deserialize)]
@@ -53,7 +55,7 @@ struct ChatHistoryEntry {
 /// ```text
 /// client → server:  {"token":"…","message":"…","history":[{"role","content"},…]}
 /// server → client:  {"type":"sources","notes":[{"id","title"}, …]}
-///                   {"type":"created","action":"create"|"append","note":{"id","title"}}
+///                   {"type":"created","action":"create"|"append"|"update","note":{"id","title"}}
 ///                                                (0..1, only when the turn
 ///                                                 created or appended a note)
 ///                   {"type":"delta","text":"…"}   (0..n)
@@ -207,9 +209,10 @@ async fn chat_loop(
     // can't make chat worse than ordinary RAG, only better.
     let decision = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        state
-            .llm
-            .complete(&cfg, crate::assist::route_messages(&history, message)),
+        state.llm.complete(
+            &cfg,
+            crate::assist::route_messages(&history, message, &llm_settings.prompt),
+        ),
     )
     .await
     {
@@ -267,7 +270,15 @@ async fn chat_loop(
             }
             // Prompt rendering, not the embedding text: checklists keep
             // their per-item checked state here.
-            let text = crate::assist::note_prompt_text(&record);
+            let text = format!(
+                "kind={}, pinned={}, archived={}, color={}, reminder_at={}\n{}",
+                record.kind,
+                record.pinned,
+                record.archived,
+                record.color,
+                record.reminder_at.as_deref().unwrap_or("none"),
+                crate::assist::note_prompt_text(&record),
+            );
             notes.push((record.id, record.title, text));
         }
     }
@@ -284,6 +295,12 @@ async fn chat_loop(
                 user_id: &user_id,
                 cfg: &cfg,
                 workspace_id: workspace_id.as_deref(),
+                prompt: &llm_settings.prompt,
+                permissions: crate::assist::WritePermissions {
+                    create: llm_settings.chat_create,
+                    edit: llm_settings.chat_edit,
+                    organize: llm_settings.chat_organize,
+                },
             },
             &notes,
             &history,
@@ -311,10 +328,10 @@ async fn chat_loop(
         // Write reaches here only when its plan was unusable: answer over the
         // retrieved notes like an ordinary read turn rather than writing.
         crate::assist::RouteDecision::Search(_) | crate::assist::RouteDecision::Write(_) => {
-            crate::assist::chat_messages(&prompt_notes, &history, message)
+            crate::assist::chat_messages(&prompt_notes, &history, message, &llm_settings.prompt)
         }
         crate::assist::RouteDecision::Direct => {
-            crate::assist::chat_messages_direct(&history, message)
+            crate::assist::chat_messages_direct(&history, message, &llm_settings.prompt)
         }
     };
 
@@ -400,7 +417,13 @@ where
     }
 
     // Plan the edit; a failed/timed-out planner falls through to answering.
-    let planner = crate::assist::write_plan_messages(candidates, history, message);
+    let planner = crate::assist::write_plan_messages(
+        candidates,
+        history,
+        message,
+        turn.permissions,
+        turn.prompt,
+    );
     let reply = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
         state.llm.complete(turn.cfg, planner),
@@ -411,13 +434,14 @@ where
         _ => return false,
     };
     let candidate_ids: Vec<String> = candidates.iter().map(|(id, _, _)| id.clone()).collect();
-    let Some(action) = crate::assist::parse_write_action(&reply, &candidate_ids) else {
+    let Some(action) = crate::assist::parse_write_action(&reply, &candidate_ids, turn.permissions)
+    else {
         return false;
     };
 
     // Apply the edit through the same pipeline the HTTP handlers use, so it
     // gets indexing, auto-labeling, version history, and the WS refresh nudge.
-    let (action_label, view, confirmation) = match action {
+    let (action_label, view, confirmation, undo) = match action {
         crate::assist::WriteAction::Create {
             kind,
             title,
@@ -481,7 +505,14 @@ where
             } else {
                 format!("Created a note{}.", titled(&view.note.title))
             };
-            ("create", view, confirmation)
+            let undo = if view.owner.id == turn.user_id {
+                serde_json::json!({"trashed": true, "pinned": false})
+            } else {
+                // Workspace members may create and archive notes, but only
+                // the workspace owner controls trash.
+                serde_json::json!({"archived": true, "pinned": false})
+            };
+            ("create", view, confirmation, undo)
         }
         crate::assist::WriteAction::Append {
             note_id,
@@ -533,6 +564,12 @@ where
             if body.items.is_none() && body.content.is_none() {
                 return false; // nothing usable to add
             }
+            let undo = serde_json::json!({
+                "kind": record.kind,
+                "title": record.title,
+                "content": record.content,
+                "items": record.items,
+            });
             let view = match apply_note_update(state, turn.user_id, &note_id, body).await {
                 Ok(view) => view,
                 Err(_) => {
@@ -553,7 +590,82 @@ where
             } else {
                 format!("Updated{}.", titled(&view.note.title))
             };
-            ("append", view, confirmation)
+            ("append", view, confirmation, undo)
+        }
+        crate::assist::WriteAction::Update {
+            note_id,
+            title,
+            content,
+            items,
+            color,
+            pinned,
+            archived,
+            trashed,
+            reminder_at,
+            reminder_repeat,
+        } => {
+            let Ok(Some(record)) = state
+                .repo
+                .note_record_for_user(&note_id, turn.user_id)
+                .await
+            else {
+                return false;
+            };
+            let replacement_items = items.map(|texts| {
+                texts
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, text)| match record.items.get(index) {
+                        Some(item) => ChecklistItem {
+                            id: item.id.clone(),
+                            text,
+                            done: item.done,
+                            depth: item.depth,
+                        },
+                        None => ChecklistItem {
+                            id: new_id(),
+                            text,
+                            done: false,
+                            depth: 0,
+                        },
+                    })
+                    .collect()
+            });
+            let undo = serde_json::json!({
+                "title": record.title,
+                "content": record.content,
+                "items": record.items,
+                "color": record.color,
+                "pinned": record.pinned,
+                "archived": record.archived,
+                "trashed": record.trashed,
+                "reminder_at": record.reminder_at,
+                "reminder_repeat": record.reminder_repeat,
+            });
+            let body = UpdateNote {
+                title,
+                content,
+                items: replacement_items,
+                color,
+                pinned,
+                archived,
+                trashed,
+                reminder_at,
+                reminder_repeat,
+                ..Default::default()
+            };
+            let view = match apply_note_update(state, turn.user_id, &note_id, body).await {
+                Ok(view) => view,
+                Err(_) => {
+                    send(
+                        sink,
+                        serde_json::json!({"type":"error","message":"could not update the note"}),
+                    )
+                    .await;
+                    return true;
+                }
+            };
+            ("update", view, "Updated the note.".to_string(), undo)
         }
     };
 
@@ -564,6 +676,7 @@ where
         "type": "created",
         "action": action_label,
         "note": {"id": view.note.id, "title": view.note.title},
+        "undo": undo,
     });
     if !send(sink, created).await {
         return true; // client gone; turn is still "handled"

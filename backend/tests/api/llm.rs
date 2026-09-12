@@ -307,6 +307,7 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
             "llm_model": "test-model",
             "llm_labeling": false,
             "llm_writing": true,
+            "llm_prompt": "Use terse sentences",
         })),
     )
     .await;
@@ -327,6 +328,7 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     assert!(prompt.contains("grammar, spelling, punctuation, and syntax"));
     assert!(prompt.contains("plain text only, without Markdown syntax"));
     assert!(prompt.contains("Never translate it or switch languages"));
+    assert!(prompt.contains("Use terse sentences"));
 
     let markdown_note = create_note(
         &app,

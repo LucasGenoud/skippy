@@ -369,6 +369,7 @@ async fn chat_write_creates_a_new_note() {
         .expect("created frame");
     assert_eq!(created["action"], "create");
     assert_eq!(created["note"]["title"], "Groceries");
+    assert_eq!(created["undo"]["trashed"], true);
     let confirmation: String = frames
         .iter()
         .filter(|f| f["type"] == "delta")
@@ -461,4 +462,50 @@ async fn chat_write_appends_to_an_existing_note() {
         .map(|i| i["text"].as_str().unwrap())
         .collect();
     assert_eq!(items, ["bread", "potatoes"]);
+}
+
+#[tokio::test]
+async fn chat_updates_note_properties_and_returns_an_undo_patch() {
+    let (llm, _calls) = FakeLlm::new_seq(&[
+        r#"{"write":"project plan"}"#,
+        r##"{"action":"update","note_id":"plan","title":"Launch plan","color":"#ff0000","archived":true}"##,
+    ]);
+    let index = Arc::new(
+        SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64")
+            .await
+            .unwrap(),
+    );
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "chat_update").await;
+    configure_llm(&app, &token).await;
+    create_note(
+        &app,
+        &token,
+        json!({"id":"plan","title":"Project plan","content":"project plan steps"}),
+    )
+    .await;
+    settle_index().await;
+
+    let frames = chat_turn(state, &token, "archive and pin the project plan", json!([])).await;
+    let changed = frames
+        .iter()
+        .find(|frame| frame["type"] == "created")
+        .expect("change frame");
+    assert_eq!(changed["action"], "update");
+    assert_eq!(changed["undo"]["title"], "Project plan");
+    assert_eq!(changed["undo"]["color"], "default");
+    assert_eq!(changed["undo"]["archived"], false);
+
+    let note = list_notes(&app, &token)
+        .await
+        .into_iter()
+        .find(|note| note["id"] == "plan")
+        .unwrap();
+    assert_eq!(note["title"], "Launch plan");
+    assert_eq!(note["color"], "#ff0000");
+    assert_eq!(note["archived"], true);
 }

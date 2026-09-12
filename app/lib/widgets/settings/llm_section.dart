@@ -39,6 +39,126 @@ class LlmConfigTile extends StatelessWidget {
   }
 }
 
+class LlmBehaviorTile extends StatelessWidget {
+  const LlmBehaviorTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsStore>();
+    return ListTile(
+      leading: const Icon(Icons.tune),
+      title: const Text('AI behavior'),
+      subtitle: Text(
+        settings.llmPrompt.isEmpty
+            ? 'Default prompt and allowed note changes'
+            : 'Custom prompt and allowed note changes',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _LlmBehaviorDialog.show(context),
+    );
+  }
+}
+
+class _LlmBehaviorDialog extends StatefulWidget {
+  const _LlmBehaviorDialog();
+
+  static Future<void> show(BuildContext context) {
+    final settings = context.read<SettingsStore>();
+    return showFormDialog<void>(
+      context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: settings,
+        child: const _LlmBehaviorDialog(),
+      ),
+    );
+  }
+
+  @override
+  State<_LlmBehaviorDialog> createState() => _LlmBehaviorDialogState();
+}
+
+class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
+  late final TextEditingController _prompt;
+  late bool _create;
+  late bool _edit;
+  late bool _organize;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<SettingsStore>();
+    _prompt = TextEditingController(text: settings.llmPrompt);
+    _create = settings.llmChatCreateEnabled;
+    _edit = settings.llmChatEditEnabled;
+    _organize = settings.llmChatOrganizeEnabled;
+  }
+
+  @override
+  void dispose() {
+    _prompt.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    context.read<SettingsStore>().setLlmBehavior(
+      prompt: _prompt.text,
+      create: _create,
+      edit: _edit,
+      organize: _organize,
+    );
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) => FormDialog(
+    title: const Text('AI behavior'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _prompt,
+          minLines: 3,
+          maxLines: 6,
+          maxLength: 4000,
+          decoration: const InputDecoration(
+            labelText: 'Custom instructions',
+            hintText: 'Example: Reply in French and keep notes concise.',
+            helperText: 'Used by chat, labeling, and note editing.',
+            helperMaxLines: 2,
+          ),
+        ),
+        const SizedBox(height: 8),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Create notes'),
+          value: _create,
+          onChanged: (value) => setState(() => _create = value ?? false),
+        ),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Edit note content'),
+          value: _edit,
+          onChanged: (value) => setState(() => _edit = value ?? false),
+        ),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Organize notes'),
+          subtitle: const Text('Pin, archive, trash, color, and reminders'),
+          value: _organize,
+          onChanged: (value) => setState(() => _organize = value ?? false),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _save, child: const Text('Save')),
+    ],
+  );
+}
+
 /// Are any of the LLM config fields (endpoint/key/model) server-managed?
 bool _llmManaged(SettingsStore s) =>
     s.isManaged('llm_base_url') ||

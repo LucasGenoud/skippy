@@ -93,6 +93,7 @@ class SettingsScreen extends StatelessWidget {
               const Divider(height: 32),
               const _SectionHeader('AI'),
               const LlmConfigTile(),
+              const LlmBehaviorTile(),
               SwitchListTile(
                 secondary: const Icon(Icons.label_outline),
                 title: const Text('Automatic labeling'),

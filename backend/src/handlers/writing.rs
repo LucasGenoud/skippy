@@ -70,7 +70,10 @@ pub async fn rewrite_note(
 
     let reply = state
         .llm
-        .complete(&cfg, rewrite_messages(&record, request.mode))
+        .complete(
+            &cfg,
+            rewrite_messages(&record, request.mode, &llm_settings.prompt),
+        )
         .await
         .map_err(ApiError::Internal)?;
     let RewriteReply {
@@ -113,7 +116,11 @@ pub async fn rewrite_note(
     Ok(Json(apply_note_update(&state, &user_id, &id, body).await?))
 }
 
-fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::ChatMessage> {
+fn rewrite_messages(
+    record: &NoteRecord,
+    mode: RewriteMode,
+    custom_prompt: &str,
+) -> Vec<crate::llm::ChatMessage> {
     let instruction = match mode {
         RewriteMode::Concise => {
             "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information."
@@ -155,7 +162,12 @@ fn rewrite_messages(record: &NoteRecord, mode: RewriteMode) -> Vec<crate::llm::C
     };
     vec![
         crate::llm::ChatMessage::system(format!(
-            "You edit one personal note. {instruction} {format_instruction} {language_instruction} {shape}"
+            "You edit one personal note. {instruction} {format_instruction} {language_instruction} {shape}{}",
+            if custom_prompt.trim().is_empty() {
+                String::new()
+            } else {
+                format!(" User's custom AI instructions: {}", custom_prompt.trim())
+            }
         )),
         crate::llm::ChatMessage::user(note),
     ]

@@ -396,6 +396,12 @@ void main() {
     expect(settings.noteWritingAvailable, isFalse);
     settings.setLlmLabelingEnabled(false);
     settings.setLlmWritingEnabled(true);
+    settings.setLlmBehavior(
+      prompt: 'Reply in French',
+      create: false,
+      edit: true,
+      organize: false,
+    );
     expect(settings.autoLabelingAvailable, isFalse);
     await settleSave();
 
@@ -406,6 +412,10 @@ void main() {
     expect(api.settings['llm_labeling'], isFalse);
     expect(api.settings['llm_chat'], isTrue);
     expect(api.settings['llm_writing'], isTrue);
+    expect(api.settings['llm_prompt'], 'Reply in French');
+    expect(api.settings['llm_chat_create'], isFalse);
+    expect(api.settings['llm_chat_edit'], isTrue);
+    expect(api.settings['llm_chat_organize'], isFalse);
 
     // Another device picks it all up.
     final other = SettingsStore(api: api);
@@ -415,6 +425,9 @@ void main() {
     expect(other.llmLabelingEnabled, isFalse);
     expect(other.notesChatAvailable, isTrue);
     expect(other.noteWritingAvailable, isTrue);
+    expect(other.llmPrompt, 'Reply in French');
+    expect(other.llmChatCreateEnabled, isFalse);
+    expect(other.llmChatOrganizeEnabled, isFalse);
     other.dispose();
 
     // No semantic search on the server: chat unavailable even when configured.

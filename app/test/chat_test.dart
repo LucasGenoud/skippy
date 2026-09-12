@@ -3,6 +3,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/chat.dart';
+import 'package:skippy/models/note.dart';
 import 'package:skippy/screens/chat_screen.dart';
 import 'package:skippy/screens/settings_screen.dart';
 import 'package:skippy/state/notes_store.dart';
@@ -39,10 +40,12 @@ void main() {
         'type': 'created',
         'action': 'append',
         'note': {'id': 'n3', 'title': 'Groceries'},
+        'undo': {'title': 'Before'},
       });
       expect(created, isA<ChatCreatedEvent>());
       expect((created as ChatCreatedEvent).action, 'append');
       expect(created.note.id, 'n3');
+      expect(created.undo['title'], 'Before');
       // A created frame without a note object is ignored, not a crash.
       expect(ChatEvent.fromJson({'type': 'created'}), isNull);
 
@@ -132,6 +135,39 @@ void main() {
       expect(find.textContaining('Created: Groceries'), findsOneWidget);
       // The write turn also refreshes the local note store.
       expect(api.log, contains('fetchNotes'));
+    });
+
+    testWidgets('an agent change can be undone from its chat turn', (
+      tester,
+    ) async {
+      api.notes['n9'] = Note(
+        id: 'n9',
+        title: 'Changed',
+        content: 'New text',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      await store.load();
+      api.chatScript = const [
+        ChatCreatedEvent(
+          action: 'update',
+          note: ChatSource(id: 'n9', title: 'Changed'),
+          undo: {'title': 'Original', 'content': 'Old text'},
+        ),
+        ChatDeltaEvent('Updated the note.'),
+        ChatDoneEvent(),
+      ];
+      await tester.pumpWidget(harness(const ChatScreen()));
+
+      await tester.enterText(find.byType(TextField), 'rewrite it');
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Undo'));
+      await tester.pumpAndSettle();
+
+      expect(api.notes['n9']!.title, 'Original');
+      expect(api.notes['n9']!.content, 'Old text');
+      expect(find.text('Undone'), findsOneWidget);
     });
 
     testWidgets('assistant responses render Markdown formatting', (
@@ -378,6 +414,30 @@ void main() {
       expect(settings.llmApiKey, 'sk-x');
       expect(settings.llmModel, 'gpt-5-mini');
       expect(settings.llmConfigured, isTrue);
+      await tester.pump(const Duration(milliseconds: 700));
+    });
+
+    testWidgets('behavior dialog saves the prompt and change permissions', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness());
+      await tester.scrollUntilVisible(find.text('AI behavior'), 200);
+      await tester.tap(find.text('AI behavior'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Custom instructions'),
+        'Reply in French',
+      );
+      await tester.tap(find.text('Create notes'));
+      await tester.tap(find.text('Organize notes'));
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(settings.llmPrompt, 'Reply in French');
+      expect(settings.llmChatCreateEnabled, isFalse);
+      expect(settings.llmChatEditEnabled, isTrue);
+      expect(settings.llmChatOrganizeEnabled, isFalse);
       await tester.pump(const Duration(milliseconds: 700));
     });
   });

@@ -17,7 +17,8 @@ persistence and optimistic, offline-capable edits.
 - Password reset by email, when the deployment has a mail server configured
 - Optional self-hosted Whisper transcription, Tesseract image text recognition,
   and OpenAI-compatible embeddings
-- Optional LLM features: automatic labels, note editing, and notes chat
+- Optional LLM features: configurable prompts, automatic labels, note editing,
+  and notes chat with per-action permissions and undo
 - Dark mode, responsive layouts, keyboard shortcuts, share-sheet intake, and
   home-screen widgets
 

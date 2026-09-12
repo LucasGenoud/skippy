@@ -43,6 +43,8 @@ class _Turn {
   String? error;
   // Set when the turn created or appended to a note (the chat write path).
   ChatCreatedEvent? created;
+  bool undoing = false;
+  bool undone = false;
 
   _Turn.user(this.text) : role = 'user', sources = const [], streaming = false;
   _Turn.pending()
@@ -185,6 +187,32 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Future<void> _undo(_Turn turn) async {
+    final changed = turn.created;
+    if (changed == null ||
+        changed.undo.isEmpty ||
+        turn.undoing ||
+        turn.undone) {
+      return;
+    }
+    setState(() => turn.undoing = true);
+    final api = context.read<SettingsStore>().api;
+    final notes = context.read<NotesStore>();
+    try {
+      await api.patchNote(changed.note.id, changed.undo);
+      await notes.load();
+      if (mounted) setState(() => turn.undone = true);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not undo change')));
+      }
+    } finally {
+      if (mounted) setState(() => turn.undoing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -219,6 +247,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             key: ObjectKey(turn),
                             turn: turn,
                             onOpenNote: _openNote,
+                            onUndo: () => _undo(turn),
                           );
                         },
                       ),
@@ -308,7 +337,7 @@ class _EmptyHint extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Ask about your notes, answers cite the notes they came from. '
-              'You can also ask to create a note or add to one.',
+              'You can also ask to create, edit, or organize them.',
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,
@@ -324,8 +353,14 @@ class _EmptyHint extends StatelessWidget {
 class _Bubble extends StatelessWidget {
   final _Turn turn;
   final ValueChanged<String> onOpenNote;
+  final VoidCallback onUndo;
 
-  const _Bubble({super.key, required this.turn, required this.onOpenNote});
+  const _Bubble({
+    super.key,
+    required this.turn,
+    required this.onOpenNote,
+    required this.onUndo,
+  });
 
   /// Chip text for a source note: its title, else the first line of its
   /// locally cached content, else "Untitled".
@@ -421,19 +456,36 @@ class _Bubble extends StatelessWidget {
     final createdChip = switch (turn.created) {
       final created? => Padding(
         padding: const EdgeInsets.only(top: 8),
-        child: ActionChip(
-          avatar: Icon(
-            created.action == 'append'
-                ? Icons.playlist_add
-                : Icons.note_add_outlined,
-            size: 16,
-          ),
-          label: Text(
-            '${created.action == 'append' ? 'Updated' : 'Created'}: '
-            '${_chipLabel(created.note, store)}',
-            overflow: TextOverflow.ellipsis,
-          ),
-          onPressed: () => onOpenNote(created.note.id),
+        child: Wrap(
+          spacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            ActionChip(
+              avatar: Icon(
+                created.action == 'create'
+                    ? Icons.note_add_outlined
+                    : Icons.edit_outlined,
+                size: 16,
+              ),
+              label: Text(
+                '${created.action == 'create' ? 'Created' : 'Updated'}: '
+                '${_chipLabel(created.note, store)}',
+                overflow: TextOverflow.ellipsis,
+              ),
+              onPressed: () => onOpenNote(created.note.id),
+            ),
+            if (created.undo.isNotEmpty)
+              TextButton.icon(
+                onPressed: turn.undoing || turn.undone ? null : onUndo,
+                icon: turn.undoing
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(turn.undone ? Icons.check : Icons.undo, size: 18),
+                label: Text(turn.undone ? 'Undone' : 'Undo'),
+              ),
+          ],
         ),
       ),
       null => const SizedBox.shrink(),

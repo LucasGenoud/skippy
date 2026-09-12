@@ -44,6 +44,7 @@ sealed class ChatEvent {
         'created' when json['note'] is Map<String, dynamic> => ChatCreatedEvent(
           action: (json['action'] as String?) ?? 'create',
           note: ChatSource.fromJson(json['note'] as Map<String, dynamic>),
+          undo: (json['undo'] as Map?)?.cast<String, dynamic>() ?? const {},
         ),
         'delta' => ChatDeltaEvent((json['text'] as String?) ?? ''),
         'done' => const ChatDoneEvent(),
@@ -57,9 +58,14 @@ sealed class ChatEvent {
 /// The turn created a new note or appended to one. Rendered as a chip that
 /// opens the affected note; the confirmation text follows as normal deltas.
 class ChatCreatedEvent extends ChatEvent {
-  final String action; // 'create' | 'append'
+  final String action; // 'create' | 'append' | 'update'
   final ChatSource note;
-  const ChatCreatedEvent({required this.action, required this.note});
+  final Map<String, dynamic> undo;
+  const ChatCreatedEvent({
+    required this.action,
+    required this.note,
+    this.undo = const {},
+  });
 }
 
 class ChatSourcesEvent extends ChatEvent {
