@@ -1435,12 +1435,12 @@ class NotesStore extends ChangeNotifier {
   /// Runs an explicitly requested AI rewrite after every pending local edit
   /// has reached the server. Unlike normal typing this cannot be optimistic:
   /// the replacement text comes from the configured provider.
-  Future<void> rewriteNote(String id, NoteRewriteMode mode) async {
+  Future<void> rewriteNote(String id, NoteRewriteTask task) async {
     if (!_rewritingNoteIds.add(id)) return;
     notifyListeners();
     try {
       await _pushPending(id);
-      final updated = await api.rewriteNote(id, mode);
+      final updated = await api.rewriteNote(id, task);
       if (noteById(id) != null) _replace(updated);
     } finally {
       _rewritingNoteIds.remove(id);

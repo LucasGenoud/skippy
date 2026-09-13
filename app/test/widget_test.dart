@@ -484,9 +484,10 @@ void main() {
         await tester.tap(find.byTooltip('More note options'));
         await tester.pumpAndSettle();
         expect(find.text('Share'), findsOneWidget);
+        expect(find.text('Move to column'), findsNothing);
         expect(find.text('Move to Trash'), findsOneWidget);
-        expect(find.text('Clean up and make concise'), findsNothing);
-        expect(find.text('Fix grammar and syntax'), findsNothing);
+        expect(find.text('Make concise'), findsNothing);
+        expect(find.text('Fix grammar'), findsNothing);
         // Moving into the menu makes the card lose hover, but its action row
         // remains visible until the menu closes.
         await mouse.moveTo(Offset.zero);
@@ -601,11 +602,11 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('More note options'));
         await tester.pumpAndSettle();
-        expect(find.text('Clean up and make concise'), findsOneWidget);
-        expect(find.text('Fix grammar and syntax'), findsOneWidget);
+        expect(find.text('Make concise'), findsOneWidget);
+        expect(find.text('Fix grammar'), findsOneWidget);
 
         api.rewriteGate = Completer<void>();
-        await tester.tap(find.text('Fix grammar and syntax'));
+        await tester.tap(find.text('Fix grammar'));
         await tester.pump();
         expect(find.byKey(const ValueKey('note-rewrite-progress')), findsOne);
         expect(api.log, isNot(contains('rewriteNote:n1:grammar')));
@@ -619,7 +620,7 @@ void main() {
         expect(api.log, contains('rewriteNote:n1:grammar'));
         expect(
           store.noteById('n1')!.content,
-          'Corrected: this sentence needs fixing',
+          'Fix grammar: this sentence needs fixing',
         );
       },
     );

@@ -440,5 +440,51 @@ void main() {
       expect(settings.llmChatOrganizeEnabled, isFalse);
       await tester.pump(const Duration(milliseconds: 700));
     });
+
+    testWidgets('rewrite tasks can be edited, removed, and added', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness());
+      await tester.scrollUntilVisible(find.text('AI rewrite tasks'), 200);
+      await tester.tap(find.text('AI rewrite tasks'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Clean up this note'), findsOneWidget);
+      await tester.tap(find.text('Make concise'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Task name'),
+        'Shorten',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Prompt'),
+        'Keep only the essentials.',
+      );
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Remove Fix grammar'));
+      await tester.tap(find.text('Add task'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Task name'),
+        'Friendlier',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Prompt'),
+        'Use a warmer tone.',
+      );
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(settings.llmRewriteTasks.map((task) => task.name), [
+        'Shorten',
+        'Friendlier',
+      ]);
+      expect(settings.llmRewriteTasks.first.id, 'concise');
+      await tester.pump(const Duration(milliseconds: 700));
+    });
   });
 }

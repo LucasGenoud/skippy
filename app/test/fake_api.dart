@@ -549,22 +549,16 @@ class FakeApi implements Api {
   String? _resolveStage(String? id) => stages.containsKey(id) ? id : null;
 
   @override
-  Future<Note> rewriteNote(String id, NoteRewriteMode mode) async {
+  Future<Note> rewriteNote(String id, NoteRewriteTask task) async {
     final gate = rewriteGate;
     if (gate != null) await gate.future;
-    return _run('rewriteNote:$id:${mode.wire}', () {
+    return _run('rewriteNote:$id:${task.id}', () {
       final note = notes[id];
       if (note == null) throw ApiException(404, '{"error":"not found"}');
-      final updated = switch (mode) {
-        NoteRewriteMode.concise => note.copyWith(
-          content: 'Concise: ${note.content}',
-          updatedAt: DateTime.now(),
-        ),
-        NoteRewriteMode.grammar => note.copyWith(
-          content: 'Corrected: ${note.content}',
-          updatedAt: DateTime.now(),
-        ),
-      };
+      final updated = note.copyWith(
+        content: '${task.name}: ${note.content}',
+        updatedAt: DateTime.now(),
+      );
       notes[id] = updated;
       _events.add(null);
       return updated;

@@ -239,18 +239,13 @@ class _NoteTileState extends State<NoteTile> {
     );
   }
 
-  Future<void> _rewrite(NoteRewriteMode mode) async {
+  Future<void> _rewrite(NoteRewriteTask task) async {
     final store = context.read<NotesStore>();
     if (store.isRewritingNote(widget.note.id)) return;
     try {
-      await store.rewriteNote(widget.note.id, mode);
+      await store.rewriteNote(widget.note.id, task);
       if (!mounted) return;
-      showAppSnack(
-        mode == NoteRewriteMode.concise
-            ? 'Note cleaned up'
-            : 'Grammar corrected',
-        icon: Icons.auto_fix_high_outlined,
-      );
+      showAppSnack('${task.name} complete', icon: Icons.auto_fix_high_outlined);
     } catch (_) {
       if (!mounted) return;
       showAppSnack(
@@ -410,6 +405,7 @@ class _NoteTileState extends State<NoteTile> {
                   onDuplicate: _duplicate,
                   onMoveToWorkspace: _moveToWorkspace,
                   onMoveToStage: _moveToStage,
+                  showMoveToStage: widget.openedFromBoard,
                   canMove:
                       widget.note.isOwnedBy(
                         context.read<NotesStore>().currentUserId,
@@ -1026,9 +1022,10 @@ class _NoteActions extends StatelessWidget {
   /// Opens the column picker. The board's move gesture in v1, and the
   /// keyboard/screen-reader path on every platform.
   final VoidCallback onMoveToStage;
+  final bool showMoveToStage;
   final VoidCallback onCopyToClipboard;
   final VoidCallback onDelete;
-  final ValueChanged<NoteRewriteMode> onRewrite;
+  final ValueChanged<NoteRewriteTask> onRewrite;
   final VoidCallback onMenuOpened;
   final VoidCallback onMenuClosed;
 
@@ -1051,6 +1048,7 @@ class _NoteActions extends StatelessWidget {
     required this.onDuplicate,
     required this.onMoveToWorkspace,
     required this.onMoveToStage,
+    required this.showMoveToStage,
     required this.canMove,
     required this.onCopyToClipboard,
     required this.onDelete,
@@ -1081,6 +1079,9 @@ class _NoteActions extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final aiEditingEnabled = context.select<SettingsStore, bool>(
       (settings) => settings.noteWritingAvailable,
+    );
+    final rewriteTasks = context.select<SettingsStore, List<NoteRewriteTask>>(
+      (settings) => settings.llmRewriteTasks,
     );
     final hasReminder = context.select<SettingsStore, bool>(
       (settings) =>
@@ -1174,29 +1175,27 @@ class _NoteActions extends StatelessWidget {
                     if (value == 'stage') onMoveToStage();
                     if (value == 'clipboard') onCopyToClipboard();
                     if (value == 'delete') onDelete();
-                    if (value == 'concise') onRewrite(NoteRewriteMode.concise);
-                    if (value == 'grammar') onRewrite(NoteRewriteMode.grammar);
+                    if (value.startsWith('rewrite:')) {
+                      final id = value.substring('rewrite:'.length);
+                      for (final task in rewriteTasks) {
+                        if (task.id == id) onRewrite(task);
+                      }
+                    }
                   },
                   itemBuilder: (context) => [
-                    if (aiEditingEnabled && note.kind != NoteKind.audio) ...[
-                      PopupMenuItem(
-                        value: 'concise',
-                        enabled: !rewriting,
-                        child: ListTile(
-                          leading: Icon(Icons.auto_fix_high_outlined),
-                          title: Text('Clean up and make concise'),
-                          contentPadding: EdgeInsets.zero,
+                    if (aiEditingEnabled &&
+                        rewriteTasks.isNotEmpty &&
+                        note.kind != NoteKind.audio) ...[
+                      for (final task in rewriteTasks)
+                        PopupMenuItem(
+                          value: 'rewrite:${task.id}',
+                          enabled: !rewriting,
+                          child: ListTile(
+                            leading: const Icon(Icons.auto_fix_high_outlined),
+                            title: Text(task.name),
+                            contentPadding: EdgeInsets.zero,
+                          ),
                         ),
-                      ),
-                      PopupMenuItem(
-                        value: 'grammar',
-                        enabled: !rewriting,
-                        child: ListTile(
-                          leading: Icon(Icons.spellcheck_outlined),
-                          title: Text('Fix grammar and syntax'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
                       const PopupMenuDivider(),
                     ],
                     const PopupMenuItem(
@@ -1225,14 +1224,15 @@ class _NoteActions extends StatelessWidget {
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                    const PopupMenuItem(
-                      value: 'stage',
-                      child: ListTile(
-                        leading: Icon(Icons.view_kanban_outlined),
-                        title: Text('Move to column'),
-                        contentPadding: EdgeInsets.zero,
+                    if (showMoveToStage)
+                      const PopupMenuItem(
+                        value: 'stage',
+                        child: ListTile(
+                          leading: Icon(Icons.view_kanban_outlined),
+                          title: Text('Move to column'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
                       ),
-                    ),
                     if (context.read<NotesStore>().workspaceById(
                           note.workspaceId,
                         ) !=

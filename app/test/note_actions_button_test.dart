@@ -12,7 +12,7 @@ void main() {
     bool isOwner = true,
     NoteKind kind = NoteKind.text,
     void Function(NoteKind)? onConvert,
-    ValueChanged<NoteRewriteMode>? onRewrite,
+    ValueChanged<NoteRewriteTask>? onRewrite,
     VoidCallback? onMoveToStage,
     VoidCallback? onDelete,
     VoidCallback? onShare,
@@ -65,7 +65,7 @@ void main() {
   });
 
   testWidgets('rewrite and convert collapse into chip rows', (tester) async {
-    NoteRewriteMode? rewritten;
+    NoteRewriteTask? rewritten;
     NoteKind? converted;
     await tester.pumpWidget(
       menu(
@@ -93,7 +93,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Fix grammar'));
     await tester.pumpAndSettle();
-    expect(rewritten, NoteRewriteMode.grammar);
+    expect(rewritten, kDefaultNoteRewriteTasks[1]);
   });
 
   testWidgets('audio notes are convertible away from but never into', (

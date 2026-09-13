@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/note.dart';
 import '../../state/settings_store.dart';
 import '../form_dialog.dart';
 import 'managed_note.dart';
@@ -57,6 +58,198 @@ class LlmBehaviorTile extends StatelessWidget {
       onTap: () => _LlmBehaviorDialog.show(context),
     );
   }
+}
+
+class LlmRewriteTasksTile extends StatelessWidget {
+  const LlmRewriteTasksTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final tasks = context.watch<SettingsStore>().llmRewriteTasks;
+    return ListTile(
+      leading: const Icon(Icons.auto_fix_high_outlined),
+      title: const Text('AI rewrite tasks'),
+      subtitle: Text('${tasks.length} ${tasks.length == 1 ? 'task' : 'tasks'}'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _LlmRewriteTasksDialog.show(context),
+    );
+  }
+}
+
+class _LlmRewriteTasksDialog extends StatefulWidget {
+  const _LlmRewriteTasksDialog();
+
+  static Future<void> show(BuildContext context) {
+    final settings = context.read<SettingsStore>();
+    return showFormDialog<void>(
+      context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: settings,
+        child: const _LlmRewriteTasksDialog(),
+      ),
+    );
+  }
+
+  @override
+  State<_LlmRewriteTasksDialog> createState() => _LlmRewriteTasksDialogState();
+}
+
+class _LlmRewriteTasksDialogState extends State<_LlmRewriteTasksDialog> {
+  late List<NoteRewriteTask> _tasks;
+
+  @override
+  void initState() {
+    super.initState();
+    _tasks = [...context.read<SettingsStore>().llmRewriteTasks];
+  }
+
+  Future<void> _edit([int? index]) async {
+    final task = await _LlmRewriteTaskDialog.show(
+      context,
+      index == null ? null : _tasks[index],
+    );
+    if (task == null || !mounted) return;
+    setState(() {
+      if (index == null) {
+        _tasks.add(task);
+      } else {
+        _tasks[index] = task;
+      }
+    });
+  }
+
+  void _save() {
+    context.read<SettingsStore>().setLlmRewriteTasks(_tasks);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => FormDialog(
+    title: const Text('AI rewrite tasks'),
+    width: 520,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'These actions appear in each note menu. Language, note format, and response-safety instructions are added automatically.',
+        ),
+        const SizedBox(height: 12),
+        for (var i = 0; i < _tasks.length; i++)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(_tasks[i].name),
+            subtitle: Text(
+              _tasks[i].prompt,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: () => _edit(i),
+            trailing: IconButton(
+              tooltip: 'Remove ${_tasks[i].name}',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => setState(() => _tasks.removeAt(i)),
+            ),
+          ),
+        OutlinedButton.icon(
+          onPressed: _edit,
+          icon: const Icon(Icons.add),
+          label: const Text('Add task'),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _save, child: const Text('Save')),
+    ],
+  );
+}
+
+class _LlmRewriteTaskDialog extends StatefulWidget {
+  final NoteRewriteTask? task;
+
+  const _LlmRewriteTaskDialog(this.task);
+
+  static Future<NoteRewriteTask?> show(
+    BuildContext context,
+    NoteRewriteTask? task,
+  ) => showFormDialog<NoteRewriteTask>(
+    context,
+    builder: (_) => _LlmRewriteTaskDialog(task),
+  );
+
+  @override
+  State<_LlmRewriteTaskDialog> createState() => _LlmRewriteTaskDialogState();
+}
+
+class _LlmRewriteTaskDialogState extends State<_LlmRewriteTaskDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _prompt;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.task?.name ?? '');
+    _prompt = TextEditingController(text: widget.task?.prompt ?? '');
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _prompt.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final name = _name.text.trim();
+    final prompt = _prompt.text.trim();
+    if (name.isEmpty || prompt.isEmpty) return;
+    Navigator.pop(
+      context,
+      NoteRewriteTask(
+        id:
+            widget.task?.id ??
+            'custom-${DateTime.now().microsecondsSinceEpoch}',
+        name: name,
+        prompt: prompt,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => FormDialog(
+    title: Text(widget.task == null ? 'Add rewrite task' : 'Edit rewrite task'),
+    width: 520,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _name,
+          autofocus: true,
+          maxLength: 64,
+          decoration: const InputDecoration(labelText: 'Task name'),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _prompt,
+          minLines: 5,
+          maxLines: 12,
+          maxLength: 4000,
+          decoration: const InputDecoration(labelText: 'Prompt'),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _save, child: const Text('Save')),
+    ],
+  );
 }
 
 class _LlmBehaviorDialog extends StatefulWidget {

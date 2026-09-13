@@ -696,7 +696,7 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  Future<void> _rewriteWithAi(NoteRewriteMode mode) async {
+  Future<void> _rewriteWithAi(NoteRewriteTask task) async {
     final note = _note;
     if (note == null ||
         note.isEmpty ||
@@ -714,7 +714,7 @@ class _EditorScreenState extends State<EditorScreen> {
       items: note.isChecklist ? _items : null,
     );
     try {
-      await _store.rewriteNote(note.id, mode);
+      await _store.rewriteNote(note.id, task);
       if (!mounted) return;
       final updated = _note;
       if (updated != null) {
@@ -725,12 +725,7 @@ class _EditorScreenState extends State<EditorScreen> {
       }
       _afterChange(discrete: true);
       setState(() {});
-      showAppSnack(
-        mode == NoteRewriteMode.concise
-            ? 'Note cleaned up'
-            : 'Grammar corrected',
-        icon: Icons.auto_fix_high_outlined,
-      );
+      showAppSnack('${task.name} complete', icon: Icons.auto_fix_high_outlined);
     } catch (_) {
       if (!mounted) return;
       showAppSnack(
@@ -1138,6 +1133,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     !_settings.noteWritingAvailable
                 ? null
                 : _rewriteWithAi,
+            rewriteTasks: _settings.llmRewriteTasks,
             rewriting: note != null && _store.isRewritingNote(note.id),
           ),
         ],

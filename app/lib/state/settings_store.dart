@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../models/notify_channels.dart';
+import '../models/note.dart';
 import '../models/saved_location.dart';
 import '../theme.dart';
 
@@ -230,6 +231,7 @@ class SettingsStore extends ChangeNotifier {
   bool llmChatEnabled = true;
   bool llmWritingEnabled = false;
   String llmPrompt = '';
+  List<NoteRewriteTask> llmRewriteTasks = kDefaultNoteRewriteTasks;
   bool llmChatCreateEnabled = true;
   bool llmChatEditEnabled = true;
   bool llmChatOrganizeEnabled = true;
@@ -435,6 +437,16 @@ class SettingsStore extends ChangeNotifier {
     llmChatEnabled = json['llm_chat'] != false;
     llmWritingEnabled = json['llm_writing'] == true;
     llmPrompt = ((json['llm_prompt'] as String?) ?? '').trim();
+    final rawRewriteTasks = json['llm_rewrite_tasks'];
+    llmRewriteTasks = rawRewriteTasks is! List
+        ? kDefaultNoteRewriteTasks
+        : [
+            for (final entry in rawRewriteTasks)
+              if (entry is Map<String, dynamic>)
+                if (NoteRewriteTask.fromJson(entry)
+                    case final NoteRewriteTask task)
+                  task,
+          ];
     llmChatCreateEnabled = json['llm_chat_create'] != false;
     llmChatEditEnabled = json['llm_chat_edit'] != false;
     llmChatOrganizeEnabled = json['llm_chat_organize'] != false;
@@ -516,6 +528,7 @@ class SettingsStore extends ChangeNotifier {
     'llm_chat': llmChatEnabled,
     'llm_writing': llmWritingEnabled,
     'llm_prompt': llmPrompt,
+    'llm_rewrite_tasks': [for (final task in llmRewriteTasks) task.toJson()],
     'llm_chat_create': llmChatCreateEnabled,
     'llm_chat_edit': llmChatEditEnabled,
     'llm_chat_organize': llmChatOrganizeEnabled,
@@ -609,6 +622,8 @@ class SettingsStore extends ChangeNotifier {
   void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
   void setLlmWritingEnabled(bool value) =>
       _mutate(() => llmWritingEnabled = value);
+  void setLlmRewriteTasks(List<NoteRewriteTask> tasks) =>
+      _mutate(() => llmRewriteTasks = List.unmodifiable(tasks));
   void setLlmBehavior({
     required String prompt,
     required bool create,

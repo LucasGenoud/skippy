@@ -4,6 +4,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
+import 'package:skippy/models/note.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/models/notify_channels.dart';
 import 'package:skippy/models/saved_location.dart';
@@ -396,6 +397,13 @@ void main() {
     expect(settings.noteWritingAvailable, isFalse);
     settings.setLlmLabelingEnabled(false);
     settings.setLlmWritingEnabled(true);
+    settings.setLlmRewriteTasks(const [
+      NoteRewriteTask(
+        id: 'friendly',
+        name: 'Make friendly',
+        prompt: 'Use a warm, friendly tone.',
+      ),
+    ]);
     settings.setLlmBehavior(
       prompt: 'Reply in French',
       create: false,
@@ -413,6 +421,13 @@ void main() {
     expect(api.settings['llm_chat'], isTrue);
     expect(api.settings['llm_writing'], isTrue);
     expect(api.settings['llm_prompt'], 'Reply in French');
+    expect(api.settings['llm_rewrite_tasks'], [
+      {
+        'id': 'friendly',
+        'name': 'Make friendly',
+        'prompt': 'Use a warm, friendly tone.',
+      },
+    ]);
     expect(api.settings['llm_chat_create'], isFalse);
     expect(api.settings['llm_chat_edit'], isTrue);
     expect(api.settings['llm_chat_organize'], isFalse);
@@ -426,6 +441,7 @@ void main() {
     expect(other.notesChatAvailable, isTrue);
     expect(other.noteWritingAvailable, isTrue);
     expect(other.llmPrompt, 'Reply in French');
+    expect(other.llmRewriteTasks.single.name, 'Make friendly');
     expect(other.llmChatCreateEnabled, isFalse);
     expect(other.llmChatOrganizeEnabled, isFalse);
     other.dispose();

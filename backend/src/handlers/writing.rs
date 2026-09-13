@@ -8,6 +8,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -19,15 +20,15 @@ use super::{apply_note_update, require_participant};
 const MAX_REWRITE_CHARS: usize = 20_000;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RewriteMode {
-    Concise,
-    Grammar,
+pub struct RewriteRequest {
+    #[serde(alias = "mode")]
+    pub task_id: String,
 }
 
 #[derive(Deserialize)]
-pub struct RewriteRequest {
-    pub mode: RewriteMode,
+struct RewriteTask {
+    id: String,
+    prompt: String,
 }
 
 #[derive(Deserialize)]
@@ -67,12 +68,13 @@ pub async fn rewrite_note(
     let Some(cfg) = llm_settings.config.filter(|_| llm_settings.writing) else {
         return Err(ApiError::Unavailable("AI note editing is not enabled"));
     };
+    let instruction = rewrite_instruction(&effective, &request.task_id)?;
 
     let reply = state
         .llm
         .complete(
             &cfg,
-            rewrite_messages(&record, request.mode, &llm_settings.prompt),
+            rewrite_messages(&record, &instruction, &llm_settings.prompt),
         )
         .await
         .map_err(ApiError::Internal)?;
@@ -118,17 +120,9 @@ pub async fn rewrite_note(
 
 fn rewrite_messages(
     record: &NoteRecord,
-    mode: RewriteMode,
+    instruction: &str,
     custom_prompt: &str,
 ) -> Vec<crate::llm::ChatMessage> {
-    let instruction = match mode {
-        RewriteMode::Concise => {
-            "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information."
-        }
-        RewriteMode::Grammar => {
-            "Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, or change tone."
-        }
-    };
     let format_instruction = match record.kind.as_str() {
         KIND_MARKDOWN => {
             "This is a Markdown note: preserve meaningful Markdown syntax and structure."
@@ -171,6 +165,33 @@ fn rewrite_messages(
         )),
         crate::llm::ChatMessage::user(note),
     ]
+}
+
+fn rewrite_instruction(settings: &Value, task_id: &str) -> ApiResult<String> {
+    const DEFAULTS: [(&str, &str); 2] = [
+        (
+            "concise",
+            "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information.",
+        ),
+        (
+            "grammar",
+            "Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, or change tone.",
+        ),
+    ];
+    if let Some(tasks) = settings["llm_rewrite_tasks"].as_array() {
+        for value in tasks {
+            let Ok(task) = serde_json::from_value::<RewriteTask>(value.clone()) else {
+                continue;
+            };
+            let prompt = task.prompt.trim();
+            if task.id == task_id && !prompt.is_empty() && prompt.chars().count() <= 4_000 {
+                return Ok(prompt.to_string());
+            }
+        }
+    } else if let Some((_, prompt)) = DEFAULTS.iter().find(|(id, _)| *id == task_id) {
+        return Ok((*prompt).to_string());
+    }
+    Err(ApiError::BadRequest("unknown AI rewrite task".to_string()))
 }
 
 fn parse_reply(reply: &str, record: &NoteRecord) -> ApiResult<RewriteReply> {

@@ -37,14 +37,53 @@ enum ReminderRepeat {
   }
 }
 
-/// The bounded set of AI edits a user can request for a note.
-enum NoteRewriteMode {
-  concise('concise'),
-  grammar('grammar');
+/// One user-configurable AI action shown in note menus.
+class NoteRewriteTask {
+  final String id;
+  final String name;
+  final String prompt;
 
-  final String wire;
-  const NoteRewriteMode(this.wire);
+  const NoteRewriteTask({
+    required this.id,
+    required this.name,
+    required this.prompt,
+  });
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'prompt': prompt};
+
+  static NoteRewriteTask? fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final name = (json['name'] as String? ?? '').trim();
+    final prompt = (json['prompt'] as String? ?? '').trim();
+    if (id.isEmpty || name.isEmpty || prompt.isEmpty) return null;
+    return NoteRewriteTask(id: id, name: name, prompt: prompt);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is NoteRewriteTask &&
+      other.id == id &&
+      other.name == name &&
+      other.prompt == prompt;
+
+  @override
+  int get hashCode => Object.hash(id, name, prompt);
 }
+
+const List<NoteRewriteTask> kDefaultNoteRewriteTasks = [
+  NoteRewriteTask(
+    id: 'concise',
+    name: 'Make concise',
+    prompt:
+        'Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information.',
+  ),
+  NoteRewriteTask(
+    id: 'grammar',
+    name: 'Fix grammar',
+    prompt:
+        'Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, or change tone.',
+  ),
+];
 
 /// Deepest a checklist row may be nested, so three levels in all: task,
 /// subtask, sub-subtask. Mirrors the backend's `MAX_ITEM_DEPTH`.

@@ -349,6 +349,49 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     let markdown_prompt = calls.lock().unwrap()[1][0].content.clone();
     assert!(markdown_prompt.contains("Markdown note"));
     assert!(!markdown_prompt.contains("plain text only"));
+
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&token),
+        Some(json!({
+            "llm_base_url": "http://fake/v1",
+            "llm_model": "test-model",
+            "llm_writing": true,
+            "llm_rewrite_tasks": [{
+                "id": "friendly",
+                "name": "Make friendly",
+                "prompt": "Use a warm, friendly tone."
+            }]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/rewrite"),
+        Some(&token),
+        Some(json!({"task_id": "friendly"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        calls.lock().unwrap()[2][0]
+            .content
+            .contains("Use a warm, friendly tone")
+    );
+
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/notes/{id}/rewrite"),
+        Some(&token),
+        Some(json!({"task_id": "grammar"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 /// A self-hoster's env-pinned keys must win over whatever the user's settings

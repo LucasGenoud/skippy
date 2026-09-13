@@ -32,7 +32,8 @@ class NoteActionsButton extends StatelessWidget {
   final VoidCallback? onHistory;
   final VoidCallback? onAddToHomeScreen;
   final void Function(NoteKind target)? onConvert;
-  final ValueChanged<NoteRewriteMode>? onRewrite;
+  final ValueChanged<NoteRewriteTask>? onRewrite;
+  final List<NoteRewriteTask> rewriteTasks;
 
   /// Swaps the trigger for a spinner while an AI rewrite is in flight, and
   /// disables re-running one from the sheet.
@@ -52,6 +53,7 @@ class NoteActionsButton extends StatelessWidget {
     this.onAddToHomeScreen,
     this.onConvert,
     this.onRewrite,
+    this.rewriteTasks = kDefaultNoteRewriteTasks,
     this.rewriting = false,
   });
 
@@ -78,7 +80,8 @@ class NoteActionsButton extends StatelessWidget {
             if (target != kind && target != NoteKind.audio) target,
         ];
 
-  bool get _offersRewrite => onRewrite != null && kind != NoteKind.audio;
+  bool get _offersRewrite =>
+      onRewrite != null && rewriteTasks.isNotEmpty && kind != NoteKind.audio;
 
   List<_NoteAction> _rows(ColorScheme scheme) => [
     if (onShare != null)
@@ -146,8 +149,12 @@ class NoteActionsButton extends StatelessWidget {
     if (value == 'stage') onMoveToStage?.call();
     if (value == 'history') onHistory?.call();
     if (value == 'homescreen') onAddToHomeScreen?.call();
-    if (value == 'concise') onRewrite?.call(NoteRewriteMode.concise);
-    if (value == 'grammar') onRewrite?.call(NoteRewriteMode.grammar);
+    if (value.startsWith('rewrite:')) {
+      final id = value.substring('rewrite:'.length);
+      for (final task in rewriteTasks) {
+        if (task.id == id) onRewrite?.call(task);
+      }
+    }
     for (final target in NoteKind.values) {
       if (value == 'convert:${target.name}') onConvert?.call(target);
     }
@@ -181,6 +188,7 @@ class NoteActionsButton extends StatelessWidget {
                   rows: rows,
                   convertTargets: _convertTargets,
                   offersRewrite: _offersRewrite,
+                  rewriteTasks: rewriteTasks,
                   rewriting: rewriting,
                 ),
               );
@@ -200,12 +208,14 @@ class _NoteActionsSheet extends StatelessWidget {
   final List<_NoteAction> rows;
   final List<NoteKind> convertTargets;
   final bool offersRewrite;
+  final List<NoteRewriteTask> rewriteTasks;
   final bool rewriting;
 
   const _NoteActionsSheet({
     required this.rows,
     required this.convertTargets,
     required this.offersRewrite,
+    required this.rewriteTasks,
     required this.rewriting,
   });
 
@@ -234,23 +244,18 @@ class _NoteActionsSheet extends StatelessWidget {
                 _ChipRow(
                   title: 'Rewrite with AI',
                   chips: [
-                    ActionChip(
-                      avatar: const Icon(
-                        Icons.auto_fix_high_outlined,
-                        size: 18,
+                    for (final task in rewriteTasks)
+                      ActionChip(
+                        avatar: const Icon(
+                          Icons.auto_fix_high_outlined,
+                          size: 18,
+                        ),
+                        label: Text(task.name),
+                        onPressed: rewriting
+                            ? null
+                            : () =>
+                                  Navigator.pop(context, 'rewrite:${task.id}'),
                       ),
-                      label: const Text('Make concise'),
-                      onPressed: rewriting
-                          ? null
-                          : () => Navigator.pop(context, 'concise'),
-                    ),
-                    ActionChip(
-                      avatar: const Icon(Icons.spellcheck_outlined, size: 18),
-                      label: const Text('Fix grammar'),
-                      onPressed: rewriting
-                          ? null
-                          : () => Navigator.pop(context, 'grammar'),
-                    ),
                   ],
                 ),
               if (convertTargets.isNotEmpty)

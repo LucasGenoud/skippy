@@ -147,6 +147,7 @@ class SettingsScreen extends StatelessWidget {
                     ? settings.setLlmWritingEnabled
                     : null,
               ),
+              const LlmRewriteTasksTile(),
               const Divider(height: 32),
               const _SectionHeader('Notifications'),
               const NotifyConfigTile(),

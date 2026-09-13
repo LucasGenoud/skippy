@@ -167,7 +167,7 @@ abstract class Api {
 
   /// Ask the user's enabled AI provider to rewrite a note, returning the
   /// server-updated note so the local store can replace its current copy.
-  Future<Note> rewriteNote(String id, NoteRewriteMode mode);
+  Future<Note> rewriteNote(String id, NoteRewriteTask task);
   Future<void> deleteNote(String id);
   Future<void> reorderNotes(List<String> ids);
 
@@ -726,12 +726,12 @@ class ApiClient extends _ApiTransport implements Api {
   }
 
   @override
-  Future<Note> rewriteNote(String id, NoteRewriteMode mode) async {
+  Future<Note> rewriteNote(String id, NoteRewriteTask task) async {
     final data = _decode(
       await _client.post(
         _uri('/notes/$id/rewrite'),
         headers: _headers(),
-        body: jsonEncode({'mode': mode.wire}),
+        body: jsonEncode({'task_id': task.id}),
       ),
     );
     return Note.fromJson(data as Map<String, dynamic>);

@@ -110,6 +110,8 @@ void main() {
         find.text('Reminders on this device'),
         200,
       );
+      await tester.ensureVisible(deviceSwitch());
+      await tester.pumpAndSettle();
     }
 
     testWidgets('granting permission turns it on and shows the caveat', (
