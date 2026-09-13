@@ -147,7 +147,8 @@ class AnimatedMasonry extends StatefulWidget {
 class _Slot {
   final double x;
   final double y;
-  const _Slot(this.x, this.y);
+  final double width;
+  const _Slot(this.x, this.y, this.width);
 }
 
 class _Layout {
@@ -316,6 +317,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     final columnWidth = (maxWidth - spacing * (columns - 1)) / columns;
     final columnHeights = List<double>.filled(columns, 0);
     final slots = <String, _Slot>{};
+    final notesById = {for (final note in widget.notes) note.id: note};
     Rect? incoming;
 
     int shortestColumn() {
@@ -342,9 +344,22 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     for (var i = 0; i < _orderIds.length; i++) {
       if (gapAt == i) reserveIncoming();
       final id = _orderIds[i];
-      final col = shortestColumn();
-      slots[id] = _Slot(col * (columnWidth + spacing), columnHeights[col]);
-      columnHeights[col] += (_heights[id] ?? _estimatedHeight) + spacing;
+      final span = (notesById[id]?.gridSpan ?? 1).clamp(1, columns);
+      var col = 0;
+      var y = double.infinity;
+      for (var start = 0; start <= columns - span; start++) {
+        final top = columnHeights.sublist(start, start + span).reduce(math.max);
+        if (top < y - 0.5) {
+          col = start;
+          y = top;
+        }
+      }
+      final width = columnWidth * span + spacing * (span - 1);
+      slots[id] = _Slot(col * (columnWidth + spacing), y, width);
+      final bottom = y + (_heights[id] ?? _estimatedHeight) + spacing;
+      for (var c = col; c < col + span; c++) {
+        columnHeights[c] = bottom;
+      }
     }
     if (gapAt != null && gapAt >= _orderIds.length) reserveIncoming();
 
@@ -426,7 +441,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       final rect = Rect.fromLTWH(
         slot.x,
         slot.y,
-        layout.columnWidth,
+        slot.width,
         _heights[id] ?? _estimatedHeight,
       );
       if (rect.contains(local)) {
@@ -588,7 +603,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     // mounted at once during a drag.
     final feedback = Builder(
       builder: (context) => _DragFeedback(
-        width: layout.columnWidth,
+        width: layout.slots[note.id]!.width,
         child: widget.itemBuilder(context, note),
       ),
     );
@@ -681,7 +696,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
               curve: Motion.standard,
               left: layout.slots[note.id]!.x,
               top: layout.slots[note.id]!.y,
-              width: layout.columnWidth,
+              width: layout.slots[note.id]!.width,
               child: MeasureSize(
                 onChange: (size) => _onHeightMeasured(note.id, size.height),
                 child: _TileEntrance(

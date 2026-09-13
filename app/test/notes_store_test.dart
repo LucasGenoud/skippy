@@ -21,6 +21,7 @@ Note serverNote(
   bool archived = false,
   bool trashed = false,
   double position = 0,
+  int gridSpan = 1,
   DateTime? createdAt,
   DateTime? updatedAt,
   Set<String> labelIds = const {},
@@ -41,6 +42,7 @@ Note serverNote(
     archived: archived,
     trashed: trashed,
     position: position,
+    gridSpan: gridSpan,
     reminderAt: reminderAt,
     itemReminders: itemReminders,
     workspaceId: workspaceId,
@@ -269,6 +271,15 @@ void main() {
   });
 
   group('note actions', () {
+    test('card width updates optimistically and persists', () async {
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      await store.load();
+      store.setGridSpan('n1', 2);
+      expect(store.noteById('n1')!.gridSpan, 2);
+      await settle();
+      expect(api.notes['n1']!.gridSpan, 2);
+    });
+
     test('pinning an archived note unarchives it', () async {
       api.notes['n1'] = serverNote('n1', title: 'a', archived: true);
       await store.load();

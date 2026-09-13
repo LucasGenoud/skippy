@@ -13,6 +13,7 @@ void main() {
     NoteKind kind = NoteKind.text,
     void Function(NoteKind)? onConvert,
     ValueChanged<NoteRewriteTask>? onRewrite,
+    ValueChanged<int>? onGridSpan,
     VoidCallback? onMoveToStage,
     VoidCallback? onDelete,
     VoidCallback? onShare,
@@ -32,6 +33,7 @@ void main() {
             onHistory: () {},
             onConvert: onConvert,
             onRewrite: onRewrite,
+            onGridSpan: onGridSpan,
             rewriting: rewriting,
           ),
         ],
@@ -107,6 +109,18 @@ void main() {
     expect(find.text('Checklist'), findsOneWidget);
     // Rewriting a transcript is not offered either.
     expect(find.text('Rewrite with AI'), findsNothing);
+  });
+
+  testWidgets('card width choices report the selected span', (tester) async {
+    int? selected;
+    await tester.pumpWidget(menu(onGridSpan: (span) => selected = span));
+    await tester.tap(find.byTooltip('Note actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Card width'), findsOneWidget);
+    await tester.tap(find.text('2 columns'));
+    await tester.pumpAndSettle();
+    expect(selected, 2);
   });
 
   testWidgets('a rewrite in flight replaces the trigger with a spinner', (

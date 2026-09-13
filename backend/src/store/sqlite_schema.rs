@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS notes (
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
     trashed INTEGER NOT NULL DEFAULT 0 CHECK (trashed IN (0, 1)),
     position REAL NOT NULL DEFAULT 0,
+    grid_span INTEGER NOT NULL DEFAULT 1 CHECK (grid_span BETWEEN 1 AND 3),
     reminder_at TEXT,
     reminder_repeat TEXT CHECK (
         reminder_repeat IS NULL OR
@@ -268,8 +269,22 @@ CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
     migrate_collections(pool).await?;
+    migrate_grid_span(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS workspace_copies (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE) STRICT").execute(pool).await?;
     import_personal_views(pool).await?;
+    Ok(())
+}
+
+async fn migrate_grid_span(pool: &SqlitePool) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    if !table_has_column(&mut tx, "notes", "grid_span").await? {
+        sqlx::query(
+            "ALTER TABLE notes ADD COLUMN grid_span INTEGER NOT NULL DEFAULT 1 CHECK (grid_span BETWEEN 1 AND 3)",
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 

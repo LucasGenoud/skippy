@@ -324,6 +324,9 @@ pub struct NoteRecord {
     pub archived: bool,
     pub trashed: bool,
     pub position: f64,
+    /// Number of masonry columns the card occupies. The client clamps this to
+    /// the columns available, so a wide card becomes full-width on a phone.
+    pub grid_span: i64,
     pub reminder_at: Option<String>,
     /// Optional cadence for a reminder (`daily`, `weekly`, `monthly`, or
     /// `yearly`). A missing cadence keeps the existing one-shot behaviour.
@@ -382,6 +385,7 @@ pub struct NoteFields {
     pub archived: bool,
     pub trashed: bool,
     pub position: f64,
+    pub grid_span: i64,
     pub reminder_at: Option<String>,
     pub reminder_repeat: Option<String>,
     pub transcript_status: String,
@@ -406,6 +410,7 @@ impl NoteRecord {
             archived: self.archived,
             trashed: self.trashed,
             position: self.position,
+            grid_span: self.grid_span,
             reminder_at: self.reminder_at.clone(),
             reminder_repeat: self.reminder_repeat.clone(),
             transcript_status: self.transcript_status.clone(),
@@ -570,6 +575,7 @@ pub struct PublicNote {
     pub color: String,
     pub pinned: bool,
     pub position: f64,
+    pub grid_span: i64,
     pub label_ids: Vec<String>,
     pub stage_id: Option<String>,
     pub stage_position: f64,
@@ -642,6 +648,8 @@ pub struct CreateNote {
     #[serde(default)]
     pub position: Option<f64>,
     #[serde(default)]
+    pub grid_span: Option<i64>,
+    #[serde(default)]
     pub reminder_at: Option<String>,
     #[serde(default)]
     pub reminder_repeat: Option<String>,
@@ -685,6 +693,7 @@ pub struct UpdateNote {
     pub archived: Option<bool>,
     pub trashed: Option<bool>,
     pub position: Option<f64>,
+    pub grid_span: Option<i64>,
     #[serde(default, with = "double_option")]
     pub reminder_at: Option<Option<String>>,
     /// Optional recurrence cadence. Nested so a JSON `null` turns a
@@ -719,6 +728,7 @@ impl UpdateNote {
             archived,
             trashed,
             position,
+            grid_span,
             reminder_at,
             reminder_repeat,
             label_ids: _,
@@ -757,6 +767,9 @@ impl UpdateNote {
         }
         if let Some(v) = position {
             record.position = v;
+        }
+        if let Some(v) = grid_span {
+            record.grid_span = v;
         }
         if let Some(v) = reminder_at {
             record.reminder_at = v;

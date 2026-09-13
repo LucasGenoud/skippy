@@ -1135,6 +1135,10 @@ class _EditorScreenState extends State<EditorScreen> {
                 : _rewriteWithAi,
             rewriteTasks: _settings.llmRewriteTasks,
             rewriting: note != null && _store.isRewritingNote(note.id),
+            gridSpan: note?.gridSpan ?? 1,
+            onGridSpan: trashed || note == null
+                ? null
+                : (span) => _store.setGridSpan(note.id, span),
           ),
         ],
         const SizedBox(width: 4),

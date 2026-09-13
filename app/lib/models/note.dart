@@ -270,6 +270,7 @@ class Note {
   final bool archived;
   final bool trashed;
   final double position;
+  final int gridSpan;
 
   /// The board column holding this note, or null for unassigned. At most one,
   /// unlike [labelIds], stages are a separate, exclusive system, which is why
@@ -312,6 +313,7 @@ class Note {
     this.archived = false,
     this.trashed = false,
     this.position = 0,
+    this.gridSpan = 1,
     this.stageId,
     this.stagePosition = 0,
     this.reminderAt,
@@ -376,6 +378,7 @@ class Note {
     bool? archived,
     bool? trashed,
     double? position,
+    int? gridSpan,
     Object? stageId = _unset,
     double? stagePosition,
     Object? reminderAt = _unset,
@@ -400,6 +403,7 @@ class Note {
       archived: archived ?? this.archived,
       trashed: trashed ?? this.trashed,
       position: position ?? this.position,
+      gridSpan: gridSpan ?? this.gridSpan,
       stageId: stageId == _unset ? this.stageId : stageId as String?,
       stagePosition: stagePosition ?? this.stagePosition,
       reminderAt: reminderAt == _unset
@@ -435,6 +439,7 @@ class Note {
       archived: json['archived'] as bool? ?? false,
       trashed: json['trashed'] as bool? ?? false,
       position: (json['position'] as num?)?.toDouble() ?? 0,
+      gridSpan: ((json['grid_span'] as num?)?.toInt() ?? 1).clamp(1, 3),
       stageId: json['stage_id'] as String?,
       // Absent for a cache written before boards existed; the grid position is
       // the natural initial order for a board column.
@@ -487,6 +492,7 @@ class Note {
     'archived': archived,
     'trashed': trashed,
     'position': position,
+    'grid_span': gridSpan,
     'stage_id': stageId,
     'stage_position': stagePosition,
     'reminder_at': reminderAt?.toUtc().toIso8601String(),

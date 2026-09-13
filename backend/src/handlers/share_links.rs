@@ -413,6 +413,7 @@ fn public_note(view: &NoteView) -> PublicNote {
         color: view.note.color.clone(),
         pinned: view.note.pinned,
         position: view.note.position,
+        grid_span: view.note.grid_span,
         label_ids: view.label_ids.clone(),
         stage_id: view.note.stage_id.clone(),
         stage_position: view.note.stage_position,

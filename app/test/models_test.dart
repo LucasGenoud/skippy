@@ -17,6 +17,7 @@ void main() {
       'archived': false,
       'trashed': false,
       'position': 2048.0,
+      'grid_span': 2,
       'reminder_at': '2030-05-01T07:00:00+00:00',
       'reminder_repeat': 'weekly',
       'created_at': '2026-07-01T10:00:00+00:00',
@@ -36,6 +37,7 @@ void main() {
     expect(note.items.first.done, isTrue);
     expect(note.color, 'teal');
     expect(note.pinned, isTrue);
+    expect(note.gridSpan, 2);
     expect(note.reminderAt, isNotNull);
     // RFC3339 UTC converts to local without losing the instant.
     expect(note.reminderAt!.toUtc(), DateTime.utc(2030, 5, 1, 7));
@@ -82,6 +84,7 @@ void main() {
     expect(note.kind, NoteKind.text);
     expect(note.items, isEmpty);
     expect(note.color, 'default');
+    expect(note.gridSpan, 1);
     expect(note.reminderAt, isNull);
     expect(note.collaborators, isEmpty);
     expect(note.owner, isNull);

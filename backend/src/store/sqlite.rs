@@ -783,9 +783,9 @@ impl SqliteRepository {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO notes
              (id, workspace_id, created_by, kind, title, content, items, color, pinned, archived,
-              trashed, position, reminder_at, reminder_repeat, reminder_fired_at, created_at, updated_at, trashed_at,
+              trashed, position, grid_span, reminder_at, reminder_repeat, reminder_fired_at, created_at, updated_at, trashed_at,
               stage_id, stage_position, collection_id, transcript_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                      CASE WHEN ? THEN ? ELSE NULL END, ?, ?, ?, ?)",
         )
         .bind(&note.id)
@@ -800,6 +800,7 @@ impl SqliteRepository {
         .bind(note.archived as i64)
         .bind(note.trashed as i64)
         .bind(note.position)
+        .bind(note.grid_span)
         .bind(&note.reminder_at)
         .bind(&note.reminder_repeat)
         .bind(&note.reminder_fired_at)
@@ -835,7 +836,7 @@ impl SqliteRepository {
         .await?;
         sqlx::query(
             "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
-             color = ?, pinned = ?, archived = ?, position = ?, reminder_at = ?,
+             color = ?, pinned = ?, archived = ?, position = ?, grid_span = ?, reminder_at = ?,
              reminder_repeat = ?, reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
              stage_id = ?, stage_position = ?, collection_id = ?,
              trashed_at = CASE
@@ -855,6 +856,7 @@ impl SqliteRepository {
         .bind(note.pinned as i64)
         .bind(note.archived as i64)
         .bind(note.position)
+        .bind(note.grid_span)
         .bind(&note.reminder_at)
         .bind(&note.reminder_repeat)
         .bind(&note.reminder_fired_at)

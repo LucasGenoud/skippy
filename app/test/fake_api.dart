@@ -473,6 +473,7 @@ class FakeApi implements Api {
               ]
             : null,
         workspaceId: fields['workspace_id'] as String?,
+        gridSpan: (fields['grid_span'] as num?)?.toInt(),
         collectionId: fields['collection_id'] as String?,
         color: fields['color'] as String?,
         pinned: fields['pinned'] as bool?,

@@ -670,6 +670,7 @@ class ApiClient extends _ApiTransport implements Api {
           'color': note.color,
           'pinned': note.pinned,
           'position': note.position,
+          'grid_span': note.gridSpan,
           if (note.reminderAt != null)
             'reminder_at': note.reminderAt!.toUtc().toIso8601String(),
           if (note.reminderRepeat != null)

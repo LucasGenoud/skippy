@@ -109,6 +109,7 @@ pub async fn rewrite_note(
         archived: None,
         trashed: None,
         position: None,
+        grid_span: None,
         reminder_at: None,
         reminder_repeat: None,
         label_ids: None,

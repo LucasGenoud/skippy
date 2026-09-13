@@ -37,6 +37,7 @@ async fn create_defaults_and_patch() {
     assert_eq!(note["kind"], "text");
     assert_eq!(note["color"], "default");
     assert_eq!(note["pinned"], json!(false));
+    assert_eq!(note["grid_span"], 1);
     assert_eq!(note["owner"]["id"], json!(user_id));
     assert_eq!(note["items"], json!([]));
 
@@ -46,14 +47,25 @@ async fn create_defaults_and_patch() {
         "PATCH",
         &format!("/api/notes/{id}"),
         Some(&token),
-        Some(json!({"title": "Hi", "color": "teal", "pinned": true})),
+        Some(json!({"title": "Hi", "color": "teal", "pinned": true, "grid_span": 2})),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["title"], "Hi");
     assert_eq!(updated["color"], "teal");
     assert_eq!(updated["pinned"], json!(true));
+    assert_eq!(updated["grid_span"], 2);
     assert_eq!(updated["content"], "world"); // untouched
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"grid_span": 4})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

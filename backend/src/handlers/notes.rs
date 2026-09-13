@@ -22,6 +22,16 @@ const TRASH_RETENTION_DAYS: i64 = 7;
 
 const REMINDER_REPEATS: &[&str] = &["daily", "weekly", "monthly", "yearly"];
 
+fn validate_grid_span(span: i64) -> ApiResult<()> {
+    if (1..=3).contains(&span) {
+        Ok(())
+    } else {
+        Err(ApiError::BadRequest(
+            "grid_span must be between 1 and 3".to_string(),
+        ))
+    }
+}
+
 pub(super) fn validate_kind(kind: &str) -> ApiResult<()> {
     if kind == KIND_TEXT || kind == KIND_CHECKLIST || kind == KIND_MARKDOWN || kind == KIND_AUDIO {
         Ok(())
@@ -88,6 +98,9 @@ fn validate_update(record: &NoteRecord, is_owner: bool, body: &UpdateNote) -> Ap
     }
     if let Some(kind) = &body.kind {
         validate_kind(kind)?;
+    }
+    if let Some(span) = body.grid_span {
+        validate_grid_span(span)?;
     }
     if let Some(reminder) = &body.reminder_at {
         validate_reminder(reminder)?;
@@ -247,6 +260,8 @@ pub async fn create_note_for_user(
         // New notes go to the front of the grid.
         None => state.repo.min_position_for_user(user_id).await? - 1024.0,
     };
+    let grid_span = body.grid_span.unwrap_or(1);
+    validate_grid_span(grid_span)?;
     let ts = now();
     let created_at = restored_created.unwrap_or_else(|| ts.clone());
     let updated_at = restored_updated.unwrap_or_else(|| ts.clone());
@@ -270,6 +285,7 @@ pub async fn create_note_for_user(
         archived: body.archived.unwrap_or(false),
         trashed: body.trashed.unwrap_or(false),
         position,
+        grid_span,
         reminder_at: body.reminder_at,
         reminder_repeat: body.reminder_repeat,
         reminder_fired_at: None,

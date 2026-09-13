@@ -142,6 +142,7 @@ class BackupNote {
   final bool archived;
   final bool trashed;
   final double position;
+  final int gridSpan;
   final String? stageId;
   final double stagePosition;
   final DateTime? reminderAt;
@@ -169,6 +170,7 @@ class BackupNote {
     required this.archived,
     this.trashed = false,
     this.position = 0,
+    this.gridSpan = 1,
     this.stageId,
     this.stagePosition = 0,
     required this.reminderAt,
@@ -289,6 +291,7 @@ Future<Uint8List> createBackupArchive({
         'archived': note.archived,
         'trashed': note.trashed,
         'position': note.position,
+        'grid_span': note.gridSpan,
         'stage_id': note.stageId,
         'stage_position': note.stagePosition,
         'reminder_at': note.reminderAt?.toUtc().toIso8601String(),
@@ -649,6 +652,7 @@ BackupWorkspace _parseWorkspaceContents(
         archived: note['archived'] == true,
         trashed: note['trashed'] == true,
         position: _number(note['position'], 0),
+        gridSpan: (_number(note['grid_span'], 1)).toInt().clamp(1, 3),
         stageId: stageId != null && stageIds.contains(stageId) ? stageId : null,
         stagePosition: _number(note['stage_position'], 0),
         reminderAt: _optionalDate(note['reminder_at']),

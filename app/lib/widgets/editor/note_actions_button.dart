@@ -34,6 +34,8 @@ class NoteActionsButton extends StatelessWidget {
   final void Function(NoteKind target)? onConvert;
   final ValueChanged<NoteRewriteTask>? onRewrite;
   final List<NoteRewriteTask> rewriteTasks;
+  final int gridSpan;
+  final ValueChanged<int>? onGridSpan;
 
   /// Swaps the trigger for a spinner while an AI rewrite is in flight, and
   /// disables re-running one from the sheet.
@@ -54,6 +56,8 @@ class NoteActionsButton extends StatelessWidget {
     this.onConvert,
     this.onRewrite,
     this.rewriteTasks = kDefaultNoteRewriteTasks,
+    this.gridSpan = 1,
+    this.onGridSpan,
     this.rewriting = false,
   });
 
@@ -155,6 +159,9 @@ class NoteActionsButton extends StatelessWidget {
         if (task.id == id) onRewrite?.call(task);
       }
     }
+    if (value.startsWith('span:')) {
+      onGridSpan?.call(int.parse(value.substring('span:'.length)));
+    }
     for (final target in NoteKind.values) {
       if (value == 'convert:${target.name}') onConvert?.call(target);
     }
@@ -163,7 +170,11 @@ class NoteActionsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rows = _rows(Theme.of(context).colorScheme);
-    final empty = rows.isEmpty && _convertTargets.isEmpty && !_offersRewrite;
+    final empty =
+        rows.isEmpty &&
+        _convertTargets.isEmpty &&
+        !_offersRewrite &&
+        onGridSpan == null;
     return IconButton(
       icon: rewriting
           ? const SizedBox(
@@ -190,6 +201,8 @@ class NoteActionsButton extends StatelessWidget {
                   offersRewrite: _offersRewrite,
                   rewriteTasks: rewriteTasks,
                   rewriting: rewriting,
+                  gridSpan: gridSpan,
+                  offersGridSpan: onGridSpan != null,
                 ),
               );
               if (action != null) _dispatch(action);
@@ -210,6 +223,8 @@ class _NoteActionsSheet extends StatelessWidget {
   final bool offersRewrite;
   final List<NoteRewriteTask> rewriteTasks;
   final bool rewriting;
+  final int gridSpan;
+  final bool offersGridSpan;
 
   const _NoteActionsSheet({
     required this.rows,
@@ -217,6 +232,8 @@ class _NoteActionsSheet extends StatelessWidget {
     required this.offersRewrite,
     required this.rewriteTasks,
     required this.rewriting,
+    required this.gridSpan,
+    required this.offersGridSpan,
   });
 
   @override
@@ -266,8 +283,22 @@ class _NoteActionsSheet extends StatelessWidget {
                       NoteActionsButton._kindChip(context, target),
                   ],
                 ),
+              if (offersGridSpan)
+                _ChipRow(
+                  title: 'Card width',
+                  chips: [
+                    for (var span = 1; span <= 3; span++)
+                      ChoiceChip(
+                        label: Text(span == 1 ? 'Standard' : '$span columns'),
+                        selected: gridSpan == span,
+                        onSelected: (_) => Navigator.pop(context, 'span:$span'),
+                      ),
+                  ],
+                ),
               if (rows.isNotEmpty &&
-                  (offersRewrite || convertTargets.isNotEmpty))
+                  (offersRewrite ||
+                      convertTargets.isNotEmpty ||
+                      offersGridSpan))
                 const Divider(height: 24),
               for (final row in rows)
                 ListTile(

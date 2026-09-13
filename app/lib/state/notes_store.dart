@@ -792,6 +792,7 @@ class NotesStore extends ChangeNotifier {
             archived: backupNote.archived,
             trashed: backupNote.trashed,
             position: backupNote.position,
+            gridSpan: backupNote.gridSpan,
             stageId: backupNote.stageId == null
                 ? null
                 : stageMap[backupNote.stageId!],
@@ -1625,6 +1626,12 @@ class NotesStore extends ChangeNotifier {
     _patch(id, note.copyWith(color: color), {'color': color});
   }
 
+  void setGridSpan(String id, int span) {
+    final note = noteById(id);
+    if (note == null || span == note.gridSpan || span < 1 || span > 3) return;
+    _patch(id, note.copyWith(gridSpan: span), {'grid_span': span});
+  }
+
   void setArchived(String id, bool archived) {
     final note = noteById(id);
     if (note == null) return;
@@ -1817,6 +1824,7 @@ class NotesStore extends ChangeNotifier {
       ],
       color: source.color,
       position: _frontPosition(),
+      gridSpan: source.gridSpan,
       createdAt: now,
       updatedAt: now,
       labelIds: Set<String>.from(source.labelIds),

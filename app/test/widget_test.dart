@@ -730,6 +730,33 @@ void main() {
     );
   });
 
+  testWidgets('masonry cards span columns and clamp to the grid width', (
+    tester,
+  ) async {
+    Future<double> widthFor(int columns, int span) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 608,
+              child: AnimatedMasonry(
+                notes: [serverNote('wide', gridSpan: span)],
+                columns: columns,
+                itemBuilder: (context, note) =>
+                    SizedBox(key: const ValueKey('wide-card'), height: 80),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return tester.getSize(find.byKey(const ValueKey('wide-card'))).width;
+    }
+
+    expect(await widthFor(3, 2), closeTo(402.7, 0.1));
+    expect(await widthFor(2, 3), 608);
+  });
+
   group('AnimatedMasonry drag reorder', () {
     testWidgets(
       'long-press drag to another tile reports the new order',
@@ -1406,6 +1433,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Note actions'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Duplicate'));
       await tester.tap(find.text('Duplicate'));
       await tester.pumpAndSettle();
 
