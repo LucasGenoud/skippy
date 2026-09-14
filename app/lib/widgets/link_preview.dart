@@ -19,6 +19,8 @@ import '../util/linkify.dart';
 class LinkPreviewCard extends StatelessWidget {
   final String url;
   final void Function(String url)? onOpen;
+  final Future<void> Function(String url)? onSummarize;
+  final bool summarizing;
   final BorderRadius borderRadius;
   final bool topDivider;
 
@@ -26,6 +28,8 @@ class LinkPreviewCard extends StatelessWidget {
     super.key,
     required this.url,
     this.onOpen,
+    this.onSummarize,
+    this.summarizing = false,
     this.borderRadius = const BorderRadius.all(kRadiusCorner),
     this.topDivider = false,
   });
@@ -41,6 +45,8 @@ class LinkPreviewCard extends StatelessWidget {
           url: url,
           preview: snapshot.data,
           onTap: open,
+          onSummarize: onSummarize == null ? null : () => onSummarize!(url),
+          summarizing: summarizing,
           borderRadius: borderRadius,
           topDivider: topDivider,
         );
@@ -58,6 +64,8 @@ class _Strip extends StatelessWidget {
   final String url;
   final LinkPreview? preview;
   final VoidCallback onTap;
+  final Future<void> Function()? onSummarize;
+  final bool summarizing;
   final BorderRadius borderRadius;
   final bool topDivider;
 
@@ -65,6 +73,8 @@ class _Strip extends StatelessWidget {
     required this.url,
     required this.preview,
     required this.onTap,
+    required this.onSummarize,
+    required this.summarizing,
     required this.borderRadius,
     required this.topDivider,
   });
@@ -119,14 +129,26 @@ class _Strip extends StatelessWidget {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 12, left: 4),
-            child: Icon(
-              Icons.open_in_new,
-              size: 15,
-              color: scheme.onSurfaceVariant,
+          if (onSummarize != null)
+            IconButton(
+              tooltip: 'Summarize page',
+              onPressed: summarizing ? null : onSummarize,
+              icon: summarizing
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_outlined, size: 18),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 12, left: 4),
+              child: Icon(
+                Icons.open_in_new,
+                size: 15,
+                color: scheme.onSurfaceVariant,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -263,12 +285,16 @@ class LinkPreviewList extends StatelessWidget {
   final String text;
   final int max;
   final void Function(String url)? onOpen;
+  final Future<void> Function(String url)? onSummarize;
+  final Set<String> summarizingUrls;
 
   const LinkPreviewList({
     super.key,
     required this.text,
     this.max = 3,
     this.onOpen,
+    this.onSummarize,
+    this.summarizingUrls = const {},
   });
 
   @override
@@ -284,7 +310,12 @@ class LinkPreviewList extends StatelessWidget {
       children: [
         for (var i = 0; i < shown.length; i++) ...[
           if (i > 0) const SizedBox(height: 8),
-          LinkPreviewCard(url: shown[i], onOpen: onOpen),
+          LinkPreviewCard(
+            url: shown[i],
+            onOpen: onOpen,
+            onSummarize: onSummarize,
+            summarizing: summarizingUrls.contains(shown[i]),
+          ),
         ],
       ],
     );

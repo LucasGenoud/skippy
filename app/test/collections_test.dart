@@ -13,6 +13,7 @@ import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/theme.dart';
+import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/collection_settings.dart';
 import 'package:skippy/widgets/duplicate_workspace_dialog.dart';
 import 'package:skippy/widgets/board/board_view.dart';
@@ -214,6 +215,9 @@ void main() {
     tester,
   ) async {
     final api = FakeApi();
+    api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+      collections: [NoteCollection.general('w-default'), reading],
+    );
     api.labels['l'] = const Label(
       id: 'l',
       workspaceId: 'w-default',
@@ -221,8 +225,21 @@ void main() {
     );
     final store = NotesStore(api: api, currentUserId: 'u-me');
     await store.load();
+    store.selectCollection(reading.id);
     await tester.pumpWidget(homeApp(store));
     await tester.pumpAndSettle();
+    final sidebar = find.byType(AppSidebar);
+    expect(
+      find.descendant(of: sidebar, matching: find.byIcon(Icons.menu_book)),
+      findsOneWidget,
+    );
+    final manageCollections = tester.widget<Text>(
+      find.descendant(of: sidebar, matching: find.text('Manage collections')),
+    );
+    expect(
+      manageCollections.style?.color,
+      Theme.of(tester.element(sidebar)).colorScheme.primary,
+    );
     await tester.tap(find.text('Important'));
     await tester.pumpAndSettle();
     expect(find.text('Important'), findsOneWidget);

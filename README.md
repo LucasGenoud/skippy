@@ -441,7 +441,7 @@ Authenticated JSON endpoints live under `/api`. The main groups are:
   purpose and available only where the server can send mail
 - `/notes/{id}/versions`, `/notes/{id}/attachments`,
   `/notes/{id}/item-reminders/{item_id}`, and sharing endpoints
-- `/search`, `/chat`, `/settings`, `/unfurl`, and `/ws`
+- `/search`, `/chat`, `/settings`, `/unfurl`, `/unfurl/summary`, and `/ws`
 - `/health` and `/capabilities` for service status
 
 Attachments are served through signed, expiring URLs. Optional search,

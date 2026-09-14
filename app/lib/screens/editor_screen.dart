@@ -274,6 +274,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _closing = false;
   bool _finding = false;
   bool _uploading = false;
+  final Set<String> _summarizingUrls = {};
   // Files currently mid-upload, shown as dimmed placeholder tiles right where
   // their real attachment tile will appear once the network call resolves.
   final List<DroppedFile> _pendingUploads = [];
@@ -733,6 +734,37 @@ class _EditorScreenState extends State<EditorScreen> {
         icon: Icons.error_outline,
         kind: SnackKind.danger,
       );
+    }
+  }
+
+  Future<void> _summarizeUrl(String url) async {
+    if (!_summarizingUrls.add(url)) return;
+    setState(() {});
+    try {
+      final summary = (await _store.api.summarizeUrl(url)).trim();
+      if (!mounted || summary.isEmpty) return;
+      final current = _contentController.text.trimRight();
+      final content = current.isEmpty ? summary : '$current\n\n$summary';
+      _restoring = true;
+      _contentController.value = TextEditingValue(
+        text: content,
+        selection: TextSelection.collapsed(offset: content.length),
+      );
+      _restoring = false;
+      _store.updateNoteContent(_noteId!, content: content);
+      _afterChange(discrete: true);
+      showAppSnack('Page summary added', icon: Icons.auto_awesome_outlined);
+    } catch (_) {
+      if (mounted) {
+        showAppSnack(
+          "Couldn't summarize page",
+          icon: Icons.error_outline,
+          kind: SnackKind.danger,
+        );
+      }
+    } finally {
+      _summarizingUrls.remove(url);
+      if (mounted) setState(() {});
     }
   }
 
@@ -1299,6 +1331,14 @@ class _EditorScreenState extends State<EditorScreen> {
                                       padding: const EdgeInsets.only(top: 12),
                                       child: LinkPreviewList(
                                         text: _linkText(note),
+                                        onSummarize:
+                                            !trashed &&
+                                                !note.isChecklist &&
+                                                !note.isAudio &&
+                                                settings.noteWritingAvailable
+                                            ? _summarizeUrl
+                                            : null,
+                                        summarizingUrls: _summarizingUrls,
                                       ),
                                     ),
                                 ],

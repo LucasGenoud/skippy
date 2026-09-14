@@ -83,7 +83,7 @@ pub fn allow_private() -> bool {
 /// the client still gets a usable card.
 pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkPreview> {
     let parsed = validate_public_http_url(raw, allow_private).await?;
-    let mut preview = match fetch_html(&parsed, allow_private).await {
+    let mut preview = match fetch_html(&parsed, allow_private, true).await {
         Ok((final_url, html)) => {
             let base = validate_public_http_url(&final_url, true)
                 .await
@@ -122,6 +122,19 @@ pub async fn preview_for(raw: &str, allow_private: bool) -> anyhow::Result<LinkP
         preview.favicon = Some(inline_favicon(&fav, allow_private).await.unwrap_or(fav));
     }
     Ok(preview)
+}
+
+/// Fetch the readable text of an HTML page for an explicit summarization
+/// request. The same URL validation, DNS pinning, redirect checks, timeouts,
+/// and body cap as previews apply.
+pub async fn page_text_for(raw: &str, allow_private: bool) -> anyhow::Result<String> {
+    let parsed = validate_public_http_url(raw, allow_private).await?;
+    let (_, html) = fetch_html(&parsed, allow_private, false).await?;
+    let text = extract_page_text(&html);
+    if text.is_empty() {
+        bail!("page contained no readable text");
+    }
+    Ok(text)
 }
 
 /// Whether a fetched title belongs to a bot-check page instead of the link the
@@ -306,7 +319,11 @@ fn base64_encode(bytes: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 // Fetching
 
-async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(String, String)> {
+async fn fetch_html(
+    start: &ParsedUrl,
+    allow_private: bool,
+    stop_at_head: bool,
+) -> anyhow::Result<(String, String)> {
     let mut current = start.clone();
     for _ in 0..MAX_REDIRECTS {
         let resp = client(&current)?
@@ -344,7 +361,7 @@ async fn fetch_html(start: &ParsedUrl, allow_private: bool) -> anyhow::Result<(S
                 bail!("non-html content-type: {ct}");
             }
         }
-        let bytes = read_capped(resp, MAX_BODY_BYTES).await?;
+        let bytes = read_capped(resp, MAX_BODY_BYTES, stop_at_head).await?;
         let html = String::from_utf8_lossy(&bytes).into_owned();
         return Ok((current.full, html));
     }
@@ -406,10 +423,13 @@ async fn fetch_bytes(
     bail!("too many redirects")
 }
 
-/// Read the body, stopping at whichever comes first: the end of `<head>` (all
-/// the metadata we parse lives there, so there's no point downloading the rest
-/// of a multi-MB page) or `cap` bytes.
-async fn read_capped(resp: reqwest::Response, cap: usize) -> anyhow::Result<Vec<u8>> {
+/// Read the body up to `cap` bytes, optionally stopping at the end of `<head>`
+/// when the caller only needs preview metadata.
+async fn read_capped(
+    resp: reqwest::Response,
+    cap: usize,
+    stop_at_head: bool,
+) -> anyhow::Result<Vec<u8>> {
     const HEAD_CLOSE: &[u8] = b"</head>";
     let mut stream = resp.bytes_stream();
     let mut buf = Vec::new();
@@ -419,7 +439,7 @@ async fn read_capped(resp: reqwest::Response, cap: usize) -> anyhow::Result<Vec<
         // Search the newly-arrived bytes, backing up by len-1 so a `</head>`
         // straddling a chunk boundary is still matched.
         let from = scanned.saturating_sub(HEAD_CLOSE.len() - 1);
-        if let Some(rel) = find_ci(&buf[from..], HEAD_CLOSE) {
+        if stop_at_head && let Some(rel) = find_ci(&buf[from..], HEAD_CLOSE) {
             buf.truncate(from + rel + HEAD_CLOSE.len());
             break;
         }
@@ -430,6 +450,52 @@ async fn read_capped(resp: reqwest::Response, cap: usize) -> anyhow::Result<Vec<
         }
     }
     Ok(buf)
+}
+
+/// Strip page chrome that must never reach the model, then flatten the
+/// remaining HTML into readable whitespace-separated text.
+fn extract_page_text(html: &str) -> String {
+    let mut clean = html.to_string();
+    for name in ["head", "script", "style", "noscript", "svg"] {
+        loop {
+            let lower = clean.to_ascii_lowercase();
+            let Some(start) = element_start(&lower, name) else {
+                break;
+            };
+            let Some(end) = lower[start..].find(&format!("</{name}>")) else {
+                clean.truncate(start);
+                break;
+            };
+            clean.replace_range(start..start + end + name.len() + 3, " ");
+        }
+    }
+    let mut text = String::with_capacity(clean.len());
+    let mut in_tag = false;
+    for ch in clean.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(ch),
+            _ => {}
+        }
+    }
+    decode_entities(&text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn element_start(html: &str, name: &str) -> Option<usize> {
+    let needle = format!("<{name}");
+    html.match_indices(&needle).find_map(|(start, _)| {
+        html.as_bytes()
+            .get(start + needle.len())
+            .is_none_or(|b| b.is_ascii_whitespace() || *b == b'>')
+            .then_some(start)
+    })
 }
 
 /// First index of ASCII-case-insensitive `needle` (which must be lowercase) in
@@ -806,6 +872,15 @@ mod tests {
         assert_eq!(find_ci(b"abc</head>xyz", b"</head>"), Some(3));
         assert_eq!(find_ci(b"no closing tag here", b"</head>"), None);
         assert_eq!(find_ci(b"", b"</head>"), None);
+    }
+
+    #[test]
+    fn page_text_drops_markup_and_non_content_elements() {
+        let html = r#"<html><head><title>Hidden</title></head><body><header>Kept header</header><main>Hello &amp; welcome.<script>ignore me</script><style>.nope{}</style><p>Second line.</p></main></body></html>"#;
+        assert_eq!(
+            extract_page_text(html),
+            "Kept header Hello & welcome. Second line."
+        );
     }
 
     #[tokio::test]

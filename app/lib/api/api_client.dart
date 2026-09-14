@@ -319,6 +319,10 @@ abstract class Api {
   /// when the server rejects the URL (invalid/blocked) or the fetch fails.
   Future<LinkPreview?> unfurl(String url);
 
+  /// Fetch a webpage and ask the user's enabled writing model for a very
+  /// short plain-text summary.
+  Future<String> summarizeUrl(String url);
+
   /// Server-push change events; emits whenever this user's notes change.
   Stream<void> changeEvents();
 
@@ -1103,6 +1107,18 @@ class ApiClient extends _ApiTransport implements Api {
       // Invalid/blocked URL (400) or auth/transient error, no preview.
       return null;
     }
+  }
+
+  @override
+  Future<String> summarizeUrl(String url) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/unfurl/summary'),
+        headers: _headers(),
+        body: jsonEncode({'url': url}),
+      ),
+    );
+    return (data as Map<String, dynamic>)['summary'] as String;
   }
 
   // -- capabilities & transcription --------------------------------------------

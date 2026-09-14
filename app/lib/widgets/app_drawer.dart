@@ -103,7 +103,7 @@ class AppSidebar extends StatelessWidget {
                       : labelIconFor(c.icon),
                   selectedIcon: c.icon == null
                       ? Icons.folder
-                      : labelIconFor(c.icon),
+                      : filledLabelIconFor(c.icon),
                   iconColor: PaletteEntry.hexToColor(c.color),
                   label: c.name,
                   isOpen: isOpen,
@@ -127,6 +127,7 @@ class AppSidebar extends StatelessWidget {
                 label: 'Manage collections',
                 isSelected: false,
                 isOpen: isOpen,
+                action: true,
                 onTap: () =>
                     _afterDrawer(context, ManageCollectionsDialog.show),
               ),
@@ -164,6 +165,7 @@ class AppSidebar extends StatelessWidget {
                 label: store.labels.isEmpty ? 'Create labels' : 'Manage labels',
                 isSelected: false,
                 isOpen: isOpen,
+                action: true,
                 onTap: () => _afterDrawer(context, EditLabelsDialog.show),
               ),
               const Divider(height: 24, indent: 16, endIndent: 16),
@@ -198,6 +200,7 @@ class AppSidebar extends StatelessWidget {
                     : 'Manage smart views',
                 isSelected: false,
                 isOpen: isOpen,
+                action: true,
                 onTap: () => _afterDrawer(context, EditSmartViewsDialog.show),
               ),
               const Divider(height: 32, indent: 16, endIndent: 16),
@@ -292,6 +295,7 @@ class _SidebarItem extends StatelessWidget {
   final String label;
   final bool isSelected;
   final bool isOpen;
+  final bool action;
   final VoidCallback onTap;
 
   /// Overrides the icon's colour (a label's custom colour). Null keeps the
@@ -313,6 +317,7 @@ class _SidebarItem extends StatelessWidget {
     required this.label,
     required this.isSelected,
     required this.isOpen,
+    this.action = false,
     required this.onTap,
     this.iconColor,
     this.onAcceptNote,
@@ -336,10 +341,16 @@ class _SidebarItem extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final Color foreground = dropTarget
         ? scheme.onPrimaryContainer
-        : (isSelected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant);
+        : (action
+              ? scheme.primary
+              : (isSelected
+                    ? scheme.onSecondaryContainer
+                    : scheme.onSurfaceVariant));
     final Color labelColor = dropTarget
         ? scheme.onPrimaryContainer
-        : (isSelected ? scheme.onSecondaryContainer : scheme.onSurface);
+        : (action
+              ? scheme.primary
+              : (isSelected ? scheme.onSecondaryContainer : scheme.onSurface));
     return Tooltip(
       message: isOpen ? '' : label,
       child: Padding(
@@ -383,7 +394,7 @@ class _SidebarItem extends StatelessWidget {
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
                                 color: labelColor,
-                                fontWeight: isSelected
+                                fontWeight: isSelected || action
                                     ? FontWeight.w600
                                     : FontWeight.w500,
                               ),

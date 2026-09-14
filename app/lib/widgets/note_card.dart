@@ -50,6 +50,7 @@ class NoteTile extends StatefulWidget {
   final bool selectionMode;
   final bool selected;
   final ValueChanged<bool>? onSelectionChanged;
+  final bool showCollection;
 
   /// Board cards retain the column picker when opened in the editor.
   final bool openedFromBoard;
@@ -69,6 +70,7 @@ class NoteTile extends StatefulWidget {
     this.selectionMode = false,
     this.selected = false,
     this.onSelectionChanged,
+    this.showCollection = false,
     this.openedFromBoard = false,
     this.swipeToArchive = false,
   });
@@ -316,6 +318,21 @@ class _NoteTileState extends State<NoteTile> {
     final actionsBottomInset =
         _NoteCardContent._linkPreviewUrls(note).length *
         kLinkPreviewStripHeight;
+    final collection = widget.showCollection
+        ? context.select<NotesStore, String?>((store) {
+            final collections = store
+                .workspaceById(note.workspaceId)
+                ?.collections;
+            if (collections == null) return null;
+            for (final collection in collections) {
+              if (collection.id ==
+                  (note.collectionId ?? '${note.workspaceId}-general')) {
+                return '${collection.name}\u0001${collection.color ?? ''}\u0001${collection.icon ?? ''}';
+              }
+            }
+            return null;
+          })
+        : null;
 
     // The selection badge straddles the card's top-left corner, so it hangs
     // outside the card's box: it can't live in the OpenContainer's stack,
@@ -385,6 +402,7 @@ class _NoteTileState extends State<NoteTile> {
               _NoteCardContent(
                 note: note,
                 query: widget.query,
+                collection: collection,
                 reserveActions: actionsSlot,
                 showLabelsInBody: !actionsSlot,
               ),
@@ -423,6 +441,7 @@ class _NoteTileState extends State<NoteTile> {
               if (actionsSlot)
                 _NoteFooterLabels(
                   note: note,
+                  collection: collection,
                   visible: !(desktopActions && actionsVisible),
                   bottomInset: actionsBottomInset,
                 ),
@@ -482,11 +501,13 @@ class _NoteCardContent extends StatelessWidget {
 
   final Note note;
   final String query;
+  final String? collection;
   final bool reserveActions;
   final bool showLabelsInBody;
   const _NoteCardContent({
     required this.note,
     this.query = '',
+    this.collection,
     this.reserveActions = false,
     this.showLabelsInBody = true,
   });
@@ -567,6 +588,7 @@ class _NoteCardContent extends StatelessWidget {
         (note.isChecklist && visibleItems.isNotEmpty) ||
         note.isEmpty; // truly empty draft shows the placeholder
     final hasFooter =
+        collection != null ||
         note.reminderAt != null ||
         locationReminderLabel != null ||
         (showLabelsInBody && labels.isNotEmpty) ||
@@ -735,6 +757,7 @@ class _NoteCardContent extends StatelessWidget {
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                if (collection != null) _LabelChip.encoded(collection!),
                 if (note.reminderAt != null)
                   ReminderChip(
                     at: note.reminderAt!,
@@ -1299,10 +1322,12 @@ class _NoteActions extends StatelessWidget {
 /// replaces it on hover without shifting a card.
 class _NoteFooterLabels extends StatelessWidget {
   final Note note;
+  final String? collection;
   final bool visible;
   final double bottomInset;
   const _NoteFooterLabels({
     required this.note,
+    this.collection,
     required this.visible,
     this.bottomInset = 0,
   });
@@ -1320,8 +1345,9 @@ class _NoteFooterLabels extends StatelessWidget {
           ),
     );
     final labels = joinedLabels.isEmpty
-        ? const <String>[]
+        ? <String>[]
         : joinedLabels.split('\u0000');
+    if (collection != null) labels.insert(0, collection!);
     return Positioned(
       left: 16,
       right: 16,

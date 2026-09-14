@@ -1295,6 +1295,7 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, note) => NoteTile(
                 key: ValueKey(note.id),
                 note: note,
+                showCollection: _selection.view == NoteView.archive,
                 query: query,
                 selectionMode: _selectionMode,
                 selected: _selectedNoteIds.contains(note.id),

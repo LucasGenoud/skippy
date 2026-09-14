@@ -212,6 +212,7 @@ class FakeApi implements Api {
   /// Canned link-preview responses keyed by URL, returned by [unfurl]. Tests
   /// populate it; unknown URLs unfurl to null (no card).
   Map<String, LinkPreview> previews = {};
+  Map<String, String> urlSummaries = {};
 
   /// When set, every call throws it (network-down simulation).
   Exception? failWith;
@@ -937,6 +938,12 @@ class FakeApi implements Api {
   @override
   Future<LinkPreview?> unfurl(String url) =>
       _run('unfurl:$url', () => previews[url]);
+
+  @override
+  Future<String> summarizeUrl(String url) => _run(
+    'summarizeUrl:$url',
+    () => urlSummaries[url] ?? (throw ApiException(400, 'summary unavailable')),
+  );
 
   @override
   Future<

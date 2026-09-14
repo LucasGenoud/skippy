@@ -43,7 +43,7 @@ pub use settings::{get_settings, put_settings};
 pub use share_links::{create_share_link, delete_share_link, list_share_links, public_share};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use stages::{create_stage, delete_stage, list_stages, update_stage};
-pub use unfurl::unfurl;
+pub use unfurl::{summarize_url, unfurl};
 pub use versions::{list_note_versions, restore_note_version};
 pub use workspaces::{
     add_workspace_member, create_default_workspace, create_workspace, delete_workspace,

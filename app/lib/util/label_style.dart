@@ -52,9 +52,46 @@ const Map<String, IconData> kLabelIcons = {
   'bolt': Icons.bolt_outlined,
 };
 
+const Map<String, IconData> kFilledLabelIcons = {
+  'star': Icons.star,
+  'flag': Icons.flag,
+  'favorite': Icons.favorite,
+  'bookmark': Icons.bookmark,
+  'work': Icons.work,
+  'home': Icons.home,
+  'person': Icons.person,
+  'group': Icons.group,
+  'school': Icons.school,
+  'shopping': Icons.shopping_cart,
+  'restaurant': Icons.restaurant,
+  'travel': Icons.flight,
+  'fitness': Icons.fitness_center,
+  'health': Icons.favorite,
+  'money': Icons.attach_money,
+  'idea': Icons.lightbulb,
+  'code': Icons.code,
+  'bug': Icons.bug_report,
+  'book': Icons.menu_book,
+  'music': Icons.music_note,
+  'movie': Icons.movie,
+  'photo': Icons.photo_camera,
+  'game': Icons.sports_esports,
+  'pets': Icons.pets,
+  'nature': Icons.eco,
+  'gift': Icons.card_giftcard,
+  'event': Icons.event,
+  'call': Icons.call,
+  'mail': Icons.mail,
+  'priority': Icons.priority_high,
+  'bolt': Icons.bolt,
+};
+
 /// The [IconData] for a label's [icon] key, defaulting to [kDefaultLabelIcon].
 IconData labelIconFor(String? key) =>
     key == null ? kDefaultLabelIcon : (kLabelIcons[key] ?? kDefaultLabelIcon);
+
+IconData filledLabelIconFor(String? key) =>
+    key == null ? Icons.label : (kFilledLabelIcons[key] ?? Icons.label);
 
 /// The [IconData] for a whole [Label].
 IconData labelIcon(Label label) => labelIconFor(label.icon);

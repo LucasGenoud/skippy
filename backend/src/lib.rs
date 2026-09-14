@@ -306,6 +306,7 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         .route("/search/reindex", post(handlers::reindex_search))
         .route("/search/reindex/status", get(handlers::reindex_status))
         .route("/unfurl", get(handlers::unfurl))
+        .route("/unfurl/summary", post(handlers::summarize_url))
         .route(
             "/labels",
             get(handlers::list_labels).post(handlers::create_label),

@@ -122,6 +122,48 @@ async fn unfurl_rejects_non_http_urls() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn summarize_fetches_page_content_and_uses_the_writing_model() {
+    allow_private_fetch();
+    let (base, _) = spawn_og_server().await;
+    let (state, calls) = state_with_llm("A tiny page summary.").await;
+    let app = build_app(state);
+    let (token, _) = register(&app, "unfurl_summary").await;
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&token),
+        Some(json!({
+            "llm_base_url": "http://fake/v1",
+            "llm_model": "test-model",
+            "llm_writing": true
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/unfurl/summary",
+        Some(&token),
+        Some(json!({"url": format!("{base}/page")})),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "summary: {body}");
+    assert_eq!(body["summary"], "A tiny page summary.");
+    let calls = calls.lock().unwrap();
+    assert!(
+        calls[0][0]
+            .content
+            .contains("one or two very short sentences")
+    );
+    assert!(calls[0][1].content.contains("hi"));
+    assert!(!calls[0][1].content.contains("Fallback Title"));
+}
+
 /// Minimal percent-encoding for the query value (`:` `/` `?` etc.).
 fn urlencoding(s: &str) -> String {
     let mut out = String::new();

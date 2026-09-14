@@ -14,6 +14,8 @@ void main() {
       expect(labelIconFor('work'), kLabelIcons['work']);
       expect(labelIconFor(null), kDefaultLabelIcon);
       expect(labelIconFor('does-not-exist'), kDefaultLabelIcon);
+      expect(filledLabelIconFor('work'), Icons.work);
+      expect(filledLabelIconFor(null), Icons.label);
     });
 
     test('labelColor parses hex and falls back', () {

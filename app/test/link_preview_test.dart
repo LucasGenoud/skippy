@@ -91,6 +91,30 @@ void main() {
       expect(find.text('example.com'), findsOneWidget);
     });
 
+    testWidgets('offers summarizing only when a callback is provided', (
+      tester,
+    ) async {
+      final api = FakeApi();
+      final summarized = <String>[];
+      final opened = <String>[];
+      await tester.pumpWidget(
+        harness(
+          api,
+          LinkPreviewCard(
+            url: 'https://example.com/article',
+            onOpen: opened.add,
+            onSummarize: (url) async => summarized.add(url),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Summarize page'));
+      await tester.pump();
+      expect(summarized, ['https://example.com/article']);
+      expect(opened, isEmpty);
+    });
+
     // The server inlines small favicons as `data:` URIs so Flutter web can
     // render them (a cross-origin favicon is CORS-tainted on CanvasKit). Those
     // must decode to bytes, mobile's NetworkImage can't fetch the data: scheme.
