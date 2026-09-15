@@ -105,7 +105,21 @@ class _BoardViewState extends State<BoardView> {
   /// is the phone's move gesture: short travel, and no page turns under the
   /// finger the way dragging across a `PageView` would.
   void _dropOnStage(String noteId, BoardColumn column) {
-    context.read<NotesStore>().setNoteStage(noteId, column.stage?.id);
+    final store = context.read<NotesStore>();
+    final ids = widget.selectedIds.contains(noteId)
+        ? widget.selectedIds
+        : {noteId};
+    for (final id in ids) {
+      store.setNoteStage(id, column.stage?.id);
+    }
+  }
+
+  bool _canDropOnStage(String noteId, BoardColumn column) {
+    final store = context.read<NotesStore>();
+    final ids = widget.selectedIds.contains(noteId)
+        ? widget.selectedIds
+        : {noteId};
+    return ids.any((id) => store.noteById(id)?.stageId != column.stage?.id);
   }
 
   Widget _buildColumns(Board board) {
@@ -189,9 +203,7 @@ class _BoardViewState extends State<BoardView> {
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
           ),
-          onWillDrop: (noteId, column) =>
-              context.read<NotesStore>().noteById(noteId)?.stageId !=
-              column.stage?.id,
+          onWillDrop: _canDropOnStage,
           onDrop: _dropOnStage,
         ),
         Expanded(

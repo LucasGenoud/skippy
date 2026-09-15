@@ -685,6 +685,42 @@ void main() {
       expect(find.byType(SnackBar), findsNothing);
       await flushTimers(tester);
     });
+
+    testWidgets('dragging one selected card moves the whole selection', (
+      tester,
+    ) async {
+      await setViewport(tester, const Size(1200, 900));
+      api.notes['a'] = serverNote('a', title: 'card a');
+      api.notes['b'] = serverNote('b', title: 'card b');
+      await store.load();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider(create: (_) => SettingsStore(api: api)),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: BoardView(selectionMode: true, selectedIds: {'a', 'b'}),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('card a')),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await gesture.moveTo(tester.getCenter(find.text('Doing')));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(store.noteById('a')!.stageId, 'doing');
+      expect(store.noteById('b')!.stageId, 'doing');
+      await flushTimers(tester);
+    });
   });
 
   /// Semantic search bypassed the board entirely: it built its columns from a

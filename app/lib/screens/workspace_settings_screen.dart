@@ -1,6 +1,7 @@
 import '../widgets/duplicate_workspace_dialog.dart';
 import '../widgets/collection_settings.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
@@ -341,13 +342,30 @@ class _DangerZone extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     if (store.canDeleteWorkspace(workspace.id)) {
-      return ListTile(
-        leading: Icon(Icons.delete_outline, color: scheme.error),
-        title: Text('Delete workspace', style: TextStyle(color: scheme.error)),
-        subtitle: const Text(
-          'Permanently removes its notes, labels, and board columns',
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Permanently removes its notes, labels, and board columns.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: scheme.error,
+                side: BorderSide(color: scheme.error),
+                minimumSize: const Size.fromHeight(48),
+              ),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete workspace'),
+              onPressed: () => _confirmDelete(context, store),
+            ),
+          ],
         ),
-        onTap: () => _confirmDelete(context, store),
       );
     }
     if (!isOwner) {
@@ -450,20 +468,21 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
         children: [
           Text(deletionMessage),
           const SizedBox(height: 16),
-          Text.rich(
-            TextSpan(
-              text: 'Type ',
-              children: [
-                TextSpan(
-                  text: widget.workspace.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+          Wrap(
+            spacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('Type', style: Theme.of(context).textTheme.bodySmall),
+              ActionChip(
+                avatar: const Icon(Icons.copy_outlined, size: 16),
+                label: Text(widget.workspace.name),
+                tooltip: 'Copy workspace name',
+                onPressed: () => Clipboard.setData(
+                  ClipboardData(text: widget.workspace.name),
                 ),
-                const TextSpan(text: ' to confirm.'),
-              ],
-            ),
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              Text('to confirm.', style: Theme.of(context).textTheme.bodySmall),
+            ],
           ),
           const SizedBox(height: 8),
           TextField(

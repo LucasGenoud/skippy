@@ -69,8 +69,9 @@ class MasonryRaiseTileNotification extends Notification {
 /// lifts it into a drag; the remaining tiles flow around the pointer in real
 /// time and the grid auto-scrolls near the viewport edges.
 ///
-/// Positions are recomputed for the full item set each build (no viewport
-/// culling), which is the right trade-off for a personal notes grid.
+/// Positions are recomputed for the full item set, but expensive card widgets
+/// are mounted in small batches so opening a large grid does not monopolize a
+/// frame.
 class AnimatedMasonry extends StatefulWidget {
   final List<Note> notes;
   final int columns;
@@ -95,6 +96,9 @@ class AnimatedMasonry extends StatefulWidget {
   final Object? itemBuildKey;
 
   final bool dragEnabled;
+
+  /// When set, only these notes can start a drag.
+  final Set<String>? draggableIds;
   final MasonryReorderCallback? onReorder;
 
   /// Touch long presses that end without movement select this note; moving
@@ -123,6 +127,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.itemBuildKey,
     this.spacing = 8,
     this.dragEnabled = true,
+    this.draggableIds,
     this.onReorder,
     this.onStationaryLongPress,
     this.scrollController,
@@ -160,6 +165,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     with TickerProviderStateMixin {
   static const double _estimatedHeight = 120;
   static const Duration _moveDuration = Duration(milliseconds: 240);
+  static const int _buildBatchSize = 20;
 
   /// How tall a slot held open for an incoming card is. The card's own height
   /// is unknowable while it belongs to somewhere else, so this is a stand-in
@@ -168,6 +174,8 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   final Map<String, double> _heights = {};
   List<String> _orderIds = [];
+  int _visibleCount = 0;
+  bool _batchScheduled = false;
   String? _draggingId;
   List<String>? _dragStartOrder;
 
@@ -219,6 +227,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   void initState() {
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
+    _visibleCount = math.min(_buildBatchSize, _orderIds.length);
     _autoScrollTicker = createTicker(_onAutoScrollTick);
   }
 
@@ -246,6 +255,10 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       ];
     }
     final live = ids.toSet();
+    _visibleCount = math.min(
+      math.max(_visibleCount, math.min(_buildBatchSize, ids.length)),
+      ids.length,
+    );
     _heights.removeWhere((id, _) => !live.contains(id));
     // The usual way a raised tile ends is the note leaving the view, which is
     // exactly what it was swiped off the grid for.
@@ -562,7 +575,12 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   Widget _buildTile(Note note, _Layout layout) {
     final child = _tileFor(note);
-    if (!widget.dragEnabled || widget.onReorder == null) return child;
+    if (!widget.dragEnabled ||
+        widget.onReorder == null ||
+        (widget.draggableIds != null &&
+            !widget.draggableIds!.contains(note.id))) {
+      return child;
+    }
 
     // Built through a Builder so the second copy of the card only comes into
     // existence when a drag actually lifts one. Eagerly building feedback for
@@ -630,6 +648,19 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         }
         final layout = _computeLayout(width);
         final notesById = {for (final n in widget.notes) n.id: n};
+        if (_visibleCount < _orderIds.length && !_batchScheduled) {
+          _batchScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _batchScheduled = false;
+            if (!mounted) return;
+            setState(
+              () => _visibleCount = math.min(
+                _visibleCount + _buildBatchSize,
+                _orderIds.length,
+              ),
+            );
+          });
+        }
         final snap = _snapFrame;
         // Re-arm the glide animation for the frames that follow this one.
         if (snap) {
@@ -643,7 +674,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         // over, not the element it is built from.
         final tiles = <Widget>[];
         Widget? raised;
-        for (var i = 0; i < _orderIds.length; i++) {
+        for (var i = 0; i < _visibleCount; i++) {
           if (notesById[_orderIds[i]] case final Note note) {
             final tile = AnimatedPositioned(
               key: ValueKey(note.id),

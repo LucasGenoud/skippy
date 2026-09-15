@@ -5,6 +5,27 @@ import 'package:skippy/widgets/masonry.dart';
 import 'notes_store_test.dart' show serverNote;
 
 void main() {
+  testWidgets('large grids mount cards progressively', (tester) async {
+    final notes = [
+      for (var i = 0; i < 45; i++) serverNote('n$i', title: 'Card $i'),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AnimatedMasonry(
+            notes: notes,
+            columns: 3,
+            itemBuilder: (_, note) => Text(note.title),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Card ').evaluate().length, 20);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Card ').evaluate().length, notes.length);
+  });
+
   testWidgets('cards are visible immediately on opening and switching views', (
     tester,
   ) async {

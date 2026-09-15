@@ -1,5 +1,6 @@
 import 'package:skippy/models/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
@@ -645,6 +646,26 @@ void main() {
       );
       final deleteButton = find.widgetWithText(FilledButton, 'Delete');
       expect(tester.widget<FilledButton>(deleteButton).onPressed, isNull);
+
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = call.arguments['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await tester.tap(find.byTooltip('Copy workspace name'));
+      await tester.pump();
+      expect(copied, 'Work');
 
       await tester.enterText(nameField, 'wrong name');
       await tester.pump();

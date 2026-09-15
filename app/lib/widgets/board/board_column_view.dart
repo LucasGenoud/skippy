@@ -44,8 +44,7 @@ class BoardColumnView extends StatefulWidget {
   /// names in its page strip instead, so it turns this off.
   final bool showHeader;
 
-  /// Whether cards in this column can be picked up. Selection mode turns it
-  /// off, matching the grid: a long press means "select" then, not "lift".
+  /// Whether cards in this column can be picked up.
   final bool dragEnabled;
 
   /// Selection state, owned by the home screen so the top bar's action row
@@ -106,9 +105,14 @@ class _BoardColumnViewState extends State<BoardColumnView> {
 
   String? get _stageId => widget.column.stage?.id;
 
-  /// A card already here is the masonry's business, not a transfer.
-  bool _isForeign(String noteId) =>
-      !widget.column.notes.any((note) => note.id == noteId);
+  Iterable<String> _draggedIds(String noteId) =>
+      widget.selectedIds.contains(noteId) ? widget.selectedIds : [noteId];
+
+  /// A selection is foreign when at least one of its cards changes column.
+  bool _isForeign(String noteId) {
+    final here = {for (final note in widget.column.notes) note.id};
+    return _draggedIds(noteId).any((id) => !here.contains(id));
+  }
 
   /// Follow the carried card, but only rebuild when it crosses into a new
   /// slot, pointer samples arrive far faster than the answer changes, and
@@ -131,11 +135,17 @@ class _BoardColumnViewState extends State<BoardColumnView> {
     // No confirmation snack here: the card visibly glides into its new slot,
     // which is the confirmation. A toast on top of a drag you just watched
     // happen is noise, not information.
-    store.setNoteStage(
-      noteId,
-      _stageId,
-      position: index == null ? null : _positionForIncoming(moved, index),
-    );
+    for (final id in _draggedIds(noteId)) {
+      final note = store.noteById(id);
+      if (note == null || note.stageId == _stageId) continue;
+      store.setNoteStage(
+        id,
+        _stageId,
+        position: id == noteId && index != null
+            ? _positionForIncoming(moved, index)
+            : null,
+      );
+    }
   }
 
   /// Inserts [moved] into the visual slot and lets the board's ordering policy
@@ -231,9 +241,8 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             incomingIndex: _incomingIndex,
             columns: 1,
             spacing: 8,
-            // A long press selects rather than lifts while selecting, the
-            // same rule the grid follows.
-            dragEnabled: widget.dragEnabled && !widget.selectionMode,
+            dragEnabled: widget.dragEnabled,
+            draggableIds: widget.selectionMode ? widget.selectedIds : null,
             scrollController: _scrollController,
             onReorder: _reorderWithin,
             onStationaryLongPress: (id) => widget.onSelectionChanged?.call(
@@ -345,11 +354,18 @@ class _BoardColumnHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              _CountChip(count: column.totalCount),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _CountChip(count: column.totalCount),
+              ),
               IconButton(
                 icon: const Icon(Icons.add, size: 18),
                 tooltip: 'Add a note to ${column.title}',
                 visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 36,
+                  height: 36,
+                ),
                 onPressed: () => addCardToStage(context, column.stage?.id),
               ),
               if (column.stage case final Stage stage)
@@ -357,6 +373,10 @@ class _BoardColumnHeader extends StatelessWidget {
                   icon: const Icon(Icons.more_vert, size: 18),
                   tooltip: 'Column options',
                   visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
+                  ),
                   onPressed: () => _showColumnMenu(context, stage),
                 )
               else
@@ -445,11 +465,19 @@ class _CountChip extends StatelessWidget {
         borderRadius: kBorderRadius,
         border: Border.all(color: boardColumnBorderColor(scheme)),
       ),
-      child: Text(
-        '$count',
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+      child: AnimatedSwitcher(
+        duration: Motion.fast,
+        transitionBuilder: (child, animation) => RotationTransition(
+          turns: Tween(begin: 0.8, end: 1.0).animate(animation),
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+        child: Text(
+          '$count',
+          key: ValueKey(count),
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
       ),
     );
   }
