@@ -238,8 +238,11 @@ void main() {
     );
     expect(
       manageCollections.style?.color,
-      Theme.of(tester.element(sidebar)).colorScheme.primary,
+      Theme.of(
+        tester.element(sidebar),
+      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.72),
     );
+    expect(manageCollections.style?.fontWeight, FontWeight.w400);
     await tester.tap(find.text('Important'));
     await tester.pumpAndSettle();
     expect(find.text('Important'), findsOneWidget);

@@ -342,14 +342,14 @@ class _SidebarItem extends StatelessWidget {
     final Color foreground = dropTarget
         ? scheme.onPrimaryContainer
         : (action
-              ? scheme.primary
+              ? scheme.onSurfaceVariant.withValues(alpha: 0.72)
               : (isSelected
                     ? scheme.onSecondaryContainer
                     : scheme.onSurfaceVariant));
     final Color labelColor = dropTarget
         ? scheme.onPrimaryContainer
         : (action
-              ? scheme.primary
+              ? scheme.onSurfaceVariant.withValues(alpha: 0.72)
               : (isSelected ? scheme.onSecondaryContainer : scheme.onSurface));
     return Tooltip(
       message: isOpen ? '' : label,
@@ -394,9 +394,11 @@ class _SidebarItem extends StatelessWidget {
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
                                 color: labelColor,
-                                fontWeight: isSelected || action
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                                fontWeight: action
+                                    ? FontWeight.w400
+                                    : (isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.w500),
                               ),
                         ),
                       ),

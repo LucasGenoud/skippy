@@ -402,10 +402,10 @@ class _NoteTileState extends State<NoteTile> {
               _NoteCardContent(
                 note: note,
                 query: widget.query,
-                collection: collection,
                 reserveActions: actionsSlot,
                 showLabelsInBody: !actionsSlot,
               ),
+              if (collection != null) _CollectionMarker(encoded: collection),
               _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
               if (isRewriting) const _NoteRewriteProgress(),
               if (desktopActions)
@@ -441,7 +441,6 @@ class _NoteTileState extends State<NoteTile> {
               if (actionsSlot)
                 _NoteFooterLabels(
                   note: note,
-                  collection: collection,
                   visible: !(desktopActions && actionsVisible),
                   bottomInset: actionsBottomInset,
                 ),
@@ -501,13 +500,11 @@ class _NoteCardContent extends StatelessWidget {
 
   final Note note;
   final String query;
-  final String? collection;
   final bool reserveActions;
   final bool showLabelsInBody;
   const _NoteCardContent({
     required this.note,
     this.query = '',
-    this.collection,
     this.reserveActions = false,
     this.showLabelsInBody = true,
   });
@@ -588,7 +585,6 @@ class _NoteCardContent extends StatelessWidget {
         (note.isChecklist && visibleItems.isNotEmpty) ||
         note.isEmpty; // truly empty draft shows the placeholder
     final hasFooter =
-        collection != null ||
         note.reminderAt != null ||
         locationReminderLabel != null ||
         (showLabelsInBody && labels.isNotEmpty) ||
@@ -757,7 +753,6 @@ class _NoteCardContent extends StatelessWidget {
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (collection != null) _LabelChip.encoded(collection!),
                 if (note.reminderAt != null)
                   ReminderChip(
                     at: note.reminderAt!,
@@ -845,6 +840,41 @@ class _NoteCardContent extends StatelessWidget {
       ...note.collaborators.map((c) => c.name),
     ];
     return 'Shared with ${names.join(', ')}';
+  }
+}
+
+/// The archive-only collection marker is a quiet corner glyph rather than a
+/// metadata chip. Its tooltip carries the collection name without competing
+/// with the note's own tags.
+class _CollectionMarker extends StatelessWidget {
+  final String encoded;
+  const _CollectionMarker({required this.encoded});
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = encoded.split('\u0001');
+    final name = parts.first;
+    final color = parts.length > 1 ? PaletteEntry.hexToColor(parts[1]) : null;
+    final icon = parts.length > 2
+        ? labelIconFor(parts[2])
+        : Icons.folder_outlined;
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      top: 6,
+      right: 38,
+      width: 28,
+      height: 28,
+      child: Tooltip(
+        message: name,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: scheme.surface.withValues(alpha: 0.75),
+          ),
+          child: Icon(icon, size: 15, color: color ?? scheme.onSurfaceVariant),
+        ),
+      ),
+    );
   }
 }
 
@@ -1322,12 +1352,10 @@ class _NoteActions extends StatelessWidget {
 /// replaces it on hover without shifting a card.
 class _NoteFooterLabels extends StatelessWidget {
   final Note note;
-  final String? collection;
   final bool visible;
   final double bottomInset;
   const _NoteFooterLabels({
     required this.note,
-    this.collection,
     required this.visible,
     this.bottomInset = 0,
   });
@@ -1345,9 +1373,8 @@ class _NoteFooterLabels extends StatelessWidget {
           ),
     );
     final labels = joinedLabels.isEmpty
-        ? <String>[]
+        ? const <String>[]
         : joinedLabels.split('\u0000');
-    if (collection != null) labels.insert(0, collection!);
     return Positioned(
       left: 16,
       right: 16,

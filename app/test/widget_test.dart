@@ -102,40 +102,45 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
-    testWidgets('shows its collection tag when requested by the archive', (
-      tester,
-    ) async {
-      api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
-        collections: const [
-          NoteCollection(
-            id: 'reading',
-            workspaceId: 'w-default',
-            name: 'Reading',
-            icon: 'book',
-            color: '#00897B',
+    testWidgets(
+      'shows its collection tag once when requested by the archive',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+          collections: const [
+            NoteCollection(
+              id: 'reading',
+              workspaceId: 'w-default',
+              name: 'Reading',
+              icon: 'book',
+              color: '#00897B',
+            ),
+          ],
+        );
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Archived book',
+          workspaceId: 'w-default',
+          archived: true,
+        ).copyWith(collectionId: 'reading');
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(
+              width: 280,
+              child: NoteTile(
+                note: store.noteById('n1')!,
+                showCollection: true,
+              ),
+            ),
           ),
-        ],
-      );
-      api.notes['n1'] = serverNote(
-        'n1',
-        title: 'Archived book',
-        workspaceId: 'w-default',
-        archived: true,
-      ).copyWith(collectionId: 'reading');
-      await store.load();
-      await tester.pumpWidget(
-        harness(
-          store,
-          SizedBox(
-            width: 280,
-            child: NoteTile(note: store.noteById('n1')!, showCollection: true),
-          ),
-        ),
-      );
+        );
 
-      expect(find.text('Reading'), findsOneWidget);
-      expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
-    });
+        expect(find.byTooltip('Reading'), findsOneWidget);
+        expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+      },
+    );
 
     testWidgets('shows up to three unique website preview cards', (
       tester,
