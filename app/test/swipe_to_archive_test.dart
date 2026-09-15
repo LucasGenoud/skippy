@@ -268,7 +268,6 @@ void main() {
             child: AnimatedMasonry(
               notes: store.notesForWidgets,
               columns: 2,
-              staggeredEntrance: false,
               // The grid's own gesture: a card lifts for a reorder after a
               // hold, so the swipe has to win the arena before that fires.
               onReorder: (_) => MasonryReorderDecision.keep,

@@ -81,8 +81,8 @@ class _BoardColumnViewState extends State<BoardColumnView> {
   final _scrollController = ScrollController();
 
   /// Reached for to read the pointer back into a drop index. Replaced when the
-  /// column changes underneath us, which is what replays the entrance rather
-  /// than gliding cards between unrelated columns.
+  /// column changes underneath us, so cards do not glide between unrelated
+  /// columns.
   GlobalKey<AnimatedMasonryState> _masonryKey = GlobalKey();
 
   /// Where a card from another column would land right now, or null when
@@ -234,9 +234,6 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             // A long press selects rather than lifts while selecting, the
             // same rule the grid follows.
             dragEnabled: widget.dragEnabled && !widget.selectionMode,
-            // Board cards must be visible on the first frame; see the flag's
-            // doc on why the grid's cascade is the wrong default here.
-            staggeredEntrance: false,
             scrollController: _scrollController,
             onReorder: _reorderWithin,
             onStationaryLongPress: (id) => widget.onSelectionChanged?.call(

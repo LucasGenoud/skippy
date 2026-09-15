@@ -1303,20 +1303,53 @@ class NotesStore extends ChangeNotifier {
   // ---------------------------------------------------------------------
   // Filtering & sorting
 
-  NoteSections notesFor(ViewSelection selection, String query) => selectNotes(
-    notes: _notes,
-    labels: _labels,
-    selection: selection,
-    query: query,
-    sortMode: sortMode,
-    currentUserId: currentUserId,
-    scope:
-        selection.view == NoteView.trash ||
-            selection.view == NoteView.archive ||
-            selection.view == NoteView.reminders
-        ? workspaceScope
-        : collectionScope,
-  );
+  // One cached view: unrelated rebuilds still compare note identities, but
+  // avoid parsing, searching and sorting the corpus again. Copy the inputs
+  // because mutations also replace entries in the store's lists in place.
+  Object? _selectionKey;
+  List<Note> _selectionNotes = const [];
+  List<Label> _selectionLabels = const [];
+  List<Workspace> _selectionWorkspaces = const [];
+  NoteSections? _selectionResult;
+
+  NoteSections notesFor(ViewSelection selection, String query) {
+    final key = (
+      selection,
+      query,
+      sortMode,
+      _activeWorkspaceId,
+      activeCollection?.id,
+    );
+    if (_selectionResult != null &&
+        key == _selectionKey &&
+        listEquals(_notes, _selectionNotes) &&
+        listEquals(_labels, _selectionLabels) &&
+        listEquals(_workspaces, _selectionWorkspaces)) {
+      return _selectionResult!;
+    }
+    final result = selectNotes(
+      notes: _notes,
+      labels: _labels,
+      selection: selection,
+      query: query,
+      sortMode: sortMode,
+      currentUserId: currentUserId,
+      scope:
+          selection.view == NoteView.trash ||
+              selection.view == NoteView.archive ||
+              selection.view == NoteView.reminders
+          ? workspaceScope
+          : collectionScope,
+    );
+    _selectionKey = key;
+    _selectionNotes = List.of(_notes);
+    _selectionLabels = List.of(_labels);
+    _selectionWorkspaces = List.of(_workspaces);
+    return _selectionResult = NoteSections(
+      List.unmodifiable(result.pinned),
+      List.unmodifiable(result.others),
+    );
+  }
 
   void setSortMode(SortMode mode) {
     sortMode = mode;

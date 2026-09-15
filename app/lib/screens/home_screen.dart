@@ -479,11 +479,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// What actually filters the grid: the open smart view's saved query with
   /// whatever is typed in the box appended. Terms are ANDed, so typing narrows
   /// a smart view further rather than replacing it.
-  String get _effectiveQuery {
+  String get _effectiveQuery => _queryFor(context.read<NotesStore>());
+
+  String _queryFor(NotesStore store) {
     final label = _selection.view == NoteView.label
-        ? context.read<NotesStore>().labelById(_selection.labelId!)
+        ? store.labelById(_selection.labelId!)
         : null;
-    final saved = label == null ? _savedView?.query : 'label:"${label.name}"';
+    final saved = label == null
+        ? (_selection.view == NoteView.smart
+              ? store.savedViewById(_selection.savedViewId!)?.query
+              : null)
+        : 'label:"${label.name}"';
     if (saved == null || saved.isEmpty) return _query;
     if (_query.trim().isEmpty) return saved;
     return '$saved $_query';
@@ -598,8 +604,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
-    final settings = context.watch<SettingsStore>();
+    final store = context.read<NotesStore>();
+    final viewState = context.select(
+      (NotesStore s) => (
+        sections: s.notesFor(_selection, _queryFor(s)),
+        loading: s.loading,
+        offline: s.offline,
+      ),
+    );
+    final settings = context.select(
+      (SettingsStore s) => (
+        semanticSearchAvailable: s.semanticSearchAvailable,
+        semanticRanking: s.semanticRanking,
+        gridDensity: s.gridDensity,
+        gridWidth: s.gridWidth,
+      ),
+    );
     _reconcileWorkspaceView(store);
     _listMode = store.activeCollection?.layout == 'list';
     final collectionView = ![
@@ -644,7 +664,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   : store.workspaceScope,
             ),
           )
-        : store.notesFor(_selection, _effectiveQuery);
+        : viewState.sections;
     final visibleNotes = [...sections.pinned, ...sections.others];
     // Loading indicator in the results area while the first semantic search
     // is in flight (no ranked results to show yet). On a refine the previous
@@ -1258,6 +1278,50 @@ class _HomeScreenState extends State<HomeScreen> {
     required String section,
   }) {
     final query = _highlightQuery;
+    Widget tile(Note note) => NoteTile(
+      key: ValueKey(note.id),
+      note: note,
+      showCollection: _selection.view == NoteView.archive,
+      query: query,
+      selectionMode: _selectionMode,
+      selected: _selectedNoteIds.contains(note.id),
+      onSelectionChanged: (selected) => _toggleNoteSelection(note.id, selected),
+      swipeToArchive: true,
+    );
+
+    // Sorted/search lists need no reorder geometry. Let the viewport build
+    // only nearby cards; custom ordering keeps masonry's drag/drop behavior.
+    final customOrder =
+        store.sortMode == SortMode.custom &&
+        _query.trim().isEmpty &&
+        (_selection.view == NoteView.notes ||
+            _selection.view == NoteView.archive);
+    if (_listMode && !customOrder) {
+      return SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: pad),
+        sliver: SliverList.builder(
+          key: ValueKey((section, _selection)),
+          itemCount: notes.length,
+          findChildIndexCallback: (key) {
+            final index = notes.indexWhere((note) => ValueKey(note.id) == key);
+            return index < 0 ? null : index;
+          },
+          itemBuilder: (context, index) => Padding(
+            key: ValueKey(notes[index].id),
+            padding: EdgeInsets.only(bottom: index == notes.length - 1 ? 0 : 8),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: tile(notes[index]),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: pad),
       sliver: SliverToBoxAdapter(
@@ -1265,8 +1329,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxWidth),
             child: AnimatedMasonry(
-              // Re-key per view so switching Notes/Archive/Trash/label replays
-              // the staggered entrance.
+              // Reset layout when switching views so unrelated cards do not
+              // glide from the previous view's positions.
               key: ValueKey(
                 '$section-${_selection.view}-${_selection.labelId}',
               ),
@@ -1292,20 +1356,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _selectionMode,
                 Object.hashAllUnordered(_selectedNoteIds),
               ),
-              itemBuilder: (context, note) => NoteTile(
-                key: ValueKey(note.id),
-                note: note,
-                showCollection: _selection.view == NoteView.archive,
-                query: query,
-                selectionMode: _selectionMode,
-                selected: _selectedNoteIds.contains(note.id),
-                onSelectionChanged: (selected) =>
-                    _toggleNoteSelection(note.id, selected),
-                // The grid scrolls vertically and nothing else here wants a
-                // sideways drag, so the phone gets swipe-to-archive. The card
-                // itself declines in the trash.
-                swipeToArchive: true,
-              ),
+              itemBuilder: (context, note) => tile(note),
             ),
           ),
         ),

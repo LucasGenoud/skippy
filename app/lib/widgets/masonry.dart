@@ -105,16 +105,6 @@ class AnimatedMasonry extends StatefulWidget {
   /// dragging.
   final ScrollController? scrollController;
 
-  /// Whether tiles cascade in on first appearance.
-  ///
-  /// The cascade holds every tile invisible until all their heights are
-  /// measured, which is fail-closed for what is only decoration: anything that
-  /// delays or drops a measurement leaves the content blank rather than
-  /// unanimated. The grid accepts that trade for its entrance. The board does
-  /// not, its cards are already grouped into columns, so it renders them
-  /// opaque from the first frame.
-  final bool staggeredEntrance;
-
   /// Where a card carried in from outside is about to land, or null when
   /// nothing is hovering.
   ///
@@ -136,7 +126,6 @@ class AnimatedMasonry extends StatefulWidget {
     this.onReorder,
     this.onStationaryLongPress,
     this.scrollController,
-    this.staggeredEntrance = true,
     this.incomingIndex,
   });
 
@@ -214,7 +203,6 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   /// collaborator's update merged mid-drag).
   bool _dragChangedOrder = false;
   bool _dragMoved = false;
-  bool _ready = false;
 
   // Skip the glide animation for one frame after geometry changes (initial
   // build, window resize, column count change) so tiles snap instead of
@@ -227,32 +215,16 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   late final Ticker _autoScrollTicker;
   Duration _lastTick = Duration.zero;
 
-  // One-shot staggered entrance: every tile shares this controller and takes a
-  // staggered slice of it (see [_TileEntrance]), so the grid cascades in once
-  // heights are known.
-  late final AnimationController _entranceController;
-  bool _entranceStarted = false;
-
   @override
   void initState() {
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
     _autoScrollTicker = createTicker(_onAutoScrollTick);
-    // A brisk, one-shot cascade: each tile takes a 0.5 slice (see
-    // [_TileEntrance]), so no single tile animates longer than 210ms.
-    _entranceController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    );
-    // Skip straight to "arrived" so tiles never depend on the entrance having
-    // run in order to be seen.
-    if (!widget.staggeredEntrance) _entranceController.value = 1;
   }
 
   @override
   void dispose() {
     _autoScrollTicker.dispose();
-    _entranceController.dispose();
     super.dispose();
   }
 
@@ -403,9 +375,6 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     setState(() {
       _heights[id] = height;
       _invalidateLayout();
-      if (!_ready && _orderIds.every((id) => _heights.containsKey(id))) {
-        _ready = true;
-      }
     });
   }
 
@@ -668,20 +637,6 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
             if (mounted) setState(() => _snapFrame = false);
           });
         }
-        // Kick the one-shot entrance off once every tile has been measured
-        // (before that, tiles sit at the controller's 0 value, invisible,
-        // while their heights settle).
-        if (widget.staggeredEntrance && _ready && !_entranceStarted) {
-          _entranceStarted = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            if (Motion.reduced(context)) {
-              _entranceController.value = 1;
-            } else {
-              _entranceController.forward(from: 0);
-            }
-          });
-        }
         // Painting order, which is the order of this list, is the packed
         // order — except for a raised tile, which goes last. Every tile is
         // keyed, so moving one to the end of the list moves what it paints
@@ -699,11 +654,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
               width: layout.slots[note.id]!.width,
               child: MeasureSize(
                 onChange: (size) => _onHeightMeasured(note.id, size.height),
-                child: _TileEntrance(
-                  animation: _entranceController,
-                  index: i,
-                  child: RepaintBoundary(child: _buildTile(note, layout)),
-                ),
+                child: RepaintBoundary(child: _buildTile(note, layout)),
               ),
             );
             if (note.id == _raisedId) {
@@ -755,48 +706,6 @@ class _IncomingSlot extends StatelessWidget {
         borderRadius: BorderRadius.circular(kRadius),
         border: Border.all(color: scheme.primary, width: 2),
       ),
-    );
-  }
-}
-
-/// Fades and slides each tile into its masonry slot on first appearance. Every
-/// tile shares the masonry's one entrance controller; [index] offsets each
-/// tile's slice of it (capped) so the grid arrives like staggered bricks,
-/// rather than popping together.
-class _TileEntrance extends StatelessWidget {
-  static const _verticalOffset = 28.0;
-
-  final Animation<double> animation;
-  final int index;
-  final Widget child;
-  const _TileEntrance({
-    required this.animation,
-    required this.index,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final start = math.min(index * 0.05, 0.5);
-    final end = math.min(start + 0.5, 1.0);
-    return AnimatedBuilder(
-      animation: animation,
-      child: child,
-      builder: (context, child) {
-        final raw = ((animation.value - start) / (end - start)).clamp(0.0, 1.0);
-        // Entrance over: hand back the bare tile. Leaving the opacity and
-        // transform in place would keep a compositing layer per tile alive for
-        // the rest of the session, for an animation that already finished.
-        if (raw == 1) return child!;
-        final t = Motion.standard.transform(raw);
-        return Opacity(
-          opacity: t,
-          child: Transform.translate(
-            offset: Offset(0, _verticalOffset * (1 - t)),
-            child: child,
-          ),
-        );
-      },
     );
   }
 }

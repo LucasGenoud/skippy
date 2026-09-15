@@ -28,6 +28,10 @@ abstract class LocalCache {
 class PrefsLocalCache implements LocalCache {
   String _storageKey(String key) => 'notes_cache_$key';
 
+  // Keep only the last successful write. Sync-status notifications can
+  // otherwise write the same full document to browser localStorage again.
+  ({String key, String json})? _lastWrite;
+
   @override
   Future<Map<String, dynamic>?> read(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -43,12 +47,22 @@ class PrefsLocalCache implements LocalCache {
 
   @override
   Future<void> write(String key, Map<String, dynamic> doc) async {
+    final next = (key: key, json: jsonEncode(doc));
+    if (next == _lastWrite) {
+      return;
+    }
+    _lastWrite = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey(key), jsonEncode(doc));
+    if (await prefs.setString(_storageKey(key), next.json)) {
+      _lastWrite = next;
+    }
   }
 
   @override
   Future<void> clear(String key) async {
+    if (_lastWrite?.key == key) {
+      _lastWrite = null;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey(key));
   }
