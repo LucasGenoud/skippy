@@ -92,6 +92,28 @@ void main() {
     await flushTimers(tester);
   });
 
+  testWidgets('a wide column collapses into a titled rail', (tester) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['n1'] = serverNote('n1', title: 'card one');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Collapse Unassigned'));
+    await tester.pumpAndSettle();
+    expect(find.text('card one'), findsNothing);
+    expect(find.byTooltip('Expand Unassigned'), findsOneWidget);
+    expect(
+      tester.getSize(find.byType(BoardColumnView).first).width,
+      lessThan(100),
+    );
+
+    await tester.tap(find.byTooltip('Expand Unassigned'));
+    await tester.pumpAndSettle();
+    expect(find.text('card one'), findsOneWidget);
+    await flushTimers(tester);
+  });
+
   testWidgets('phones page through columns behind a strip', (tester) async {
     await setViewport(tester, const Size(390, 780));
     api.notes['n1'] = serverNote('n1', title: 'unplaced card');
@@ -712,6 +734,7 @@ void main() {
         tester.getCenter(find.text('card a')),
       );
       await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Move 2 cards'), findsOneWidget);
       await gesture.moveTo(tester.getCenter(find.text('Doing')));
       await tester.pump();
       await gesture.up();

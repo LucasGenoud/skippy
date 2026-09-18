@@ -99,6 +99,9 @@ class AnimatedMasonry extends StatefulWidget {
 
   /// When set, only these notes can start a drag.
   final Set<String>? draggableIds;
+
+  /// A short label shown on the floating drag preview.
+  final String? dragFeedbackLabel;
   final MasonryReorderCallback? onReorder;
 
   /// Touch long presses that end without movement select this note; moving
@@ -128,6 +131,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.spacing = 8,
     this.dragEnabled = true,
     this.draggableIds,
+    this.dragFeedbackLabel,
     this.onReorder,
     this.onStationaryLongPress,
     this.scrollController,
@@ -591,6 +595,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     final feedback = Builder(
       builder: (context) => _DragFeedback(
         width: layout.slots[note.id]!.width,
+        label: widget.dragFeedbackLabel,
         child: widget.itemBuilder(context, note),
       ),
     );
@@ -745,8 +750,9 @@ class _IncomingSlot extends StatelessWidget {
 /// shadow animation on pick-up.
 class _DragFeedback extends StatelessWidget {
   final double width;
+  final String? label;
   final Widget child;
-  const _DragFeedback({required this.width, required this.child});
+  const _DragFeedback({required this.width, this.label, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -758,7 +764,35 @@ class _DragFeedback extends StatelessWidget {
       // boundary of its own, each of those moves repaints the whole card *and*
       // its blurred shadow; with one, the rasterized layer is simply moved.
       child: RepaintBoundary(
-        child: Material(type: MaterialType.transparency, child: child),
+        child: Material(
+          type: MaterialType.transparency,
+          child: Stack(
+            children: [
+              child,
+              if (label != null)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Material(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(kRadius),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        label!,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
       builder: (context, t, child) {
         return Transform.scale(

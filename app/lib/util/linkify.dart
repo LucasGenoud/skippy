@@ -118,3 +118,21 @@ Future<void> launchLinkUrl(String url) async {
     // Nothing sensible to do if the platform can't open it.
   }
 }
+
+/// Like [launchLinkUrl] for hrefs that come from untrusted content (note
+/// markdown, LLM chat output): only http/https may launch, so a `file:` or
+/// app-scheme link in a note cannot open local files or foreign apps. A bare
+/// `www.` is upgraded, mirroring `findUrls`.
+Future<void> launchSafeLink(String url) async {
+  var href = url.trim();
+  if (href.toLowerCase().startsWith('www.')) {
+    href = 'https://$href';
+  }
+  final uri = Uri.tryParse(href);
+  if (uri == null || !const {'http', 'https'}.contains(uri.scheme)) return;
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    // Nothing sensible to do if the platform can't open it.
+  }
+}

@@ -118,7 +118,12 @@ impl ImageOcr for TesseractService {
             .send()
             .await?
             .error_for_status()?;
-        Ok(clean_ocr_text(&parse_ocr_reply(&response.text().await?)))
+        // Recognized text is capped downstream anyway; the cap here stops a
+        // hostile service streaming unbounded JSON into memory.
+        let body = crate::outbound::read_body_capped(response, 1_000_000).await?;
+        Ok(clean_ocr_text(&parse_ocr_reply(&String::from_utf8_lossy(
+            &body,
+        ))))
     }
 }
 

@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
+import '../util/linkify.dart';
 import '../util/motion.dart';
 import '../util/note_routes.dart';
 import 'editor_screen.dart';
@@ -411,10 +411,7 @@ class _Bubble extends StatelessWidget {
                     ).textTheme.bodyMedium?.copyWith(height: 1.45),
                   ),
               onTapLink: (text, href, title) {
-                final uri = href == null ? null : Uri.tryParse(href);
-                if (uri != null) {
-                  launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
+                if (href != null) launchSafeLink(href);
               },
             )
           else

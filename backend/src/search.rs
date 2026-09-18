@@ -121,12 +121,18 @@ impl TextEmbedder for ApiEmbedder {
         let response = req.send().await?;
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+            let body = crate::outbound::read_body_prefix(response, 1024).await;
             // Truncated, and never echoes the API key back into logs.
-            let body = body.chars().take(300).collect::<String>();
+            let body = String::from_utf8_lossy(&body)
+                .chars()
+                .take(300)
+                .collect::<String>();
             anyhow::bail!("embeddings endpoint returned {status}: {body}");
         }
-        parse_embeddings(&response.json().await?)
+        // A batch of vectors is small; the cap stops a hostile service
+        // streaming unbounded JSON into memory.
+        let body = crate::outbound::read_body_capped(response, 8_000_000).await?;
+        parse_embeddings(&serde_json::from_slice(&body)?)
     }
 
     fn model_name(&self) -> &str {

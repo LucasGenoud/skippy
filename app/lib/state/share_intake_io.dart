@@ -85,7 +85,13 @@ class ShareIntake {
         final dropped = <DroppedFile>[];
         for (final f in files) {
           try {
-            final bytes = await File(f.path).readAsBytes();
+            final file = File(f.path);
+            // Uploads elsewhere cap at maxUploadBytes; an OS share bypasses
+            // that UI, so skip over-large files before reading them in.
+            if (await file.length() > maxUploadBytes) {
+              continue;
+            }
+            final bytes = await file.readAsBytes();
             final name = _fileName(f.path);
             final mime = f.mimeType ?? mimeFromName(name);
             dropped.add(DroppedFile(name: name, mime: mime, bytes: bytes));

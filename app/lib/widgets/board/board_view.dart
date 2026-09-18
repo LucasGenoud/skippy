@@ -48,6 +48,7 @@ class BoardView extends StatefulWidget {
   static const double pagedBreakpoint = 600;
 
   static const double _columnWidth = 300;
+  static const double _collapsedColumnWidth = 52;
 
   @override
   State<BoardView> createState() => _BoardViewState();
@@ -67,6 +68,7 @@ class _BoardViewState extends State<BoardView> {
   /// Horizontal scroll of the whole board on wide screens; also what the edge
   /// zones drive while a card is being carried.
   final _boardController = ScrollController();
+  final _collapsedStageIds = <String?>{};
   int _page = 0;
 
   @override
@@ -100,6 +102,10 @@ class _BoardViewState extends State<BoardView> {
   }
 
   void _showAll() => setState(() => _showAllUnassigned = true);
+
+  void _toggleCollapsed(String? stageId) => setState(() {
+    if (!_collapsedStageIds.add(stageId)) _collapsedStageIds.remove(stageId);
+  });
 
   /// A card carried up from the page below and dropped on a stage chip. This
   /// is the phone's move gesture: short travel, and no page turns under the
@@ -138,8 +144,11 @@ class _BoardViewState extends State<BoardView> {
             itemBuilder: (context, index) {
               if (index == board.columns.length) return const _AddColumnTile();
               final column = board.columns[index];
+              final collapsed = _collapsedStageIds.contains(column.stage?.id);
               return Container(
-                width: BoardView._columnWidth,
+                width: collapsed
+                    ? BoardView._collapsedColumnWidth
+                    : BoardView._columnWidth,
                 margin: const EdgeInsets.only(right: 12),
                 // A trough, not a step of the surface ladder: see
                 // [boardColumnColor] for why the theme's containers are too
@@ -159,6 +168,8 @@ class _BoardViewState extends State<BoardView> {
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
                   onSelectionChanged: widget.onSelectionChanged,
+                  collapsed: collapsed,
+                  onToggleCollapsed: () => _toggleCollapsed(column.stage?.id),
                 ),
               );
             },

@@ -53,6 +53,10 @@ class BoardColumnView extends StatefulWidget {
   final Set<String> selectedIds;
   final void Function(String noteId, bool selected)? onSelectionChanged;
 
+  /// A collapsed column keeps its title and count in a narrow rail.
+  final bool collapsed;
+  final VoidCallback? onToggleCollapsed;
+
   /// Compose a note already filed in this column. Supplied by the phone
   /// layout, which hides the header the button normally lives in.
   final VoidCallback? onAddCard;
@@ -67,6 +71,8 @@ class BoardColumnView extends StatefulWidget {
     this.selectionMode = false,
     this.selectedIds = const {},
     this.onSelectionChanged,
+    this.collapsed = false,
+    this.onToggleCollapsed,
     this.onAddCard,
   });
 
@@ -204,25 +210,34 @@ class _BoardColumnViewState extends State<BoardColumnView> {
       onAcceptWithDetails: (details) => _acceptForeign(details.data),
       builder: (context, candidate, _) => _DropHighlight(
         active: candidate.isNotEmpty,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Outside the header on purpose: the phone hides the header but
-            // still wants its column capped in the stage's colour.
-            _StageRule(column: widget.column),
-            if (widget.showHeader) _BoardColumnHeader(column: widget.column),
-            if (!widget.showHeader && widget.onAddCard != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: widget.onAddCard,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add note'),
-                ),
+        child: widget.collapsed
+            ? _CollapsedColumn(
+                column: widget.column,
+                onExpand: widget.onToggleCollapsed,
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Outside the header on purpose: the phone hides the header but
+                  // still wants its column capped in the stage's colour.
+                  _StageRule(column: widget.column),
+                  if (widget.showHeader)
+                    _BoardColumnHeader(
+                      column: widget.column,
+                      onToggleCollapsed: widget.onToggleCollapsed,
+                    ),
+                  if (!widget.showHeader && widget.onAddCard != null)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: widget.onAddCard,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add note'),
+                      ),
+                    ),
+                  Expanded(child: _body()),
+                ],
               ),
-            Expanded(child: _body()),
-          ],
-        ),
       ),
     );
   }
@@ -243,6 +258,10 @@ class _BoardColumnViewState extends State<BoardColumnView> {
             spacing: 8,
             dragEnabled: widget.dragEnabled,
             draggableIds: widget.selectionMode ? widget.selectedIds : null,
+            dragFeedbackLabel:
+                widget.selectionMode && widget.selectedIds.length > 1
+                ? 'Move ${widget.selectedIds.length} cards'
+                : null,
             scrollController: _scrollController,
             onReorder: _reorderWithin,
             onStationaryLongPress: (id) => widget.onSelectionChanged?.call(
@@ -331,8 +350,9 @@ class _DropHighlight extends StatelessWidget {
 
 class _BoardColumnHeader extends StatelessWidget {
   final BoardColumn column;
+  final VoidCallback? onToggleCollapsed;
 
-  const _BoardColumnHeader({required this.column});
+  const _BoardColumnHeader({required this.column, this.onToggleCollapsed});
 
   @override
   Widget build(BuildContext context) {
@@ -358,6 +378,17 @@ class _BoardColumnHeader extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 8),
                 child: _CountChip(count: column.totalCount),
               ),
+              if (onToggleCollapsed != null)
+                IconButton(
+                  icon: const Icon(Icons.unfold_less, size: 18),
+                  tooltip: 'Collapse ${column.title}',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
+                  ),
+                  onPressed: onToggleCollapsed,
+                ),
               IconButton(
                 icon: const Icon(Icons.add, size: 18),
                 tooltip: 'Add a note to ${column.title}',
@@ -420,6 +451,51 @@ class _BoardColumnHeader extends StatelessWidget {
     } else {
       store.deleteStage(stage.id);
     }
+  }
+}
+
+class _CollapsedColumn extends StatelessWidget {
+  final BoardColumn column;
+  final VoidCallback? onExpand;
+
+  const _CollapsedColumn({required this.column, this.onExpand});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Expand ${column.title}',
+      child: InkWell(
+        onTap: onExpand,
+        child: Column(
+          children: [
+            _StageRule(column: column),
+            Expanded(
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.unfold_more,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${column.title} (${column.totalCount})',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

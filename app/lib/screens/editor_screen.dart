@@ -10,7 +10,6 @@ import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
@@ -1534,9 +1533,7 @@ class _EditorScreenState extends State<EditorScreen> {
           // long-press gestures remain owned by the selectable text.
           onTapText: trashed ? null : _editMarkdownFromPreview,
           onTapLink: (text, href, title) {
-            if (href != null) {
-              launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
-            }
+            if (href != null) launchSafeLink(href);
           },
         ),
       );

@@ -64,6 +64,9 @@ impl Transcriber for WhisperService {
             .send()
             .await?
             .error_for_status()?;
-        Ok(response.text().await?.trim().to_string())
+        // A transcript is small text; cap so a hostile service cannot stream
+        // gigabytes into memory.
+        let body = crate::outbound::read_body_capped(response, 1_000_000).await?;
+        Ok(String::from_utf8_lossy(&body).trim().to_string())
     }
 }
