@@ -642,11 +642,18 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('More note options'));
         await tester.pumpAndSettle();
+        expect(find.text('AI edit'), findsOneWidget);
+        expect(find.text('Make concise'), findsNothing);
+        expect(find.text('Fix grammar'), findsNothing);
+
+        await tester.tap(find.text('AI edit'));
+        await tester.pumpAndSettle();
         expect(find.text('Make concise'), findsOneWidget);
         expect(find.text('Fix grammar'), findsOneWidget);
 
         api.rewriteGate = Completer<void>();
         await tester.tap(find.text('Fix grammar'));
+        await tester.pump(const Duration(seconds: 1));
         await tester.pump();
         expect(find.byKey(const ValueKey('note-rewrite-progress')), findsOne);
         expect(api.log, isNot(contains('rewriteNote:n1:grammar')));

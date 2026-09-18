@@ -1193,151 +1193,112 @@ class _NoteActions extends StatelessWidget {
                   tooltip: note.archived ? 'Unarchive note' : 'Archive note',
                   onPressed: onArchive,
                 ),
-                // PopupMenuButton's default icon target is 48 px. Use the
-                // same 36 px circular ink target as the neighboring controls.
-                PopupMenuButton<String>(
-                  popUpAnimationStyle: Motion.menuFor(context),
-                  borderRadius: BorderRadius.circular(18),
-                  splashRadius: 18,
-                  tooltip: 'More note options',
-                  padding: EdgeInsets.zero,
-                  onOpened: onMenuOpened,
-                  onCanceled: onMenuClosed,
-                  onSelected: (value) async {
-                    onMenuClosed();
-                    if (value == 'share' ||
-                        value == 'collection' ||
-                        value == 'move' ||
-                        value == 'stage') {
-                      await Motion.waitForMenuDismissal(context);
-                      if (!context.mounted) return;
-                    }
-                    if (value == 'collection') {
-                      final store = context.read<NotesStore>();
-                      final target = await CollectionPicker.show(
-                        context,
-                        note.workspaceId,
-                      );
-                      if (target != null) {
-                        store.moveToCollection(note.id, target);
-                      }
-                    }
-                    if (value == 'share') onShare();
-                    if (value == 'duplicate') onDuplicate();
-                    if (value == 'move') onMoveToWorkspace();
-                    if (value == 'stage') onMoveToStage();
-                    if (value == 'clipboard') onCopyToClipboard();
-                    if (value == 'delete') onDelete();
-                    if (value.startsWith('rewrite:')) {
-                      final id = value.substring('rewrite:'.length);
-                      for (final task in rewriteTasks) {
-                        if (task.id == id) onRewrite(task);
-                      }
-                    }
-                  },
-                  itemBuilder: (context) => [
+                MenuAnchor(
+                  onOpen: onMenuOpened,
+                  onClose: onMenuClosed,
+                  builder: (context, controller, child) => _button(
+                    icon: Icons.more_vert,
+                    tooltip: 'More note options',
+                    color: scheme.onSurfaceVariant,
+                    onPressed: controller.isOpen
+                        ? controller.close
+                        : controller.open,
+                  ),
+                  menuChildren: [
                     if (aiEditingEnabled &&
                         rewriteTasks.isNotEmpty &&
-                        note.kind != NoteKind.audio) ...[
-                      for (final task in rewriteTasks)
-                        PopupMenuItem(
-                          value: 'rewrite:${task.id}',
-                          enabled: !rewriting,
-                          child: ListTile(
-                            leading: const Icon(Icons.auto_fix_high_outlined),
-                            title: Text(task.name),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                      const PopupMenuDivider(),
-                    ],
-                    const PopupMenuItem(
-                      value: 'share',
-                      child: ListTile(
-                        leading: Icon(Icons.person_add_alt_outlined),
-                        title: Text('Share'),
-                        contentPadding: EdgeInsets.zero,
+                        note.kind != NoteKind.audio)
+                      SubmenuButton(
+                        leadingIcon: const Icon(Icons.auto_fix_high_outlined),
+                        menuChildren: [
+                          for (final task in rewriteTasks)
+                            MenuItemButton(
+                              onPressed: rewriting
+                                  ? null
+                                  : () => onRewrite(task),
+                              child: Text(task.name),
+                            ),
+                        ],
+                        child: const Text('AI edit'),
                       ),
+                    if (aiEditingEnabled &&
+                        rewriteTasks.isNotEmpty &&
+                        note.kind != NoteKind.audio)
+                      const Divider(height: 1),
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.person_add_alt_outlined),
+                      onPressed: () async {
+                        await Motion.waitForMenuDismissal(context);
+                        if (context.mounted) onShare();
+                      },
+                      child: const Text('Share'),
                     ),
                     // Both live in the menu rather than the action row: six
                     // controls already share a card's width.
-                    const PopupMenuItem(
-                      value: 'clipboard',
-                      child: ListTile(
-                        leading: Icon(Icons.content_copy_outlined),
-                        title: Text('Copy to clipboard'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.content_copy_outlined),
+                      onPressed: onCopyToClipboard,
+                      child: const Text('Copy to clipboard'),
                     ),
-                    const PopupMenuItem(
-                      value: 'duplicate',
-                      child: ListTile(
-                        leading: Icon(Icons.copy_all_outlined),
-                        title: Text('Duplicate'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.copy_all_outlined),
+                      onPressed: onDuplicate,
+                      child: const Text('Duplicate'),
                     ),
                     if (showMoveToStage)
-                      const PopupMenuItem(
-                        value: 'stage',
-                        child: ListTile(
-                          leading: Icon(Icons.view_kanban_outlined),
-                          title: Text('Move to column'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      MenuItemButton(
+                        leadingIcon: const Icon(Icons.view_kanban_outlined),
+                        onPressed: () async {
+                          await Motion.waitForMenuDismissal(context);
+                          if (context.mounted) onMoveToStage();
+                        },
+                        child: const Text('Move to column'),
                       ),
                     if (context.read<NotesStore>().workspaceById(
                           note.workspaceId,
                         ) !=
                         null)
-                      const PopupMenuItem(
-                        value: 'collection',
-                        child: ListTile(
-                          leading: Icon(Icons.folder_outlined),
-                          title: Text('Move to collection'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      MenuItemButton(
+                        leadingIcon: const Icon(Icons.folder_outlined),
+                        onPressed: () async {
+                          await Motion.waitForMenuDismissal(context);
+                          if (!context.mounted) return;
+                          final store = context.read<NotesStore>();
+                          final target = await CollectionPicker.show(
+                            context,
+                            note.workspaceId,
+                          );
+                          if (target != null) {
+                            store.moveToCollection(note.id, target);
+                          }
+                        },
+                        child: const Text('Move to collection'),
                       ),
                     if (canMove)
-                      const PopupMenuItem(
-                        value: 'move',
-                        child: ListTile(
-                          leading: Icon(Icons.drive_file_move_outlined),
-                          title: Text('Move to workspace'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                      MenuItemButton(
+                        leadingIcon: const Icon(Icons.drive_file_move_outlined),
+                        onPressed: () async {
+                          await Motion.waitForMenuDismissal(context);
+                          if (context.mounted) onMoveToWorkspace();
+                        },
+                        child: const Text('Move to workspace'),
                       ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      enabled: canDelete,
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.delete_outline,
-                          color: canDelete ? scheme.error : null,
-                        ),
-                        title: Text(
-                          canDelete
-                              ? 'Move to Trash'
-                              : 'Only the owner can delete',
-                          style: canDelete
-                              ? TextStyle(color: scheme.error)
-                              : null,
-                        ),
-                        contentPadding: EdgeInsets.zero,
+                    MenuItemButton(
+                      leadingIcon: Icon(
+                        Icons.delete_outline,
+                        color: canDelete ? scheme.error : null,
+                      ),
+                      onPressed: canDelete ? onDelete : null,
+                      child: Text(
+                        canDelete
+                            ? 'Move to Trash'
+                            : 'Only the owner can delete',
+                        style: canDelete
+                            ? TextStyle(color: scheme.error)
+                            : null,
                       ),
                     ),
                   ],
-                  child: SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: Center(
-                      child: Icon(
-                        Icons.more_vert,
-                        size: 19,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
                 ),
               ],
             ),
