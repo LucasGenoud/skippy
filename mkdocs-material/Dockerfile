@@ -6,4 +6,5 @@ RUN mkdocs build --strict
 
 FROM nginx:alpine
 COPY --from=build /site/site /usr/share/nginx/html
-EXPOSE 80
+RUN sed -i 's/listen[[:space:]]*80;/listen 8123;/' /etc/nginx/conf.d/default.conf
+EXPOSE 8123

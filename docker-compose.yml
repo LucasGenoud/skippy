@@ -29,7 +29,7 @@ services:
   docs:
     image: ghcr.io/lucasgenoud/skippy-docs:latest
     ports:
-      - "${DOCS_PORT:-8000}:80"
+      - "${DOCS_PORT:-8123}:8123"
     restart: unless-stopped
 
 volumes:

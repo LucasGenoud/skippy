@@ -21,7 +21,7 @@ Start it with `docker compose up -d`, then open
 
 ## Public documentation
 
-The repository Compose file also starts this documentation site on port 8000:
+The repository Compose file also starts this documentation site on port 8123:
 
 ```sh
 docker compose up -d docs

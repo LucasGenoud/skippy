@@ -10,5 +10,5 @@ it with:
 docker compose up -d docs
 ```
 
-Open <http://localhost:8000>. The app itself remains available at
+Open <http://localhost:8123>. The app itself remains available at
 <http://localhost:8787>.
