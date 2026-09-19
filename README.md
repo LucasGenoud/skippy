@@ -1,26 +1,34 @@
 # Skippy
 
-Skippy is a cross-platform notes app with a Flutter client and a Rust/axum
-backend. It supports web, iOS, Android, macOS, and Windows, with SQLite
-persistence and optimistic, offline-capable edits.
+Skippy is a notes app you can host yourself. It works on the web, iOS,
+Android, macOS, and Windows. Notes stay usable while a device is offline and
+sync when it reconnects.
 
 ## Features
 
-- Text, Markdown, checklist, audio, and attachment notes
-- Independent collections with shared grid, list, or kanban layouts and drag-to-reorder
-- Workspaces, shared smart views, labels, stages, archive, trash, time and location reminders,
-  search, and exports
-- Reminders on a whole note or on a single checklist item, pushed through ntfy,
-  Telegram, or email
-- Checklists with subtasks, up to three levels deep
-- Sharing, public read-only links, live sync, and version history
-- Password reset by email, when the deployment has a mail server configured
-- Optional self-hosted Whisper transcription, Tesseract image text recognition,
-  and OpenAI-compatible embeddings
-- Optional LLM features: configurable prompts, automatic labels, note editing,
-  and notes chat with per-action permissions and undo
-- Dark mode, responsive layouts, keyboard shortcuts, share-sheet intake, and
-  home-screen widgets
+- Write text, Markdown, checklist, and audio notes. Add files, images, and
+  links with previews.
+- Make nested checklists with reminders for a note or an individual task.
+- Organize notes in workspaces and collections. Use a grid, list, or board;
+  resize cards, add labels, and save useful filters.
+- Find notes with text search. Optional image reading and semantic search also
+  search image text and related content.
+- Share workspaces or individual notes, create public read-only links, and see
+  changes from other participants.
+- Set time or location reminders. Notifications can use the device, ntfy,
+  Telegram, or email.
+- Restore a note from its version history, archive or trash it, and make
+  exports, workspace copies, and backups.
+- Use mobile sharing, home-screen widgets, dark mode, responsive layouts, and
+  keyboard shortcuts where the platform supports them.
+- Add optional AI tools for link summaries, automatic labels, configurable
+  rewrite actions, and chat with your notes.
+- Enable email password reset when the deployment has a mail server.
+
+> Mobile app availability: Android needs more testers before a public release.
+> The iOS app is not yet in the App Store, but is planned. Both apps can be
+> installed directly; a direct iOS installation must be refreshed every seven
+> days.
 
 ## Screenshots
 
@@ -39,47 +47,19 @@ persistence and optimistic, offline-capable edits.
   </tr>
 </table>
 
-On Android and iOS, a card is archived by swiping it sideways in the grid,
-either way. The panel revealed behind it warms to the accent as the card passes
-the point where letting go acts, and the notification that follows carries an
-Undo. The same swipe in the archive puts a note back. Board cards keep the
-gesture for paging between columns.
+## Technical overview
 
-On Android and iOS, adding an image offers the camera alongside the photo
-library, so a receipt or a whiteboard goes straight from the lens onto a note.
-Uploaded images are read for text when an OCR service is configured, so that
-photo is found again by the words in it. Recognition runs in the background,
-feeds both keyword and semantic search, and never blocks the upload.
+The client is Flutter. The server is Rust with axum and SQLite. The server can
+also serve the built web client, so a small deployment is one container and one
+persistent volume.
 
-On Android and iOS, Settings can hold personal saved places such as Home or
-Work, each pinned on a map with the radius that counts as being there. A note
-can then raise a notification when the device arrives at or leaves one of those
-places, even while Skippy is closed, either once or on every visit. Location
-reminders require notification and background-location permission; saved
-coordinates are user settings and are never exposed to note collaborators. Map
-tiles come from OpenStreetMap and are only fetched while the place editor is
-open.
+Edits are applied locally first and queued for sync. Collaboration uses
+last-write-wins at note level; it does not use CRDTs. Attachments use local disk
+storage by default and can use S3-compatible storage instead.
 
-A checklist row can be nested under the one above it, three levels in all:
-task, subtask, sub-subtask. Tab and Shift+Tab move a row in and out on a
-keyboard, and dragging its handle sideways does the same on a phone; a row
-carries whatever is nested under it, whether it is being indented, dragged, or
-ticked off. Checking a task checks everything under it and files the whole
-group away together, while a subtask ticked off under a task still in progress
-stays where it is, struck through, so it never loses what it belonged to.
-Removing a row promotes its subtasks rather than deleting them.
-
-A checklist row can carry a reminder of its own, set from the bell beside it,
-with the same one-shot or repeating options a note reminder has. Ticking the row
-off cancels its reminder, and so does deleting the row: an alarm outlives
-neither. Item reminders are shared with everyone who can see the note, are
-written one row at a time so two devices editing the same list never overwrite
-each other, and reach both the server's push channels and the device's own
-alarms. Setting one is not an edit: it does not change the note's "Edited"
-stamp, capture a version, or re-run automatic labeling.
-
-The app is deliberately out of scope for drawings, calendar sync, and
-CRDT-style collaboration. Collaboration uses last-write-wins at note level.
+Whisper transcription, Tesseract image text recognition, embeddings, and an
+OpenAI-compatible LLM are optional services. The app still works without them.
+Drawings and calendar sync are not included.
 
 ## Quick start with Docker
 
@@ -131,10 +111,11 @@ printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 Keep `.env` private. Keep matching `S3_*` and `GARAGE_DEFAULT_*`
 values unchanged after Garage setup.
 
-Open <http://localhost:8787>. The image bundles the Flutter web app and the
-Rust server. SQLite data persists in the `app_data` volume. Disk-storage
-deployments also keep attachments there; the full stack stores attachments in
-Garage.
+Open <http://localhost:8787> to use the app. Set `LANDING_PAGE=true` to show
+the landing page at `/`, with the app then available at `/app/`. The image
+bundles the Flutter web app and the Rust server. SQLite data persists in the
+`app_data` volume. Disk-storage deployments also keep attachments there; the
+full stack stores attachments in Garage.
 
 To build the image yourself rather than pull it:
 
@@ -168,7 +149,9 @@ deployment.
 | `ADDR` | `0.0.0.0:8787` | Listen address |
 | `DB` | `sticky_notes.db` | SQLite path (`/data/sticky_notes.db` in Docker) |
 | `UPLOADS` | `uploads` | Disk attachment directory |
+| `WEB` | `../app/build/web` | Directory containing the built Flutter web app |
 | `PUBLIC_URL` | unset | Browser API URL and allowed CORS origin |
+| `LANDING_PAGE` | `false` | Set to `true` to serve the landing and setup pages at `/` and the Flutter app at `/app/` |
 | `STORAGE` | `disk` | `disk` or `s3` |
 | `WHISPER_URL` | unset | Whisper service URL; Docker sets it to `http://whisper:9000` |
 | `OCR_URL` | unset | Tesseract service URL; enables text search inside images. Docker sets it to `http://tesseract:8884` |
@@ -231,6 +214,7 @@ values come from the shell or `.env`.
 | Service | Variable | Compose value or host input | Purpose |
 | --- | --- | --- | --- |
 | server | `PUBLIC_URL` | host/.env; empty by default | Public browser URL, allowed CORS origin, and the base of emailed password reset links. |
+| server | `LANDING_PAGE` | host/.env; `false` by default | Set `true` to serve the landing page at `/` and the Flutter app at `/app/`. |
 | server | `EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
 | server | `EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
 | server | `EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |
@@ -370,6 +354,8 @@ phone can watch a geofence, but the saved places and the reminders pinned to
 them live in the account's settings document, so any platform can set one and
 the phone arms it on its next sync. The reminder picker says as much wherever
 the device itself is not the one watching.
+
+## Data model and sharing
 
 Each workspace contains independent collections. Every note belongs to one
 collection, whose settings define its name, icon, color, default sorting and

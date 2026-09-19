@@ -5,6 +5,7 @@ services:
       - "8787:8787"
     environment:
       PUBLIC_URL: ${PUBLIC_URL:-}
+      LANDING_PAGE: ${LANDING_PAGE:-false}
       EMBED_URL: ${EMBED_URL:-}
       EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
       EMBED_API_KEY: ${EMBED_API_KEY:-}

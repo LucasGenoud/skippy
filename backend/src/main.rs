@@ -10,7 +10,7 @@ use sticky_notes_server::search::{
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
 use sticky_notes_server::{
-    AppState, build_app_with_cors_origin, cors_origin_from_public_url, handlers,
+    AppState, build_app_with_cors_origin, cors_origin_from_public_url, handlers, landing,
 };
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -41,37 +41,57 @@ async fn load_file_secret(repo: &SqliteRepository) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Resolve the index.html to serve as the SPA fallback. When
-/// PUBLIC_URL is set, inject it as `window.stickyNotesApiBase`
-/// into a runtime copy so the web app targets that backend without a rebuild;
-/// otherwise serve the original file untouched.
-fn serve_index_path(web_dir: &str) -> PathBuf {
+/// Resolve the index.html to serve as the SPA fallback. A landing page puts
+/// the app under `/app/`, so that copy gets a matching Flutter base href.
+/// `PUBLIC_URL`, when set, is also injected as the web app's API base.
+fn serve_index_path(web_dir: &str, base_href: &str) -> PathBuf {
     let index = Path::new(web_dir).join("index.html");
-    let url = match std::env::var("PUBLIC_URL") {
-        Ok(u) if !u.trim().is_empty() => u.trim().trim_end_matches('/').to_string(),
-        _ => return index,
-    };
+    let url = std::env::var("PUBLIC_URL")
+        .ok()
+        .map(|url| url.trim().trim_end_matches('/').to_string())
+        .filter(|url| !url.is_empty());
+    if base_href == "/" && url.is_none() {
+        return index;
+    }
     let html = match std::fs::read_to_string(&index) {
         Ok(h) => h,
         Err(_) => return index,
     };
-    let injected = inject_api_base(&html, &url);
-    // Namespace the temp copy by a hash of the URL so two instances on one host
-    // (different PUBLIC_URL) can't clobber each other's file.
+    let injected = match url.as_deref() {
+        Some(url) => inject_api_base(&inject_base_href(&html, base_href), url),
+        None => inject_base_href(&html, base_href),
+    };
+    // Namespace the temp copy by its public URL and base href so two instances
+    // on one host cannot clobber each other's generated index.
     let tag = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        url.hash(&mut h);
+        injected.hash(&mut h);
         h.finish()
     };
     let out = std::env::temp_dir().join(format!("sticky-notes-index-{tag:x}.html"));
     match std::fs::write(&out, injected) {
         Ok(()) => {
-            println!("web app default backend URL pinned to {url}");
+            if let Some(url) = url {
+                println!("web app default backend URL pinned to {url}");
+            }
             out
         }
         Err(_) => index,
     }
+}
+
+/// Point a built Flutter app at a mounted sub-path. `flutter build web` emits
+/// this exact root base tag; a root-mounted app is deliberately left untouched.
+fn inject_base_href(html: &str, base_href: &str) -> String {
+    if base_href == "/" {
+        return html.to_string();
+    }
+    html.replacen(
+        r#"<base href="/">"#,
+        &format!(r#"<base href="{base_href}">"#),
+        1,
+    )
 }
 
 /// Insert `window.stickyNotesApiBase = "<url>"` into an index.html, just before
@@ -300,6 +320,7 @@ async fn main() -> anyhow::Result<()> {
         .map(|url| cors_origin_from_public_url(&url))
         .transpose()?;
     let mut app = build_app_with_cors_origin(state, cors_origin);
+    let landing_page = landing::enabled(std::env::var("LANDING_PAGE").ok().as_deref());
 
     // If the Flutter web build exists, serve it so the whole app runs off one binary.
     let web_dir = std::env::var("WEB").unwrap_or_else(|_| "../app/build/web".to_string());
@@ -309,15 +330,33 @@ async fn main() -> anyhow::Result<()> {
         // stamp it into a runtime copy of index.html as `window.stickyNotesApiBase`
         // so the app reads it without a rebuild; unset ⇒ serve the file as-is
         // and the app falls back to same-origin.
-        let index = serve_index_path(&web_dir);
+        let index = serve_index_path(&web_dir, "/");
         // append_index_html_on_directories(false) so `/` misses ServeDir and
         // hits the fallback too, guaranteeing the injected copy is served.
+        if landing_page {
+            let app_index = serve_index_path(&web_dir, "/app/");
+            app = app
+                .route("/", axum::routing::get(landing::home))
+                .route("/setup", axum::routing::get(landing::setup))
+                .nest_service(
+                    "/app",
+                    ServeDir::new(&web_dir)
+                        .append_index_html_on_directories(false)
+                        .fallback(ServeFile::new(app_index)),
+                );
+            println!("landing page enabled at / (app at /app/)");
+        }
         app = app.fallback_service(
             ServeDir::new(&web_dir)
                 .append_index_html_on_directories(false)
                 .fallback(ServeFile::new(index)),
         );
         println!("serving web app from {web_dir}");
+    } else if landing_page {
+        app = app
+            .route("/", axum::routing::get(landing::home))
+            .route("/setup", axum::routing::get(landing::setup));
+        println!("landing page enabled at / (Flutter web build not found)");
     }
 
     let addr = std::env::var("ADDR").unwrap_or_else(|_| "0.0.0.0:8787".to_string());
@@ -329,7 +368,7 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::inject_api_base;
+    use super::{inject_api_base, inject_base_href};
 
     #[test]
     fn injects_before_head_close() {
@@ -357,5 +396,13 @@ mod tests {
         let out = inject_api_base("<body>app</body>", "http://localhost:8787");
         assert!(out.starts_with("<script>window.stickyNotesApiBase="));
         assert!(out.contains("<body>app</body>"));
+    }
+
+    #[test]
+    fn moves_generated_app_to_sub_path() {
+        assert_eq!(
+            inject_base_href("<head><base href=\"/\"></head>", "/app/"),
+            "<head><base href=\"/app/\"></head>"
+        );
     }
 }
