@@ -111,11 +111,10 @@ printf 'GARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key"
 Keep `.env` private. Keep matching `S3_*` and `GARAGE_DEFAULT_*`
 values unchanged after Garage setup.
 
-Open <http://localhost:8787> to use the app. Set `LANDING_PAGE=true` to show
-the landing page at `/`, with the app then available at `/app/`. The image
-bundles the Flutter web app and the Rust server. SQLite data persists in the
-`app_data` volume. Disk-storage deployments also keep attachments there; the
-full stack stores attachments in Garage.
+Open <http://localhost:8787> to use the app. The image bundles the Flutter web
+app and the Rust server. SQLite data persists in the `app_data` volume.
+Disk-storage deployments also keep attachments there; the full stack stores
+attachments in Garage.
 
 To build the image yourself rather than pull it:
 
@@ -151,7 +150,6 @@ deployment.
 | `UPLOADS` | `uploads` | Disk attachment directory |
 | `WEB` | `../app/build/web` | Directory containing the built Flutter web app |
 | `PUBLIC_URL` | unset | Browser API URL and allowed CORS origin |
-| `LANDING_PAGE` | `false` | Set to `true` to serve the landing and setup pages at `/` and the Flutter app at `/app/` |
 | `STORAGE` | `disk` | `disk` or `s3` |
 | `WHISPER_URL` | unset | Whisper service URL; Docker sets it to `http://whisper:9000` |
 | `OCR_URL` | unset | Tesseract service URL; enables text search inside images. Docker sets it to `http://tesseract:8884` |
@@ -214,7 +212,6 @@ values come from the shell or `.env`.
 | Service | Variable | Compose value or host input | Purpose |
 | --- | --- | --- | --- |
 | server | `PUBLIC_URL` | host/.env; empty by default | Public browser URL, allowed CORS origin, and the base of emailed password reset links. |
-| server | `LANDING_PAGE` | host/.env; `false` by default | Set `true` to serve the landing page at `/` and the Flutter app at `/app/`. |
 | server | `EMBED_URL` | host/.env; empty by default | OpenAI-compatible embeddings endpoint. |
 | server | `EMBED_MODEL` | host/.env; `bge-m3` by default | Embedding model name. |
 | server | `EMBED_API_KEY` | host/.env; empty by default | Bearer token for the embeddings endpoint. |

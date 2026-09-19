@@ -32,7 +32,6 @@ docker compose up -d docs
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `PUBLIC_URL` | Public address used by the browser and reset links. | Unset |
-| `LANDING_PAGE` | Serve the optional app landing page at `/`; the app moves to `/app/`. | `false` |
 | `STORAGE` | Attachment storage: `disk` or `s3`. | `disk` |
 | `WHISPER_URL` | Optional audio transcription service. | Unset |
 | `OCR_URL` | Optional image text recognition service. | Unset |

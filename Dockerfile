@@ -34,9 +34,6 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=server /src/target/release/sticky-notes-server /app/
 COPY --from=web /src/build/web /app/web
-# The optional landing page uses these local screenshots; documentation keeps
-# the source copies under mkdocs-material.
-COPY mkdocs-material/docs/assets/screenshots /app/web/screenshots
 COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ENV WEB=/app/web \
