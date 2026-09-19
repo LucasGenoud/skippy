@@ -88,7 +88,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `docker-compose.yml`: base app service; the simple/all overrides add Whisper, Tesseract, and Garage. None defines Watchtower.
 - `garage.toml`: bundled S3-compatible Garage configuration.
 - `.forgejo/workflows/build.yml`: full-stack image build and registry push on the `homeserver-runner` label.
-- `mkdocs-material/docs/deployment.md`: Forgejo, registry, homeserver, and rollback notes.
+- `mkdocs-material/docs/`: public overview and self-hosting setup guides.
 
 ### Backend
 

@@ -8,7 +8,7 @@ theme:
       primary: amber
       accent: amber
   features:
-    - navigation.sections
+    - navigation.tabs
     - navigation.top
     - search.suggest
 plugins:
@@ -22,6 +22,5 @@ markdown_extensions:
 nav:
   - Overview: index.md
   - Set up Skippy: setup.md
-  - Deployment: deployment.md
-  - Development: development.md
-  - Reference: reference.md
+  - Open Skippy: https://skippy-notes.com
+  - GitHub: https://github.com/LucasGenoud/skippy
