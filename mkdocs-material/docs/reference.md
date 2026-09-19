@@ -406,9 +406,10 @@ app/      Flutter client, state stores, screens, widgets, platform adapters
 docs/     Deployment notes and screenshots
 ```
 
-`SqliteRepository` in [`backend/src/store/sqlite.rs`](backend/src/store/sqlite.rs)
+`SqliteRepository` in
+[`backend/src/store/sqlite.rs`](https://github.com/LucasGenoud/skippy/blob/main/backend/src/store/sqlite.rs)
 owns relational persistence. `FileStore` in
-[`backend/src/files.rs`](backend/src/files.rs) selects local disk or
+[`backend/src/files.rs`](https://github.com/LucasGenoud/skippy/blob/main/backend/src/files.rs) selects local disk or
 S3-compatible attachment storage.
 
 ## API overview
