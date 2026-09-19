@@ -1,0 +1,27 @@
+site_name: Skippy
+site_description: Documentation for the self-hosted Skippy notes app
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: amber
+      accent: amber
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+plugins:
+  - search
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight
+  - pymdownx.superfences
+nav:
+  - Overview: index.md
+  - Set up Skippy: setup.md
+  - Deployment: deployment.md
+  - Development: development.md
+  - Reference: reference.md

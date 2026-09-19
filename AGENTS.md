@@ -82,12 +82,13 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 
 ### Root and deployment
 
-- `README.md`: product behavior, local setup, API sketch, and design trade-offs.
+- `README.md`: concise project entry point and documentation link.
+- `mkdocs-material/docs/`: product, setup, deployment, API, and design documentation.
 - `Dockerfile`: builds Flutter web, compiles the Rust binary, and produces the full-stack runtime image.
 - `docker-compose.yml`: base app service; the simple/all overrides add Whisper, Tesseract, and Garage. None defines Watchtower.
 - `garage.toml`: bundled S3-compatible Garage configuration.
 - `.forgejo/workflows/build.yml`: full-stack image build and registry push on the `homeserver-runner` label.
-- `docs/DEPLOY.md`: Forgejo, registry, homeserver, and rollback notes.
+- `mkdocs-material/docs/deployment.md`: Forgejo, registry, homeserver, and rollback notes.
 
 ### Backend
 

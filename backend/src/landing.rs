@@ -25,6 +25,10 @@ h2 { margin-top: 3rem; letter-spacing: -0.025em; }
 .card { border: 1px solid #dedbd4; border-radius: .5rem; padding: 1.1rem; background: #fff; }
 .card h2 { margin: 0 0 .4rem; font-size: 1rem; }
 .card p { margin: 0; color: #5f6368; }
+.details { max-width: 720px; }
+.shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.shot { overflow: hidden; border: 1px solid #dedbd4; border-radius: .5rem; background: #fff; }
+.shot img { display: block; width: 100%; }
 pre { overflow-x: auto; padding: 1rem; border: 1px solid #dedbd4; border-radius: .5rem; background: #f3f1ec; line-height: 1.45; }
 code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 table { width: 100%; border-collapse: collapse; }
@@ -32,8 +36,8 @@ th, td { padding: .7rem; text-align: left; vertical-align: top; border-bottom: 1
 th { font-size: .85rem; color: #5f6368; }
 .note { border-left: 3px solid #1f6f54; padding-left: 1rem; color: #5f6368; }
 footer { padding-bottom: 2rem; color: #5f6368; font-size: .9rem; }
-@media (prefers-color-scheme: dark) { :root { color: #e8e6e1; background: #1d1f1d; } .nav-links a, .lead, .card p, .note, footer, th { color: #b9b7b0; } .card { background: #252825; border-color: #42453f; } pre { background: #262925; border-color: #42453f; } th, td { border-color: #42453f; } .button.secondary { color: #78c6a5; } }
-@media (max-width: 650px) { main { padding-top: 2.5rem; } .cards { grid-template-columns: 1fr; } }
+@media (prefers-color-scheme: dark) { :root { color: #e8e6e1; background: #1d1f1d; } .nav-links a, .lead, .card p, .note, footer, th { color: #b9b7b0; } .card, .shot { background: #252825; border-color: #42453f; } pre { background: #262925; border-color: #42453f; } th, td { border-color: #42453f; } .button.secondary { color: #78c6a5; } }
+@media (max-width: 650px) { main { padding-top: 2.5rem; } .cards, .shots { grid-template-columns: 1fr; } }
 "#;
 
 /// The Flutter app stays at `/` unless `LANDING_PAGE` is explicitly enabled.
@@ -57,6 +61,19 @@ pub async fn home() -> Html<String> {
     <article class="card"><h2>Write</h2><p>Text, Markdown, checklists, audio, files, and links in one place.</p></article>
     <article class="card"><h2>Organise</h2><p>Workspaces, collections, labels, boards, reminders, and search.</p></article>
     <article class="card"><h2>Share</h2><p>Work together in real time, with offline edits that sync later.</p></article>
+  </section>
+  <section class="details">
+    <h2>Designed for everyday notes.</h2>
+    <p>Use a grid, list, or board to keep work visible. Add reminders, labels, attachments, shared workspaces, and public read-only links when you need them.</p>
+    <p>Skippy is a Flutter client backed by a Rust and SQLite server. Changes are saved locally first and sync after a connection returns. Transcription, image text recognition, semantic search, and AI tools are optional.</p>
+  </section>
+  <section aria-label="Screenshots">
+    <h2>See it in use.</h2>
+    <div class="shots">
+      <figure class="shot"><img src="/screenshots/skippy-desktop-masonry.png" alt="Desktop notes grid"></figure>
+      <figure class="shot"><img src="/screenshots/skippy-desktop-board-features.png" alt="Desktop board"></figure>
+      <figure class="shot"><img src="/screenshots/skippy-iphone-editor-mockup.png" alt="iPhone note editor"></figure>
+    </div>
   </section>
 </main>
 "#,

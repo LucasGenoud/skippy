@@ -1,12 +1,12 @@
 # Deployment
 
-Pushing to `main` builds the full-stack image in a Forgejo Actions job and
-pushes it to the Forgejo container registry. A Watchtower container on the
-homeserver polls that registry and restarts `server` when a new image lands,
-so a deploy is just `git push`.
+Pushing to `main` builds the full-stack image and the documentation image in
+Forgejo Actions, then pushes both to the Forgejo container registry. A
+Watchtower container on the homeserver can poll the registry and restart the
+services when a new image lands, so a deploy is just `git push`.
 
 ```
-git push  ->  .forgejo/workflows/build.yml  ->  registry :latest  ->  Watchtower pulls & restarts server
+git push  ->  CI builds app + docs images  ->  registry :latest  ->  Watchtower pulls & restarts services
 ```
 
 Your data (SQLite DB + uploads in the `app_data` volume, or Garage) survives the
@@ -37,10 +37,12 @@ image (it reads `~/.docker/config.json`):
 docker login forgejo.genoud.dev
 ```
 
-The Compose files in the repository point at the public GitHub image,
-`ghcr.io/lucasgenoud/skippy:latest`. The homeserver stays on the Forgejo
-registry: set `server`'s `image:` to
-`forgejo.genoud.dev/lucasgenoud/skippy:latest` in its own copy.
+The Compose files in the repository point at the public GitHub images,
+`ghcr.io/lucasgenoud/skippy:latest` and
+`ghcr.io/lucasgenoud/skippy-docs:latest`. The homeserver stays on the Forgejo
+registry: set the `server` and `docs` images to
+`forgejo.genoud.dev/lucasgenoud/skippy:latest` and
+`forgejo.genoud.dev/lucasgenoud/skippy-docs:latest` in its own copy.
 
 Generate credentials before the first start. Copy each output line into the
 private `.env` file:

@@ -35,9 +35,10 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" |
             docker login forgejo.genoud.dev --username "$REGISTRY_USER" --password-stdin
 
-      - name: Build and push
+      - name: Build and push images
         run: |
           IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
+          DOCS_IMAGE=forgejo.genoud.dev/lucasgenoud/skippy-docs
           # SemVer build metadata: the release number is intentional, while
           # the commit count and hash identify the exact deployed build.
           VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
@@ -45,11 +46,13 @@ jobs:
           # --pull: re-resolve the base images instead of trusting the local copy.
           docker build --no-cache --pull --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" -t "$IMAGE:latest" .
           docker push "$IMAGE:latest"
+          docker build --no-cache --pull -t "$DOCS_IMAGE:latest" ./mkdocs-material
+          docker push "$DOCS_IMAGE:latest"
 
       - name: Drop dangling layers left by this build
         run: |
-          # Only the "latest" tag is ever pushed now, so the previous build's
-          # image is left dangling (untagged, <none>:<none>) rather than under
+          # Only the "latest" tags are ever pushed now, so previous builds'
+          # images are left dangling (untagged, <none>:<none>) rather than under
           # another tag. Images a container is still running are refused by
           # docker, hence `|| true`.
           docker image prune -f

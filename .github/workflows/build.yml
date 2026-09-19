@@ -38,12 +38,15 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" |
             docker login "$REGISTRY" --username "$REGISTRY_USER" --password-stdin
 
-      - name: Build and push
+      - name: Build and push images
         run: |
           IMAGE=ghcr.io/lucasgenoud/skippy
+          DOCS_IMAGE=ghcr.io/lucasgenoud/skippy-docs
           VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
           docker build --no-cache --pull --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" -t "$IMAGE:latest" .
           docker push "$IMAGE:latest"
+          docker build --no-cache --pull -t "$DOCS_IMAGE:latest" ./mkdocs-material
+          docker push "$DOCS_IMAGE:latest"
 
       - name: Drop dangling layers left by this build
         run: docker image prune -f
