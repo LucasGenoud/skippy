@@ -1368,6 +1368,29 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('automatically summarizes a newly added link', (tester) async {
+      const url = 'https://example.com/article';
+      api.notes['n1'] = serverNote('n1', content: 'Start');
+      api.urlSummaries[url] = 'A longer page summary.';
+      await store.load();
+      final settings = SettingsStore(api: api)
+        ..llmBaseUrl = 'http://fake/v1'
+        ..llmModel = 'test-model'
+        ..llmWritingEnabled = true
+        ..autoSummarizeLinks = true
+        ..linkSummaryLength = UrlSummaryLength.long;
+      await tester.pumpWidget(
+        harness(store, const EditorScreen(noteId: 'n1'), settings: settings),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Start'), '$url');
+      await tester.pumpAndSettle();
+
+      expect(store.noteById('n1')!.content, '$url\n\nA longer page summary.');
+      await flushTimers(tester);
+    });
+
     testWidgets('a note is written with the keyboard capitalizing it', (
       tester,
     ) async {

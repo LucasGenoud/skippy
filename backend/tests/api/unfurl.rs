@@ -148,18 +148,14 @@ async fn summarize_fetches_page_content_and_uses_the_writing_model() {
         "POST",
         "/api/unfurl/summary",
         Some(&token),
-        Some(json!({"url": format!("{base}/page")})),
+        Some(json!({"url": format!("{base}/page"), "length": "long"})),
     )
     .await;
 
     assert_eq!(status, StatusCode::OK, "summary: {body}");
     assert_eq!(body["summary"], "A tiny page summary.");
     let calls = calls.lock().unwrap();
-    assert!(
-        calls[0][0]
-            .content
-            .contains("one or two very short sentences")
-    );
+    assert!(calls[0][0].content.contains("detailed overview"));
     assert!(calls[0][1].content.contains("hi"));
     assert!(!calls[0][1].content.contains("Fallback Title"));
 }

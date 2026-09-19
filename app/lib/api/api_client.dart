@@ -18,6 +18,8 @@ import '../util/runtime_config.dart';
 
 part 'api_transport.dart';
 
+enum UrlSummaryLength { short, medium, long }
+
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -321,7 +323,10 @@ abstract class Api {
 
   /// Fetch a webpage and ask the user's enabled writing model for a very
   /// short plain-text summary.
-  Future<String> summarizeUrl(String url);
+  Future<String> summarizeUrl(
+    String url, {
+    UrlSummaryLength length = UrlSummaryLength.short,
+  });
 
   /// Server-push change events; emits whenever this user's notes change.
   Stream<void> changeEvents();
@@ -1110,12 +1115,15 @@ class ApiClient extends _ApiTransport implements Api {
   }
 
   @override
-  Future<String> summarizeUrl(String url) async {
+  Future<String> summarizeUrl(
+    String url, {
+    UrlSummaryLength length = UrlSummaryLength.short,
+  }) async {
     final data = _decode(
       await _client.post(
         _uri('/unfurl/summary'),
         headers: _headers(),
-        body: jsonEncode({'url': url}),
+        body: jsonEncode({'url': url, 'length': length.name}),
       ),
     );
     return (data as Map<String, dynamic>)['summary'] as String;

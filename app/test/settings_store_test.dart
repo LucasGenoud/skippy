@@ -410,6 +410,10 @@ void main() {
       edit: true,
       organize: false,
     );
+    settings.setLinkSummarySettings(
+      automatically: true,
+      length: UrlSummaryLength.long,
+    );
     expect(settings.autoLabelingAvailable, isFalse);
     await settleSave();
 
@@ -421,6 +425,8 @@ void main() {
     expect(api.settings['llm_chat'], isTrue);
     expect(api.settings['llm_writing'], isTrue);
     expect(api.settings['llm_prompt'], 'Reply in French');
+    expect(api.settings['auto_summarize_links'], isTrue);
+    expect(api.settings['link_summary_length'], 'long');
     expect(api.settings['llm_rewrite_tasks'], [
       {
         'id': 'friendly',
@@ -441,6 +447,8 @@ void main() {
     expect(other.notesChatAvailable, isTrue);
     expect(other.noteWritingAvailable, isTrue);
     expect(other.llmPrompt, 'Reply in French');
+    expect(other.autoSummarizeLinks, isTrue);
+    expect(other.linkSummaryLength, UrlSummaryLength.long);
     expect(other.llmRewriteTasks.single.name, 'Make friendly');
     expect(other.llmChatCreateEnabled, isFalse);
     expect(other.llmChatOrganizeEnabled, isFalse);

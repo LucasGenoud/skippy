@@ -274,6 +274,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _finding = false;
   bool _uploading = false;
   final Set<String> _summarizingUrls = {};
+  final Set<String> _seenLinkUrls = {};
   // Files currently mid-upload, shown as dimmed placeholder tiles right where
   // their real attachment tile will appear once the network call resolves.
   final List<DroppedFile> _pendingUploads = [];
@@ -304,6 +305,7 @@ class _EditorScreenState extends State<EditorScreen> {
       text: note?.content ?? '',
       markdownEnabled: (note?.kind ?? widget.kind) == NoteKind.markdown,
     );
+    _seenLinkUrls.addAll(_currentLinkUrls());
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
     _findController.addListener(() => setState(() {}));
@@ -409,6 +411,7 @@ class _EditorScreenState extends State<EditorScreen> {
       urgent: false,
     );
     _afterChange();
+    _summarizeNewLinks();
     setState(() {});
   }
 
@@ -736,11 +739,14 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  Future<void> _summarizeUrl(String url) async {
+  Future<void> _summarizeUrl(String url, {bool quietly = false}) async {
     if (!_summarizingUrls.add(url)) return;
     setState(() {});
     try {
-      final summary = (await _store.api.summarizeUrl(url)).trim();
+      final summary = (await _store.api.summarizeUrl(
+        url,
+        length: _settings.linkSummaryLength,
+      )).trim();
       if (!mounted || summary.isEmpty) return;
       final current = _contentController.text.trimRight();
       final content = current.isEmpty ? summary : '$current\n\n$summary';
@@ -752,9 +758,11 @@ class _EditorScreenState extends State<EditorScreen> {
       _restoring = false;
       _store.updateNoteContent(_noteId!, content: content);
       _afterChange(discrete: true);
-      showAppSnack('Page summary added', icon: Icons.auto_awesome_outlined);
+      if (!quietly) {
+        showAppSnack('Page summary added', icon: Icons.auto_awesome_outlined);
+      }
     } catch (_) {
-      if (mounted) {
+      if (mounted && !quietly) {
         showAppSnack(
           "Couldn't summarize page",
           icon: Icons.error_outline,
@@ -764,6 +772,21 @@ class _EditorScreenState extends State<EditorScreen> {
     } finally {
       _summarizingUrls.remove(url);
       if (mounted) setState(() {});
+    }
+  }
+
+  void _summarizeNewLinks() {
+    final urls = _currentLinkUrls();
+    for (final url in urls) {
+      if (!_seenLinkUrls.add(url) ||
+          !_settings.autoSummarizeLinks ||
+          !_settings.noteWritingAvailable ||
+          _kind == NoteKind.checklist ||
+          _kind == NoteKind.audio ||
+          _note?.trashed == true) {
+        continue;
+      }
+      _summarizeUrl(url, quietly: true);
     }
   }
 
@@ -1730,6 +1753,13 @@ class _EditorScreenState extends State<EditorScreen> {
     final combined = '${note.title}\n${note.content}';
     return findUrls(combined).isEmpty ? '' : combined;
   }
+
+  Set<String> _currentLinkUrls() => {
+    for (final match in findUrls(
+      '${_titleController.text}\n${_contentController.text}',
+    ))
+      match.url,
+  };
 
   /// Images render inline, in upload order; every other file becomes a
   /// download tile below them. Files still mid-upload render as placeholder

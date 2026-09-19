@@ -940,7 +940,10 @@ class FakeApi implements Api {
       _run('unfurl:$url', () => previews[url]);
 
   @override
-  Future<String> summarizeUrl(String url) => _run(
+  Future<String> summarizeUrl(
+    String url, {
+    UrlSummaryLength length = UrlSummaryLength.short,
+  }) => _run(
     'summarizeUrl:$url',
     () => urlSummaries[url] ?? (throw ApiException(400, 'summary unavailable')),
   );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../api/api_client.dart';
 import '../../models/note.dart';
 import '../../state/settings_store.dart';
 import '../form_dialog.dart';
@@ -275,6 +276,8 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
   late bool _create;
   late bool _edit;
   late bool _organize;
+  late bool _autoSummarizeLinks;
+  late UrlSummaryLength _linkSummaryLength;
 
   @override
   void initState() {
@@ -284,6 +287,8 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
     _create = settings.llmChatCreateEnabled;
     _edit = settings.llmChatEditEnabled;
     _organize = settings.llmChatOrganizeEnabled;
+    _autoSummarizeLinks = settings.autoSummarizeLinks;
+    _linkSummaryLength = settings.linkSummaryLength;
   }
 
   @override
@@ -298,6 +303,10 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
       create: _create,
       edit: _edit,
       organize: _organize,
+    );
+    context.read<SettingsStore>().setLinkSummarySettings(
+      automatically: _autoSummarizeLinks,
+      length: _linkSummaryLength,
     );
     Navigator.of(context).pop();
   }
@@ -316,9 +325,37 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
           decoration: const InputDecoration(
             labelText: 'Custom instructions',
             hintText: 'Example: Reply in French and keep notes concise.',
-            helperText: 'Used by chat, labeling, and note editing.',
+            helperText: 'Used by chat, labeling, note editing, and summaries.',
             helperMaxLines: 2,
           ),
+        ),
+        const SizedBox(height: 8),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Automatically summarize new links'),
+          subtitle: const Text('Only while a text or Markdown note is open'),
+          value: _autoSummarizeLinks,
+          onChanged: (value) =>
+              setState(() => _autoSummarizeLinks = value ?? false),
+        ),
+        DropdownButtonFormField<UrlSummaryLength>(
+          initialValue: _linkSummaryLength,
+          decoration: const InputDecoration(labelText: 'Link summary length'),
+          items: const [
+            DropdownMenuItem(
+              value: UrlSummaryLength.short,
+              child: Text('Brief'),
+            ),
+            DropdownMenuItem(
+              value: UrlSummaryLength.medium,
+              child: Text('Standard'),
+            ),
+            DropdownMenuItem(
+              value: UrlSummaryLength.long,
+              child: Text('Detailed'),
+            ),
+          ],
+          onChanged: (value) => setState(() => _linkSummaryLength = value!),
         ),
         const SizedBox(height: 8),
         CheckboxListTile(

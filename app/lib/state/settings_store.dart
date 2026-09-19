@@ -231,6 +231,8 @@ class SettingsStore extends ChangeNotifier {
   bool llmChatEnabled = true;
   bool llmWritingEnabled = false;
   String llmPrompt = '';
+  bool autoSummarizeLinks = false;
+  UrlSummaryLength linkSummaryLength = UrlSummaryLength.short;
   List<NoteRewriteTask> llmRewriteTasks = kDefaultNoteRewriteTasks;
   bool llmChatCreateEnabled = true;
   bool llmChatEditEnabled = true;
@@ -437,6 +439,12 @@ class SettingsStore extends ChangeNotifier {
     llmChatEnabled = json['llm_chat'] != false;
     llmWritingEnabled = json['llm_writing'] == true;
     llmPrompt = ((json['llm_prompt'] as String?) ?? '').trim();
+    autoSummarizeLinks = json['auto_summarize_links'] == true;
+    linkSummaryLength = switch (json['link_summary_length']) {
+      'medium' => UrlSummaryLength.medium,
+      'long' => UrlSummaryLength.long,
+      _ => UrlSummaryLength.short,
+    };
     final rawRewriteTasks = json['llm_rewrite_tasks'];
     llmRewriteTasks = rawRewriteTasks is! List
         ? kDefaultNoteRewriteTasks
@@ -528,6 +536,8 @@ class SettingsStore extends ChangeNotifier {
     'llm_chat': llmChatEnabled,
     'llm_writing': llmWritingEnabled,
     'llm_prompt': llmPrompt,
+    'auto_summarize_links': autoSummarizeLinks,
+    'link_summary_length': linkSummaryLength.name,
     'llm_rewrite_tasks': [for (final task in llmRewriteTasks) task.toJson()],
     'llm_chat_create': llmChatCreateEnabled,
     'llm_chat_edit': llmChatEditEnabled,
@@ -622,6 +632,13 @@ class SettingsStore extends ChangeNotifier {
   void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
   void setLlmWritingEnabled(bool value) =>
       _mutate(() => llmWritingEnabled = value);
+  void setLinkSummarySettings({
+    required bool automatically,
+    required UrlSummaryLength length,
+  }) => _mutate(() {
+    autoSummarizeLinks = automatically;
+    linkSummaryLength = length;
+  });
   void setLlmRewriteTasks(List<NoteRewriteTask> tasks) =>
       _mutate(() => llmRewriteTasks = List.unmodifiable(tasks));
   void setLlmBehavior({
