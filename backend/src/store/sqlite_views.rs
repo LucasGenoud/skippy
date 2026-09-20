@@ -184,6 +184,7 @@ pub(super) async fn build_note_views(
                     .cloned()
                     .unwrap_or_default(),
                 item_reminders,
+                summarizing_links: false,
                 note: record.fields(),
             })
         })

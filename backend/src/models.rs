@@ -369,6 +369,8 @@ pub struct NoteView {
     /// here: they are written one at a time through their own sub-resource so
     /// two devices editing two items never clobber each other.
     pub item_reminders: Vec<ItemReminder>,
+    /// Ephemeral server-side work state for the subtle client progress cue.
+    pub summarizing_links: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

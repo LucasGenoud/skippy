@@ -333,7 +333,7 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
         CheckboxListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Automatically summarize new links'),
-          subtitle: const Text('Only while a text or Markdown note is open'),
+          subtitle: const Text('In text and Markdown notes'),
           value: _autoSummarizeLinks,
           onChanged: (value) =>
               setState(() => _autoSummarizeLinks = value ?? false),

@@ -82,6 +82,9 @@ pub struct AppState {
     /// note_id -> generation counter, coalescing auto-labeling triggers so a
     /// burst of debounced autosaves costs one LLM call.
     pub label_generations: Arc<Mutex<HashMap<String, u64>>>,
+    /// note_id -> running automatic link summaries. Ephemeral by design: a
+    /// restart aborts those jobs, so no stale progress can survive it.
+    pub link_summary_jobs: Arc<Mutex<HashMap<String, usize>>>,
     /// user_id -> progress of a running "re-run embeddings" job, so the
     /// settings UI can show a progress bar. `done == total` means finished;
     /// the entry lingers (at most one per user) until the next reindex.
@@ -133,6 +136,7 @@ impl AppState {
             llm: Arc::new(llm::OpenAiCompatLlm),
             notifiers: Arc::new(notify::default_connectors()),
             label_generations: Arc::default(),
+            link_summary_jobs: Arc::default(),
             reindex_progress: Arc::default(),
             label_delay: Duration::from_secs(20),
             file_secret: Arc::new(secret),

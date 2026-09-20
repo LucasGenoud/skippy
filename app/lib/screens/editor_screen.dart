@@ -42,6 +42,7 @@ import '../widgets/editor/note_actions_button.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
+import '../widgets/link_summary_indicator.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/paste_files.dart';
 import '../widgets/pick_image.dart';
@@ -1313,6 +1314,11 @@ class _EditorScreenState extends State<EditorScreen> {
                                     trashed: trashed,
                                     query: query,
                                   ),
+                                  if (note?.summarizingLinks ?? false)
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 12),
+                                      child: LinkSummaryIndicator(),
+                                    ),
                                   // Images sit directly under the text; other
                                   // files follow as download tiles.
                                   ..._buildAttachments(note),

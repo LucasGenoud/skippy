@@ -213,6 +213,30 @@ async fn automatically_summarizes_a_link_added_through_notes_api() {
     panic!("automatic summary was not added");
 }
 
+#[tokio::test]
+async fn note_view_reports_a_running_link_summary() {
+    let state = state().await;
+    state
+        .link_summary_jobs
+        .lock()
+        .unwrap()
+        .insert("summary-pending".to_string(), 1);
+    let app = build_app(state);
+    let (token, _) = register(&app, "unfurl_pending_summary").await;
+
+    let (status, note) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"id": "summary-pending", "content": "https://example.com"})),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "create: {note}");
+    assert_eq!(note["summarizing_links"], true);
+}
+
 /// Minimal percent-encoding for the query value (`:` `/` `?` etc.).
 fn urlencoding(s: &str) -> String {
     let mut out = String::new();

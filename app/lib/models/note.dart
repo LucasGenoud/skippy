@@ -293,6 +293,9 @@ class Note {
   /// Audio-note transcription state: `none` (not an audio note or no clip yet),
   /// `pending` (Whisper running), `done`, or `failed`. Server-owned.
   final String transcriptStatus;
+
+  /// True only while the server is generating automatic link summaries.
+  final bool summarizingLinks;
   final DateTime createdAt;
   final DateTime updatedAt;
   final Set<String> labelIds;
@@ -320,6 +323,7 @@ class Note {
     this.reminderRepeat,
     this.itemReminders = const {},
     this.transcriptStatus = 'none',
+    this.summarizingLinks = false,
     required this.createdAt,
     required this.updatedAt,
     this.labelIds = const {},
@@ -385,6 +389,7 @@ class Note {
     Object? reminderRepeat = _unset,
     Map<String, ItemReminder>? itemReminders,
     String? transcriptStatus,
+    bool? summarizingLinks,
     DateTime? updatedAt,
     Set<String>? labelIds,
     List<UserRef>? collaborators,
@@ -414,6 +419,7 @@ class Note {
           : reminderRepeat as ReminderRepeat?,
       itemReminders: itemReminders ?? this.itemReminders,
       transcriptStatus: transcriptStatus ?? this.transcriptStatus,
+      summarizingLinks: summarizingLinks ?? this.summarizingLinks,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       labelIds: labelIds ?? this.labelIds,
@@ -455,6 +461,7 @@ class Note {
       ),
       itemReminders: itemRemindersFromJson(json['item_reminders'] as List?),
       transcriptStatus: json['transcript_status'] as String? ?? 'none',
+      summarizingLinks: json['summarizing_links'] as bool? ?? false,
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),
@@ -476,9 +483,8 @@ class Note {
     );
   }
 
-  /// Full, lossless serialization, the inverse of [Note.fromJson], used to
-  /// cache notes locally for offline use. Keys match the wire format so a
-  /// cached note reads back identically to one fetched from the server.
+  /// Full serialization for the offline cache. The ephemeral summary progress
+  /// flag is intentionally excluded so a restart cannot restore a stale cue.
   Map<String, dynamic> toJson() => {
     'id': id,
     'workspace_id': workspaceId,

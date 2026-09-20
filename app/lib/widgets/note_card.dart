@@ -19,6 +19,7 @@ import 'board/move_to_stage_sheet.dart';
 import 'color_picker.dart';
 import 'workspace_menu.dart';
 import 'labels_sheet.dart';
+import 'link_summary_indicator.dart';
 import 'link_preview.dart';
 import 'linked_text.dart';
 import 'masonry.dart';
@@ -721,6 +722,11 @@ class _NoteCardContent extends StatelessWidget {
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
+                  ),
+                if (note.summarizingLinks)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 10),
+                    child: LinkSummaryIndicator(compact: true),
                   ),
               ],
             ),

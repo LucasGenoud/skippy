@@ -102,6 +102,25 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
+    testWidgets('shows progress while a link summary is running', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        content: 'https://example.com/article',
+      ).copyWith(summarizingLinks: true);
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          SizedBox(width: 280, child: NoteTile(note: store.noteById('n1')!)),
+        ),
+      );
+
+      expect(find.text('Summarizing link…'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
     testWidgets(
       'shows its collection tag once when requested by the archive',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),

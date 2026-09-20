@@ -59,11 +59,11 @@
     {% endif %}
     <a
       href="{{ config.extra.app_url }}"
-      title="Open Skippy"
-      class="md-header__button md-icon"
-      aria-label="Open Skippy"
+      title="Open public Skippy app"
+      class="md-header__button md-logo"
+      aria-label="Open public Skippy app"
     >
-      {% include ".icons/material/open-in-new.svg" %}
+      <img src="{{ 'assets/skippy-logo.svg' | url }}" alt="" />
     </a>
     <a
       href="{{ config.extra.github_url }}"

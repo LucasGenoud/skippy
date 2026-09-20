@@ -36,6 +36,11 @@ impl AppState {
     }
 
     pub(super) fn sign_view(&self, view: &mut NoteView) {
+        view.summarizing_links = self
+            .link_summary_jobs
+            .lock()
+            .unwrap()
+            .contains_key(&view.note.id);
         for attachment in view.attachments.iter_mut() {
             self.sign_attachment(attachment);
         }
@@ -302,13 +307,20 @@ impl AppState {
             {
                 return;
             }
+            *state
+                .link_summary_jobs
+                .lock()
+                .unwrap()
+                .entry(note_id.clone())
+                .or_default() += 1;
+            state.notify_note(&note_id).await;
             for url in urls {
                 let record = match state.repo.note_record(&note_id).await {
                     Ok(Some(record)) => record,
-                    Ok(None) => return,
+                    Ok(None) => break,
                     Err(error) => {
                         state.report_background_failure("auto_summary_note", &format!("{error:?}"));
-                        return;
+                        break;
                     }
                 };
                 if record.trashed
@@ -339,10 +351,10 @@ impl AppState {
                 // writing so a link deleted meanwhile is never resurrected.
                 let record = match state.repo.note_record(&note_id).await {
                     Ok(Some(record)) => record,
-                    Ok(None) => return,
+                    Ok(None) => break,
                     Err(error) => {
                         state.report_background_failure("auto_summary_note", &format!("{error:?}"));
-                        return;
+                        break;
                     }
                 };
                 if record.trashed
@@ -372,6 +384,16 @@ impl AppState {
                     state.report_background_failure("auto_summary_persist", &format!("{error:?}"));
                 }
             }
+            {
+                let mut jobs = state.link_summary_jobs.lock().unwrap();
+                if let Some(count) = jobs.get_mut(&note_id) {
+                    *count -= 1;
+                    if *count == 0 {
+                        jobs.remove(&note_id);
+                    }
+                }
+            }
+            state.notify_note(&note_id).await;
         });
     }
 
