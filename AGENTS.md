@@ -19,7 +19,7 @@ Before changing code:
 ## Git and release flow
 
 Work from `dev` by default. Pushing `dev` runs CI and publishes the rolling
-`forgejo.genoud.dev/lucasgenoud/skippy:dev` image (and matching docs image).
+`ghcr.io/lucasgenoud/skippy:dev` image (and matching docs image).
 Only merge to `main` and change the app/server versions for an explicitly
 requested release; `main` publishes the stable `:latest` images.
 

@@ -2,7 +2,7 @@ name: build-image
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -42,11 +42,30 @@ jobs:
         run: |
           IMAGE=ghcr.io/lucasgenoud/skippy
           DOCS_IMAGE=ghcr.io/lucasgenoud/skippy-docs
-          VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
-          docker build --no-cache --pull --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" -t "$IMAGE:latest" .
-          docker push "$IMAGE:latest"
-          docker build --no-cache --pull -t "$DOCS_IMAGE:latest" ./mkdocs-material
-          docker push "$DOCS_IMAGE:latest"
+          CLIENT_VERSION=$(awk '$1 == "version:" { split($2, parts, "+"); print parts[1]; exit }' app/pubspec.yaml)
+          SERVER_VERSION=$(awk '$1 == "version" { gsub(/"/, "", $3); print $3; exit }' backend/Cargo.toml)
+          case "$GITHUB_REF_NAME" in
+            main)
+              TAG=latest
+              VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+              ;;
+            dev)
+              TAG=dev
+              VERSION_SUFFIX="-dev+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+              ;;
+            *)
+              echo "Unsupported release branch: $GITHUB_REF_NAME"
+              exit 1
+              ;;
+          esac
+          docker build --no-cache --pull \
+            --build-arg CLIENT_VERSION="$CLIENT_VERSION" \
+            --build-arg SERVER_VERSION="$SERVER_VERSION" \
+            --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" \
+            -t "$IMAGE:$TAG" .
+          docker push "$IMAGE:$TAG"
+          docker build --no-cache --pull -t "$DOCS_IMAGE:$TAG" ./mkdocs-material
+          docker push "$DOCS_IMAGE:$TAG"
 
       - name: Drop dangling layers left by this build
         run: docker image prune -f
