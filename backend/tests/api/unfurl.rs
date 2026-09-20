@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use axum::Router;
 use axum::response::Html;
@@ -158,6 +159,58 @@ async fn summarize_fetches_page_content_and_uses_the_writing_model() {
     assert!(calls[0][0].content.contains("detailed overview"));
     assert!(calls[0][1].content.contains("hi"));
     assert!(!calls[0][1].content.contains("Fallback Title"));
+}
+
+#[tokio::test]
+async fn automatically_summarizes_a_link_added_through_notes_api() {
+    allow_private_fetch();
+    let (base, _) = spawn_og_server().await;
+    let (state, calls) = state_with_llm("Automatic summary.").await;
+    let app = build_app(state);
+    let (token, _) = register(&app, "unfurl_auto_summary").await;
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&token),
+        Some(json!({
+            "llm_base_url": "http://fake/v1",
+            "llm_model": "test-model",
+            "llm_writing": true,
+            "auto_summarize_links": true,
+            "link_summary_length": "medium"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let url = format!("{base}/page");
+    let (status, note) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"content": url})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create: {note}");
+    let id = note["id"].as_str().unwrap();
+
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let (status, note) =
+            send(&app, "GET", &format!("/api/notes/{id}"), Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK);
+        if note["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("Automatic summary."))
+        {
+            let calls = calls.lock().unwrap();
+            assert!(calls[0][0].content.contains("compact overview"));
+            return;
+        }
+    }
+    panic!("automatic summary was not added");
 }
 
 /// Minimal percent-encoding for the query value (`:` `/` `?` etc.).

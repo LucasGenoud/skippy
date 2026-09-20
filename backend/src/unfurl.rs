@@ -77,6 +77,48 @@ pub fn allow_private() -> bool {
     )
 }
 
+/// Find HTTP(S) links in note text. This intentionally mirrors the client
+/// linkifier's permissive "link-shaped run" rule, while URL parsing filters
+/// malformed candidates before an automatic summary can fetch anything.
+pub fn urls_in(text: &str) -> Vec<String> {
+    let mut starts = text
+        .match_indices("http://")
+        .chain(text.match_indices("https://"))
+        .chain(text.match_indices("www."))
+        .map(|(at, _)| at)
+        .collect::<Vec<_>>();
+    starts.sort_unstable();
+    starts.dedup();
+    let mut urls = Vec::new();
+    for start in starts {
+        if start > 0
+            && text[..start]
+                .chars()
+                .next_back()
+                .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            continue;
+        }
+        let raw = text[start..]
+            .split(|ch: char| ch.is_whitespace() || ch == '<' || ch == '>')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(['.', ',', ';', ':', '!', '?', '\'', '"', ')', ']', '}']);
+        let raw = if raw.starts_with("www.") {
+            format!("https://{raw}")
+        } else {
+            raw.to_string()
+        };
+        let Ok(parsed) = reqwest::Url::parse(&raw) else {
+            continue;
+        };
+        if matches!(parsed.scheme(), "http" | "https") && !urls.contains(&parsed.to_string()) {
+            urls.push(parsed.to_string());
+        }
+    }
+    urls
+}
+
 /// Fetch and parse a preview for `raw`. Returns `Err` only when the URL is
 /// invalid or blocked by the SSRF guard (→ the handler answers 400); a network
 /// or parse failure after a valid URL yields a host-only preview instead, so

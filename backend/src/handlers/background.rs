@@ -269,6 +269,112 @@ impl AppState {
         });
     }
 
+    /// Append summaries for links introduced by a note write. This is attached
+    /// to the shared create/update path, so share intake, chat, and offline
+    /// sync all get the same opt-in behaviour.
+    pub fn summarize_links_later(
+        &self,
+        note_id: &str,
+        user_id: &str,
+        urls: impl IntoIterator<Item = String>,
+    ) {
+        let urls = urls.into_iter().collect::<Vec<_>>();
+        if urls.is_empty() {
+            return;
+        }
+        let state = self.clone();
+        let note_id = note_id.to_string();
+        let user_id = user_id.to_string();
+        tokio::spawn(async move {
+            let settings = match state.repo.settings_for_user(&user_id).await {
+                Ok(settings) => settings,
+                Err(error) => {
+                    state.report_background_failure("auto_summary_settings", &format!("{error:?}"));
+                    return;
+                }
+            };
+            let llm_settings = crate::assist::parse_llm_settings_value(
+                &state.managed.overlay(settings.as_deref()),
+            );
+            if !llm_settings.auto_summarize_links
+                || !llm_settings.writing
+                || llm_settings.config.is_none()
+            {
+                return;
+            }
+            for url in urls {
+                let record = match state.repo.note_record(&note_id).await {
+                    Ok(Some(record)) => record,
+                    Ok(None) => return,
+                    Err(error) => {
+                        state.report_background_failure("auto_summary_note", &format!("{error:?}"));
+                        return;
+                    }
+                };
+                if record.trashed
+                    || !matches!(record.kind.as_str(), KIND_TEXT | KIND_MARKDOWN)
+                    || !crate::unfurl::urls_in(&format!("{}\n{}", record.title, record.content))
+                        .contains(&url)
+                {
+                    continue;
+                }
+                let summary = match super::unfurl::summarize_with_settings(
+                    &state,
+                    &llm_settings,
+                    &url,
+                    Some(llm_settings.link_summary_length),
+                )
+                .await
+                {
+                    Ok(summary) => summary,
+                    Err(error) => {
+                        state.report_background_failure(
+                            "auto_summary_completion",
+                            &format!("{error:?}"),
+                        );
+                        continue;
+                    }
+                };
+                // The fetch and model call can take seconds. Re-read before
+                // writing so a link deleted meanwhile is never resurrected.
+                let record = match state.repo.note_record(&note_id).await {
+                    Ok(Some(record)) => record,
+                    Ok(None) => return,
+                    Err(error) => {
+                        state.report_background_failure("auto_summary_note", &format!("{error:?}"));
+                        return;
+                    }
+                };
+                if record.trashed
+                    || !matches!(record.kind.as_str(), KIND_TEXT | KIND_MARKDOWN)
+                    || !crate::unfurl::urls_in(&format!("{}\n{}", record.title, record.content))
+                        .contains(&url)
+                {
+                    continue;
+                }
+                let content = record.content.trim_end();
+                let content = if content.is_empty() {
+                    summary
+                } else {
+                    format!("{content}\n\n{summary}")
+                };
+                if let Err(error) = super::notes::apply_auto_summary_update(
+                    &state,
+                    &user_id,
+                    &note_id,
+                    UpdateNote {
+                        content: Some(content),
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
+                    state.report_background_failure("auto_summary_persist", &format!("{error:?}"));
+                }
+            }
+        });
+    }
+
     async fn run_auto_labeling(&self, note_id: &str, user_id: &str) {
         let settings = match self.repo.settings_for_user(user_id).await {
             Ok(s) => s,

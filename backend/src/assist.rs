@@ -5,6 +5,7 @@
 
 use crate::llm::{ChatMessage, LlmConfig};
 use crate::models::{Label, NoteRecord};
+use serde::Deserialize;
 
 /// Max note text sent in a labeling prompt.
 const LABELING_NOTE_CHARS: usize = 4_000;
@@ -42,11 +43,41 @@ pub struct LlmSettings {
     /// Note cleanup and grammar-correction toggle; defaults off because these
     /// actions directly change note content.
     pub writing: bool,
+    /// Whether newly added links should be summarized into text/Markdown notes.
+    pub auto_summarize_links: bool,
+    pub link_summary_length: LinkSummaryLength,
     /// Optional user instructions shared by every AI feature.
     pub prompt: String,
     pub chat_create: bool,
     pub chat_edit: bool,
     pub chat_organize: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkSummaryLength {
+    #[default]
+    Short,
+    Medium,
+    Long,
+}
+
+impl LinkSummaryLength {
+    pub fn prompt(self) -> &'static str {
+        match self {
+            Self::Short => "one or two very short sentences",
+            Self::Medium => "a compact overview in three or four short sentences",
+            Self::Long => "a detailed overview in up to six short paragraphs",
+        }
+    }
+
+    pub fn max_chars(self) -> usize {
+        match self {
+            Self::Short => 500,
+            Self::Medium => 1_000,
+            Self::Long => 2_000,
+        }
+    }
 }
 
 /// Read the `llm_*` keys from a settings JSON document (as stored by
@@ -80,6 +111,9 @@ pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
         labeling: value["llm_labeling"] != false,
         chat: value["llm_chat"] != false,
         writing: value["llm_writing"] == true,
+        auto_summarize_links: value["auto_summarize_links"] == true,
+        link_summary_length: serde_json::from_value(value["link_summary_length"].clone())
+            .unwrap_or_default(),
         prompt: text("llm_prompt"),
         chat_create: value["llm_chat_create"] != false,
         chat_edit: value["llm_chat_edit"] != false,
