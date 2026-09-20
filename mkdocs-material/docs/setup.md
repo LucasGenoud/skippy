@@ -1,7 +1,46 @@
 # Set up Skippy
 
-Clone the repository, then create a <code>.env</code> file when you have a
-public address:
+Clone the repository. Its base <code>docker-compose.yml</code> is below, so
+you can also copy it directly into a new installation:
+
+~~~yaml title="docker-compose.yml"
+services:
+  server:
+    image: ghcr.io/lucasgenoud/skippy:latest
+    ports:
+      - "8787:8787"
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
+      STORAGE: disk
+      ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_LABELING: ${LLM_LABELING:-}
+      LLM_CHAT: ${LLM_CHAT:-}
+      LLM_WRITING: ${LLM_WRITING:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+  docs:
+    image: ghcr.io/lucasgenoud/skippy-docs:latest
+    ports:
+      - "${DOCS_PORT:-8123}:8123"
+    restart: unless-stopped
+volumes:
+  app_data:
+~~~
+
+Create a <code>.env</code> file when you have a public address:
 
 ~~~env title=".env"
 PUBLIC_URL=https://notes.example.com
