@@ -18,3 +18,5 @@ Open <http://localhost:8123>. The app itself remains available at
 ![Masonry notes](mkdocs-material/docs/assets/screenshots/skippy-desktop-masonry.png)
 
 ![Kanban board](mkdocs-material/docs/assets/screenshots/skippy-desktop-board-features.png)
+
+![Mobile board view](mkdocs-material/docs/assets/screenshots/skippy-mobile-overview.png)
