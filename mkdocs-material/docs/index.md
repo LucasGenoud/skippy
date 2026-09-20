@@ -15,11 +15,15 @@ Windows. It works offline and syncs when a device reconnects.
 
 <div class="grid cards" markdown>
 
-- ![Desktop notes grid](assets/screenshots/skippy-desktop-masonry.png)
+- <a href="assets/screenshots/skippy-desktop-masonry.png" target="_blank" rel="noopener"><img src="assets/screenshots/skippy-desktop-masonry.png" alt="Desktop masonry notes" loading="lazy"></a>
 
-- ![Desktop board](assets/screenshots/skippy-desktop-board-features.png)
+- <a href="assets/screenshots/skippy-desktop-board-features.png" target="_blank" rel="noopener"><img src="assets/screenshots/skippy-desktop-board-features.png" alt="Desktop board" loading="lazy"></a>
 
-- ![Mobile board](assets/screenshots/skippy-mobile-overview.png)
+- <a href="assets/screenshots/skippy-desktop-editor.png" target="_blank" rel="noopener"><img src="assets/screenshots/skippy-desktop-editor.png" alt="Desktop note editor" loading="lazy"></a>
+
+- <a href="assets/screenshots/skippy-mobile-overview.png" target="_blank" rel="noopener"><img src="assets/screenshots/skippy-mobile-overview.png" alt="Mobile board" loading="lazy"></a>
+
+- <a href="assets/screenshots/skippy-mobile-editor.png" target="_blank" rel="noopener"><img src="assets/screenshots/skippy-mobile-editor.png" alt="Mobile note editor" loading="lazy"></a>
 
 </div>
 
