@@ -102,6 +102,44 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
+    testWidgets('uses subtle entry and resize motion', (tester) async {
+      api.notes['n1'] = serverNote('n1', content: 'Brief note');
+      await store.load();
+      var note = store.noteById('n1')!;
+      late void Function(VoidCallback) refresh;
+
+      await tester.pumpWidget(
+        harness(
+          store,
+          StatefulBuilder(
+            builder: (context, setState) {
+              refresh = setState;
+              return Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(width: 280, child: NoteTile(note: note)),
+              );
+            },
+          ),
+        ),
+      );
+
+      final arrival = find.byKey(const ValueKey('note-arrival-n1'));
+      expect(tester.widget<AnimatedOpacity>(arrival).opacity, 0);
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(arrival).opacity, 1);
+      await tester.pumpAndSettle();
+
+      final card = find.byKey(const ValueKey('note-size-n1'));
+      expect(tester.widget<AnimatedSize>(card).duration, Motion.base);
+      note = note.copyWith(
+        content: List.filled(12, 'A longer line').join('\n'),
+      );
+      refresh(() {});
+      await tester.pump();
+
+      expect(tester.widget<AnimatedSize>(card).duration, Motion.base);
+    });
+
     testWidgets('shows progress while a link summary is running', (
       tester,
     ) async {
