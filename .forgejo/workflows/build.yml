@@ -2,7 +2,7 @@ name: build-image
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
@@ -39,21 +39,37 @@ jobs:
         run: |
           IMAGE=forgejo.genoud.dev/lucasgenoud/skippy
           DOCS_IMAGE=forgejo.genoud.dev/lucasgenoud/skippy-docs
-          # SemVer build metadata: the release number is intentional, while
-          # the commit count and hash identify the exact deployed build.
-          VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+          CLIENT_VERSION=$(awk '$1 == "version:" { split($2, parts, "+"); print parts[1]; exit }' app/pubspec.yaml)
+          SERVER_VERSION=$(awk '$1 == "version" { gsub(/"/, "", $3); print $3; exit }' backend/Cargo.toml)
+          case "$GITHUB_REF_NAME" in
+            main)
+              TAG=latest
+              VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+              ;;
+            dev)
+              TAG=dev
+              VERSION_SUFFIX="-dev+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
+              ;;
+            *)
+              echo "Unsupported release branch: $GITHUB_REF_NAME"
+              exit 1
+              ;;
+          esac
           # --no-cache: never reuse layers from a previous run.
           # --pull: re-resolve the base images instead of trusting the local copy.
-          docker build --no-cache --pull --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" -t "$IMAGE:latest" .
-          docker push "$IMAGE:latest"
-          docker build --no-cache --pull -t "$DOCS_IMAGE:latest" ./mkdocs-material
-          docker push "$DOCS_IMAGE:latest"
+          docker build --no-cache --pull \
+            --build-arg CLIENT_VERSION="$CLIENT_VERSION" \
+            --build-arg SERVER_VERSION="$SERVER_VERSION" \
+            --build-arg VERSION_SUFFIX="$VERSION_SUFFIX" \
+            -t "$IMAGE:$TAG" .
+          docker push "$IMAGE:$TAG"
+          docker build --no-cache --pull -t "$DOCS_IMAGE:$TAG" ./mkdocs-material
+          docker push "$DOCS_IMAGE:$TAG"
 
       - name: Drop dangling layers left by this build
         run: |
-          # Only the "latest" tags are ever pushed now, so previous builds'
-          # images are left dangling (untagged, <none>:<none>) rather than under
-          # another tag. Images a container is still running are refused by
-          # docker, hence `|| true`.
+          # Each branch has one rolling tag. Previous builds are left dangling
+          # (untagged, <none>:<none>); images a container is still running are
+          # refused by docker, hence `|| true`.
           docker image prune -f
           exit 0

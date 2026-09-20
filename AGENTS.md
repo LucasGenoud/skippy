@@ -16,6 +16,13 @@ Before changing code:
 2. Run `git status --short`; the worktree may contain user or another agent's changes. Preserve unrelated edits.
 3. Trace the relevant contract across both client and server when changing API data or behavior.
 
+## Git and release flow
+
+Work from `dev` by default. Pushing `dev` runs CI and publishes the rolling
+`forgejo.genoud.dev/lucasgenoud/skippy:dev` image (and matching docs image).
+Only merge to `main` and change the app/server versions for an explicitly
+requested release; `main` publishes the stable `:latest` images.
+
 ## Quick verification
 
 Run commands from the indicated package directory:
