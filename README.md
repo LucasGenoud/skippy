@@ -12,3 +12,9 @@ docker compose up -d docs
 
 Open <http://localhost:8123>. The app itself remains available at
 <http://localhost:8787>.
+
+## Screenshots
+
+![Masonry notes](mkdocs-material/docs/assets/screenshots/skippy-desktop-masonry.png)
+
+![Kanban board](mkdocs-material/docs/assets/screenshots/skippy-desktop-board-features.png)

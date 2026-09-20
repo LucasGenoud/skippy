@@ -19,8 +19,6 @@ Windows. It works offline and syncs when a device reconnects.
 
 - ![Desktop board](assets/screenshots/skippy-desktop-board-features.png)
 
-- ![Mobile notes](assets/screenshots/skippy-android-home-mockup.png)
-
 </div>
 
 !!! note "Mobile availability"

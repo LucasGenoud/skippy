@@ -2,6 +2,7 @@ FROM squidfunk/mkdocs-material:latest AS build
 WORKDIR /site
 COPY mkdocs.yml ./
 COPY docs ./docs
+COPY overrides ./overrides
 RUN mkdocs build --strict
 
 FROM nginx:alpine
