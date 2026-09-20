@@ -103,6 +103,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('card one'), findsNothing);
     expect(find.byTooltip('Expand Unassigned'), findsOneWidget);
+    expect(find.byIcon(Icons.keyboard_double_arrow_right), findsOneWidget);
+    expect(find.text('Expand'), findsOneWidget);
     expect(
       tester.getSize(find.byType(BoardColumnView).first).width,
       lessThan(100),

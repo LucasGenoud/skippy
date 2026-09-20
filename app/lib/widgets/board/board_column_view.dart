@@ -380,7 +380,7 @@ class _BoardColumnHeader extends StatelessWidget {
               ),
               if (onToggleCollapsed != null)
                 IconButton(
-                  icon: const Icon(Icons.unfold_less, size: 18),
+                  icon: const Icon(Icons.keyboard_double_arrow_left, size: 20),
                   tooltip: 'Collapse ${column.title}',
                   visualDensity: VisualDensity.compact,
                   constraints: const BoxConstraints.tightFor(
@@ -467,29 +467,41 @@ class _CollapsedColumn extends StatelessWidget {
       message: 'Expand ${column.title}',
       child: InkWell(
         onTap: onExpand,
+        mouseCursor: SystemMouseCursors.click,
+        borderRadius: kBorderRadius,
         child: Column(
           children: [
             _StageRule(column: column),
             Expanded(
-              child: RotatedBox(
-                quarterTurns: 3,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.unfold_more,
-                      size: 18,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.keyboard_double_arrow_right,
+                    size: 20,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 8),
+                  RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
                       '${column.title} (${column.totalCount})',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                  RotatedBox(
+                    quarterTurns: 3,
+                    child: Text(
+                      'Expand',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
