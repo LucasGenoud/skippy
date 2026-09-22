@@ -230,14 +230,22 @@ void main() {
         'https://four.example',
         'https://five.example',
       ]);
-      expect(previews.first.topDivider, isFalse);
-      expect(previews.skip(1).every((preview) => preview.topDivider), isTrue);
+      expect(previews.every((preview) => preview.topDivider), isTrue);
       expect(previews.every((preview) => !preview.outlined), isTrue);
       expect(
-        tester
-            .widget<ClipRRect>(find.byKey(const Key('link-preview-group')))
-            .borderRadius,
-        const BorderRadius.all(kRadiusCorner),
+        previews
+            .take(previews.length - 1)
+            .every((preview) => preview.borderRadius == BorderRadius.zero),
+        isTrue,
+      );
+      expect(
+        previews.last.borderRadius,
+        const BorderRadius.vertical(bottom: kRadiusCorner),
+      );
+      expect(find.byKey(const Key('link-preview-group')), findsNothing);
+      expect(
+        tester.getRect(find.byType(LinkPreviewCard).first).width,
+        tester.getRect(find.byType(NoteTile)).width,
       );
     });
 

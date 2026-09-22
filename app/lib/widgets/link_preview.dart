@@ -13,7 +13,8 @@ import '../util/linkify.dart';
 /// site on the right. Tapping it opens the URL. While metadata loads (or when
 /// the site exposes none) it shows just the host.
 ///
-/// [topDivider] draws a hairline between rows in a preview group.
+/// [topDivider] draws the hairline that attaches a row to the note above it
+/// or separates rows in a preview group.
 class LinkPreviewCard extends StatelessWidget {
   final String url;
   final void Function(String url)? onOpen;
@@ -190,7 +191,7 @@ class _Strip extends StatelessWidget {
                     Divider(
                       height: 1,
                       thickness: 1,
-                      color: scheme.outlineVariant,
+                      color: scheme.onSurface.withValues(alpha: 0.08),
                     ),
                     row,
                   ],

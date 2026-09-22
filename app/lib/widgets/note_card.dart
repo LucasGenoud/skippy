@@ -325,9 +325,7 @@ class _NoteTileState extends State<NoteTile> {
     // Link previews are always the card's true bottom-most content, so the
     // action row's reserved slot has to float above their combined height.
     final previewCount = _NoteCardContent._linkPreviewUrls(note).length;
-    final actionsBottomInset = previewCount == 0
-        ? 0.0
-        : previewCount * kLinkPreviewStripHeight + previewCount - 1 + 12;
+    final actionsBottomInset = previewCount * (kLinkPreviewStripHeight + 1);
     final collection = widget.showCollection
         ? context.select<NotesStore, String?>((store) {
             final collections = store
@@ -750,7 +748,7 @@ class _NoteCardContent extends StatelessWidget {
               store: store,
               borderRadius: BorderRadius.vertical(
                 top: hasTextBlock ? Radius.zero : kRadiusCorner,
-                bottom: hasFooter || reserveActions
+                bottom: hasFooter || hasLinkPreviews || reserveActions
                     ? Radius.zero
                     : kRadiusCorner,
               ),
@@ -823,10 +821,16 @@ class _NoteCardContent extends StatelessWidget {
         // previews, so the previews stay the card's true bottom-most content
         // (see _NoteActions' matching bottom offset).
         if (reserveActions) const SizedBox(height: 48),
-        if (hasLinkPreviews)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: LinkPreviewList(text: noteLinkText(note)),
+        // Full-bleed strips continue the note surface, rather than putting a
+        // second rounded card inside it. Only the last strip rounds the base.
+        for (var i = 0; i < linkPreviewUrls.length; i++)
+          LinkPreviewCard(
+            url: linkPreviewUrls[i],
+            topDivider: true,
+            outlined: false,
+            borderRadius: i < linkPreviewUrls.length - 1
+                ? BorderRadius.zero
+                : const BorderRadius.vertical(bottom: kRadiusCorner),
           ),
       ],
     );
