@@ -850,7 +850,7 @@ class _DragFeedback extends StatelessWidget {
       // boundary of its own, each of those moves repaints the whole card *and*
       // its blurred shadow; with one, the rasterized layer is simply moved.
       child: Opacity(
-        opacity: 0.72,
+        opacity: 0.84,
         child: RepaintBoundary(
           child: Material(
             type: MaterialType.transparency,
