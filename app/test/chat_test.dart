@@ -430,6 +430,8 @@ void main() {
         'Reply in French',
       );
       await tester.tap(find.text('Create notes'));
+      await tester.ensureVisible(find.text('Organize notes'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Organize notes'));
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
