@@ -607,7 +607,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final store = context.read<NotesStore>();
     final viewState = context.select(
       (NotesStore s) => (
-        sections: s.notesFor(_selection, _queryFor(s)),
+        sections: s.notesFor(_selection, _queryFor(s), display: true),
         loading: s.loading,
         offline: s.offline,
       ),
@@ -652,7 +652,7 @@ class _HomeScreenState extends State<HomeScreen> {
             filterNotes(
               notes: [
                 for (final id in _semanticIds!)
-                  if (store.noteById(id) case final Note note) note,
+                  if (store.displayNoteById(id) case final Note note) note,
               ],
               labels: store.labels,
               selection: _selection,
@@ -672,12 +672,13 @@ class _HomeScreenState extends State<HomeScreen> {
     // grid doesn't flash a skeleton on every keystroke.
     final semanticLoading =
         semanticActive && _semanticBusy && _semanticIds == null;
-    final dragEnabled =
-        !_selectionMode &&
+    final canReorder =
         !searching &&
         store.sortMode == SortMode.custom &&
         (_selection.view == NoteView.notes ||
             _selection.view == NoteView.archive);
+    final dragEnabled =
+        canReorder || (_selectionMode && _selection.view != NoteView.trash);
 
     // Keyboard shortcuts (web/desktop). Printable keys use
     // CharacterActivator so they match what the keystroke actually produced
@@ -829,6 +830,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               AppSidebar(
                                 isOpen: _isSidebarOpen,
                                 selection: _selection,
+                                selectedNoteIds: _selectedNoteIds,
                                 onSelect: _selectView,
                               ),
                             Expanded(
@@ -1289,8 +1291,8 @@ class _HomeScreenState extends State<HomeScreen> {
       swipeToArchive: true,
     );
 
-    // Sorted/search lists need no reorder geometry. Let the viewport build
-    // only nearby cards; custom ordering keeps masonry's drag/drop behavior.
+    // Lists without custom order can build only nearby cards. Masonry keeps
+    // selected-card drags available even when reordering is disabled.
     final customOrder =
         store.sortMode == SortMode.custom &&
         _query.trim().isEmpty &&
@@ -1338,11 +1340,16 @@ class _HomeScreenState extends State<HomeScreen> {
               columns: columns,
               spacing: 8,
               dragEnabled: dragEnabled,
+              draggableIds: _selectionMode ? _selectedNoteIds : null,
+              reorderGroupIds: customOrder ? _selectedNoteIds : const {},
+              dragFeedbackLabel: _selectionMode && _selectedNoteIds.length > 1
+                  ? 'Move ${_selectedNoteIds.length} cards'
+                  : null,
               scrollController: _scrollController,
               // A sidebar drop owns the gesture; crossing grid tiles on the
               // way there must not also persist an incidental reorder.
               onReorder: (reorder) {
-                if (reorder.acceptedByTarget) {
+                if (reorder.acceptedByTarget || !customOrder) {
                   return MasonryReorderDecision.restore;
                 }
                 store.reorder(reorder.orderedIds);

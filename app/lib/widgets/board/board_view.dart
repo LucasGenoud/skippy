@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/note.dart';
 import '../../state/board_layout.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
@@ -84,13 +85,27 @@ class _BoardViewState extends State<BoardView> {
 
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
+    final notes = context.select<NotesStore, List<Note>>(
+      (store) => store.displayNotesInActiveWorkspace,
+    );
+    context.select<NotesStore, int>(
+      (store) => Object.hash(
+        store.activeWorkspaceId,
+        store.activeCollection?.id,
+        store.sortMode,
+        Object.hashAll(store.workspaces),
+        Object.hashAll(store.stages),
+        Object.hashAll(store.labels),
+      ),
+    );
+    final store = context.read<NotesStore>();
     final board = buildBoard(
-      notes: store.notesInActiveWorkspace,
+      notes: notes,
       stages: store.stages,
       scope: store.collectionScope,
       query: widget.query,
       labels: store.labels,
+      sortMode: store.sortMode,
       showAllUnassigned: _showAllUnassigned,
       rankedIds: widget.rankedIds,
     );
@@ -98,7 +113,10 @@ class _BoardViewState extends State<BoardView> {
     if (board.hasNoStages) return _NoStagesYet(hasNotes: !board.isEmpty);
 
     final paged = !ScreenWidth.isAtLeast(context, BoardView.pagedBreakpoint);
-    return paged ? _buildPaged(board) : _buildColumns(board);
+    final dragEnabled = store.sortMode == SortMode.custom;
+    return paged
+        ? _buildPaged(board, dragEnabled: dragEnabled)
+        : _buildColumns(board, dragEnabled: dragEnabled);
   }
 
   void _showAll() => setState(() => _showAllUnassigned = true);
@@ -128,7 +146,7 @@ class _BoardViewState extends State<BoardView> {
     return ids.any((id) => store.noteById(id)?.stageId != column.stage?.id);
   }
 
-  Widget _buildColumns(Board board) {
+  Widget _buildColumns(Board board, {required bool dragEnabled}) {
     final scheme = Theme.of(context).colorScheme;
     return Stack(
       children: [
@@ -164,6 +182,7 @@ class _BoardViewState extends State<BoardView> {
                 child: BoardColumnView(
                   column: column,
                   query: _highlight,
+                  dragEnabled: dragEnabled,
                   onShowAll: column.isUnassigned ? _showAll : null,
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
@@ -199,7 +218,7 @@ class _BoardViewState extends State<BoardView> {
     );
   }
 
-  Widget _buildPaged(Board board) {
+  Widget _buildPaged(Board board, {required bool dragEnabled}) {
     // A stage deleted while the board is open can leave the controller past
     // the end; clamp rather than page into nothing.
     final page = _page.clamp(0, board.columns.length - 1);
@@ -240,6 +259,7 @@ class _BoardViewState extends State<BoardView> {
                 child: BoardColumnView(
                   column: column,
                   query: _highlight,
+                  dragEnabled: dragEnabled,
                   onShowAll: column.isUnassigned ? _showAll : null,
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,

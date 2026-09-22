@@ -199,9 +199,7 @@ void main() {
       },
     );
 
-    testWidgets('shows up to three unique website preview cards', (
-      tester,
-    ) async {
+    testWidgets('groups at most five unique website previews', (tester) async {
       api.notes['n1'] = serverNote(
         'n1',
         title: 'Links https://one.example',
@@ -209,7 +207,9 @@ void main() {
             'https://one.example repeated\n'
             'https://two.example\n'
             'https://three.example\n'
-            'https://four.example',
+            'https://four.example\n'
+            'https://five.example\n'
+            'https://six.example',
       );
       await store.load();
       await tester.pumpWidget(
@@ -227,15 +227,48 @@ void main() {
         'https://one.example',
         'https://two.example',
         'https://three.example',
+        'https://four.example',
+        'https://five.example',
       ]);
-      expect(previews.every((preview) => preview.topDivider), isTrue);
-      expect(previews[0].borderRadius, BorderRadius.zero);
-      expect(previews[1].borderRadius, BorderRadius.zero);
+      expect(previews.first.topDivider, isFalse);
+      expect(previews.skip(1).every((preview) => preview.topDivider), isTrue);
+      expect(previews.every((preview) => !preview.outlined), isTrue);
       expect(
-        previews[2].borderRadius,
-        const BorderRadius.vertical(bottom: kRadiusCorner),
+        tester
+            .widget<ClipRRect>(find.byKey(const Key('link-preview-group')))
+            .borderRadius,
+        const BorderRadius.all(kRadiusCorner),
       );
     });
+
+    testWidgets(
+      'previews links in checklist rows and renders markdown titles',
+      (tester) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          kind: NoteKind.checklist,
+          title: '**Read this**',
+          items: const [
+            ChecklistItem(id: 'i1', text: 'See https://example.com/guide'),
+          ],
+        );
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 280, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Read this'), findsOneWidget);
+        expect(find.text('**Read this**'), findsNothing);
+        expect(
+          tester.widget<LinkPreviewCard>(find.byType(LinkPreviewCard)).url,
+          'https://example.com/guide',
+        );
+      },
+    );
 
     testWidgets('renders checklist preview with checked summary', (
       tester,
@@ -863,6 +896,53 @@ void main() {
 
   group('AnimatedMasonry drag reorder', () {
     testWidgets(
+      'dragging a selected card reorders the selected cards together',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        final notes = [
+          for (final id in ['a', 'b', 'c', 'd', 'e']) serverNote(id, title: id),
+        ];
+        MasonryReorder? reported;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: AnimatedMasonry(
+                  notes: notes,
+                  columns: 1,
+                  draggableIds: const {'a', 'c'},
+                  reorderGroupIds: const {'a', 'c'},
+                  dragFeedbackLabel: 'Move 2 cards',
+                  onReorder: (reorder) {
+                    reported = reorder;
+                    return MasonryReorderDecision.keep;
+                  },
+                  itemBuilder: (context, note) => SizedBox(
+                    height: 80,
+                    child: Card(child: Center(child: Text(note.title))),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('a')),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Move 2 cards'), findsOneWidget);
+        await gesture.moveTo(tester.getCenter(find.text('d')));
+        await tester.pump(const Duration(milliseconds: 100));
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(reported?.orderedIds, ['b', 'd', 'a', 'c', 'e']);
+      },
+    );
+
+    testWidgets(
       'long-press drag to another tile reports the new order',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {
@@ -1404,6 +1484,40 @@ void main() {
   });
 
   group('EditorScreen', () {
+    testWidgets('groups five links from title, body, and checklist rows', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.checklist,
+        title: 'https://one.example',
+        content: 'https://two.example',
+        items: const [
+          ChecklistItem(id: 'i1', text: 'https://three.example'),
+          ChecklistItem(id: 'i2', text: 'https://four.example'),
+          ChecklistItem(id: 'i3', text: 'https://five.example'),
+          ChecklistItem(id: 'i4', text: 'https://six.example'),
+        ],
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widgetList<LinkPreviewCard>(find.byType(LinkPreviewCard))
+            .map((card) => card.url),
+        [
+          'https://one.example',
+          'https://two.example',
+          'https://three.example',
+          'https://four.example',
+          'https://five.example',
+        ],
+      );
+      expect(find.byKey(const Key('link-preview-group')), findsOneWidget);
+    });
+
     testWidgets('adds an optional URL summary to the note', (tester) async {
       const url = 'https://example.com/article';
       api.notes['n1'] = serverNote('n1', content: url);
@@ -3145,6 +3259,66 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets(
+      'dragging selected masonry cards onto a label applies it to both',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'First note',
+          workspaceId: 'w-default',
+        );
+        api.notes['n2'] = serverNote(
+          'n2',
+          title: 'Second note',
+          workspaceId: 'w-default',
+        );
+        api.labels['l1'] = const Label(id: 'l1', name: 'work');
+        await store.load();
+        await tester.pumpWidget(homeApp(store));
+        await tester.pumpAndSettle();
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.text('First note')),
+        );
+        await tester.pumpAndSettle();
+        Finder badgeFor(String title) => find.descendant(
+          of: find.ancestor(
+            of: find.text(title),
+            matching: find.byType(NoteTile),
+          ),
+          matching: find.byTooltip('Select note'),
+        );
+        await tester.tap(badgeFor('First note'));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+        await tester.tap(badgeFor('Second note'));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('First note')),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await gesture.moveBy(const Offset(-24, 0));
+        await tester.pump();
+        expect(find.text('Move 2 cards'), findsOneWidget);
+        await gesture.moveTo(tester.getCenter(find.text('work')));
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.labelIds, contains('l1'));
+        expect(store.noteById('n2')!.labelIds, contains('l1'));
+        await flushTimers(tester);
+      },
+    );
+
     testWidgets('deselecting the last note leaves selection mode', (
       tester,
     ) async {
@@ -3973,13 +4147,17 @@ void main() {
   group('sidebar drag-and-drop', () {
     // A plain Draggable<String> stands in for a grid tile mid-drag; the
     // masonry carries the note id exactly this way.
-    Widget dragHarness(NotesStore store) => harness(
+    Widget dragHarness(
+      NotesStore store, {
+      Set<String> selectedNoteIds = const {},
+    }) => harness(
       store,
       Row(
         children: [
           AppSidebar(
             isOpen: true,
             selection: ViewSelection.notes,
+            selectedNoteIds: selectedNoteIds,
             onSelect: (_) {},
           ),
           const Expanded(
@@ -3998,6 +4176,8 @@ void main() {
     );
 
     Future<void> dropOn(WidgetTester tester, Finder target) async {
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
       final gesture = await tester.startGesture(
         tester.getCenter(find.text('drag me')),
       );
@@ -4034,6 +4214,42 @@ void main() {
       await dropOn(tester, find.text('Archive'));
 
       expect(store.noteById('n1')!.archived, isTrue);
+      await flushTimers(tester);
+    });
+
+    testWidgets('dropping a selected note archives the selection', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      api.notes['n2'] = serverNote('n2', title: 'b');
+      await store.load();
+      await tester.pumpWidget(
+        dragHarness(store, selectedNoteIds: {'n1', 'n2'}),
+      );
+      await tester.pumpAndSettle();
+
+      await dropOn(tester, find.text('Archive'));
+
+      expect(store.noteById('n1')!.archived, isTrue);
+      expect(store.noteById('n2')!.archived, isTrue);
+      await flushTimers(tester);
+    });
+
+    testWidgets('dropping a selected note trashes every owned note', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'a');
+      api.notes['n2'] = serverNote('n2', title: 'b');
+      await store.load();
+      await tester.pumpWidget(
+        dragHarness(store, selectedNoteIds: {'n1', 'n2'}),
+      );
+      await tester.pumpAndSettle();
+
+      await dropOn(tester, find.text('Trash'));
+
+      expect(store.noteById('n1')!.trashed, isTrue);
+      expect(store.noteById('n2')!.trashed, isTrue);
       await flushTimers(tester);
     });
 

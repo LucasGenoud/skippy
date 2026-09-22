@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/collection.dart';
+import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/widgets/masonry.dart';
@@ -70,6 +71,62 @@ void main() {
     store.setSortMode(SortMode.custom);
     await tester.pumpAndSettle();
     expect(find.byType(AnimatedMasonry), findsOneWidget);
+    await flushTimers(tester);
+  });
+
+  testWidgets('masonry mounts nearby cards as the grid scrolls', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    for (var i = 0; i < 80; i++) {
+      api.notes['n$i'] = serverNote(
+        'n$i',
+        title: 'Card $i',
+        position: i.toDouble(),
+      );
+    }
+    final store = NotesStore(api: api, currentUserId: 'u-me');
+    addTearDown(store.dispose);
+    await store.load();
+    await tester.pumpWidget(homeApp(store));
+    await tester.pumpAndSettle();
+
+    final initial = tester
+        .widgetList<NoteTile>(find.byType(NoteTile))
+        .map((card) => card.note.id)
+        .toSet();
+    expect(initial.length, lessThan(40));
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    final scrolled = tester
+        .widgetList<NoteTile>(find.byType(NoteTile))
+        .map((card) => card.note.id)
+        .toSet();
+    expect(scrolled.length, lessThan(40));
+    expect(scrolled.difference(initial), isNotEmpty);
+    await flushTimers(tester);
+  });
+
+  testWidgets('card updates when the editor closes', (tester) async {
+    final api = FakeApi()..notes['n1'] = serverNote('n1', title: 'Before');
+    final store = NotesStore(api: api, currentUserId: 'u-me');
+    addTearDown(store.dispose);
+    await store.load();
+    await tester.pumpWidget(homeApp(store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(NoteTile).first);
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorScreen), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Title'), 'After');
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(store.noteById('n1')!.title, 'After');
+    expect(tester.widget<NoteTile>(find.byType(NoteTile)).note.title, 'Before');
+
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(tester.widget<NoteTile>(find.byType(NoteTile)).note.title, 'After');
     await flushTimers(tester);
   });
 

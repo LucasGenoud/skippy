@@ -73,6 +73,7 @@ Board buildBoard({
   /// Only needed to resolve `label:` terms in [query]; the board itself never
   /// groups by label.
   Iterable<Label> labels = const [],
+  SortMode sortMode = SortMode.custom,
   bool showAllUnassigned = false,
   Set<String>? rankedIds,
 }) {
@@ -104,7 +105,7 @@ Board buildBoard({
   }
 
   for (final bucket in buckets.values) {
-    bucket.sort(_byPinnedThenPosition);
+    bucket.sort((a, b) => _compareCards(a, b, sortMode));
   }
 
   final unassigned = buckets[null]!;
@@ -195,11 +196,14 @@ bool _sameOrder(List<String> a, List<String> b) {
 /// workflow, and a board that accumulates them stops being a board.
 bool _isOnBoard(Note note) => !note.archived && !note.trashed;
 
-/// Pinned cards ride at the top of their column; everything else follows the
-/// board's own order. The board always uses [Note.stagePosition] rather than
-/// the grid's sort mode, a board whose cards reshuffle themselves is not a
-/// board.
-int _byPinnedThenPosition(Note a, Note b) {
+/// Pinned cards ride at the top of their column; each group follows the active
+/// sort. Custom order remains the board's sparse stage positions.
+int _compareCards(Note a, Note b, SortMode sortMode) {
   if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
-  return a.stagePosition.compareTo(b.stagePosition);
+  return switch (sortMode) {
+    SortMode.custom => a.stagePosition.compareTo(b.stagePosition),
+    SortMode.edited => b.updatedAt.compareTo(a.updatedAt),
+    SortMode.newest => b.createdAt.compareTo(a.createdAt),
+    SortMode.oldest => a.createdAt.compareTo(b.createdAt),
+  };
 }

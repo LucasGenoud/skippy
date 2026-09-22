@@ -35,9 +35,11 @@ class AppSidebar extends StatelessWidget {
   final bool inDrawer;
   final ViewSelection selection;
   final ValueChanged<ViewSelection> onSelect;
+  final Set<String> selectedNoteIds;
   const AppSidebar({
     super.key,
     this.inDrawer = false,
+    this.selectedNoteIds = const {},
     required this.isOpen,
     required this.selection,
     required this.onSelect,
@@ -68,6 +70,10 @@ class AppSidebar extends StatelessWidget {
         selection.view != NoteView.archive &&
         selection.view != NoteView.trash &&
         selection.view != NoteView.reminders;
+    Iterable<String> draggedIds(String id) =>
+        selectedNoteIds.contains(id) ? selectedNoteIds : [id];
+    bool acceptsAny(String id, bool Function(String) accepts) =>
+        draggedIds(id).any(accepts);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -117,9 +123,19 @@ class AppSidebar extends StatelessWidget {
                           : ViewSelection.notes,
                     );
                   },
-                  willAcceptNote: (id) =>
-                      store.noteById(id)?.workspaceId == c.workspaceId,
-                  onAcceptNote: (id) => store.moveToCollection(id, c.id),
+                  willAcceptNote: (id) => acceptsAny(
+                    id,
+                    (noteId) =>
+                        store.noteById(noteId)?.workspaceId == c.workspaceId,
+                  ),
+                  onAcceptNote: (id) {
+                    for (final noteId in draggedIds(id)) {
+                      if (store.noteById(noteId)?.workspaceId ==
+                          c.workspaceId) {
+                        store.moveToCollection(noteId, c.id);
+                      }
+                    }
+                  },
                 ),
               _SidebarItem(
                 icon: Icons.edit_outlined,
@@ -154,10 +170,20 @@ class AppSidebar extends StatelessWidget {
                         ? baseSelection
                         : ViewSelection(NoteView.label, label.id),
                   ),
-                  willAcceptNote: (id) =>
-                      store.noteById(id)?.workspaceId ==
-                      store.activeWorkspaceId,
-                  onAcceptNote: (id) => store.addLabelToNote(id, label.id),
+                  willAcceptNote: (id) => acceptsAny(
+                    id,
+                    (noteId) =>
+                        store.noteById(noteId)?.workspaceId ==
+                        store.activeWorkspaceId,
+                  ),
+                  onAcceptNote: (id) {
+                    for (final noteId in draggedIds(id)) {
+                      if (store.noteById(noteId)?.workspaceId ==
+                          store.activeWorkspaceId) {
+                        store.addLabelToNote(noteId, label.id);
+                      }
+                    }
+                  },
                 ),
               _SidebarItem(
                 icon: Icons.edit_outlined,
@@ -225,16 +251,22 @@ class AppSidebar extends StatelessWidget {
                   isSelected: selection == entry.$1,
                   isOpen: isOpen,
                   onTap: () => onSelect(entry.$1),
-                  willAcceptNote: (id) =>
-                      entry.$1 == ViewSelection.archive ||
-                      (entry.$1 == ViewSelection.trash && store.canTrash(id)),
+                  willAcceptNote: (id) => acceptsAny(
+                    id,
+                    (noteId) =>
+                        entry.$1 == ViewSelection.archive ||
+                        (entry.$1 == ViewSelection.trash &&
+                            store.canTrash(noteId)),
+                  ),
                   onAcceptNote: entry.$1 == ViewSelection.reminders
                       ? null
                       : (id) {
-                          if (entry.$1 == ViewSelection.archive) {
-                            store.setArchived(id, true);
-                          } else {
-                            store.moveToTrash(id);
+                          for (final noteId in draggedIds(id)) {
+                            if (entry.$1 == ViewSelection.archive) {
+                              store.setArchived(noteId, true);
+                            } else if (store.canTrash(noteId)) {
+                              store.moveToTrash(noteId);
+                            }
                           }
                         },
                 ),

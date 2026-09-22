@@ -561,6 +561,17 @@ fn find_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
 /// favicon URLs are resolved against `base`.
 pub fn parse_preview(html: &str, base: &ParsedUrl) -> LinkPreview {
     let lower = html.to_ascii_lowercase();
+    let resource_base = each_tag(html, &lower, "base")
+        .into_iter()
+        .find_map(|tag| get_attr(tag, "href"))
+        .map(|href| base.resolve(&href))
+        .unwrap_or_else(|| base.full.clone());
+    let resolve = |href: &str| {
+        reqwest::Url::parse(&resource_base)
+            .and_then(|url| url.join(href.trim()))
+            .map(String::from)
+            .unwrap_or_else(|_| href.trim().to_string())
+    };
 
     let mut og_title = None;
     let mut og_desc = None;
@@ -615,9 +626,9 @@ pub fn parse_preview(html: &str, base: &ParsedUrl) -> LinkPreview {
     let title = og_title
         .or(tw_title)
         .or_else(|| extract_title(html, &lower));
-    let image = og_image.or(tw_image).map(|i| base.resolve(&i));
+    let image = og_image.or(tw_image).map(|i| resolve(&i));
     let favicon = favicon
-        .map(|f| base.resolve(&f))
+        .map(|f| resolve(&f))
         .or_else(|| Some(base.resolve("/favicon.ico")));
 
     LinkPreview {
@@ -830,6 +841,17 @@ mod tests {
             Some("https://example.com/favicon.png")
         );
         assert_eq!(p.description.as_deref(), Some("A show"));
+    }
+
+    #[test]
+    fn skippy_page_advertises_its_icon_as_preview_image() {
+        let html = include_str!("../../app/web/index.html").replace("$FLUTTER_BASE_HREF", "/");
+        let preview = parse_preview(&html, &base());
+        assert_eq!(preview.title.as_deref(), Some("Skippy"));
+        assert_eq!(
+            preview.image.as_deref(),
+            Some("https://example.com/favicon.png")
+        );
     }
 
     #[test]

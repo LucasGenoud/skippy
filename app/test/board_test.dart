@@ -13,6 +13,8 @@ Note note(
   String workspaceId = 'w1',
   String title = '',
   Set<String> labelIds = const {},
+  DateTime? createdAt,
+  DateTime? updatedAt,
 }) {
   final now = DateTime(2026, 7, 27);
   return Note(
@@ -25,8 +27,8 @@ Note note(
     archived: archived,
     trashed: trashed,
     labelIds: labelIds,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: createdAt ?? now,
+    updatedAt: updatedAt ?? now,
   );
 }
 
@@ -75,6 +77,53 @@ void main() {
         stages: [stage('todo', 1024)],
       );
       expect(board.columns[1].notes.map((n) => n.id), ['pinned', 'plain']);
+    });
+
+    test('sort mode orders cards within each column', () {
+      final early = DateTime(2026, 1, 1);
+      final late = DateTime(2026, 2, 1);
+      final notes = [
+        note(
+          'older',
+          stageId: 'todo',
+          stagePosition: 2048,
+          createdAt: early,
+          updatedAt: late,
+        ),
+        note(
+          'newer',
+          stageId: 'todo',
+          stagePosition: 1024,
+          createdAt: late,
+          updatedAt: early,
+        ),
+      ];
+      final stages = [stage('todo', 1024)];
+
+      expect(
+        buildBoard(
+          notes: notes,
+          stages: stages,
+          sortMode: SortMode.edited,
+        ).columns[1].notes.map((note) => note.id),
+        ['older', 'newer'],
+      );
+      expect(
+        buildBoard(
+          notes: notes,
+          stages: stages,
+          sortMode: SortMode.newest,
+        ).columns[1].notes.map((note) => note.id),
+        ['newer', 'older'],
+      );
+      expect(
+        buildBoard(
+          notes: notes,
+          stages: stages,
+          sortMode: SortMode.oldest,
+        ).columns[1].notes.map((note) => note.id),
+        ['older', 'newer'],
+      );
     });
 
     test('archived and trashed notes leave the board', () {

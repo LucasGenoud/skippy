@@ -69,6 +69,11 @@ class NotesStore extends ChangeNotifier {
   static const _uuid = Uuid();
 
   List<Note> _notes = [];
+  // The editor writes optimistically, but its card keeps the version that was
+  // visible when editing began until the editor closes. Null hides a new draft.
+  final Map<String, Note?> _editingCards = {};
+  List<Note> _displayNotesCache = const [];
+  List<Note> _workspaceDisplayCache = const [];
   List<Label> _labels = [];
   List<Stage> _stages = [];
   List<Workspace> _workspaces = [];
@@ -440,6 +445,43 @@ class NotesStore extends ChangeNotifier {
   /// Notes in the open workspace, whatever their view, used by the pickers
   /// and counts that must agree with what the grid shows.
   List<Note> get notesInActiveWorkspace => notesInWorkspace(_activeWorkspaceId);
+
+  List<Note> get displayNotesInActiveWorkspace {
+    final scope = workspaceScope;
+    final notes = [
+      for (final note in _displayNotes)
+        if (scope.contains(note)) note,
+    ];
+    if (listEquals(notes, _workspaceDisplayCache)) {
+      return _workspaceDisplayCache;
+    }
+    return _workspaceDisplayCache = List.unmodifiable(notes);
+  }
+
+  List<Note> get _displayNotes {
+    final notes = [
+      for (final note in _notes)
+        if (!_editingCards.containsKey(note.id) ||
+            _editingCards[note.id] != null)
+          _editingCards[note.id] ?? note,
+    ];
+    if (listEquals(notes, _displayNotesCache)) return _displayNotesCache;
+    return _displayNotesCache = List.unmodifiable(notes);
+  }
+
+  Note? displayNoteById(String id) =>
+      _editingCards.containsKey(id) ? _editingCards[id] : noteById(id);
+
+  void beginEditing(String id, {bool newNote = false}) {
+    if (_editingCards.containsKey(id)) return;
+    _editingCards[id] = newNote ? null : noteById(id);
+  }
+
+  void endEditing(String id) {
+    if (!_editingCards.containsKey(id)) return;
+    _editingCards.remove(id);
+    notifyListeners();
+  }
 
   /// Notes filed in [workspaceId], whatever their view, trash included.
   List<Note> notesInWorkspace(String? workspaceId) {
@@ -1312,23 +1354,29 @@ class NotesStore extends ChangeNotifier {
   List<Workspace> _selectionWorkspaces = const [];
   NoteSections? _selectionResult;
 
-  NoteSections notesFor(ViewSelection selection, String query) {
+  NoteSections notesFor(
+    ViewSelection selection,
+    String query, {
+    bool display = false,
+  }) {
+    final notes = display ? _displayNotes : _notes;
     final key = (
       selection,
       query,
       sortMode,
       _activeWorkspaceId,
       activeCollection?.id,
+      display,
     );
     if (_selectionResult != null &&
         key == _selectionKey &&
-        listEquals(_notes, _selectionNotes) &&
+        listEquals(notes, _selectionNotes) &&
         listEquals(_labels, _selectionLabels) &&
         listEquals(_workspaces, _selectionWorkspaces)) {
       return _selectionResult!;
     }
     final result = selectNotes(
-      notes: _notes,
+      notes: notes,
       labels: _labels,
       selection: selection,
       query: query,
@@ -1342,7 +1390,7 @@ class NotesStore extends ChangeNotifier {
           : collectionScope,
     );
     _selectionKey = key;
-    _selectionNotes = List.of(_notes);
+    _selectionNotes = List.of(notes);
     _selectionLabels = List.of(_labels);
     _selectionWorkspaces = List.of(_workspaces);
     return _selectionResult = NoteSections(

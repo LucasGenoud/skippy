@@ -5,6 +5,7 @@ import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../models/link_preview.dart';
+import '../models/note.dart';
 import '../state/link_preview_cache.dart';
 import '../util/linkify.dart';
 
@@ -12,10 +13,7 @@ import '../util/linkify.dart';
 /// site on the right. Tapping it opens the URL. While metadata loads (or when
 /// the site exposes none) it shows just the host.
 ///
-/// [topDivider] draws a hairline at the top instead of a full border, used
-/// when the strip is a full-bleed continuation attached to the bottom of a
-/// note card. [borderRadius] rounds its corners (bottom-only when attached,
-/// all-round when standalone in the editor).
+/// [topDivider] draws a hairline between rows in a preview group.
 class LinkPreviewCard extends StatelessWidget {
   final String url;
   final void Function(String url)? onOpen;
@@ -23,6 +21,7 @@ class LinkPreviewCard extends StatelessWidget {
   final bool summarizing;
   final BorderRadius borderRadius;
   final bool topDivider;
+  final bool outlined;
 
   const LinkPreviewCard({
     super.key,
@@ -32,6 +31,7 @@ class LinkPreviewCard extends StatelessWidget {
     this.summarizing = false,
     this.borderRadius = const BorderRadius.all(kRadiusCorner),
     this.topDivider = false,
+    this.outlined = true,
   });
 
   @override
@@ -49,6 +49,7 @@ class LinkPreviewCard extends StatelessWidget {
           summarizing: summarizing,
           borderRadius: borderRadius,
           topDivider: topDivider,
+          outlined: outlined,
         );
       },
     );
@@ -59,6 +60,18 @@ class LinkPreviewCard extends StatelessWidget {
 /// reserve layout space for a stack of previews (e.g. the note grid's action
 /// row overlay) can compute how much room a given count will take.
 const double kLinkPreviewStripHeight = 60;
+const int kMaxLinkPreviewCards = 5;
+
+List<String> linkPreviewUrls(String text) => findUrls(
+  text,
+).map((match) => match.url).toSet().take(kMaxLinkPreviewCards).toList();
+
+/// Include checklist rows as well as the title and body in both card and editor previews.
+String noteLinkText(Note note) => [
+  note.title,
+  note.content,
+  for (final item in note.items) item.text,
+].join('\n');
 
 class _Strip extends StatelessWidget {
   final String url;
@@ -68,6 +81,7 @@ class _Strip extends StatelessWidget {
   final bool summarizing;
   final BorderRadius borderRadius;
   final bool topDivider;
+  final bool outlined;
 
   const _Strip({
     required this.url,
@@ -77,6 +91,7 @@ class _Strip extends StatelessWidget {
     required this.summarizing,
     required this.borderRadius,
     required this.topDivider,
+    required this.outlined,
   });
 
   @override
@@ -164,9 +179,9 @@ class _Strip extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: borderRadius,
-            border: topDivider
-                ? null
-                : Border.all(color: scheme.outlineVariant),
+            border: outlined && !topDivider
+                ? Border.all(color: scheme.outlineVariant)
+                : null,
           ),
           child: topDivider
               ? Column(
@@ -175,7 +190,7 @@ class _Strip extends StatelessWidget {
                     Divider(
                       height: 1,
                       thickness: 1,
-                      color: scheme.onSurface.withValues(alpha: 0.08),
+                      color: scheme.outlineVariant,
                     ),
                     row,
                   ],
@@ -278,12 +293,9 @@ class _Thumb extends StatelessWidget {
   }
 }
 
-/// Preview strips for every unique URL in [text] (capped at [max]). Renders
-/// nothing when there are no links. Used standalone in the editor, so each
-/// strip is a fully-rounded, bordered card.
+/// Up to five unique previews in one rounded rectangle, with row dividers.
 class LinkPreviewList extends StatelessWidget {
   final String text;
-  final int max;
   final void Function(String url)? onOpen;
   final Future<void> Function(String url)? onSummarize;
   final Set<String> summarizingUrls;
@@ -291,7 +303,6 @@ class LinkPreviewList extends StatelessWidget {
   const LinkPreviewList({
     super.key,
     required this.text,
-    this.max = 3,
     this.onOpen,
     this.onSummarize,
     this.summarizingUrls = const {},
@@ -299,25 +310,33 @@ class LinkPreviewList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final urls = <String>[];
-    for (final u in findUrls(text)) {
-      if (!urls.contains(u.url)) urls.add(u.url);
-    }
+    final urls = linkPreviewUrls(text);
     if (urls.isEmpty) return const SizedBox.shrink();
-    final shown = urls.take(max).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < shown.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          LinkPreviewCard(
-            url: shown[i],
-            onOpen: onOpen,
-            onSummarize: onSummarize,
-            summarizing: summarizingUrls.contains(shown[i]),
-          ),
-        ],
-      ],
+    return DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: const BorderRadius.all(kRadiusCorner),
+      ),
+      child: ClipRRect(
+        key: const Key('link-preview-group'),
+        borderRadius: const BorderRadius.all(kRadiusCorner),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < urls.length; i++)
+              LinkPreviewCard(
+                url: urls[i],
+                onOpen: onOpen,
+                onSummarize: onSummarize,
+                summarizing: summarizingUrls.contains(urls[i]),
+                topDivider: i > 0,
+                outlined: false,
+                borderRadius: BorderRadius.zero,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

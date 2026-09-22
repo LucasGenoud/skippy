@@ -296,6 +296,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _store = context.read<NotesStore>();
     _settings = context.read<SettingsStore>();
     _noteId = widget.noteId;
+    if (_noteId != null) _store.beginEditing(_noteId!);
     final note = _note;
     // Existing markdown notes open in their rendered form. A new markdown
     // draft still opens as source so typing can begin immediately.
@@ -368,6 +369,7 @@ class _EditorScreenState extends State<EditorScreen> {
           stageId: widget.stageId,
         )
         .id;
+    _store.beginEditing(_noteId!, newNote: true);
   }
 
   void _finalize() {
@@ -387,10 +389,14 @@ class _EditorScreenState extends State<EditorScreen> {
         _store.updateNoteContent(_noteId!, items: pruned);
       }
     }
+    final id = _noteId!;
     _store.finalizeNote(
-      _noteId!,
-      retainEmpty: _settings.locationReminderForNote(_noteId) != null,
+      id,
+      retainEmpty: _settings.locationReminderForNote(id) != null,
     );
+    // dispose runs while Flutter locks the tree; reveal the updated card once
+    // the closing frame has finished.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _store.endEditing(id));
   }
 
   void _onTextChanged() {
@@ -641,8 +647,10 @@ class _EditorScreenState extends State<EditorScreen> {
     // it would get from closing: a still-unsaved draft has to be materialized
     // here, nothing else will come back for it.
     _store.finalizeNote(note.id, retainEmpty: true);
+    _store.endEditing(note.id);
     _restoring = true;
     _noteId = copy.id;
+    _store.beginEditing(copy.id, newNote: true);
     _titleController.text = copy.title;
     if (!copy.isChecklist) _contentController.text = copy.content;
     _restoring = false;
@@ -1334,11 +1342,11 @@ class _EditorScreenState extends State<EditorScreen> {
                                   // note, kept as the very last thing so they
                                   // always sit below everything else.
                                   if (note != null &&
-                                      _linkText(note).isNotEmpty)
+                                      findUrls(noteLinkText(note)).isNotEmpty)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 12),
                                       child: LinkPreviewList(
-                                        text: _linkText(note),
+                                        text: noteLinkText(note),
                                         onSummarize:
                                             !trashed &&
                                                 !note.isChecklist &&
@@ -1731,13 +1739,6 @@ class _EditorScreenState extends State<EditorScreen> {
           : () => _store.toggleLabelOnNote(noteId, label.id),
       onPressed: trashed ? null : () => LabelsSheet.show(context, noteId),
     );
-  }
-
-  /// The note's title + body, but only when it actually contains a URL, an
-  /// empty string otherwise so the preview strip is skipped entirely.
-  String _linkText(Note note) {
-    final combined = '${note.title}\n${note.content}';
-    return findUrls(combined).isEmpty ? '' : combined;
   }
 
   /// Images render inline, in upload order; every other file becomes a

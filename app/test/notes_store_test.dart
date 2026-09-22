@@ -163,6 +163,54 @@ void main() {
   tearDown(() => store.dispose());
 
   group('drafts', () {
+    test('editor keeps its card still while content autosaves', () async {
+      api.notes['n1'] = serverNote('n1', title: 'Before');
+      await store.load();
+
+      store.beginEditing('n1');
+      final shown = store.notesFor(ViewSelection.notes, '', display: true);
+      final boardShown = store.displayNotesInActiveWorkspace;
+      store.updateNoteContent('n1', title: 'After', urgent: false);
+      await settle();
+
+      expect(store.noteById('n1')!.title, 'After');
+      expect(store.displayNoteById('n1')!.title, 'Before');
+      expect(api.notes['n1']!.title, 'After');
+      expect(
+        store.notesFor(ViewSelection.notes, '', display: true),
+        same(shown),
+      );
+      expect(shown.others.single.title, 'Before');
+      expect(store.displayNotesInActiveWorkspace, same(boardShown));
+      expect(boardShown.single.title, 'Before');
+
+      store.endEditing('n1');
+      expect(
+        store
+            .notesFor(ViewSelection.notes, '', display: true)
+            .others
+            .single
+            .title,
+        'After',
+      );
+      expect(store.displayNotesInActiveWorkspace.single.title, 'After');
+      expect(store.displayNoteById('n1')!.title, 'After');
+
+      final draft = store.createDraft();
+      store.beginEditing(draft.id, newNote: true);
+      store.updateNoteContent(draft.id, title: 'New');
+      expect(
+        store.notesFor(ViewSelection.notes, '', display: true).others,
+        hasLength(1),
+      );
+      store.finalizeNote(draft.id);
+      store.endEditing(draft.id);
+      expect(
+        store.notesFor(ViewSelection.notes, '', display: true).others,
+        hasLength(2),
+      );
+    });
+
     test('draft is only created on the server once it has content', () async {
       final draft = store.createDraft();
       expect(api.log.where((l) => l.startsWith('createNote')), isEmpty);

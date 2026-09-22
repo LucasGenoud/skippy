@@ -69,9 +69,8 @@ class MasonryRaiseTileNotification extends Notification {
 /// lifts it into a drag; the remaining tiles flow around the pointer in real
 /// time and the grid auto-scrolls near the viewport edges.
 ///
-/// Positions are recomputed for the full item set, but expensive card widgets
-/// are mounted in small batches so opening a large grid does not monopolize a
-/// frame.
+/// Positions are recomputed for the full item set, but only cards near the
+/// viewport are mounted. Unseen cards use an estimated height until measured.
 class AnimatedMasonry extends StatefulWidget {
   final List<Note> notes;
   final int columns;
@@ -99,6 +98,10 @@ class AnimatedMasonry extends StatefulWidget {
 
   /// When set, only these notes can start a drag.
   final Set<String>? draggableIds;
+
+  /// Selected notes that reorder together inside this masonry. Other views
+  /// can allow multi-card drops without changing their own ordering policy.
+  final Set<String> reorderGroupIds;
 
   /// A short label shown on the floating drag preview.
   final String? dragFeedbackLabel;
@@ -131,6 +134,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.spacing = 8,
     this.dragEnabled = true,
     this.draggableIds,
+    this.reorderGroupIds = const {},
     this.dragFeedbackLabel,
     this.onReorder,
     this.onStationaryLongPress,
@@ -178,9 +182,13 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   final Map<String, double> _heights = {};
   List<String> _orderIds = [];
-  int _visibleCount = 0;
+  int _unscrolledCount = 0;
   bool _batchScheduled = false;
+  Set<String> _visibleIds = const {};
+  Rect? _viewportBounds;
+  bool _viewportScheduled = false;
   String? _draggingId;
+  Set<String> _draggingIds = const {};
   List<String>? _dragStartOrder;
 
   /// The tile that asked to paint last; see [MasonryRaiseTileNotification].
@@ -231,12 +239,14 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   void initState() {
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
-    _visibleCount = math.min(_buildBatchSize, _orderIds.length);
+    _unscrolledCount = math.min(_buildBatchSize, _orderIds.length);
+    widget.scrollController?.addListener(_onScroll);
     _autoScrollTicker = createTicker(_onAutoScrollTick);
   }
 
   @override
   void dispose() {
+    widget.scrollController?.removeListener(_onScroll);
     _autoScrollTicker.dispose();
     super.dispose();
   }
@@ -244,6 +254,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   @override
   void didUpdateWidget(AnimatedMasonry oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController?.removeListener(_onScroll);
+      widget.scrollController?.addListener(_onScroll);
+      _viewportBounds = null;
+    }
     final ids = [for (final n in widget.notes) n.id];
     if (_draggingId == null) {
       _orderIds = ids;
@@ -259,8 +274,8 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       ];
     }
     final live = ids.toSet();
-    _visibleCount = math.min(
-      math.max(_visibleCount, math.min(_buildBatchSize, ids.length)),
+    _unscrolledCount = math.min(
+      math.max(_unscrolledCount, math.min(_buildBatchSize, ids.length)),
       ids.length,
     );
     _heights.removeWhere((id, _) => !live.contains(id));
@@ -298,6 +313,46 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     _layout = layout;
     _layoutWidth = maxWidth;
     return layout;
+  }
+
+  Set<String> _cardsNearViewport(_Layout layout) {
+    if (widget.scrollController == null) {
+      return _orderIds.take(_unscrolledCount).toSet();
+    }
+    final viewport = _viewportBounds;
+    if (viewport == null) return _orderIds.take(_buildBatchSize).toSet();
+    final margin = viewport.height / 2;
+    final top = viewport.top - margin;
+    final bottom = viewport.bottom + margin;
+    return {
+      for (final id in _orderIds)
+        if (layout.slots[id] case final _Slot slot)
+          if (slot.y <= bottom &&
+              slot.y + (_heights[id] ?? _estimatedHeight) >= top)
+            id,
+    };
+  }
+
+  void _onScroll() => _scheduleViewportUpdate();
+
+  void _scheduleViewportUpdate() {
+    if (_viewportScheduled || widget.scrollController == null) return;
+    _viewportScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _viewportScheduled = false;
+      if (!mounted || _layout == null) return;
+      final viewport = _viewportRect();
+      final box = context.findRenderObject() as RenderBox?;
+      if (viewport == null || box == null || !box.attached || !box.hasSize) {
+        return;
+      }
+      _viewportBounds = Rect.fromPoints(
+        box.globalToLocal(viewport.topLeft),
+        box.globalToLocal(viewport.bottomRight),
+      );
+      final next = _cardsNearViewport(_layout!);
+      if (!setEquals(next, _visibleIds)) setState(() => _visibleIds = next);
+    });
   }
 
   _Layout _packLayout(double maxWidth, {int? gapAt}) {
@@ -403,7 +458,15 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     _dragChangedOrder = false;
     _dragMoved = false;
     _dragStartOrder = List<String>.unmodifiable(_orderIds);
-    setState(() => _draggingId = id);
+    setState(() {
+      _draggingId = id;
+      _draggingIds = widget.reorderGroupIds.contains(id)
+          ? {
+              for (final noteId in _orderIds)
+                if (widget.reorderGroupIds.contains(noteId)) noteId,
+            }
+          : {id};
+    });
   }
 
   void _onDragMove(Offset globalPosition) {
@@ -422,7 +485,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
     String? targetId;
     for (final id in _orderIds) {
-      if (id == draggingId) continue;
+      if (_draggingIds.contains(id)) continue;
       final slot = layout.slots[id]!;
       final rect = Rect.fromLTWH(
         slot.x,
@@ -436,21 +499,32 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       }
     }
 
-    int? targetIndex;
-    if (targetId != null) {
-      targetIndex = _orderIds.indexOf(targetId);
-    } else if (local.dy > layout.totalHeight &&
+    final atEnd =
+        targetId == null &&
+        local.dy > layout.totalHeight &&
         local.dx >= 0 &&
-        local.dx <= box.size.width) {
-      targetIndex = _orderIds.length - 1;
-    }
-    if (targetIndex == null) return;
+        local.dx <= box.size.width;
+    if (targetId == null && !atEnd) return;
 
     final from = _orderIds.indexOf(draggingId);
-    if (from == targetIndex) return;
+    final targetIndex = targetId == null
+        ? _orderIds.length
+        : _orderIds.indexOf(targetId);
+    final moving = [
+      for (final id in _orderIds)
+        if (_draggingIds.contains(id)) id,
+    ];
+    final remaining = [
+      for (final id in _orderIds)
+        if (!_draggingIds.contains(id)) id,
+    ];
+    final insertAt = targetId == null
+        ? remaining.length
+        : remaining.indexOf(targetId) + (targetIndex > from ? 1 : 0);
+    final next = [...remaining]..insertAll(insertAt, moving);
+    if (listEquals(next, _orderIds)) return;
     setState(() {
-      _orderIds.removeAt(from);
-      _orderIds.insert(targetIndex!, draggingId);
+      _orderIds = next;
       _invalidateLayout();
     });
     _dragChangedOrder = true;
@@ -468,7 +542,10 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     final draggingId = _draggingId;
     if (draggingId == null) return;
     final stationary = !_dragMoved;
-    setState(() => _draggingId = null);
+    setState(() {
+      _draggingId = null;
+      _draggingIds = const {};
+    });
     final original = _dragStartOrder ?? [for (final n in widget.notes) n.id];
     final fromIndex = original.indexOf(draggingId);
     final toIndex = _orderIds.indexOf(draggingId);
@@ -538,10 +615,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   }
 
   Rect? _viewportRect() {
+    if (widget.scrollController?.hasClients != true) return null;
     final context =
         widget.scrollController?.position.context.notificationContext;
     final box = context?.findRenderObject() as RenderBox?;
-    if (box == null || !box.attached) return null;
+    if (box == null || !box.attached || !box.hasSize) return null;
     return box.localToGlobal(Offset.zero) & box.size;
   }
 
@@ -579,6 +657,9 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   Widget _buildTile(Note note, _Layout layout) {
     final child = _tileFor(note);
+    if (_draggingIds.contains(note.id) && note.id != _draggingId) {
+      return Opacity(opacity: 0.30, child: child);
+    }
     if (!widget.dragEnabled ||
         widget.onReorder == null ||
         (widget.draggableIds != null &&
@@ -653,19 +734,23 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         }
         final layout = _computeLayout(width);
         final notesById = {for (final n in widget.notes) n.id: n};
-        if (_visibleCount < _orderIds.length && !_batchScheduled) {
+        if (widget.scrollController == null &&
+            _unscrolledCount < _orderIds.length &&
+            !_batchScheduled) {
           _batchScheduled = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _batchScheduled = false;
             if (!mounted) return;
-            setState(
-              () => _visibleCount = math.min(
-                _visibleCount + _buildBatchSize,
+            setState(() {
+              _unscrolledCount = math.min(
+                _unscrolledCount + _buildBatchSize,
                 _orderIds.length,
-              ),
-            );
+              );
+            });
           });
         }
+        _visibleIds = _cardsNearViewport(layout);
+        _scheduleViewportUpdate();
         final snap = _snapFrame;
         // Re-arm the glide animation for the frames that follow this one.
         if (snap) {
@@ -679,8 +764,9 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         // over, not the element it is built from.
         final tiles = <Widget>[];
         Widget? raised;
-        for (var i = 0; i < _visibleCount; i++) {
-          if (notesById[_orderIds[i]] case final Note note) {
+        for (final id in _orderIds) {
+          if (!_visibleIds.contains(id)) continue;
+          if (notesById[id] case final Note note) {
             final tile = AnimatedPositioned(
               key: ValueKey(note.id),
               duration: snap ? Duration.zero : _moveDuration,
@@ -763,34 +849,38 @@ class _DragFeedback extends StatelessWidget {
       // The lifted card is repositioned on every pointer sample. Without a
       // boundary of its own, each of those moves repaints the whole card *and*
       // its blurred shadow; with one, the rasterized layer is simply moved.
-      child: RepaintBoundary(
-        child: Material(
-          type: MaterialType.transparency,
-          child: Stack(
-            children: [
-              child,
-              if (label != null)
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(kRadius),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      child: Text(
-                        label!,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onPrimary,
+      child: Opacity(
+        opacity: 0.72,
+        child: RepaintBoundary(
+          child: Material(
+            type: MaterialType.transparency,
+            child: Stack(
+              children: [
+                child,
+                if (label != null)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(kRadius),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          label!,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
