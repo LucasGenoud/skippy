@@ -92,6 +92,117 @@ void main() {
     await flushTimers(tester);
   });
 
+  testWidgets('column count keeps its width and rolls up or down', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    for (var i = 0; i < 9; i++) {
+      api.notes['n$i'] = serverNote(
+        'n$i',
+        title: 'card $i',
+      ).copyWith(stageId: 'todo');
+    }
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    final chip = find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == '_CountChip',
+    );
+    final width = tester.getSize(chip.at(1)).width;
+    api.notes['n9'] = serverNote(
+      'n9',
+      title: 'card 9',
+    ).copyWith(stageId: 'todo');
+    await store.load();
+    await tester.pump();
+    expect(tester.getSize(chip.at(1)).width, width);
+    expect(
+      tester
+          .widget<SlideTransition>(
+            find
+                .ancestor(
+                  of: find.text('10'),
+                  matching: find.byType(SlideTransition),
+                )
+                .first,
+          )
+          .position
+          .value
+          .dy,
+      1,
+    );
+    expect(
+      tester
+          .widget<SlideTransition>(
+            find
+                .ancestor(
+                  of: find.text('9'),
+                  matching: find.byType(SlideTransition),
+                )
+                .first,
+          )
+          .position
+          .value
+          .dy,
+      0,
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+      tester
+          .widget<SlideTransition>(
+            find
+                .ancestor(
+                  of: find.text('9'),
+                  matching: find.byType(SlideTransition),
+                )
+                .first,
+          )
+          .position
+          .value
+          .dy,
+      lessThan(0),
+    );
+    await tester.pumpAndSettle();
+
+    api.notes.remove('n9');
+    await store.load();
+    await tester.pump();
+    expect(
+      tester
+          .widget<SlideTransition>(
+            find
+                .ancestor(
+                  of: find.text('9'),
+                  matching: find.byType(SlideTransition),
+                )
+                .first,
+          )
+          .position
+          .value
+          .dy,
+      -1,
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+      tester
+          .widget<SlideTransition>(
+            find
+                .ancestor(
+                  of: find.text('10'),
+                  matching: find.byType(SlideTransition),
+                )
+                .first,
+          )
+          .position
+          .value
+          .dy,
+      greaterThan(0),
+    );
+    await tester.pumpAndSettle();
+    await flushTimers(tester);
+  });
+
   testWidgets('a wide column collapses into a titled rail', (tester) async {
     await setViewport(tester, const Size(1200, 900));
     api.notes['n1'] = serverNote('n1', title: 'card one');

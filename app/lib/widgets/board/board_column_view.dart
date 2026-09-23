@@ -538,33 +538,60 @@ class _StageRule extends StatelessWidget {
 /// How many cards a column holds. Drawn on the card fill rather than as bare
 /// text, so it reads as a tally attached to the column instead of as a number
 /// floating between the title and the buttons.
-class _CountChip extends StatelessWidget {
+class _CountChip extends StatefulWidget {
   final int count;
 
   const _CountChip({required this.count});
 
   @override
+  State<_CountChip> createState() => _CountChipState();
+}
+
+class _CountChipState extends State<_CountChip> {
+  late int _previousCount = widget.count;
+
+  @override
+  void didUpdateWidget(_CountChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _previousCount = oldWidget.count;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final count = widget.count;
     final scheme = Theme.of(context).colorScheme;
     return Container(
+      constraints: const BoxConstraints(minWidth: 40),
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: kBorderRadius,
         border: Border.all(color: boardColumnBorderColor(scheme)),
       ),
-      child: AnimatedSwitcher(
-        duration: Motion.fast,
-        transitionBuilder: (child, animation) => RotationTransition(
-          turns: Tween(begin: 0.8, end: 1.0).animate(animation),
-          child: FadeTransition(opacity: animation, child: child),
-        ),
-        child: Text(
-          '$count',
-          key: ValueKey(count),
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+      child: ClipRect(
+        child: AnimatedSwitcher(
+          duration: Motion.fast,
+          transitionBuilder: (child, animation) {
+            final childCount = (child.key as ValueKey<int>).value;
+            final offset = childCount == count
+                ? Offset(0, childCount > _previousCount ? 1 : -1)
+                : Offset(0, childCount < count ? -1 : 1);
+            return SlideTransition(
+              position: Tween(
+                begin: offset,
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            );
+          },
+          child: Text(
+            '$count',
+            key: ValueKey(count),
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
         ),
       ),
     );
