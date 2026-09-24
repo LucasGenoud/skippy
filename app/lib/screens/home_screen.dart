@@ -1358,11 +1358,10 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               onStationaryLongPress: (id) =>
                   _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
-              // Everything the itemBuilder below reads beyond the note.
-              itemBuildKey: Object.hash(
+              itemBuildKey: (note) => Object.hash(
                 query,
                 _selectionMode,
-                Object.hashAllUnordered(_selectedNoteIds),
+                _selectedNoteIds.contains(note.id),
               ),
               itemBuilder: (context, note) => tile(note),
             ),

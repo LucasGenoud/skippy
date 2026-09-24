@@ -83,6 +83,27 @@ class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
   bool _menuOpen = false;
   bool _reminderPickerOpen = false;
+  Note? _bodyNote;
+  String? _bodyQuery;
+  bool? _bodyActionsSlot;
+  Widget? _body;
+
+  Widget _cardBody(Note note, String query, bool actionsSlot) {
+    if (!identical(_bodyNote, note) ||
+        _bodyQuery != query ||
+        _bodyActionsSlot != actionsSlot) {
+      _bodyNote = note;
+      _bodyQuery = query;
+      _bodyActionsSlot = actionsSlot;
+      _body = _NoteCardContent(
+        note: note,
+        query: query,
+        reserveActions: actionsSlot,
+        showLabelsInBody: !actionsSlot,
+      );
+    }
+    return _body!;
+  }
 
   Future<void> _editReminder() async {
     if (_reminderPickerOpen) return;
@@ -358,15 +379,10 @@ class _NoteTileState extends State<NoteTile> {
       onLongPress: widget.selectionMode
           ? () => widget.onSelectionChanged?.call(!widget.selected)
           : null,
-      // Keep hover controls outside the note body.
+      // Keep the content widget identical while selection and hover change.
       child: Stack(
         children: [
-          _NoteCardContent(
-            note: note,
-            query: widget.query,
-            reserveActions: actionsSlot,
-            showLabelsInBody: !actionsSlot,
-          ),
+          _cardBody(note, widget.query, actionsSlot),
           if (collection != null) _CollectionMarker(encoded: collection),
           _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
           if (isRewriting) const _NoteRewriteProgress(),

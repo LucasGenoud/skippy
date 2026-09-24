@@ -103,6 +103,41 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
+    testWidgets('selection changes reuse the unchanged card body', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', content: 'Body');
+      await store.load();
+      var note = store.noteById('n1')!;
+      var selectionMode = false;
+      late StateSetter refresh;
+      await tester.pumpWidget(
+        harness(
+          store,
+          StatefulBuilder(
+            builder: (context, setState) {
+              refresh = setState;
+              return SizedBox(
+                width: 240,
+                child: NoteTile(note: note, selectionMode: selectionMode),
+              );
+            },
+          ),
+        ),
+      );
+      final body = tester.widget<LinkedText>(find.byType(LinkedText));
+      refresh(() => selectionMode = true);
+      await tester.pump();
+      expect(tester.widget<LinkedText>(find.byType(LinkedText)), same(body));
+
+      refresh(() => note = note.copyWith(content: 'Changed'));
+      await tester.pump();
+      expect(
+        tester.widget<LinkedText>(find.byType(LinkedText)),
+        isNot(same(body)),
+      );
+    });
+
     testWidgets('only narrow cards mount a fullscreen container route', (
       tester,
     ) async {

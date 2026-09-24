@@ -77,8 +77,7 @@ class AnimatedMasonry extends StatefulWidget {
   final double spacing;
   final Widget Function(BuildContext context, Note note) itemBuilder;
 
-  /// Everything [itemBuilder] reads besides the note itself, as one value that
-  /// compares equal while a tile would come out the same.
+  /// Everything [itemBuilder] reads besides the note itself, per card.
   ///
   /// [itemBuilder] is a closure rebuilt with its parent, so it is never equal
   /// to the previous one and cannot say whether it would still produce the
@@ -89,10 +88,9 @@ class AnimatedMasonry extends StatefulWidget {
   /// sliding up (which changes the available height, never the width) re-ran
   /// it on every frame of the animation and rebuilt every card with it.
   ///
-  /// Pass the state the builder closes over (selection, query) and the cache
-  /// survives all of that instead, at the cost of having to keep this in step
-  /// with what [itemBuilder] actually reads.
-  final Object? itemBuildKey;
+  /// Return the state the builder closes over (selection, query) for [note].
+  /// A selection change then rebuilds only cards whose own key changed.
+  final Object? Function(Note note)? itemBuildKey;
 
   final bool dragEnabled;
 
@@ -202,19 +200,24 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   // widget). Dragging is exactly this case: the grid setStates on every step
   // and nothing about the cards themselves has changed.
   //
-  // The cache is dropped whenever the note object changes, and wholesale when
-  // [AnimatedMasonry.itemBuildKey] changes (or on every parent rebuild when
-  // there is no key), which is how the parent declares that its [itemBuilder]
-  // would now produce different cards.
+  // A changed note or per-card build key drops just that card. Without a key,
+  // every parent rebuild drops the cache because the builder may have changed.
   final Map<String, Widget> _tiles = {};
   final Map<String, Note> _tileNotes = {};
+  final Map<String, Object?> _tileKeys = {};
 
   Widget _tileFor(Note note) {
     final cached = _tiles[note.id];
-    if (cached != null && identical(_tileNotes[note.id], note)) return cached;
+    final key = widget.itemBuildKey?.call(note);
+    if (cached != null &&
+        identical(_tileNotes[note.id], note) &&
+        _tileKeys[note.id] == key) {
+      return cached;
+    }
     final built = widget.itemBuilder(context, note);
     _tiles[note.id] = built;
     _tileNotes[note.id] = note;
+    _tileKeys[note.id] = key;
     return built;
   }
 
@@ -282,17 +285,16 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     // The usual way a raised tile ends is the note leaving the view, which is
     // exactly what it was swiped off the grid for.
     if (_raisedId != null && !live.contains(_raisedId)) _raisedId = null;
-    // Cards the parent would now build differently, plus any whose note has
-    // gone away. A note that merely changed is dropped by [_tileFor] itself.
-    // No key means the parent hasn't told us what its builder reads, so assume
-    // the worst, as this did before the key existed.
-    if (widget.itemBuildKey == null ||
-        widget.itemBuildKey != oldWidget.itemBuildKey) {
+    // With per-card keys, [_tileFor] decides which survivors changed. No key
+    // means the builder may have changed arbitrarily, so drop them all.
+    if (widget.itemBuildKey == null) {
       _tiles.clear();
       _tileNotes.clear();
+      _tileKeys.clear();
     } else {
       _tiles.removeWhere((id, _) => !live.contains(id));
       _tileNotes.removeWhere((id, _) => !live.contains(id));
+      _tileKeys.removeWhere((id, _) => !live.contains(id));
     }
     _invalidateLayout();
   }

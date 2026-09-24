@@ -285,11 +285,10 @@ class _BoardColumnViewState extends State<BoardColumnView> {
               id,
               !widget.selectedIds.contains(id),
             ),
-            // Everything the itemBuilder below reads beyond the note.
-            itemBuildKey: Object.hash(
+            itemBuildKey: (note) => Object.hash(
               widget.query,
               widget.selectionMode,
-              Object.hashAllUnordered(widget.selectedIds),
+              widget.selectedIds.contains(note.id),
             ),
             itemBuilder: (context, note) => NoteTile(
               key: ValueKey(note.id),

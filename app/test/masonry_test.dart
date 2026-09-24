@@ -5,6 +5,35 @@ import 'package:skippy/widgets/masonry.dart';
 import 'notes_store_test.dart' show serverNote;
 
 void main() {
+  testWidgets('selection rebuilds only the changed card', (tester) async {
+    final notes = [
+      for (var i = 0; i < 3; i++) serverNote('n$i', title: 'Card $i'),
+    ];
+    var selected = <String>{};
+    final builds = <String, int>{};
+    Widget grid() => MaterialApp(
+      home: Scaffold(
+        body: AnimatedMasonry(
+          notes: notes,
+          columns: 1,
+          itemBuildKey: (note) => selected.contains(note.id),
+          itemBuilder: (_, note) {
+            builds.update(note.id, (count) => count + 1, ifAbsent: () => 1);
+            return SizedBox(height: 40, child: Text(note.title));
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(grid());
+    await tester.pumpAndSettle();
+    builds.clear();
+    selected = {'n1'};
+    await tester.pumpWidget(grid());
+    await tester.pumpAndSettle();
+    expect(builds, {'n1': 1});
+  });
+
   testWidgets('large grids mount cards progressively', (tester) async {
     final notes = [
       for (var i = 0; i < 45; i++) serverNote('n$i', title: 'Card $i'),
