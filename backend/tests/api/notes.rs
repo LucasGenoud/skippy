@@ -69,6 +69,37 @@ async fn create_defaults_and_patch() {
 }
 
 #[tokio::test]
+async fn content_precondition_preserves_newer_edit() {
+    let app = app().await;
+    let (token, _) = register(&app, "precondition").await;
+    let note = create_note(&app, &token, json!({"title": "Original"})).await;
+    let id = note["id"].as_str().unwrap();
+    let original_time = note["updated_at"].as_str().unwrap();
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"title": "Newer", "if_unmodified_since": original_time})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"title": "Stale", "if_unmodified_since": original_time})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, current) = send(&app, "GET", &format!("/api/notes/{id}"), Some(&token), None).await;
+    assert_eq!(current["title"], "Newer");
+}
+
+#[tokio::test]
 async fn backup_restore_can_preserve_note_timestamps() {
     let app = app().await;
     let (token, _) = register(&app, "ada").await;

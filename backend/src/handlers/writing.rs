@@ -98,6 +98,7 @@ pub async fn rewrite_note(
             .collect()
     });
     let body = UpdateNote {
+        if_unmodified_since: None,
         collection_id: None,
         workspace_id: None,
         kind: None,

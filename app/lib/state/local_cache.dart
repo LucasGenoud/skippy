@@ -53,9 +53,10 @@ class PrefsLocalCache implements LocalCache {
     }
     _lastWrite = null;
     final prefs = await SharedPreferences.getInstance();
-    if (await prefs.setString(_storageKey(key), next.json)) {
-      _lastWrite = next;
+    if (!await prefs.setString(_storageKey(key), next.json)) {
+      throw StateError('offline storage could not save changes');
     }
+    _lastWrite = next;
   }
 
   @override

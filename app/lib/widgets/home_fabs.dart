@@ -84,7 +84,7 @@ class NewNoteFabs extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         fab(
-          size: 44,
+          size: 48,
           icon: Icons.article_outlined,
           color: scheme.surfaceContainerHigh,
           onColor: scheme.onSurfaceVariant,
@@ -93,7 +93,7 @@ class NewNoteFabs extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         fab(
-          size: 44,
+          size: 48,
           icon: Icons.check_box_outlined,
           color: scheme.surfaceContainerHigh,
           onColor: scheme.onSurfaceVariant,
@@ -154,8 +154,8 @@ class _AudioNoteFab extends StatelessWidget {
           child: InkWell(
             onTap: () => _record(context),
             child: SizedBox(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               child: Icon(
                 Icons.mic_none,
                 size: 22,

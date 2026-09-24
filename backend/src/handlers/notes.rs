@@ -410,6 +410,18 @@ async fn apply_note_update_inner(
     schedule_summaries: bool,
 ) -> ApiResult<NoteView> {
     let mut record = require_participant(state, id, user_id).await?;
+    let expected_updated_at = if let Some(expected) = body.if_unmodified_since.as_deref() {
+        let expected = chrono::DateTime::parse_from_rfc3339(expected)
+            .map_err(|_| ApiError::BadRequest("invalid if_unmodified_since".to_string()))?;
+        let current = chrono::DateTime::parse_from_rfc3339(&record.updated_at)
+            .map_err(|_| ApiError::BadRequest("invalid note timestamp".to_string()))?;
+        if expected.timestamp_micros() != current.timestamp_micros() {
+            return Err(ApiError::Conflict("note changed elsewhere".to_string()));
+        }
+        Some(record.updated_at.clone())
+    } else {
+        None
+    };
     let urls_before = note_urls(&record);
     let old_items = record.items.clone();
     let is_owner = is_note_workspace_owner(state, &record, user_id).await?;
@@ -508,10 +520,9 @@ async fn apply_note_update_inner(
     // edits within the window coalesce, so history is one entry per sitting
     // rather than one per debounced save. The first-ever edit always snapshots
     // (last_editor_id is None), preserving how the note started.
+    let prior_version =
+        (content_changed && starts_new_edit_session(&record, user_id)).then(|| version_of(&record));
     if content_changed {
-        if starts_new_edit_session(&record, user_id) {
-            state.repo.insert_note_version(&version_of(&record)).await?;
-        }
         record.last_editor_id = Some(user_id.to_string());
     }
 
@@ -525,7 +536,13 @@ async fn apply_note_update_inner(
         record.stage_id = None;
     }
     record.updated_at = now();
-    state.repo.update_note(&record).await?;
+    state
+        .repo
+        .update_note(&record, expected_updated_at.as_deref())
+        .await?;
+    if let Some(version) = prior_version {
+        state.repo.insert_note_version(&version).await?;
+    }
 
     // Items checked off in this patch feed this note's suggestion dictionary
     // ("Milk" checked today autocompletes on next week's list), scoped per

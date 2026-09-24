@@ -682,6 +682,9 @@ pub struct CreateNote {
 /// while an absent key leaves it untouched.
 #[derive(Debug, Deserialize, Default)]
 pub struct UpdateNote {
+    /// Optional content-write precondition from the last server snapshot.
+    /// Older clients omit it and keep last-write-wins behavior.
+    pub if_unmodified_since: Option<String>,
     /// Moves the note to another workspace (owner only, and only into a
     /// workspace they belong to).
     pub workspace_id: Option<String>,
@@ -719,6 +722,7 @@ impl UpdateNote {
         // Exhaustive destructuring: adding a field to UpdateNote without
         // deciding how it patches the record fails to compile.
         let UpdateNote {
+            if_unmodified_since: _,
             workspace_id,
             collection_id,
             kind,

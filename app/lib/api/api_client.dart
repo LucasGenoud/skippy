@@ -152,8 +152,8 @@ abstract class Api {
 
   // notes
   Future<List<Note>> fetchNotes();
-  Future<void> createNote(Note note, {bool preserveTimestamps = false});
-  Future<void> patchNote(String id, Map<String, dynamic> fields);
+  Future<Note> createNote(Note note, {bool preserveTimestamps = false});
+  Future<Note> patchNote(String id, Map<String, dynamic> fields);
 
   /// Set (or, with a null [at], clear) the reminder on one checklist item.
   ///
@@ -663,8 +663,8 @@ class ApiClient extends _ApiTransport implements Api {
   }
 
   @override
-  Future<void> createNote(Note note, {bool preserveTimestamps = false}) async {
-    _decode(
+  Future<Note> createNote(Note note, {bool preserveTimestamps = false}) async {
+    final data = _decode(
       await _client.post(
         _uri('/notes'),
         headers: _headers(),
@@ -703,17 +703,19 @@ class ApiClient extends _ApiTransport implements Api {
         }),
       ),
     );
+    return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override
-  Future<void> patchNote(String id, Map<String, dynamic> fields) async {
-    _decode(
+  Future<Note> patchNote(String id, Map<String, dynamic> fields) async {
+    final data = _decode(
       await _client.patch(
         _uri('/notes/$id'),
         headers: _headers(),
         body: jsonEncode(fields),
       ),
     );
+    return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override

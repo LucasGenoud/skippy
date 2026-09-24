@@ -39,7 +39,7 @@ const projects = NoteCollection(
 class PlacementApi extends FakeApi {
   final placements = <String?>[];
   @override
-  Future<void> createNote(Note note, {bool preserveTimestamps = false}) {
+  Future<Note> createNote(Note note, {bool preserveTimestamps = false}) {
     if (failWith == null) {
       expect(
         workspaces[note.workspaceId]!.collections.any(

@@ -467,7 +467,12 @@ class _NoteTileState extends State<NoteTile> {
       duration: Motion.reduced(context) ? Duration.zero : Motion.base,
       curve: Motion.emphasized,
       alignment: Alignment.topCenter,
-      child: cardContent,
+      child: Semantics(
+        button: true,
+        label:
+            '${widget.selectionMode ? (widget.selected ? 'Deselect' : 'Select') : 'Open'} ${note.title.isEmpty ? 'untitled note' : note.title}',
+        child: cardContent,
+      ),
     );
 
     final tile = MouseRegion(

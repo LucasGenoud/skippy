@@ -62,6 +62,16 @@ Future<void> settle() =>
 /// [NotesStore.offlineGrace]); tests wait 20ms for the same behaviour.
 const testOfflineGrace = Duration(milliseconds: 20);
 
+class _FailingCache extends MemoryLocalCache {
+  bool fail = false;
+
+  @override
+  Future<void> write(String key, Map<String, dynamic> doc) {
+    if (fail) throw StateError('offline storage full');
+    return super.write(key, doc);
+  }
+}
+
 NotesStore testStore(
   FakeApi api, {
   LocalCache? cache,
@@ -1447,6 +1457,24 @@ void main() {
   });
 
   group('offline persistence', () {
+    test('offline cache failure is visible and can be retried', () async {
+      final cache = _FailingCache();
+      api.notes['n1'] = serverNote('n1');
+      final s = testStore(api, cache: cache);
+      await s.load();
+      cache.fail = true;
+      s.setColor('n1', 'teal');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(s.syncStatus, SyncStatus.failed);
+      expect(s.cacheFailure, contains('offline storage full'));
+
+      cache.fail = false;
+      s.retryCacheWrite();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(s.cacheFailure, isNull);
+      s.dispose();
+    });
+
     test(
       'cache and pending writes are isolated by server as well as user',
       () async {
@@ -1636,28 +1664,82 @@ void main() {
       s.dispose();
     });
 
-    test('a rejected (4xx) pending write is dropped, not wedged', () async {
-      final cache = MemoryLocalCache();
-      await cache.write('u-me', {
-        'notes': <dynamic>[],
-        'labels': <dynamic>[],
-        'history': <String, dynamic>{},
-        'queue': [
-          {
-            'kind': 'patch',
-            'id': 'ghost', // no such note server-side -> 404
-            'data': {'color': 'teal'},
-          },
-        ],
-      });
+    test(
+      'a rejected write stays visible and durable without wedging sync',
+      () async {
+        final cache = MemoryLocalCache();
+        await cache.write('u-me', {
+          'notes': <dynamic>[],
+          'labels': <dynamic>[],
+          'history': <String, dynamic>{},
+          'queue': [
+            {
+              'kind': 'patch',
+              'id': 'ghost', // no such note server-side -> 404
+              'data': {'color': 'teal'},
+            },
+          ],
+        });
 
+        final s = testStore(api, cache: cache);
+        await s.load();
+        await settle();
+
+        expect(s.offline, isFalse);
+        expect(s.syncStatus, SyncStatus.failed);
+        expect(s.syncIssues.single.message, isNotEmpty);
+        final doc = await cache.read('u-me');
+        expect(doc!['queue'] as List, isEmpty);
+        expect(doc['sync_issues'] as List, hasLength(1));
+        s.dispose();
+
+        final reopened = testStore(api, cache: cache);
+        await reopened.load();
+        expect(reopened.syncIssues, hasLength(1));
+        reopened.dismissSyncIssue(reopened.syncIssues.single);
+        expect(reopened.syncStatus, SyncStatus.synced);
+        reopened.dispose();
+      },
+    );
+
+    test('a rejected change can be retried after its cause is fixed', () async {
+      final api = FakeApi()..notes['n1'] = serverNote('n1', title: 'Example');
+      final s = testStore(api);
+      await s.load();
+      api.notes.remove('n1');
+      s.setColor('n1', 'teal');
+      await settle();
+      expect(s.syncIssues, hasLength(1));
+
+      api.notes['n1'] = serverNote('n1', title: 'Example');
+      s.retrySyncIssue(s.syncIssues.single);
+      await settle();
+      expect(api.notes['n1']!.color, 'teal');
+      expect(s.syncIssues, isEmpty);
+      s.dispose();
+    });
+
+    test('an older offline edit cannot replace newer server content', () async {
+      final cache = MemoryLocalCache();
+      api.notes['n1'] = serverNote('n1', title: 'Original');
       final s = testStore(api, cache: cache);
       await s.load();
+      final original = api.notes['n1']!;
+      api.notes['n1'] = original.copyWith(
+        title: 'Other device',
+        updatedAt: original.updatedAt.add(const Duration(seconds: 1)),
+      );
+
+      s.updateNoteContent('n1', title: 'My offline edit');
       await settle();
 
-      expect(s.offline, isFalse);
-      final doc = await cache.read('u-me');
-      expect(doc!['queue'] as List, isEmpty);
+      expect(api.notes['n1']!.title, 'Other device');
+      expect(s.syncIssues.single.isConflict, isTrue);
+      expect(s.syncIssues.single.copyText, contains('My offline edit'));
+      s.updateNoteContent('n1', title: 'My later edit');
+      await settle();
+      expect(s.syncIssues, hasLength(1));
+      expect(s.syncIssues.single.copyText, contains('My later edit'));
       s.dispose();
     });
 

@@ -733,6 +733,7 @@ class _HomeScreenState extends State<HomeScreen> {
             hint: 'Drop files to create a note',
             onFiles: _createNoteFromDrop,
             child: GestureDetector(
+              excludeFromSemantics: true,
               onTap: () => _pageFocus.requestFocus(),
               child: Scaffold(
                 key: _scaffoldKey,

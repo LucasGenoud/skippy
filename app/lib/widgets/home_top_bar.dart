@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme.dart';
 import 'app_logo.dart';
 import 'package:provider/provider.dart';
@@ -102,7 +103,7 @@ class HomeTopBar extends StatelessWidget {
   });
 
   /// The bar's own height, and the search pill inside it.
-  static const double barHeight = 58;
+  static const double barHeight = 60;
   static const double _pillHeight = 40;
 
   @override
@@ -323,7 +324,8 @@ class HomeTopBar extends StatelessWidget {
                   hintText: 'Search your notes',
                   hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                   border: InputBorder.none,
-                  isCollapsed: true,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
@@ -762,12 +764,26 @@ class _UserAvatarMenu extends StatelessWidget {
     final syncStatus = context.select<NotesStore, SyncStatus>(
       (s) => s.syncStatus,
     );
+    final issueCount = context.select<NotesStore, int>(
+      (s) => s.syncIssues.length,
+    );
+    final cacheFailure = context.select<NotesStore, String?>(
+      (s) => s.cacheFailure,
+    );
+    final issueLabel = issueCount == 1
+        ? '1 change needs attention'
+        : '$issueCount changes need attention';
     final themeAction = _currentThemeAction(settings.themeMode);
 
     return PopupMenuButton<String>(
       popUpAnimationStyle: Motion.menuFor(context),
       offset: const Offset(0, 48),
-      tooltip: name,
+      tooltip:
+          '${name.isEmpty ? 'Account' : name}, ${cacheFailure != null
+              ? 'offline storage needs attention'
+              : issueCount > 0
+              ? issueLabel
+              : syncStatus.name}',
       itemBuilder: (context) => [
         PopupMenuItem<String>(
           enabled: false,
@@ -813,6 +829,33 @@ class _UserAvatarMenu extends StatelessWidget {
           ),
         ),
         const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          value: 'sync',
+          child: Row(
+            children: [
+              Icon(
+                issueCount > 0 || cacheFailure != null
+                    ? Icons.error_outline
+                    : Icons.cloud_done_outlined,
+                size: 20,
+                color: issueCount > 0 || cacheFailure != null
+                    ? scheme.error
+                    : scheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  cacheFailure != null
+                      ? 'Offline storage needs attention'
+                      : issueCount > 0
+                      ? issueLabel
+                      : 'Sync status: ${syncStatus.name}',
+                  maxLines: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
         PopupMenuItem<String>(
           value: 'settings',
           child: Row(
@@ -869,14 +912,17 @@ class _UserAvatarMenu extends StatelessWidget {
         ),
       ],
       onSelected: (value) async {
-        if (value == 'settings' ||
+        if (value == 'sync' ||
+            value == 'settings' ||
             value == 'sort' ||
             value == 'logout' ||
             value == 'share-view') {
           await Motion.waitForMenuDismissal(context);
           if (!context.mounted) return;
         }
-        if (value == 'share-view') {
+        if (value == 'sync') {
+          _showSyncSheet(context);
+        } else if (value == 'share-view') {
           onShareView?.call();
         } else if (value == 'settings') {
           Navigator.of(context).push(SettingsScreen.route());
@@ -889,7 +935,7 @@ class _UserAvatarMenu extends StatelessWidget {
         }
       },
       child: Padding(
-        padding: const EdgeInsets.all(4.0),
+        padding: const EdgeInsets.all(6.0),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -915,6 +961,101 @@ class _UserAvatarMenu extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showSyncSheet(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: Consumer<NotesStore>(
+        builder: (context, store, _) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Text(
+                'Sync status',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              if (store.cacheFailure != null) ...[
+                const Text(
+                  'This device could not save its offline copy. Keep the app open until changes reach the server.',
+                ),
+                TextButton(
+                  onPressed: store.retryCacheWrite,
+                  child: const Text('Retry offline save'),
+                ),
+              ],
+              Text(
+                store.syncIssues.isEmpty
+                    ? store.cacheFailure != null
+                          ? 'Offline copy was not saved'
+                          : store.syncStatus == SyncStatus.offline
+                          ? 'Offline. Changes will sync when you reconnect.'
+                          : store.pendingChanges == 0
+                          ? 'All changes saved'
+                          : '${store.pendingChanges} pending changes'
+                    : store.syncIssues.length == 1
+                    ? '1 change needs attention'
+                    : '${store.syncIssues.length} changes need attention',
+              ),
+              for (final issue in store.syncIssues) ...[
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    issue.label.isEmpty ? 'Untitled note' : issue.label,
+                  ),
+                  subtitle: Text(
+                    issue.isConflict
+                        ? 'This note changed elsewhere. Copy your edit before loading the server version.'
+                        : issue.message,
+                  ),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (issue.copyText case final text? when text.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: text));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Edit copied')),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.copy_outlined),
+                        label: const Text('Copy edit'),
+                      ),
+                    if (!issue.isConflict)
+                      TextButton(
+                        onPressed: () => store.retrySyncIssue(issue),
+                        child: const Text('Retry'),
+                      ),
+                    if (issue.isConflict)
+                      TextButton(
+                        onPressed: () async {
+                          await store.refresh();
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        child: const Text('Load server version'),
+                      ),
+                    TextButton(
+                      onPressed: () => store.dismissSyncIssue(issue),
+                      child: const Text('Dismiss'),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// A small connectivity/sync indicator overlaid on the avatar: offline (no
@@ -971,6 +1112,11 @@ class _SyncBadgeState extends State<_SyncBadge>
         Icons.cloud_off_rounded,
         scheme.error,
         'Offline, changes will sync when you reconnect',
+      ),
+      SyncStatus.failed => (
+        Icons.error_rounded,
+        scheme.error,
+        'Changes need attention',
       ),
       SyncStatus.connecting => (
         Icons.sync_rounded,

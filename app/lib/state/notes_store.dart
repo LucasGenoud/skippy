@@ -27,7 +27,54 @@ export 'note_collection.dart'
 ///
 /// [connecting] and [syncing] both spin: the difference is whether we are still
 /// establishing that the server is there, or already talking to it.
-enum SyncStatus { synced, syncing, connecting, offline }
+enum SyncStatus { synced, syncing, connecting, offline, failed }
+
+class SyncIssue {
+  const SyncIssue(this.operation, this.message, this.statusCode, this.note);
+
+  final PendingOp operation;
+  final String message;
+  final int statusCode;
+  final Map<String, dynamic>? note;
+
+  bool get isConflict =>
+      statusCode == 409 && message == 'note changed elsewhere';
+
+  String get label =>
+      note?['title'] as String? ??
+      operation.data['title'] as String? ??
+      operation.kind.wireName;
+
+  String? get copyText {
+    final data = note ?? operation.data;
+    if (operation.kind != PendingOpKind.create &&
+        !data.containsKey('content') &&
+        !data.containsKey('items')) {
+      return null;
+    }
+    final items = data['items'] as List? ?? const [];
+    return [
+      data['title'] as String? ?? '',
+      data['content'] as String? ?? '',
+      for (final item in items)
+        '${(item as Map)['done'] == true ? '☑' : '☐'} ${item['text']}',
+    ].where((part) => part.isNotEmpty).join('\n');
+  }
+
+  Map<String, dynamic> toJson() => {
+    'operation': operation.toJson(),
+    'message': message,
+    'status': statusCode,
+    if (note != null) 'note': note,
+  };
+
+  factory SyncIssue.fromJson(Map<String, dynamic> json) => SyncIssue(
+    PendingOp.fromJson((json['operation'] as Map).cast<String, dynamic>()),
+    json['message'] as String? ?? 'Change was rejected',
+    json['status'] as int? ?? 400,
+    (json['note'] as Map?)?.cast<String, dynamic>(),
+  );
+}
 
 /// Optimistic-first store: every mutation updates local state immediately and
 /// is synced to the backend through a serial queue that retries on network
@@ -281,6 +328,11 @@ class NotesStore extends ChangeNotifier {
   }
 
   final List<PendingOp> _queue = [];
+  final List<SyncIssue> _syncIssues = [];
+  final Map<String, String> _serverUpdatedAt = {};
+  String? cacheFailure;
+  List<SyncIssue> get syncIssues => List.unmodifiable(_syncIssues);
+  int get pendingChanges => _queue.length + _saveDebounce.length;
   late final PendingOperationExecutor _pendingOperations;
   bool _flushing = false;
   Timer? _retryTimer;
@@ -944,6 +996,7 @@ class NotesStore extends ChangeNotifier {
   /// until that lands we can't honestly claim local work is being pushed; then
   /// pending local work; else everything is saved on the server.
   SyncStatus get syncStatus => switch (this) {
+    _ when _syncIssues.isNotEmpty || cacheFailure != null => SyncStatus.failed,
     _ when offline => SyncStatus.offline,
     _ when _connecting => SyncStatus.connecting,
     _ when _hasLocalChangesInFlight => SyncStatus.syncing,
@@ -1023,6 +1076,13 @@ class NotesStore extends ChangeNotifier {
         if (!startedWithLocalChanges &&
             !writesChangedDuringFetch &&
             !_hasLocalChangesInFlight) {
+          _serverUpdatedAt
+            ..clear()
+            ..addEntries(
+              notes.map(
+                (n) => MapEntry(n.id, n.updatedAt.toUtc().toIso8601String()),
+              ),
+            );
           _notes = notes..sort((a, b) => a.position.compareTo(b.position));
           _labels = labels;
           _stages = stages;
@@ -1179,6 +1239,15 @@ class NotesStore extends ChangeNotifier {
             for (final j in (doc['queue'] as List? ?? const []))
               PendingOp.fromJson((j as Map).cast<String, dynamic>()),
           ]);
+        _syncIssues
+          ..clear()
+          ..addAll([
+            for (final j in (doc['sync_issues'] as List? ?? const []))
+              SyncIssue.fromJson((j as Map).cast<String, dynamic>()),
+          ]);
+        _serverUpdatedAt.addAll(
+          (doc['server_updated_at'] as Map? ?? const {}).cast<String, String>(),
+        );
       }
     } catch (_) {
       // Corrupt/unreadable cache: start empty rather than fail to open.
@@ -1229,6 +1298,8 @@ class NotesStore extends ChangeNotifier {
       },
       'history': _checklistHistory,
       'queue': ops,
+      'sync_issues': [for (final issue in _syncIssues) issue.toJson()],
+      'server_updated_at': _serverUpdatedAt,
     };
   }
 
@@ -1266,12 +1337,19 @@ class NotesStore extends ChangeNotifier {
       _persistDirty = false;
       try {
         await cache.write(_cacheKey, _toCacheDoc());
-      } catch (_) {
-        // Best-effort; the next change retries the write.
+        if (cacheFailure != null) {
+          cacheFailure = null;
+          if (!_disposed) super.notifyListeners();
+        }
+      } catch (error) {
+        cacheFailure = error.toString();
+        if (!_disposed) super.notifyListeners();
       }
     }
     _persisting = false;
   }
+
+  void retryCacheWrite() => _persistNow();
 
   @override
   void notifyListeners() {
@@ -1523,6 +1601,7 @@ class NotesStore extends ChangeNotifier {
     try {
       await _pushPending(id);
       final updated = await api.rewriteNote(id, task);
+      _serverUpdatedAt[id] = updated.updatedAt.toUtc().toIso8601String();
       if (noteById(id) != null) _replace(updated);
     } finally {
       _rewritingNoteIds.remove(id);
@@ -2342,6 +2421,7 @@ class NotesStore extends ChangeNotifier {
   Future<void> restoreNoteVersion(String id, String versionId) async {
     await _pushPending(id);
     final updated = await api.restoreNoteVersion(id, versionId);
+    _serverUpdatedAt[id] = updated.updatedAt.toUtc().toIso8601String();
     if (noteById(id) != null) _replace(updated);
   }
 
@@ -2375,7 +2455,10 @@ class NotesStore extends ChangeNotifier {
       // Force-create even while textually empty; the file is the content.
       _drafts.remove(noteId);
       final note = noteById(noteId);
-      if (note != null) await api.createNote(note);
+      if (note != null) {
+        final created = await api.createNote(note);
+        _serverUpdatedAt[noteId] = created.updatedAt.toUtc().toIso8601String();
+      }
     }
   }
 
@@ -2779,6 +2862,29 @@ class NotesStore extends ChangeNotifier {
     _flush();
   }
 
+  void dismissSyncIssue(SyncIssue issue) {
+    if (_syncIssues.remove(issue)) {
+      _persistNow();
+      notifyListeners();
+      if (_queue.isEmpty) load();
+    }
+  }
+
+  void retrySyncIssue(SyncIssue issue) {
+    if (!_syncIssues.remove(issue)) return;
+    if (issue.note case final snapshot?) {
+      final restored = Note.fromJson(snapshot);
+      if (noteById(restored.id) == null) {
+        _notes.add(restored);
+      } else {
+        _replace(restored);
+      }
+    }
+    _persistNow();
+    notifyListeners();
+    _enqueue(issue.operation);
+  }
+
   /// Wait for the serial queue to empty (used before await-based calls that
   /// depend on queued writes, like sharing right after creating).
   Future<void> _drainQueue() async {
@@ -2802,11 +2908,38 @@ class NotesStore extends ChangeNotifier {
           // cancel its underlying HTTP request; retrying after such a timeout
           // could let the original finish last and overwrite a newer queued
           // operation. ApiClient owns the real transport timeout instead.
-          await _pendingOperations.run(op);
+          if (op.kind == PendingOpKind.create) {
+            final note = noteById(op.id!);
+            if (note != null) {
+              final created = await api.createNote(
+                Note.fromJson({...note.toJson(), ...op.data}),
+              );
+              _serverUpdatedAt[op.id!] = created.updatedAt
+                  .toUtc()
+                  .toIso8601String();
+            }
+          } else if (op.kind == PendingOpKind.patch) {
+            final fields = Map<String, dynamic>.of(op.data);
+            final expected = _serverUpdatedAt[op.id!];
+            if (fields.keys.any(
+                  (key) =>
+                      const ['kind', 'title', 'content', 'items'].contains(key),
+                ) &&
+                expected != null) {
+              fields['if_unmodified_since'] = expected;
+            }
+            final updated = await api.patchNote(op.id!, fields);
+            _serverUpdatedAt[op.id!] = updated.updatedAt
+                .toUtc()
+                .toIso8601String();
+          } else {
+            await _pendingOperations.run(op);
+          }
           if (_disposed) break;
           _queue.removeAt(0);
           _persistNow();
-          if (_markConnectionUp()) notifyListeners();
+          final connectionChanged = _markConnectionUp();
+          if (connectionChanged || _queue.isEmpty) notifyListeners();
         } on ApiException catch (e) {
           if (_disposed) break;
           // Authentication expiry and explicit throttling are recoverable.
@@ -2815,9 +2948,23 @@ class NotesStore extends ChangeNotifier {
           // responses are permanent contract/permission failures.
           final decision = syncFailureDecision(e);
           if (decision.shouldDrop) {
-            debugPrint('dropping rejected op: $e');
+            _syncIssues.removeWhere(
+              (issue) =>
+                  issue.operation.id == op.id &&
+                  issue.operation.kind == op.kind &&
+                  issue.statusCode == e.statusCode,
+            );
+            _syncIssues.add(
+              SyncIssue(
+                op,
+                e.serverMessage,
+                e.statusCode,
+                op.id == null ? null : noteById(op.id!)?.toJson(),
+              ),
+            );
             _queue.removeAt(0);
             _persistNow();
+            notifyListeners();
             continue;
           }
           _scheduleRetry(

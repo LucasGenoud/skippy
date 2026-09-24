@@ -820,7 +820,11 @@ impl SqliteRepository {
         Ok(())
     }
 
-    pub async fn update_note(&self, note: &NoteRecord) -> RepoResult<()> {
+    pub async fn update_note(
+        &self,
+        note: &NoteRecord,
+        expected_updated_at: Option<&str>,
+    ) -> RepoResult<()> {
         // trashed_at drives the 7-day purge; set it on the false->true edge.
         let mut tx = self.pool.begin().await?;
         // Label membership includes workspace_id as a composite integrity
@@ -834,7 +838,7 @@ impl SqliteRepository {
         .bind(&note.workspace_id)
         .execute(&mut *tx)
         .await?;
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
              color = ?, pinned = ?, archived = ?, position = ?, grid_span = ?, reminder_at = ?,
              reminder_repeat = ?, reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
@@ -845,7 +849,7 @@ impl SqliteRepository {
                  ELSE trashed_at
              END,
              trashed = ?
-             WHERE id = ?",
+             WHERE id = ? AND (? IS NULL OR updated_at = ?)",
         )
         .bind(&note.workspace_id)
         .bind(&note.kind)
@@ -870,8 +874,13 @@ impl SqliteRepository {
         .bind(note.trashed as i64)
         .bind(note.trashed as i64)
         .bind(&note.id)
+        .bind(expected_updated_at)
+        .bind(expected_updated_at)
         .execute(&mut *tx)
         .await?;
+        if result.rows_affected() == 0 {
+            return Err(RepoError::Conflict("note changed elsewhere".to_string()));
+        }
         // An item reminder outlives neither its item nor its unchecked state.
         // Pruning here, in the transaction that writes `items`, is what makes
         // the rule impossible to forget: version restores, chat writes, and

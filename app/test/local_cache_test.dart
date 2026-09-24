@@ -52,7 +52,7 @@ void main() {
           {'id': 'pending'},
         ],
       };
-      await cache.write('account-a', edited);
+      await expectLater(cache.write('account-a', edited), throwsStateError);
       fail = false;
       await cache.write('account-a', edited);
       expect(writes, 3);

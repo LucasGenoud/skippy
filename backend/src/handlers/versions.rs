@@ -119,7 +119,7 @@ pub async fn restore_note_version(
         normalize_item_depths(&mut record.items);
         record.last_editor_id = Some(user_id.clone());
         record.updated_at = now();
-        state.repo.update_note(&record).await?;
+        state.repo.update_note(&record, None).await?;
         state.index_note_later(&id);
         state.notify_note(&id).await;
     }

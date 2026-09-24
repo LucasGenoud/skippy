@@ -3180,6 +3180,70 @@ void main() {
   });
 
   group('home screen layout', () {
+    testWidgets('phone users can reach and read a failed sync change', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'My note');
+      await store.load();
+      api.notes.remove('n1');
+      store.setColor('n1', 'teal');
+      await tester.pump();
+      expect(store.syncStatus, SyncStatus.failed);
+
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      final homeSemantics = tester.ensureSemantics();
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      homeSemantics.dispose();
+      await tester.tap(find.byTooltip('Account, 1 change needs attention'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1 change needs attention'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sync status'), findsOneWidget);
+      expect(find.text('My note'), findsWidgets);
+      expect(find.text('Retry'), findsOneWidget);
+      final handle = tester.ensureSemantics();
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      handle.dispose();
+      await flushTimers(tester);
+    });
+
+    testWidgets(
+      'a conflict offers the saved edit and loads the server version',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote('n1', title: 'Original');
+        await store.load();
+        final original = api.notes['n1']!;
+        api.notes['n1'] = original.copyWith(
+          title: 'Other device',
+          updatedAt: original.updatedAt.add(const Duration(seconds: 1)),
+        );
+        store.updateNoteContent('n1', title: 'My edit');
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(store.syncIssues.single.isConflict, isTrue);
+
+        await tester.pumpWidget(homeApp(store));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Account, 1 change needs attention'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('1 change needs attention'));
+        await tester.pumpAndSettle();
+        expect(find.text('Copy edit'), findsOneWidget);
+        await tester.tap(find.text('Load server version'));
+        await tester.pumpAndSettle();
+        expect(find.text('Other device'), findsOneWidget);
+        await flushTimers(tester);
+      },
+    );
+
     testWidgets('desktop grid stays still when its notes fit in the viewport', (
       tester,
     ) async {

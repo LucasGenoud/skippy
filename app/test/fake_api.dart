@@ -441,7 +441,7 @@ class FakeApi implements Api {
   });
 
   @override
-  Future<void> createNote(Note note, {bool preserveTimestamps = false}) =>
+  Future<Note> createNote(Note note, {bool preserveTimestamps = false}) =>
       _run('createNote:${note.id}', () {
         if (notes.containsKey(note.id)) {
           throw ApiException(409, '{"error":"note id already exists"}');
@@ -449,10 +449,11 @@ class FakeApi implements Api {
         notes[note.id] = note.workspaceId.isEmpty
             ? note.copyWith(workspaceId: defaultWorkspaceId)
             : note;
+        return notes[note.id]!;
       });
 
   @override
-  Future<void> patchNote(String id, Map<String, dynamic> fields) async {
+  Future<Note> patchNote(String id, Map<String, dynamic> fields) async {
     final gate = patchGate;
     if (gate != null) {
       patchGate = null;
@@ -461,6 +462,11 @@ class FakeApi implements Api {
     return _run('patchNote:$id:${fields.keys.join(',')}', () {
       final existing = notes[id];
       if (existing == null) throw ApiException(404, '{"error":"not found"}');
+      if (fields['if_unmodified_since'] case final String expected?) {
+        if (!existing.updatedAt.isAtSameMomentAs(DateTime.parse(expected))) {
+          throw ApiException(409, '{"error":"note changed elsewhere"}');
+        }
+      }
       notes[id] = existing.copyWith(
         kind: fields.containsKey('kind')
             ? NoteKind.fromWire(fields['kind'] as String?)
@@ -507,6 +513,7 @@ class FakeApi implements Api {
       notes[id] = notes[id]!.copyWith(
         itemReminders: _pruneItemReminders(notes[id]!),
       );
+      return notes[id]!;
     });
   }
 
