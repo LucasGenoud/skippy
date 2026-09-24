@@ -74,11 +74,11 @@ void main() {
     await flushTimers(tester);
   });
 
-  testWidgets('masonry mounts nearby cards as the grid scrolls', (
+  testWidgets('5000-note masonry mounts nearby cards as the grid scrolls', (
     tester,
   ) async {
     final api = FakeApi();
-    for (var i = 0; i < 80; i++) {
+    for (var i = 0; i < 5000; i++) {
       api.notes['n$i'] = serverNote(
         'n$i',
         title: 'Card $i',

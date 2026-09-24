@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::{Router, http::HeaderValue, middleware, response::Response};
 use sticky_notes_server::config::ManagedSettings;
 use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
 use sticky_notes_server::ocr::{ImageOcr, TesseractService};
@@ -13,6 +14,29 @@ use sticky_notes_server::{
     AppState, build_app_with_cors_origin, cors_origin_from_public_url, handlers,
 };
 use tower_http::services::{ServeDir, ServeFile};
+
+fn web_service(web_dir: &str, index: PathBuf) -> Router {
+    Router::new()
+        .fallback_service(
+            ServeDir::new(web_dir)
+                .append_index_html_on_directories(false)
+                .fallback(ServeFile::new(index)),
+        )
+        .layer(middleware::map_response(
+            |mut response: Response| async move {
+                // Flutter's Wasm renderer needs an isolated page to use worker threads.
+                response.headers_mut().insert(
+                    "cross-origin-opener-policy",
+                    HeaderValue::from_static("same-origin"),
+                );
+                response.headers_mut().insert(
+                    "cross-origin-embedder-policy",
+                    HeaderValue::from_static("credentialless"),
+                );
+                response
+            },
+        ))
+}
 
 /// How many unread images one start hands to the OCR service. The jobs run
 /// two at a time behind `AppState::ocr_slots`, so this bounds how long a
@@ -313,13 +337,8 @@ async fn main() -> anyhow::Result<()> {
         // so the app reads it without a rebuild; unset ⇒ serve the file as-is
         // and the app falls back to same-origin.
         let index = serve_index_path(&web_dir);
-        // append_index_html_on_directories(false) so `/` misses ServeDir and
-        // hits the fallback too, guaranteeing the injected copy is served.
-        app = app.fallback_service(
-            ServeDir::new(&web_dir)
-                .append_index_html_on_directories(false)
-                .fallback(ServeFile::new(index)),
-        );
+        // `/` misses ServeDir and hits the fallback, so the injected copy is served.
+        app = app.fallback_service(web_service(&web_dir, index));
         println!("serving web app from {web_dir}");
     }
 
@@ -332,7 +351,30 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::inject_api_base;
+    use super::{inject_api_base, web_service};
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn web_responses_enable_wasm_threads() {
+        let dir = std::env::temp_dir().join(format!("skippy-web-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let index = dir.join("index.html");
+        std::fs::write(&index, "<html></html>").unwrap();
+        let response = web_service(dir.to_str().unwrap(), index)
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()["cross-origin-opener-policy"],
+            "same-origin"
+        );
+        assert_eq!(
+            response.headers()["cross-origin-embedder-policy"],
+            "credentialless"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn injects_before_head_close() {

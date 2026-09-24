@@ -83,15 +83,6 @@ class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
   bool _menuOpen = false;
   bool _reminderPickerOpen = false;
-  bool _shown = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _shown = true);
-    });
-  }
 
   Future<void> _editReminder() async {
     if (_reminderPickerOpen) return;
@@ -491,7 +482,7 @@ class _NoteTileState extends State<NoteTile> {
       ),
     );
 
-    final swipe = SwipeToArchive(
+    return SwipeToArchive(
       // A mouse drag on a card lifts it for a reorder from the first pixel
       // (see AnimatedMasonry), so the swipe would eat that gesture. Selecting
       // is a mode of its own: while it is on, a card's tap toggles it and a
@@ -508,15 +499,6 @@ class _NoteTileState extends State<NoteTile> {
         raised: active,
       ).dispatch(context),
       child: tile,
-    );
-
-    final reduced = Motion.reduced(context);
-    return AnimatedOpacity(
-      key: ValueKey('note-arrival-${note.id}'),
-      opacity: _shown || reduced ? 1 : 0,
-      duration: reduced ? Duration.zero : Motion.base,
-      curve: Motion.standard,
-      child: swipe,
     );
   }
 }

@@ -102,7 +102,9 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
-    testWidgets('uses subtle entry and resize motion', (tester) async {
+    testWidgets('shows immediately and resizes when content changes', (
+      tester,
+    ) async {
       api.notes['n1'] = serverNote('n1', content: 'Brief note');
       await store.load();
       var note = store.noteById('n1')!;
@@ -123,13 +125,11 @@ void main() {
         ),
       );
 
-      final arrival = find.byKey(const ValueKey('note-arrival-n1'));
-      expect(tester.widget<AnimatedOpacity>(arrival).opacity, 0);
-      await tester.pump();
-      expect(tester.widget<AnimatedOpacity>(arrival).opacity, 1);
-      await tester.pumpAndSettle();
-
       final card = find.byKey(const ValueKey('note-size-n1'));
+      expect(
+        find.ancestor(of: card, matching: find.byType(AnimatedOpacity)),
+        findsNothing,
+      );
       expect(tester.widget<AnimatedSize>(card).duration, Motion.base);
       note = note.copyWith(
         content: List.filled(12, 'A longer line').join('\n'),

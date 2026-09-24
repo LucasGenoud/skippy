@@ -23,8 +23,9 @@ abstract class LocalCache {
   Future<void> clear(String key);
 }
 
-/// Backed by shared_preferences. On web that is localStorage (~5 MB), which is
-/// ample for text notes; the seam lets us move to IndexedDB later if needed.
+/// Backed by shared_preferences. On web that is localStorage, whose limited
+/// capacity can be exhausted by a large notebook. The seam allows a different
+/// web storage backend without changing the notes store.
 class PrefsLocalCache implements LocalCache {
   String _storageKey(String key) => 'notes_cache_$key';
 
