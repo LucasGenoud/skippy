@@ -33,6 +33,7 @@ class _MarqueeSelectionState extends State<MarqueeSelection>
   Offset? _start;
   Offset? _current;
   Set<String> _initialSelection = const {};
+  Set<String> _pendingSelection = const {};
   List<ScrollController> _originControllers = const [];
   bool _additive = false;
   bool _dragging = false;
@@ -79,6 +80,7 @@ class _MarqueeSelectionState extends State<MarqueeSelection>
     _start = event.position;
     _current = event.position;
     _initialSelection = Set.of(widget.selectedIds);
+    _pendingSelection = _initialSelection;
     _originControllers = canvas.widget.scrollControllers;
     final keyboard = HardwareKeyboard.instance;
     _additive = keyboard.isControlPressed || keyboard.isMetaPressed;
@@ -108,7 +110,7 @@ class _MarqueeSelectionState extends State<MarqueeSelection>
         }
       }
     }
-    if (!setEquals(ids, widget.selectedIds)) widget.onSelected(ids);
+    _pendingSelection = ids;
     setState(() {});
   }
 
@@ -150,6 +152,11 @@ class _MarqueeSelectionState extends State<MarqueeSelection>
 
   void _end(PointerEvent event) {
     if (event.pointer != _pointer) return;
+    if (event is PointerUpEvent &&
+        _dragging &&
+        !setEquals(_pendingSelection, widget.selectedIds)) {
+      widget.onSelected(_pendingSelection);
+    }
     _pointer = null;
     _start = null;
     _current = null;

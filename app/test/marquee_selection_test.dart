@@ -51,10 +51,11 @@ void main() {
     await mouse.down(const Offset(20, 20));
     await mouse.moveTo(const Offset(180, 180));
     await tester.pump();
-    expect(selected, {'a'});
+    expect(selected, {'old'});
     expect(find.byKey(const Key('marquee-selection-rect')), findsOneWidget);
     await mouse.up();
     await tester.pump();
+    expect(selected, {'a'});
     expect(find.byKey(const Key('marquee-selection-rect')), findsNothing);
 
     // A card's own drag remains its gesture, and a click on the background
@@ -143,9 +144,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
     }
     expect(controller.offset, greaterThan(300));
-    expect(selected, {'later'});
+    expect(selected, isEmpty);
     await mouse.up();
     await tester.pumpAndSettle();
+    expect(selected, {'later'});
   });
 
   testWidgets('horizontal edge scrolling reaches another board column', (
@@ -209,9 +211,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
     }
     expect(controller.offset, greaterThan(200));
-    expect(selected, {'next'});
+    expect(selected, isEmpty);
     await mouse.up();
     await tester.pumpAndSettle();
+    expect(selected, {'next'});
   });
 
   for (final layout in ['masonry', 'list', 'board']) {
