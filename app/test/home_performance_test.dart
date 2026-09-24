@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/collection.dart';
@@ -109,7 +110,7 @@ void main() {
   });
 
   testWidgets(
-    'desktop selection reuses unselected cards and still selects them',
+    'desktop selection reuses cards without breaking open and select',
     variant: TargetPlatformVariant.only(TargetPlatform.macOS),
     (tester) async {
       final api = FakeApi()
@@ -119,6 +120,12 @@ void main() {
       addTearDown(store.dispose);
       await store.load();
       await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('First'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsOneWidget);
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
       await tester.pumpAndSettle();
 
       NoteTile secondCard() => tester
@@ -135,6 +142,13 @@ void main() {
       await tester.tap(find.text('Second'));
       await tester.pump();
       expect(find.text('2 selected'), findsOneWidget);
+      expect(find.byType(EditorScreen), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Second'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsOneWidget);
       await flushTimers(tester);
     },
   );
