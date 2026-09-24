@@ -1,6 +1,7 @@
 import 'package:skippy/models/collection.dart';
 import 'dart:async';
 
+import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -102,6 +103,28 @@ void main() {
   tearDown(() => store.dispose());
 
   group('NoteTile', () {
+    testWidgets('only narrow cards mount a fullscreen container route', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Note');
+      await store.load();
+      final card = harness(
+        store,
+        SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+      );
+      final container = find.byWidgetPredicate(
+        (widget) => widget is OpenContainer<void>,
+      );
+      await tester.pumpWidget(card);
+      expect(container, findsNothing);
+
+      tester.view.physicalSize = const Size(500, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(card);
+      expect(container, findsOneWidget);
+    });
+
     testWidgets('shows immediately and resizes when content changes', (
       tester,
     ) async {

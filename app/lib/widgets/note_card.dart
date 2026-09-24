@@ -39,8 +39,8 @@ import '../util/motion.dart';
 import '../util/platform.dart';
 import 'screen_width.dart';
 
-/// A note in the grid. The whole tile is an [OpenContainer], so tapping it
-/// morphs the card into the editor with a shared container transition.
+/// A note in the grid. Narrow layouts use [OpenContainer] to morph into the
+/// fullscreen editor; wide layouts open their own modal from the card.
 class NoteTile extends StatefulWidget {
   final Note note;
 
@@ -333,17 +333,126 @@ class _NoteTileState extends State<NoteTile> {
           })
         : null;
 
-    // The selection badge straddles the card's top-left corner, so it hangs
-    // outside the card's box: it can't live in the OpenContainer's stack,
-    // which is clipped to the card shape.
+    final cardShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(kRadius),
+      side: BorderSide(
+        color: widget.selected ? scheme.primary : borderColor,
+        width: widget.selected ? 2 : 1,
+      ),
+    );
+    Widget closedCard(VoidCallback open) => InkWell(
+      borderRadius: BorderRadius.circular(kRadius),
+      onTap: () {
+        if (widget.selectionMode) {
+          widget.onSelectionChanged?.call(!widget.selected);
+          return;
+        }
+        openNoteEditor(
+          context,
+          openFullscreen: open,
+          noteId: note.id,
+          openedFromBoard: widget.openedFromBoard,
+          sourceRect: morphSourceRect(context),
+        );
+      },
+      onLongPress: widget.selectionMode
+          ? () => widget.onSelectionChanged?.call(!widget.selected)
+          : null,
+      // Keep hover controls outside the note body.
+      child: Stack(
+        children: [
+          _NoteCardContent(
+            note: note,
+            query: widget.query,
+            reserveActions: actionsSlot,
+            showLabelsInBody: !actionsSlot,
+          ),
+          if (collection != null) _CollectionMarker(encoded: collection),
+          _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
+          if (isRewriting) const _NoteRewriteProgress(),
+          if (desktopActions && actionsVisible)
+            _NoteActions(
+              note: note,
+              rewriting: isRewriting,
+              canDelete: context.read<NotesStore>().canTrash(note.id),
+              onReminder: _editReminder,
+              onShare: _share,
+              onColor: _pickColor,
+              onLabel: _addLabel,
+              onImage: _addImage,
+              onArchive: _archive,
+              onDuplicate: _duplicate,
+              onMoveToWorkspace: _moveToWorkspace,
+              onMoveToStage: _moveToStage,
+              showMoveToStage: widget.openedFromBoard,
+              canMove:
+                  widget.note.isOwnedBy(
+                    context.read<NotesStore>().currentUserId,
+                  ) &&
+                  context.read<NotesStore>().workspaces.length > 1,
+              onCopyToClipboard: _copyToClipboard,
+              onDelete: _delete,
+              onRewrite: _rewrite,
+              onMenuOpened: () => setState(() => _menuOpen = true),
+              onMenuClosed: () => setState(() => _menuOpen = false),
+              bottomInset: actionsBottomInset,
+            ),
+          // In selection mode the action icons are gone, so the reserved
+          // slot shows the labels for good instead of only at rest.
+          if (actionsSlot && note.labelIds.isNotEmpty)
+            _NoteFooterLabels(
+              note: note,
+              visible: !(desktopActions && actionsVisible),
+              bottomInset: actionsBottomInset,
+            ),
+        ],
+      ),
+    );
+
+    // The desktop editor uses its own modal morph, so only narrow layouts
+    // need the container route and its widget subtree on every card.
+    final surface = wantsModalEditor(context)
+        ? Material(
+            color: fill ?? scheme.surface,
+            shape: cardShape,
+            clipBehavior: Clip.antiAlias,
+            child: closedCard(
+              () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  settings: RouteSettings(name: noteRouteName(note.id)),
+                  builder: (_) => EditorScreen(
+                    noteId: note.id,
+                    openedFromBoard: widget.openedFromBoard,
+                  ),
+                ),
+              ),
+            ),
+          )
+        : OpenContainer<void>(
+            routeSettings: RouteSettings(name: noteRouteName(note.id)),
+            transitionDuration: Motion.slow,
+            transitionType: ContainerTransitionType.fade,
+            closedElevation: 0,
+            openElevation: 0,
+            closedColor: fill ?? scheme.surface,
+            middleColor: fill ?? scheme.surface,
+            openColor: fill ?? scheme.surface,
+            closedShape: cardShape,
+            tappable: false,
+            closedBuilder: (context, open) => closedCard(open),
+            openBuilder: (context, close) => EditorScreen(
+              noteId: note.id,
+              openedFromBoard: widget.openedFromBoard,
+            ),
+          );
+
+    // The selection badge straddles the card's corner outside the clip.
     final cardContent = AnimatedContainer(
       duration: Motion.fast,
       curve: Motion.standard,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(kRadius),
         boxShadow: [
-          // A whisper of shadow at rest lifts the card off the grey canvas;
-          // it deepens on hover for a tactile response.
           BoxShadow(
             color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.05),
             blurRadius: _hovered ? 14 : 4,
@@ -351,105 +460,7 @@ class _NoteTileState extends State<NoteTile> {
           ),
         ],
       ),
-      child: OpenContainer<void>(
-        // See [noteRouteName]: naming the route it pushes is what lets a
-        // widget tap raise this editor rather than open the note twice.
-        routeSettings: RouteSettings(name: noteRouteName(note.id)),
-        transitionDuration: Motion.slow,
-        transitionType: ContainerTransitionType.fade,
-        closedElevation: 0,
-        openElevation: 0,
-        closedColor: fill ?? scheme.surface,
-        middleColor: fill ?? scheme.surface,
-        openColor: fill ?? scheme.surface,
-        closedShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(kRadius),
-          // Painted on top of the card, never inset from it, so a selected
-          // card keeps exactly the footprint it had.
-          side: BorderSide(
-            color: widget.selected ? scheme.primary : borderColor,
-            width: widget.selected ? 2 : 1,
-          ),
-        ),
-        // Tap handling is ours: wide layouts open a centered modal
-        // instead of letting the container expand fullscreen. Either way the
-        // editor grows out of this card and shrinks back into it.
-        tappable: false,
-        closedBuilder: (context, open) => InkWell(
-          borderRadius: BorderRadius.circular(kRadius),
-          onTap: () {
-            if (widget.selectionMode) {
-              widget.onSelectionChanged?.call(!widget.selected);
-              return;
-            }
-            openNoteEditor(
-              context,
-              openFullscreen: open,
-              noteId: note.id,
-              openedFromBoard: widget.openedFromBoard,
-              sourceRect: morphSourceRect(context),
-            );
-          },
-          onLongPress: widget.selectionMode
-              ? () => widget.onSelectionChanged?.call(!widget.selected)
-              : null,
-          // The pin overlay is the only hover-dependent piece, and it sits
-          // outside _NoteCardContent so hover flips never rebuild the card
-          // body (markdown parse, image resolve).
-          child: Stack(
-            children: [
-              _NoteCardContent(
-                note: note,
-                query: widget.query,
-                reserveActions: actionsSlot,
-                showLabelsInBody: !actionsSlot,
-              ),
-              if (collection != null) _CollectionMarker(encoded: collection),
-              _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
-              if (isRewriting) const _NoteRewriteProgress(),
-              if (desktopActions && actionsVisible)
-                _NoteActions(
-                  note: note,
-                  rewriting: isRewriting,
-                  canDelete: context.read<NotesStore>().canTrash(note.id),
-                  onReminder: _editReminder,
-                  onShare: _share,
-                  onColor: _pickColor,
-                  onLabel: _addLabel,
-                  onImage: _addImage,
-                  onArchive: _archive,
-                  onDuplicate: _duplicate,
-                  onMoveToWorkspace: _moveToWorkspace,
-                  onMoveToStage: _moveToStage,
-                  showMoveToStage: widget.openedFromBoard,
-                  canMove:
-                      widget.note.isOwnedBy(
-                        context.read<NotesStore>().currentUserId,
-                      ) &&
-                      context.read<NotesStore>().workspaces.length > 1,
-                  onCopyToClipboard: _copyToClipboard,
-                  onDelete: _delete,
-                  onRewrite: _rewrite,
-                  onMenuOpened: () => setState(() => _menuOpen = true),
-                  onMenuClosed: () => setState(() => _menuOpen = false),
-                  bottomInset: actionsBottomInset,
-                ),
-              // In selection mode the action icons are gone, so the reserved
-              // slot shows the labels for good instead of only at rest.
-              if (actionsSlot)
-                _NoteFooterLabels(
-                  note: note,
-                  visible: !(desktopActions && actionsVisible),
-                  bottomInset: actionsBottomInset,
-                ),
-            ],
-          ),
-        ),
-        openBuilder: (context, close) => EditorScreen(
-          noteId: note.id,
-          openedFromBoard: widget.openedFromBoard,
-        ),
-      ),
+      child: surface,
     );
 
     final card = AnimatedSize(
