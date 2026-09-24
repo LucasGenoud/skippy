@@ -195,6 +195,10 @@ class SettingsStore extends ChangeNotifier {
   bool defaultListMode = false;
   GridDensity gridDensity = GridDensity.comfortable;
   GridWidth gridWidth = GridWidth.medium;
+
+  /// Personal board exits, keyed by collection id. They change how this user
+  /// sees the board, not the workspace's shared stage taxonomy.
+  Map<String, Set<String>> boardExitColumns = {};
   List<PaletteEntry> palette = List.of(kDefaultPalette);
   bool loaded = false;
 
@@ -428,6 +432,17 @@ class SettingsStore extends ChangeNotifier {
         GridDensity.comfortable;
     gridWidth =
         GridWidth.values.asNameMap()[json['grid_width']] ?? GridWidth.medium;
+    final rawBoardExits = json['board_exit_columns'];
+    boardExitColumns = rawBoardExits is Map
+        ? {
+            for (final entry in rawBoardExits.entries)
+              if (entry.key is String && entry.value is List)
+                entry.key as String: {
+                  for (final value in entry.value as List)
+                    if (value == 'archive' || value == 'trash') value as String,
+                },
+          }
+        : {};
     // Feature toggles default ON when absent (they only take effect when the
     // server also advertises the capability).
     semanticSearchEnabled = json['semantic_search'] != false;
@@ -527,6 +542,10 @@ class SettingsStore extends ChangeNotifier {
     'default_view': defaultListMode ? 'list' : 'grid',
     'grid_density': gridDensity.name,
     'grid_width': gridWidth.name,
+    'board_exit_columns': {
+      for (final entry in boardExitColumns.entries)
+        entry.key: entry.value.toList(),
+    },
     'semantic_search': semanticSearchEnabled,
     'semantic_ranking': semanticRanking,
     'llm_base_url': llmBaseUrl,
@@ -614,6 +633,26 @@ class SettingsStore extends ChangeNotifier {
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
   void setGridDensity(GridDensity value) => _mutate(() => gridDensity = value);
   void setGridWidth(GridWidth value) => _mutate(() => gridWidth = value);
+  Set<String> boardExitsFor(String? collectionId) =>
+      boardExitColumns[collectionId] ?? const {};
+
+  void setBoardExitColumn(String? collectionId, String exit, bool visible) {
+    if (collectionId == null || (exit != 'archive' && exit != 'trash')) return;
+    _mutate(() {
+      final next = {...boardExitsFor(collectionId)};
+      if (visible) {
+        next.add(exit);
+      } else {
+        next.remove(exit);
+      }
+      if (next.isEmpty) {
+        boardExitColumns.remove(collectionId);
+      } else {
+        boardExitColumns[collectionId] = next;
+      }
+    });
+  }
+
   void setSemanticSearchEnabled(bool value) =>
       _mutate(() => semanticSearchEnabled = value);
   void setSemanticRanking(bool value) => _mutate(() => semanticRanking = value);

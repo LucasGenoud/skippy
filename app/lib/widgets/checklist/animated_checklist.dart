@@ -42,6 +42,7 @@ class AnimatedChecklist extends StatefulWidget {
   final void Function(String itemId) onToggle;
   final void Function(String itemId, String text) onItemTextChanged;
   final void Function(String itemId) onRemove;
+  final VoidCallback? onClearChecked;
 
   /// Creates a new item at the end of the list and returns its id, so the
   /// composer can go on writing into the row it just spawned.
@@ -69,6 +70,7 @@ class AnimatedChecklist extends StatefulWidget {
     required this.onToggle,
     required this.onItemTextChanged,
     required this.onRemove,
+    this.onClearChecked,
     required this.onAdd,
     required this.onReorderItems,
     this.onInsertAfter,
@@ -1791,6 +1793,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                 context,
               ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
+            const Spacer(),
+            if (!widget.readOnly && widget.onClearChecked != null)
+              TextButton(
+                onPressed: widget.onClearChecked,
+                child: const Text('Clear checked'),
+              ),
           ],
         ),
       ),

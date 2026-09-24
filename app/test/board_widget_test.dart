@@ -92,6 +92,42 @@ void main() {
     await flushTimers(tester);
   });
 
+  testWidgets('board exits archive and trash dropped cards', (tester) async {
+    await setViewport(tester, const Size(1800, 900));
+    api.notes['archive-me'] = serverNote('archive-me', title: 'Archive me');
+    api.notes['trash-me'] = serverNote('trash-me', title: 'Trash me');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Archive'), findsNothing);
+    expect(find.text('Trash'), findsNothing);
+    await tester.tap(find.text('Add column'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Archive'));
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Trash'));
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    for (final (card, target) in [
+      ('Archive me', 'Archive'),
+      ('Trash me', 'Trash'),
+    ]) {
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text(card)),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await gesture.moveTo(tester.getCenter(find.text(target)));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    expect(store.noteById('archive-me')!.archived, isTrue);
+    expect(store.noteById('trash-me')!.trashed, isTrue);
+    await flushTimers(tester);
+  });
+
   testWidgets('column count keeps its width and rolls up or down', (
     tester,
   ) async {
@@ -210,7 +246,17 @@ void main() {
     await tester.pumpWidget(boardApp(store));
     await tester.pumpAndSettle();
 
+    expect(
+      tester.getTopLeft(find.byTooltip('Collapse Unassigned')).dx,
+      lessThan(tester.getTopLeft(find.text('Unassigned')).dx),
+    );
     await tester.tap(find.byTooltip('Collapse Unassigned'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      tester.getSize(find.byType(BoardColumnView).first).width,
+      inExclusiveRange(52, 300),
+    );
     await tester.pumpAndSettle();
     expect(find.text('card one'), findsNothing);
     expect(find.byTooltip('Expand Unassigned'), findsOneWidget);
@@ -266,6 +312,13 @@ void main() {
 
     expect(find.textContaining('Add columns to build a board'), findsOneWidget);
     expect(find.text('Add a column'), findsOneWidget);
+    await tester.tap(find.text('Add a column'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Archive'));
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unassigned'), findsOneWidget);
+    expect(find.text('Archive'), findsOneWidget);
     await flushTimers(tester);
   });
 
@@ -948,7 +1001,7 @@ void main() {
 
   /// A column needs its own way to start a note, or filing one there means
   /// creating it loose and moving it.
-  testWidgets('the column header composes a note already in that column', (
+  testWidgets('the column footer composes a note already in that column', (
     tester,
   ) async {
     await setViewport(tester, const Size(1200, 900));
@@ -956,7 +1009,13 @@ void main() {
     await tester.pumpWidget(boardApp(store));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Add a note to Doing'));
+    final doing = find.ancestor(
+      of: find.text('Doing').first,
+      matching: find.byType(BoardColumnView),
+    );
+    await tester.tap(
+      find.descendant(of: doing, matching: find.text('Add note')),
+    );
     await tester.pumpAndSettle();
 
     // The editor opens carrying the column. The draft itself stays unwritten

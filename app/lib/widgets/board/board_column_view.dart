@@ -10,6 +10,7 @@ import '../../theme.dart';
 import '../../util/motion.dart';
 import '../form_dialog.dart';
 import '../masonry.dart';
+import '../marquee_selection.dart';
 import '../note_card.dart';
 import 'stage_editor.dart';
 
@@ -46,6 +47,7 @@ class BoardColumnView extends StatefulWidget {
 
   /// Whether cards in this column can be picked up.
   final bool dragEnabled;
+  final ScrollController? boardScrollController;
 
   /// Selection state, owned by the home screen so the top bar's action row
   /// works over the board exactly as it does over the grid.
@@ -57,10 +59,6 @@ class BoardColumnView extends StatefulWidget {
   final bool collapsed;
   final VoidCallback? onToggleCollapsed;
 
-  /// Compose a note already filed in this column. Supplied by the phone
-  /// layout, which hides the header the button normally lives in.
-  final VoidCallback? onAddCard;
-
   const BoardColumnView({
     super.key,
     required this.column,
@@ -68,12 +66,12 @@ class BoardColumnView extends StatefulWidget {
     this.onShowAll,
     this.showHeader = true,
     this.dragEnabled = true,
+    this.boardScrollController,
     this.selectionMode = false,
     this.selectedIds = const {},
     this.onSelectionChanged,
     this.collapsed = false,
     this.onToggleCollapsed,
-    this.onAddCard,
   });
 
   @override
@@ -174,7 +172,10 @@ class _BoardColumnViewState extends State<BoardColumnView> {
     // while this masonry is finishing its animation. The target has already
     // updated the store in that case, so the old source column must never
     // write the carried card back into itself.
-    if (moved == null || moved.stageId != _stageId) {
+    if (moved == null ||
+        moved.archived ||
+        moved.trashed ||
+        moved.stageId != _stageId) {
       return MasonryReorderDecision.restore;
     }
     final after = [
@@ -210,34 +211,62 @@ class _BoardColumnViewState extends State<BoardColumnView> {
       onAcceptWithDetails: (details) => _acceptForeign(details.data),
       builder: (context, candidate, _) => _DropHighlight(
         active: candidate.isNotEmpty,
-        child: widget.collapsed
-            ? _CollapsedColumn(
-                column: widget.column,
-                onExpand: widget.onToggleCollapsed,
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Outside the header on purpose: the phone hides the header but
-                  // still wants its column capped in the stage's colour.
-                  _StageRule(column: widget.column),
-                  if (widget.showHeader)
-                    _BoardColumnHeader(
-                      column: widget.column,
-                      onToggleCollapsed: widget.onToggleCollapsed,
-                    ),
-                  if (!widget.showHeader && widget.onAddCard != null)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: widget.onAddCard,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Add note'),
+        child: AnimatedSwitcher(
+          duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+          switchInCurve: Motion.standard,
+          switchOutCurve: Motion.standard,
+          transitionBuilder: (child, animation) =>
+              widget.onToggleCollapsed != null &&
+                  child.key == const ValueKey('expanded')
+              ? OverflowBox(
+                  minWidth: 300,
+                  maxWidth: 300,
+                  alignment: Alignment.topLeft,
+                  child: FadeTransition(opacity: animation, child: child),
+                )
+              : FadeTransition(opacity: animation, child: child),
+          child: widget.collapsed
+              ? _CollapsedColumn(
+                  key: const ValueKey('collapsed'),
+                  column: widget.column,
+                  onExpand: widget.onToggleCollapsed,
+                )
+              : Column(
+                  key: const ValueKey('expanded'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Outside the header on purpose: the phone hides the header but
+                    // still wants its column capped in the stage's colour.
+                    _StageRule(column: widget.column),
+                    if (widget.showHeader)
+                      _BoardColumnHeader(
+                        column: widget.column,
+                        onToggleCollapsed: widget.onToggleCollapsed,
+                      ),
+                    Expanded(
+                      child: MarqueeRegion.canvas(
+                        scrollControllers: [
+                          _scrollController,
+                          if (widget.boardScrollController != null)
+                            widget.boardScrollController!,
+                        ],
+                        child: _body(),
                       ),
                     ),
-                  Expanded(child: _body()),
-                ],
-              ),
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonalIcon(
+                          onPressed: () => addCardToStage(context, _stageId),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add note'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -274,15 +303,18 @@ class _BoardColumnViewState extends State<BoardColumnView> {
               widget.selectionMode,
               Object.hashAllUnordered(widget.selectedIds),
             ),
-            itemBuilder: (context, note) => NoteTile(
-              key: ValueKey(note.id),
-              note: note,
-              query: widget.query,
-              selectionMode: widget.selectionMode,
-              selected: widget.selectedIds.contains(note.id),
-              openedFromBoard: true,
-              onSelectionChanged: (selected) =>
-                  widget.onSelectionChanged?.call(note.id, selected),
+            itemBuilder: (context, note) => MarqueeRegion.note(
+              id: note.id,
+              child: NoteTile(
+                key: ValueKey(note.id),
+                note: note,
+                query: widget.query,
+                selectionMode: widget.selectionMode,
+                selected: widget.selectedIds.contains(note.id),
+                openedFromBoard: true,
+                onSelectionChanged: (selected) =>
+                    widget.onSelectionChanged?.call(note.id, selected),
+              ),
             ),
           ),
           if (widget.column.hiddenCount > 0)
@@ -362,9 +394,20 @@ class _BoardColumnHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
           child: Row(
             children: [
+              if (onToggleCollapsed != null)
+                IconButton(
+                  icon: const Icon(Icons.keyboard_double_arrow_left, size: 20),
+                  tooltip: 'Collapse ${column.title}',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
+                  ),
+                  onPressed: onToggleCollapsed,
+                ),
               Expanded(
                 child: Text(
                   column.title,
@@ -377,27 +420,6 @@ class _BoardColumnHeader extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: _CountChip(count: column.totalCount),
-              ),
-              if (onToggleCollapsed != null)
-                IconButton(
-                  icon: const Icon(Icons.keyboard_double_arrow_left, size: 20),
-                  tooltip: 'Collapse ${column.title}',
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 36,
-                    height: 36,
-                  ),
-                  onPressed: onToggleCollapsed,
-                ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 18),
-                tooltip: 'Add a note to ${column.title}',
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints.tightFor(
-                  width: 36,
-                  height: 36,
-                ),
-                onPressed: () => addCardToStage(context, column.stage?.id),
               ),
               if (column.stage case final Stage stage)
                 IconButton(
@@ -458,7 +480,7 @@ class _CollapsedColumn extends StatelessWidget {
   final BoardColumn column;
   final VoidCallback? onExpand;
 
-  const _CollapsedColumn({required this.column, this.onExpand});
+  const _CollapsedColumn({super.key, required this.column, this.onExpand});
 
   @override
   Widget build(BuildContext context) {
@@ -468,7 +490,8 @@ class _CollapsedColumn extends StatelessWidget {
       child: InkWell(
         onTap: onExpand,
         mouseCursor: SystemMouseCursors.click,
-        borderRadius: kBorderRadius,
+        hoverColor: Colors.transparent,
+        splashColor: Colors.transparent,
         child: Column(
           children: [
             _StageRule(column: column),

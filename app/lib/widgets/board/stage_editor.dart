@@ -31,7 +31,10 @@ class EditStagesDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<NotesStore>();
+    final settings = context.watch<SettingsStore>();
     final stages = store.stages;
+    final collectionId = store.activeCollection?.id;
+    final exits = settings.boardExitsFor(collectionId);
     return FormDialog(
       title: const Text('Edit columns'),
       content: Column(
@@ -70,6 +73,22 @@ class EditStagesDialog extends StatelessWidget {
               ),
             ),
           ),
+          const Divider(height: 8),
+          for (final (id, label, icon) in [
+            ('archive', 'Archive', Icons.archive_outlined),
+            ('trash', 'Trash', Icons.delete_outline),
+          ])
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(icon),
+              title: Text(label),
+              subtitle: const Text('Show as a board drop column'),
+              value: exits.contains(id),
+              onChanged: collectionId == null
+                  ? null
+                  : (visible) =>
+                        settings.setBoardExitColumn(collectionId, id, visible),
+            ),
         ],
       ),
       actions: [

@@ -99,6 +99,9 @@ class _BoardViewState extends State<BoardView> {
       ),
     );
     final store = context.read<NotesStore>();
+    final exits = context.select<SettingsStore, Set<String>>(
+      (settings) => settings.boardExitsFor(store.activeCollection?.id),
+    );
     final board = buildBoard(
       notes: notes,
       stages: store.stages,
@@ -110,13 +113,15 @@ class _BoardViewState extends State<BoardView> {
       rankedIds: widget.rankedIds,
     );
 
-    if (board.hasNoStages) return _NoStagesYet(hasNotes: !board.isEmpty);
+    if (board.hasNoStages && exits.isEmpty) {
+      return _NoStagesYet(hasNotes: !board.isEmpty);
+    }
 
     final paged = !ScreenWidth.isAtLeast(context, BoardView.pagedBreakpoint);
     final dragEnabled = store.sortMode == SortMode.custom;
     return paged
-        ? _buildPaged(board, dragEnabled: dragEnabled)
-        : _buildColumns(board, dragEnabled: dragEnabled);
+        ? _buildPaged(board, dragEnabled: dragEnabled, exits: exits)
+        : _buildColumns(board, dragEnabled: dragEnabled, exits: exits);
   }
 
   void _showAll() => setState(() => _showAllUnassigned = true);
@@ -146,8 +151,42 @@ class _BoardViewState extends State<BoardView> {
     return ids.any((id) => store.noteById(id)?.stageId != column.stage?.id);
   }
 
-  Widget _buildColumns(Board board, {required bool dragEnabled}) {
+  Set<String> _draggedIds(String noteId) =>
+      widget.selectedIds.contains(noteId) ? widget.selectedIds : {noteId};
+
+  bool _canDropOnAction(String noteId, bool trash) {
+    final store = context.read<NotesStore>();
+    return _draggedIds(noteId).every((id) {
+      final note = store.noteById(id);
+      return note != null &&
+          !note.archived &&
+          !note.trashed &&
+          (!trash || store.canTrash(id));
+    });
+  }
+
+  void _dropOnAction(String noteId, bool trash) {
+    if (!_canDropOnAction(noteId, trash)) return;
+    final store = context.read<NotesStore>();
+    for (final id in _draggedIds(noteId)) {
+      if (trash) {
+        store.moveToTrash(id);
+      } else {
+        store.setArchived(id, true);
+      }
+    }
+  }
+
+  Widget _buildColumns(
+    Board board, {
+    required bool dragEnabled,
+    required Set<String> exits,
+  }) {
     final scheme = Theme.of(context).colorScheme;
+    final actions = [
+      if (exits.contains('archive')) false,
+      if (exits.contains('trash')) true,
+    ];
     return Stack(
       children: [
         Positioned.fill(
@@ -155,18 +194,29 @@ class _BoardViewState extends State<BoardView> {
             controller: _boardController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            // One past the columns: the tail tile. The empty state's "Add a
-            // column" button disappears with the first stage, so without this
-            // the column editor would be unreachable on a board that has one.
-            itemCount: board.columns.length + 1,
+            // The exits and add-column tile follow the stage columns. The
+            // empty state's add button disappears with the first stage.
+            itemCount: board.columns.length + 1 + actions.length,
             itemBuilder: (context, index) {
-              if (index == board.columns.length) return const _AddColumnTile();
+              if (index == board.columns.length) {
+                return const _AddColumnTile();
+              }
+              if (index >= board.columns.length) {
+                final trash = actions[index - board.columns.length - 1];
+                return _BoardActionTarget(
+                  trash: trash,
+                  onWillDrop: (id) => _canDropOnAction(id, trash),
+                  onDrop: (id) => _dropOnAction(id, trash),
+                );
+              }
               final column = board.columns[index];
               final collapsed = _collapsedStageIds.contains(column.stage?.id);
-              return Container(
+              return AnimatedContainer(
                 width: collapsed
                     ? BoardView._collapsedColumnWidth
                     : BoardView._columnWidth,
+                duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+                curve: Motion.standard,
                 margin: const EdgeInsets.only(right: 12),
                 // A trough, not a step of the surface ladder: see
                 // [boardColumnColor] for why the theme's containers are too
@@ -183,6 +233,7 @@ class _BoardViewState extends State<BoardView> {
                   column: column,
                   query: _highlight,
                   dragEnabled: dragEnabled,
+                  boardScrollController: _boardController,
                   onShowAll: column.isUnassigned ? _showAll : null,
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
@@ -218,7 +269,11 @@ class _BoardViewState extends State<BoardView> {
     );
   }
 
-  Widget _buildPaged(Board board, {required bool dragEnabled}) {
+  Widget _buildPaged(
+    Board board, {
+    required bool dragEnabled,
+    required Set<String> exits,
+  }) {
     // A stage deleted while the board is open can leave the controller past
     // the end; clamp rather than page into nothing.
     final page = _page.clamp(0, board.columns.length - 1);
@@ -235,6 +290,12 @@ class _BoardViewState extends State<BoardView> {
           ),
           onWillDrop: _canDropOnStage,
           onDrop: _dropOnStage,
+          onWillDropAction: _canDropOnAction,
+          onDropAction: _dropOnAction,
+          actions: [
+            if (exits.contains('archive')) false,
+            if (exits.contains('trash')) true,
+          ],
         ),
         Expanded(
           child: PageView.builder(
@@ -260,14 +321,13 @@ class _BoardViewState extends State<BoardView> {
                   column: column,
                   query: _highlight,
                   dragEnabled: dragEnabled,
+                  boardScrollController: _pageController,
                   onShowAll: column.isUnassigned ? _showAll : null,
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
                   onSelectionChanged: widget.onSelectionChanged,
-                  // The strip above already names the column and counts it,
-                  // but the add button has nowhere else to live on a phone.
+                  // The strip above already names the column and counts it.
                   showHeader: false,
-                  onAddCard: () => addCardToStage(context, column.stage?.id),
                 ),
               );
             },
@@ -278,7 +338,7 @@ class _BoardViewState extends State<BoardView> {
   }
 }
 
-/// The board's tail on wide screens: opens the column editor.
+/// The stage columns' tail on wide screens: opens the column editor.
 ///
 /// Sits where the next column would go, which is where you reach for it. Drawn
 /// at half the fill of a real column so it reads as an invitation and not as a
@@ -319,6 +379,75 @@ class _AddColumnTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Board exits are drop targets, not stages: archiving or trashing a card
+/// keeps its stage so restoring it puts it back in the same column.
+class _BoardActionTarget extends StatelessWidget {
+  final bool trash;
+  final bool compact;
+  final bool Function(String noteId) onWillDrop;
+  final ValueChanged<String> onDrop;
+
+  const _BoardActionTarget({
+    required this.trash,
+    required this.onWillDrop,
+    required this.onDrop,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final title = trash ? 'Trash' : 'Archive';
+    final icon = trash ? Icons.delete_outline : Icons.archive_outlined;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => onWillDrop(details.data),
+      onAcceptWithDetails: (details) => onDrop(details.data),
+      builder: (context, candidate, _) {
+        final active = candidate.isNotEmpty;
+        return Container(
+          width: compact ? null : 180,
+          height: compact ? 32 : null,
+          margin: compact ? null : const EdgeInsets.only(right: 12),
+          padding: compact
+              ? const EdgeInsets.symmetric(horizontal: 12)
+              : const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: active ? scheme.primaryContainer : boardColumnColor(scheme),
+            borderRadius: kBorderRadius,
+            border: Border.all(
+              color: active ? scheme.primary : boardColumnBorderColor(scheme),
+            ),
+          ),
+          child: compact
+              ? Row(
+                  children: [
+                    Icon(icon, size: 16),
+                    const SizedBox(width: 6),
+                    Text(title),
+                  ],
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 32, color: scheme.onSurfaceVariant),
+                    const SizedBox(height: 12),
+                    Text(title, style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Drop notes here',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+        );
+      },
     );
   }
 }
@@ -404,6 +533,9 @@ class _StageStrip extends StatefulWidget {
 
   /// A card was carried up from the page below and dropped on a chip.
   final void Function(String noteId, BoardColumn column)? onDrop;
+  final bool Function(String noteId, bool trash) onWillDropAction;
+  final void Function(String noteId, bool trash) onDropAction;
+  final List<bool> actions;
 
   const _StageStrip({
     required this.columns,
@@ -411,6 +543,9 @@ class _StageStrip extends StatefulWidget {
     required this.onSelect,
     this.onWillDrop,
     this.onDrop,
+    required this.onWillDropAction,
+    required this.onDropAction,
+    required this.actions,
   });
 
   @override
@@ -480,10 +615,18 @@ class _StageStripState extends State<_StageStrip> {
                   ),
                 ),
               ),
-            // Last in the strip, after the columns it adds to. The phone hides
-            // the column headers, so this is its only route to the editor,
-            // rename and delete arrive with it.
+            // Keep Add column beside the stages, before the board exits.
             const _AddColumnChip(),
+            for (final trash in widget.actions)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _BoardActionTarget(
+                  trash: trash,
+                  compact: true,
+                  onWillDrop: (id) => widget.onWillDropAction(id, trash),
+                  onDrop: (id) => widget.onDropAction(id, trash),
+                ),
+              ),
           ],
         ),
       ),
@@ -491,7 +634,7 @@ class _StageStripState extends State<_StageStrip> {
   }
 }
 
-/// The strip's trailing chip: opens the column editor.
+/// The chip after the stage columns: opens the column editor.
 class _AddColumnChip extends StatelessWidget {
   const _AddColumnChip();
 

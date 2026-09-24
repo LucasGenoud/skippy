@@ -458,6 +458,24 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('clear checked keeps open rows and repairs their depth', (
+      tester,
+    ) async {
+      await openChecklist(
+        tester,
+        items: const [
+          ChecklistItem(id: 'i1', text: 'Done', done: true),
+          ChecklistItem(id: 'i2', text: 'Still open', depth: 1),
+          ChecklistItem(id: 'i3', text: 'Also done', done: true),
+        ],
+      );
+
+      await tester.tap(find.text('Clear checked'));
+      await tester.pumpAndSettle();
+      expect(shapeOf('n1'), ['0:Still open']);
+      await flushTimers(tester);
+    });
+
     testWidgets('removing a task keeps its subtasks, one level up', (
       tester,
     ) async {

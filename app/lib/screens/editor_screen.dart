@@ -538,6 +538,13 @@ class _EditorScreenState extends State<EditorScreen> {
     _setItems(removeItem(_items, itemId));
   }
 
+  void _clearCheckedItems() => _setItems(
+    normalizeDepths([
+      for (final item in _items)
+        if (!item.done) item,
+    ]),
+  );
+
   /// Set, change, or remove the reminder on one checklist row.
   ///
   /// Deliberately time-only: the location branch is keyed per note in the
@@ -1527,6 +1534,7 @@ class _EditorScreenState extends State<EditorScreen> {
         onToggle: _toggleItem,
         onItemTextChanged: _updateItemText,
         onRemove: _removeItem,
+        onClearChecked: _clearCheckedItems,
         onAdd: _addItem,
         onInsertAfter: _insertItemAfter,
         onReorderItems: _setItems,
