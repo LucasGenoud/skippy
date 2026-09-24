@@ -1,6 +1,6 @@
 import 'collection_settings.dart';
 import 'package:animations/animations.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable;
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
@@ -48,6 +48,7 @@ class NoteTile extends StatefulWidget {
   /// searching.
   final String query;
   final bool selectionMode;
+  final ValueListenable<bool>? selectionModeListenable;
   final bool selected;
   final ValueChanged<bool>? onSelectionChanged;
   final bool showCollection;
@@ -68,6 +69,7 @@ class NoteTile extends StatefulWidget {
     required this.note,
     this.query = '',
     this.selectionMode = false,
+    this.selectionModeListenable,
     this.selected = false,
     this.onSelectionChanged,
     this.showCollection = false,
@@ -87,6 +89,34 @@ class _NoteTileState extends State<NoteTile> {
   String? _bodyQuery;
   bool? _bodyActionsSlot;
   Widget? _body;
+
+  bool get _selectionModeNow =>
+      widget.selectionModeListenable?.value ?? widget.selectionMode;
+
+  void _selectionModeChanged() {
+    if (_hovered || _menuOpen) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.selectionModeListenable?.addListener(_selectionModeChanged);
+  }
+
+  @override
+  void didUpdateWidget(NoteTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectionModeListenable != widget.selectionModeListenable) {
+      oldWidget.selectionModeListenable?.removeListener(_selectionModeChanged);
+      widget.selectionModeListenable?.addListener(_selectionModeChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.selectionModeListenable?.removeListener(_selectionModeChanged);
+    super.dispose();
+  }
 
   Widget _cardBody(Note note, String query, bool actionsSlot) {
     if (!identical(_bodyNote, note) ||
@@ -325,11 +355,14 @@ class _NoteTileState extends State<NoteTile> {
     // reserving the slot regardless is what keeps cards from resizing when
     // selection starts.
     final actionsSlot = !note.trashed && !isTouchPrimaryPlatform;
-    final desktopActions = actionsSlot && !widget.selectionMode;
+    final desktopActions = actionsSlot && !_selectionModeNow;
     // The compact control is for mouse users. Touch enters selection with a
     // long press anywhere on the card, which is much easier to hit.
-    final showSelectionControl =
-        !isTouchPrimaryPlatform && (widget.selectionMode || _hovered);
+    Widget selectionBadge(bool mode) => _SelectionButton(
+      selected: widget.selected,
+      visible: !isTouchPrimaryPlatform && (mode || _hovered),
+      onPressed: () => widget.onSelectionChanged?.call(!widget.selected),
+    );
     // The popup lives in an overlay, so a pointer travelling from the card to
     // its menu triggers MouseRegion.onExit. Keep the footer visible until that
     // menu closes instead of making the controls vanish underneath the cursor.
@@ -364,7 +397,7 @@ class _NoteTileState extends State<NoteTile> {
     Widget closedCard(VoidCallback open) => InkWell(
       borderRadius: BorderRadius.circular(kRadius),
       onTap: () {
-        if (widget.selectionMode) {
+        if (_selectionModeNow) {
           widget.onSelectionChanged?.call(!widget.selected);
           return;
         }
@@ -376,8 +409,13 @@ class _NoteTileState extends State<NoteTile> {
           sourceRect: morphSourceRect(context),
         );
       },
-      onLongPress: widget.selectionMode
-          ? () => widget.onSelectionChanged?.call(!widget.selected)
+      onLongPress:
+          widget.selectionModeListenable != null || widget.selectionMode
+          ? () {
+              if (_selectionModeNow) {
+                widget.onSelectionChanged?.call(!widget.selected);
+              }
+            }
           : null,
       // Keep the content widget identical while selection and hover change.
       child: Stack(
@@ -479,17 +517,24 @@ class _NoteTileState extends State<NoteTile> {
       child: surface,
     );
 
+    Widget cardSemantics(bool mode) => Semantics(
+      button: true,
+      label:
+          '${mode ? (widget.selected ? 'Deselect' : 'Select') : 'Open'} ${note.title.isEmpty ? 'untitled note' : note.title}',
+      child: cardContent,
+    );
+
     final card = AnimatedSize(
       key: ValueKey('note-size-${note.id}'),
       duration: Motion.reduced(context) ? Duration.zero : Motion.base,
       curve: Motion.emphasized,
       alignment: Alignment.topCenter,
-      child: Semantics(
-        button: true,
-        label:
-            '${widget.selectionMode ? (widget.selected ? 'Deselect' : 'Select') : 'Open'} ${note.title.isEmpty ? 'untitled note' : note.title}',
-        child: cardContent,
-      ),
+      child: widget.selectionModeListenable != null
+          ? ValueListenableBuilder<bool>(
+              valueListenable: widget.selectionModeListenable!,
+              builder: (_, mode, _) => cardSemantics(mode),
+            )
+          : cardSemantics(widget.selectionMode),
     );
 
     final tile = MouseRegion(
@@ -499,11 +544,13 @@ class _NoteTileState extends State<NoteTile> {
         clipBehavior: Clip.none,
         children: [
           card,
-          _SelectionButton(
-            selected: widget.selected,
-            visible: showSelectionControl,
-            onPressed: () => widget.onSelectionChanged?.call(!widget.selected),
-          ),
+          if (widget.selectionModeListenable case final listenable?)
+            ValueListenableBuilder<bool>(
+              valueListenable: listenable,
+              builder: (_, mode, _) => selectionBadge(mode),
+            )
+          else
+            selectionBadge(widget.selectionMode),
         ],
       ),
     );

@@ -108,6 +108,37 @@ void main() {
     await flushTimers(tester);
   });
 
+  testWidgets(
+    'desktop selection reuses unselected cards and still selects them',
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    (tester) async {
+      final api = FakeApi()
+        ..notes['n1'] = serverNote('n1', title: 'First')
+        ..notes['n2'] = serverNote('n2', title: 'Second');
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      addTearDown(store.dispose);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      NoteTile secondCard() => tester
+          .widgetList<NoteTile>(find.byType(NoteTile))
+          .singleWhere((card) => card.note.id == 'n2');
+      final before = secondCard();
+      tester
+          .widgetList<NoteTile>(find.byType(NoteTile))
+          .singleWhere((card) => card.note.id == 'n1')
+          .onSelectionChanged!(true);
+      await tester.pumpAndSettle();
+      expect(secondCard(), same(before));
+      expect(find.text('1 selected'), findsOneWidget);
+      await tester.tap(find.text('Second'));
+      await tester.pump();
+      expect(find.text('2 selected'), findsOneWidget);
+      await flushTimers(tester);
+    },
+  );
+
   testWidgets('card updates when the editor closes', (tester) async {
     final api = FakeApi()..notes['n1'] = serverNote('n1', title: 'Before');
     final store = NotesStore(api: api, currentUserId: 'u-me');

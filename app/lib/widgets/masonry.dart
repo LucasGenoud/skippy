@@ -662,10 +662,12 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     if (_draggingIds.contains(note.id) && note.id != _draggingId) {
       return Opacity(opacity: 0.30, child: child);
     }
+    final canDrag =
+        widget.draggableIds == null || widget.draggableIds!.contains(note.id);
+    // Keep the desktop wrapper mounted when selection disables a card's drag.
     if (!widget.dragEnabled ||
         widget.onReorder == null ||
-        (widget.draggableIds != null &&
-            !widget.draggableIds!.contains(note.id))) {
+        (isTouchPrimaryPlatform && !canDrag)) {
       return child;
     }
 
@@ -699,7 +701,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         },
         onDraggableCanceled: (velocity, offset) => _onDragEnd(),
         onDragEnd: (details) => _onDragEnd(tookIt: details.wasAccepted),
-        maxSimultaneousDrags: 1,
+        maxSimultaneousDrags: canDrag ? 1 : 0,
         child: child,
       );
     }

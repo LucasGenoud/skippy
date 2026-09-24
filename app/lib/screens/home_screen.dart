@@ -17,6 +17,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
+import '../util/platform.dart';
 import '../util/search_query.dart';
 import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
@@ -56,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSidebarOpen = true;
   final Set<String> _selectedNoteIds = {};
   bool _selectionMode = false;
+  final _selectionModeNotifier = ValueNotifier(false);
   // Paints a background behind the `label:`/`is:` operators, and is what
   // the filter sheet edits while it stays open.
   final _searchController = SearchQueryController();
@@ -115,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchFocus.dispose();
     _pageFocus.dispose();
     _scrollController.dispose();
+    _selectionModeNotifier.dispose();
     super.dispose();
   }
 
@@ -189,12 +192,16 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectionMode = false;
       _selectedNoteIds.clear();
     });
+    _selectionModeNotifier.value = false;
   }
 
-  void _cancelSelection() => setState(() {
-    _selectionMode = false;
-    _selectedNoteIds.clear();
-  });
+  void _cancelSelection() {
+    setState(() {
+      _selectionMode = false;
+      _selectedNoteIds.clear();
+    });
+    _selectionModeNotifier.value = false;
+  }
 
   void _toggleNoteSelection(String id, bool selected) {
     setState(() {
@@ -208,6 +215,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // leaves the mode instead of stranding the user in an inert action bar.
       _selectionMode = _selectedNoteIds.isNotEmpty;
     });
+    _selectionModeNotifier.value = _selectionMode;
   }
 
   void _toggleSelectAll(Iterable<Note> visibleNotes) {
@@ -220,6 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       _selectionMode = _selectedNoteIds.isNotEmpty;
     });
+    _selectionModeNotifier.value = _selectionMode;
   }
 
   List<Note> _selectedNotes(NotesStore store) => [
@@ -1287,6 +1296,9 @@ class _HomeScreenState extends State<HomeScreen> {
       showCollection: _selection.view == NoteView.archive,
       query: query,
       selectionMode: _selectionMode,
+      selectionModeListenable: isTouchPrimaryPlatform
+          ? null
+          : _selectionModeNotifier,
       selected: _selectedNoteIds.contains(note.id),
       onSelectionChanged: (selected) => _toggleNoteSelection(note.id, selected),
       swipeToArchive: true,
@@ -1358,9 +1370,11 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               onStationaryLongPress: (id) =>
                   _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
+              // Desktop card chrome observes the mode; its body only changes
+              // when that card's own selection changes.
               itemBuildKey: (note) => Object.hash(
                 query,
-                _selectionMode,
+                isTouchPrimaryPlatform ? _selectionMode : null,
                 _selectedNoteIds.contains(note.id),
               ),
               itemBuilder: (context, note) => tile(note),
