@@ -581,7 +581,7 @@ void main() {
     );
 
     testWidgets(
-      'desktop hover reveals the reserved note action footer',
+      'desktop hover mounts the reserved note action footer',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {
         api.notes['n1'] = serverNote(
@@ -598,7 +598,8 @@ void main() {
         );
 
         final actions = find.byKey(const ValueKey('note-actions-n1'));
-        expect(tester.widget<AnimatedOpacity>(actions).opacity, 0);
+        expect(actions, findsNothing);
+        expect(find.byTooltip('Note color'), findsNothing);
         final cardBottom = tester.getRect(find.byType(NoteTile)).bottom;
         final titleBottom = tester.getRect(find.text('Desktop actions')).bottom;
         expect(cardBottom - titleBottom, greaterThanOrEqualTo(48));
@@ -610,7 +611,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(tester.widget<AnimatedOpacity>(actions).opacity, 1);
+        expect(actions, findsOneWidget);
         expect(find.byTooltip('Note color'), findsOneWidget);
         expect(find.byTooltip('Add label'), findsOneWidget);
         expect(find.byTooltip('Add reminder'), findsOneWidget);
@@ -630,7 +631,7 @@ void main() {
         // remains visible until the menu closes.
         await mouse.moveTo(Offset.zero);
         await tester.pump();
-        expect(tester.widget<AnimatedOpacity>(actions).opacity, 1);
+        expect(actions, findsOneWidget);
         await tester.tap(find.text('Move to Trash'));
         await tester.pump();
         expect(store.noteById('n1')!.trashed, isTrue);

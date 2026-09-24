@@ -10,7 +10,6 @@ import '../../theme.dart';
 import '../../util/motion.dart';
 import '../form_dialog.dart';
 import '../masonry.dart';
-import '../marquee_selection.dart';
 import '../note_card.dart';
 import 'stage_editor.dart';
 
@@ -47,7 +46,6 @@ class BoardColumnView extends StatefulWidget {
 
   /// Whether cards in this column can be picked up.
   final bool dragEnabled;
-  final ScrollController? boardScrollController;
 
   /// Selection state, owned by the home screen so the top bar's action row
   /// works over the board exactly as it does over the grid.
@@ -66,7 +64,6 @@ class BoardColumnView extends StatefulWidget {
     this.onShowAll,
     this.showHeader = true,
     this.dragEnabled = true,
-    this.boardScrollController,
     this.selectionMode = false,
     this.selectedIds = const {},
     this.onSelectionChanged,
@@ -243,16 +240,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                         column: widget.column,
                         onToggleCollapsed: widget.onToggleCollapsed,
                       ),
-                    Expanded(
-                      child: MarqueeRegion.canvas(
-                        scrollControllers: [
-                          _scrollController,
-                          if (widget.boardScrollController != null)
-                            widget.boardScrollController!,
-                        ],
-                        child: _body(),
-                      ),
-                    ),
+                    Expanded(child: _body()),
                     Padding(
                       padding: const EdgeInsets.all(8),
                       child: SizedBox(
@@ -303,18 +291,15 @@ class _BoardColumnViewState extends State<BoardColumnView> {
               widget.selectionMode,
               Object.hashAllUnordered(widget.selectedIds),
             ),
-            itemBuilder: (context, note) => MarqueeRegion.note(
-              id: note.id,
-              child: NoteTile(
-                key: ValueKey(note.id),
-                note: note,
-                query: widget.query,
-                selectionMode: widget.selectionMode,
-                selected: widget.selectedIds.contains(note.id),
-                openedFromBoard: true,
-                onSelectionChanged: (selected) =>
-                    widget.onSelectionChanged?.call(note.id, selected),
-              ),
+            itemBuilder: (context, note) => NoteTile(
+              key: ValueKey(note.id),
+              note: note,
+              query: widget.query,
+              selectionMode: widget.selectionMode,
+              selected: widget.selectedIds.contains(note.id),
+              openedFromBoard: true,
+              onSelectionChanged: (selected) =>
+                  widget.onSelectionChanged?.call(note.id, selected),
             ),
           ),
           if (widget.column.hiddenCount > 0)
