@@ -5,6 +5,7 @@ import '../../api/api_client.dart';
 import '../../state/auth_store.dart';
 import '../../theme.dart';
 import '../form_dialog.dart';
+import '../form_error_banner.dart';
 
 enum _AccountField { name, email, password }
 
@@ -159,10 +160,10 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
               ),
             ),
           ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: scheme.error)),
-          ],
+          AnimatedFormError(
+            message: _error,
+            padding: const EdgeInsets.only(top: 12),
+          ),
         ],
       ),
       actions: [
@@ -380,16 +381,10 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
               ),
             ),
           ],
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          ],
+          AnimatedFormError(
+            message: _error,
+            padding: const EdgeInsets.only(top: 12),
+          ),
         ],
       ),
       actions: [

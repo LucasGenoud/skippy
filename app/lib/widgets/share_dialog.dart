@@ -8,6 +8,7 @@ import '../util/motion.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
 import 'public_link_dialog.dart';
+import 'form_error_banner.dart';
 
 /// Collaborator management for a note. Owners add/remove people by email;
 /// collaborators can see the roster and leave.
@@ -173,14 +174,10 @@ class _ShareDialogState extends State<ShareDialog> {
                 ),
               ],
             ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: kSpaceSm),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: scheme.error, fontSize: 13),
-                ),
-              ),
+            AnimatedFormError(
+              message: _error,
+              padding: const EdgeInsets.only(top: kSpaceSm),
+            ),
             const SizedBox(height: 8),
             const Divider(height: 24),
             // Sharing with an account and sharing with the world are different

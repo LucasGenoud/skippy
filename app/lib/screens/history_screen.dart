@@ -8,6 +8,7 @@ import '../state/settings_store.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import '../widgets/form_dialog.dart';
+import '../widgets/state_cross_fade.dart';
 
 /// The edit-history timeline for a single note: the current state on top,
 /// then every past version newest-first, each restorable. Restoring rolls the
@@ -104,66 +105,81 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
       appBar: AppBar(title: const Text('Version history')),
       body: FutureBuilder<List<NoteVersion>>(
         future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _Message(
-              icon: Icons.cloud_off_outlined,
-              text: "Couldn't load history",
-              action: FilledButton.tonal(
-                onPressed: _reload,
-                child: const Text('Try again'),
-              ),
-            );
-          }
-          final versions = snapshot.data ?? const <NoteVersion>[];
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            children: [
-              if (note != null)
-                _VersionCard(
-                  settings: settings,
-                  isCurrent: true,
-                  kind: note.kind,
-                  title: note.title,
-                  content: note.content,
-                  items: note.items,
-                  stamp: _stamp(settings, note.updatedAt),
-                  author: null,
-                ),
-              if (versions.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Text(
-                    'No earlier versions yet.\nEdits you make from now on are '
-                    'saved here automatically.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              for (final version in versions)
-                _VersionCard(
-                  settings: settings,
-                  isCurrent: false,
-                  kind: version.kind,
-                  title: version.title,
-                  content: version.content,
-                  items: version.items,
-                  stamp: _stamp(settings, version.createdAt),
-                  author: _authorLabel(version),
-                  onRestore: canRestore && _restoringId == null
-                      ? () => _restore(version)
-                      : null,
-                  restoring: _restoringId == version.id,
-                ),
-            ],
-          );
-        },
+        // The spinner cross-fades into the list (or the failure) instead of
+        // the page cutting over once the versions arrive.
+        builder: (context, snapshot) => StateCrossFade(
+          alignment: Alignment.center,
+          duration: Motion.base,
+          state: (snapshot.connectionState, snapshot.hasError),
+          child: _body(context, snapshot, note, settings, canRestore),
+        ),
       ),
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    AsyncSnapshot<List<NoteVersion>> snapshot,
+    Note? note,
+    SettingsStore settings,
+    bool canRestore,
+  ) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (snapshot.hasError) {
+      return _Message(
+        icon: Icons.cloud_off_outlined,
+        text: "Couldn't load history",
+        action: FilledButton.tonal(
+          onPressed: _reload,
+          child: const Text('Try again'),
+        ),
+      );
+    }
+    final versions = snapshot.data ?? const <NoteVersion>[];
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        if (note != null)
+          _VersionCard(
+            settings: settings,
+            isCurrent: true,
+            kind: note.kind,
+            title: note.title,
+            content: note.content,
+            items: note.items,
+            stamp: _stamp(settings, note.updatedAt),
+            author: null,
+          ),
+        if (versions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Text(
+              'No earlier versions yet.\nEdits you make from now on are '
+              'saved here automatically.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        for (final version in versions)
+          _VersionCard(
+            settings: settings,
+            isCurrent: false,
+            kind: version.kind,
+            title: version.title,
+            content: version.content,
+            items: version.items,
+            stamp: _stamp(settings, version.createdAt),
+            author: _authorLabel(version),
+            onRestore: canRestore && _restoringId == null
+                ? () => _restore(version)
+                : null,
+            restoring: _restoringId == version.id,
+          ),
+      ],
     );
   }
 

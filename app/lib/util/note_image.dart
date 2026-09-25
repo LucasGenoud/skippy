@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../models/note.dart';
 import 'attachment_image.dart';
+import 'motion.dart';
 
 /// Renders a note image attachment.
 ///
@@ -189,6 +190,7 @@ class _RasterNoteImageState extends State<_RasterNoteImage> {
             // once capped it crops the overflow from the bottom.
             fit: BoxFit.cover,
             alignment: Alignment.topCenter,
+            frameBuilder: Motion.fadeInFrame,
             errorBuilder: (context, error, stack) =>
                 widget.errorBuilder(context, 80),
           ),

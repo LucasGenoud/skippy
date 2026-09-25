@@ -184,6 +184,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectView(ViewSelection selection) {
+    // A new view starts at its top, not at whatever depth the last one was
+    // scrolled to. Picking the view already shown glides back up instead.
+    if (_scrollController.hasClients) {
+      if (selection == _selection) {
+        _scrollController.animateTo(
+          0,
+          duration: Motion.reduced(context) ? Duration.zero : Motion.slow,
+          curve: Motion.emphasized,
+        );
+      } else {
+        _scrollController.jumpTo(0);
+      }
+    }
+
     context.read<NotesStore>().rememberWorkspaceView(selection);
     setState(() {
       _selection = selection;
@@ -585,6 +599,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final workspace = store.activeWorkspace;
     if (workspace == null) return;
     final workspaceChanged = _shownWorkspaceId != workspace.id;
+    // Another workspace is another grid; open it at the top. Deferred because
+    // this runs during build.
+    if (workspaceChanged && _shownWorkspaceId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+      });
+    }
     final remembered = store.lastWorkspaceView(workspace.id);
     final candidate = workspaceChanged && remembered != null
         ? remembered

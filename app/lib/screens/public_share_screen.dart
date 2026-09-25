@@ -8,9 +8,11 @@ import '../state/settings_store.dart' show kDefaultPalette;
 import '../theme.dart';
 import '../util/attachment_image.dart';
 import '../util/label_style.dart';
+import '../util/motion.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/linked_text.dart';
 import '../widgets/masonry.dart';
+import '../widgets/state_cross_fade.dart';
 
 /// The page behind a public link: someone else's notes, read only, with no
 /// account and no session.
@@ -36,20 +38,32 @@ class _PublicShareScreenState extends State<PublicShareScreen> {
 
   void _retry() => setState(() => _share = _load());
 
+  Widget _body(AsyncSnapshot<PublicShare> snapshot) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final share = snapshot.data;
+    if (share == null) {
+      return _Unavailable(onRetry: _retry);
+    }
+
+    return _ShareBody(share: share, api: widget.api);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: FutureBuilder<PublicShare>(
           future: _share,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final share = snapshot.data;
-            if (share == null) return _Unavailable(onRetry: _retry);
-            return _ShareBody(share: share, api: widget.api);
-          },
+          // The spinner cross-fades into the page rather than cutting over.
+          builder: (context, snapshot) => StateCrossFade(
+            alignment: Alignment.center,
+            duration: Motion.base,
+            state: (snapshot.connectionState, snapshot.hasData),
+            child: _body(snapshot),
+          ),
         ),
       ),
     );
@@ -534,6 +548,7 @@ class PublicNoteCard extends StatelessWidget {
               ),
               fit: BoxFit.cover,
               width: double.infinity,
+              frameBuilder: Motion.fadeInFrame,
               errorBuilder: (context, _, _) => const SizedBox.shrink(),
             ),
         ],

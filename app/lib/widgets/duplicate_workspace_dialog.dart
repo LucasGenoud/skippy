@@ -4,7 +4,9 @@ import '../api/api_client.dart';
 import '../models/workspace.dart';
 import '../state/notes_store.dart';
 import '../theme.dart';
+import 'animated_reveal.dart';
 import 'form_dialog.dart';
+import 'form_error_banner.dart';
 
 class DuplicateWorkspaceDialog extends StatefulWidget {
   final Workspace workspace;
@@ -145,19 +147,18 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          if (_busy)
-            const Padding(
-              padding: EdgeInsets.only(top: 20),
-              child: LinearProgressIndicator(),
-            ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
+          AnimatedReveal(
+            child: _busy
+                ? const Padding(
+                    padding: EdgeInsets.only(top: 20),
+                    child: LinearProgressIndicator(),
+                  )
+                : null,
+          ),
+          AnimatedFormError(
+            message: _error,
+            padding: const EdgeInsets.only(top: 12),
+          ),
         ],
       ),
       actions: [

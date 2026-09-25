@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../models/note.dart';
 import '../state/notes_store.dart';
 import '../util/home_widgets.dart';
+import '../util/motion.dart';
 import '../util/widget_payload.dart';
+import '../widgets/state_cross_fade.dart';
 
 /// Picks the note a newly added Android widget will show.
 ///
@@ -90,22 +92,27 @@ class _WidgetConfigScreenState extends State<WidgetConfigScreen> {
           ),
         ),
       ),
-      body: store.loading
-          ? const Center(child: CircularProgressIndicator())
-          : notes.isEmpty
-          ? const Center(child: Text('No notes to show yet.'))
-          : ListView.builder(
-              itemCount: notes.length,
-              itemBuilder: (context, index) {
-                final note = notes[index];
-                return _NoteRow(
-                  note: note,
-                  highlighted: note.id == _preselected,
-                  enabled: !_binding,
-                  onTap: () => _choose(note),
-                );
-              },
-            ),
+      body: StateCrossFade(
+        alignment: Alignment.center,
+        duration: Motion.base,
+        state: (store.loading, notes.isEmpty),
+        child: store.loading
+            ? const Center(child: CircularProgressIndicator())
+            : notes.isEmpty
+            ? const Center(child: Text('No notes to show yet.'))
+            : ListView.builder(
+                itemCount: notes.length,
+                itemBuilder: (context, index) {
+                  final note = notes[index];
+                  return _NoteRow(
+                    note: note,
+                    highlighted: note.id == _preselected,
+                    enabled: !_binding,
+                    onTap: () => _choose(note),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

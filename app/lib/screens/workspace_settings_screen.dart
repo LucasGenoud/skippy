@@ -16,6 +16,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/form_dialog.dart';
 import '../widgets/workspace_menu.dart';
 import 'workspace_stats_screen.dart';
+import '../widgets/form_error_banner.dart';
 
 /// Settings for one workspace: its name, which views it offers, who is in it,
 /// what it holds, and how to delete or leave it.
@@ -305,14 +306,10 @@ class _PeopleSectionState extends State<_PeopleSection> {
               ],
             ),
           ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(
-                _error!,
-                style: TextStyle(color: scheme.error, fontSize: 13),
-              ),
-            ),
+          AnimatedFormError(
+            message: _error,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          ),
         ],
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),

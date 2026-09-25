@@ -8,6 +8,7 @@ import '../../models/note.dart';
 import '../../util/attachment_image.dart';
 import '../../util/download.dart';
 import '../../util/mime.dart';
+import '../../util/motion.dart';
 
 /// An inline image attachment in the editor, with a hover remove button.
 /// A null [onRemove] (trashed note) hides the button.
@@ -80,6 +81,7 @@ class ImageAttachmentTile extends StatelessWidget {
       key: Key('full-image-${attachment.id}'),
       image: AttachmentImage(attachmentId: attachment.id, url: url),
       fit: BoxFit.contain,
+      frameBuilder: Motion.fadeInFrame,
       errorBuilder: (context, error, stack) => const Center(
         child: Icon(Icons.broken_image_outlined, color: Colors.white, size: 40),
       ),
@@ -140,6 +142,7 @@ class ImageAttachmentTile extends StatelessWidget {
                                   ),
                                 ),
                                 fit: BoxFit.cover,
+                                frameBuilder: Motion.fadeInFrame,
                                 errorBuilder: (context, error, stack) =>
                                     Container(
                                       height: 80,

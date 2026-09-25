@@ -244,10 +244,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             ],
           ),
         ),
-        if (error != null) ...[
-          const SizedBox(height: 16),
-          FormErrorBanner(message: error),
-        ],
+        AnimatedFormError(message: error),
         const SizedBox(height: 24),
         FilledButton.icon(
           onPressed: _busy ? null : _submit,

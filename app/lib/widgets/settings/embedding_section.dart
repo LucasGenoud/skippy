@@ -5,6 +5,7 @@ import '../../models/search_stats.dart';
 import '../../state/settings_store.dart';
 import '../../theme.dart';
 import '../../util/snack.dart';
+import '../animated_reveal.dart';
 
 /// Diagnostics for the semantic-search index, embedding model, vector width,
 /// and how many of the user's notes are embedded, plus a button to re-run the
@@ -140,7 +141,9 @@ class _EmbeddingStatsTileState extends State<EmbeddingStatsTile> {
               label: Text(_reindexing ? 'Re-embedding…' : 'Re-run embeddings'),
             ),
           ),
-          if (_reindexing) _ReindexProgress(progress: _progress),
+          AnimatedReveal(
+            child: _reindexing ? _ReindexProgress(progress: _progress) : null,
+          ),
         ],
       );
     }

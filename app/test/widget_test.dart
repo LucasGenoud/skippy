@@ -3324,6 +3324,37 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('switching views starts the new view at the top', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      for (var i = 0; i < 60; i++) {
+        api.notes['n$i'] = serverNote('n$i', title: 'Note $i');
+        api.notes['a$i'] = serverNote('a$i', title: 'Old $i', archived: true);
+      }
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      final grid = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      );
+      ScrollPosition position() =>
+          tester.state<ScrollableState>(grid.first).position;
+      position().jumpTo(1200);
+      await tester.pump();
+      expect(position().pixels, 1200);
+
+      await tester.tap(find.text('Archive'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Old '), findsWidgets);
+      expect(position().pixels, 0);
+      await flushTimers(tester);
+    });
+
     testWidgets('selects multiple masonry notes and applies a label', (
       tester,
     ) async {

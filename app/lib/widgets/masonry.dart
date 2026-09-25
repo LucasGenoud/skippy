@@ -192,6 +192,16 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   /// The tile that asked to paint last; see [MasonryRaiseTileNotification].
   String? _raisedId;
 
+  /// Cards that left [AnimatedMasonry.notes] and are fading out where they
+  /// last stood. They no longer take part in the layout, so the rest of the
+  /// grid closes the gap while they go.
+  final Map<String, ({Note note, _Slot slot})> _departing = {};
+
+  /// Cards that joined [AnimatedMasonry.notes] since the last frame. Only a
+  /// tile mounting in that frame fades in, so one mounted later by scrolling
+  /// or progressive loading shows at once.
+  final Set<String> _arriving = {};
+
   // Tile widgets, kept between our own rebuilds. A note card is expensive to
   // build (markdown, linkified spans, image resolution, an OpenContainer
   // each), while a reorder changes where cards go, not what they are, so the
@@ -263,6 +273,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       _viewportBounds = null;
     }
     final ids = [for (final n in widget.notes) n.id];
+    _trackPresence(oldWidget, ids);
     if (_draggingId == null) {
       _orderIds = ids;
     } else {
@@ -276,7 +287,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
           if (!existing.contains(id)) id,
       ];
     }
-    final live = ids.toSet();
+    final live = {...ids, ..._departing.keys};
     _unscrolledCount = math.min(
       math.max(_unscrolledCount, math.min(_buildBatchSize, ids.length)),
       ids.length,
@@ -284,7 +295,9 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     _heights.removeWhere((id, _) => !live.contains(id));
     // The usual way a raised tile ends is the note leaving the view, which is
     // exactly what it was swiped off the grid for.
-    if (_raisedId != null && !live.contains(_raisedId)) _raisedId = null;
+    if (_raisedId != null && !ids.contains(_raisedId)) {
+      _raisedId = null;
+    }
     // With per-card keys, [_tileFor] decides which survivors changed. No key
     // means the builder may have changed arbitrarily, so drop them all.
     if (widget.itemBuildKey == null) {
@@ -443,8 +456,55 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     return _orderIds.length;
   }
 
+  /// Records which cards just arrived and which just left, before the order
+  /// and caches forget the leavers. A card on screen that leaves keeps its
+  /// last slot while it fades; one coming back mid-exit simply returns.
+  void _trackPresence(AnimatedMasonry oldWidget, List<String> ids) {
+    final incoming = ids.toSet();
+    final previous = {for (final n in oldWidget.notes) n.id};
+    _departing.removeWhere((id, _) => incoming.contains(id));
+    for (final id in incoming) {
+      if (!previous.contains(id)) {
+        _arriving.add(id);
+      }
+    }
+
+    // Mid-drag the drag owns every card's position; let leavers just go.
+    final slots = _layout?.slots;
+    if (_draggingId != null || slots == null) {
+      return;
+    }
+
+    for (final note in oldWidget.notes) {
+      final slot = slots[note.id];
+      if (incoming.contains(note.id) ||
+          slot == null ||
+          !_visibleIds.contains(note.id)) {
+        continue;
+      }
+      _departing[note.id] = (note: note, slot: slot);
+    }
+  }
+
+  void _onDeparted(String id) {
+    if (!mounted || !_departing.containsKey(id)) {
+      return;
+    }
+
+    setState(() {
+      _departing.remove(id);
+      _heights.remove(id);
+      _tiles.remove(id);
+      _tileNotes.remove(id);
+      _tileKeys.remove(id);
+    });
+  }
+
   void _onHeightMeasured(String id, double height) {
     if (!mounted) return;
+    if (_departing.containsKey(id)) {
+      return;
+    }
     if ((_heights[id] ?? -1) == height) return;
     setState(() {
       _heights[id] = height;
@@ -657,6 +717,32 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   // -------------------------------------------------------------------
 
+  /// One card at its slot. Arriving, staying and leaving cards share this
+  /// exact shape, so a card that leaves (or returns) keeps its element and
+  /// every bit of state below it, a swiped-away card stays swiped away while
+  /// it fades.
+  Widget _positionedTile(
+    Note note,
+    _Slot slot,
+    _Layout layout,
+    _Presence presence,
+  ) => AnimatedPositioned(
+    key: ValueKey(note.id),
+    duration: _snapFrame ? Duration.zero : _moveDuration,
+    curve: Motion.standard,
+    left: slot.x,
+    top: slot.y,
+    width: slot.width,
+    child: _TilePresence(
+      presence: presence,
+      onDeparted: () => _onDeparted(note.id),
+      child: MeasureSize(
+        onChange: (size) => _onHeightMeasured(note.id, size.height),
+        child: RepaintBoundary(child: _buildTile(note, layout)),
+      ),
+    ),
+  );
+
   Widget _buildTile(Note note, _Layout layout) {
     final child = _tileFor(note);
     if (_draggingIds.contains(note.id) && note.id != _draggingId) {
@@ -763,25 +849,25 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
           });
         }
         // Painting order, which is the order of this list, is the packed
-        // order — except for a raised tile, which goes last. Every tile is
-        // keyed, so moving one to the end of the list moves what it paints
-        // over, not the element it is built from.
-        final tiles = <Widget>[];
+        // order — except for leaving cards, which go first so the ones
+        // gliding into their gap pass over them, and a raised tile, which
+        // goes last. Every tile is keyed, so moving one to the end of the
+        // list moves what it paints over, not the element it is built from.
+        final tiles = <Widget>[
+          for (final gone in _departing.values)
+            _positionedTile(gone.note, gone.slot, layout, _Presence.leaving),
+        ];
         Widget? raised;
         for (final id in _orderIds) {
           if (!_visibleIds.contains(id)) continue;
           if (notesById[id] case final Note note) {
-            final tile = AnimatedPositioned(
-              key: ValueKey(note.id),
-              duration: snap ? Duration.zero : _moveDuration,
-              curve: Motion.standard,
-              left: layout.slots[note.id]!.x,
-              top: layout.slots[note.id]!.y,
-              width: layout.slots[note.id]!.width,
-              child: MeasureSize(
-                onChange: (size) => _onHeightMeasured(note.id, size.height),
-                child: RepaintBoundary(child: _buildTile(note, layout)),
-              ),
+            final tile = _positionedTile(
+              note,
+              layout.slots[note.id]!,
+              layout,
+              _arriving.contains(note.id)
+                  ? _Presence.arriving
+                  : _Presence.present,
             );
             if (note.id == _raisedId) {
               raised = tile;
@@ -791,6 +877,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
           }
         }
         if (raised != null) tiles.add(raised);
+        if (_arriving.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _arriving.clear();
+          });
+        }
 
         return NotificationListener<MasonryRaiseTileNotification>(
           onNotification: (notification) {
@@ -816,6 +907,106 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       },
     );
   }
+}
+
+/// Where a card is in its life on the grid.
+enum _Presence { arriving, present, leaving }
+
+/// Fades and scales a card in when it joins a shown grid and out when it
+/// leaves one. Always in the tree, so toggling it never remounts the card.
+///
+/// Fail-open: a tile whose tickers are off (its route covered) skips the
+/// entrance and exits at once, so no card can be left invisible or linger.
+class _TilePresence extends StatefulWidget {
+  final _Presence presence;
+  final VoidCallback onDeparted;
+  final Widget child;
+
+  const _TilePresence({
+    required this.presence,
+    required this.onDeparted,
+    required this.child,
+  });
+
+  @override
+  State<_TilePresence> createState() => _TilePresenceState();
+}
+
+class _TilePresenceState extends State<_TilePresence>
+    with SingleTickerProviderStateMixin {
+  static const double _hiddenScale = 0.95;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: Motion.base,
+    reverseDuration: Motion.fast,
+    value: 1,
+  );
+  late final Animation<double> _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Motion.emphasized,
+    reverseCurve: Motion.standard,
+  );
+  late final Animation<double> _scale = _curve.drive(
+    Tween(begin: _hiddenScale, end: 1),
+  );
+  bool _started = false;
+
+  bool get _animates =>
+      !Motion.reduced(context) && TickerMode.valuesOf(context).enabled;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Only the first call is the mount; later ones are a route covering or
+    // uncovering the grid, which must not replay the entrance.
+    if (_started) {
+      return;
+    }
+
+    _started = true;
+    if (widget.presence == _Presence.arriving && _animates) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_TilePresence oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final leaving = widget.presence == _Presence.leaving;
+    if (leaving == (oldWidget.presence == _Presence.leaving)) {
+      return;
+    }
+
+    if (!leaving) {
+      _controller.forward();
+      return;
+    }
+
+    if (!_animates) {
+      _controller.value = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) => widget.onDeparted());
+      return;
+    }
+
+    // A reverse cancelled by the card coming back never completes.
+    _controller.reverse().then((_) => widget.onDeparted());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    ignoring: widget.presence == _Presence.leaving,
+    child: FadeTransition(
+      opacity: _curve,
+      child: ScaleTransition(scale: _scale, child: widget.child),
+    ),
+  );
 }
 
 /// The opening a hovering card is about to drop into: an outline where the

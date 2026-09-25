@@ -398,10 +398,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   )
                                 : const SizedBox.shrink(),
                           ),
-                          if (auth.error != null) ...[
-                            const SizedBox(height: 16),
-                            FormErrorBanner(message: auth.error!),
-                          ],
+                          AnimatedFormError(message: auth.error),
                           const SizedBox(height: 24),
                           FilledButton.icon(
                             onPressed: auth.busy ? null : _submit,
@@ -592,10 +589,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             prefixIcon: Icon(Icons.email_outlined),
           ),
         ),
-        if (error != null) ...[
-          const SizedBox(height: 16),
-          FormErrorBanner(message: error),
-        ],
+        AnimatedFormError(message: error),
       ],
     );
   }

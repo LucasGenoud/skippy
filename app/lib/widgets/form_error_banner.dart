@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'animated_reveal.dart';
 
 /// A soft error banner shown above a form's submit button. Used by the sign-in
 /// form and the password reset form, which are the two places someone meets a
@@ -37,6 +38,33 @@ class FormErrorBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A [FormErrorBanner] that grows in when [message] arrives and collapses when
+/// it clears, so a failed submit doesn't shove the form's buttons in one frame.
+/// [padding] is the gap to the field above, collapsed with the banner.
+class AnimatedFormError extends StatelessWidget {
+  final String? message;
+  final EdgeInsetsGeometry padding;
+
+  const AnimatedFormError({
+    super.key,
+    required this.message,
+    this.padding = const EdgeInsets.only(top: 16),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final message = this.message;
+    return AnimatedReveal(
+      child: message == null
+          ? null
+          : Padding(
+              padding: padding,
+              child: FormErrorBanner(message: message),
+            ),
     );
   }
 }

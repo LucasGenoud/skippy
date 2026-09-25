@@ -24,6 +24,7 @@ import 'link_preview.dart';
 import 'linked_text.dart';
 import 'masonry.dart';
 import 'pick_image.dart';
+import 'pin_icon.dart';
 import 'reminder_chip.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
@@ -993,20 +994,7 @@ class _PinButton extends StatelessWidget {
               height: _size,
             ),
             iconSize: 18,
-            // A little scale-pop when the pin state flips, so the action
-            // reads as tactile rather than an instant glyph swap.
-            icon: AnimatedSwitcher(
-              duration: Motion.fast,
-              switchInCurve: Curves.easeOutBack,
-              switchOutCurve: Curves.easeIn,
-              transitionBuilder: (child, animation) =>
-                  ScaleTransition(scale: animation, child: child),
-              child: Icon(
-                note.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                key: ValueKey(note.pinned),
-                size: 18,
-              ),
-            ),
+            icon: PinIcon(pinned: note.pinned, size: 18),
             color: scheme.onSurfaceVariant,
             tooltip: note.pinned ? 'Unpin note' : 'Pin note',
             onPressed: () => context.read<NotesStore>().togglePin(note.id),

@@ -5,8 +5,11 @@ import 'package:provider/provider.dart';
 import '../../models/share_link.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
+import '../../util/motion.dart';
 import '../../util/snack.dart';
+import '../animated_reveal.dart';
 import '../form_dialog.dart';
+import '../state_cross_fade.dart';
 
 /// Every public link this account has published, with a way to take each one
 /// down.
@@ -26,6 +29,10 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
   String? _error;
   bool _loading = true;
 
+  /// Tokens revoked since the last load. Their rows stay mounted long enough
+  /// to collapse instead of vanishing from the middle of the list.
+  final Set<String> _revoked = {};
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +50,7 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
       if (!mounted) return;
       setState(() {
         _links = links;
+        _revoked.clear();
         _loading = false;
       });
     } catch (_) {
@@ -80,7 +88,7 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
     try {
       await api.deleteShareLink(link.token);
       if (!mounted) return;
-      setState(() => _links = _links?.where((l) => l != link).toList());
+      setState(() => _revoked.add(link.token));
       showAppSnack(
         'Public link revoked',
         icon: Icons.link_off,
@@ -103,8 +111,26 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
     showAppSnack('Link copied', icon: Icons.content_copy);
   }
 
+  int get _liveCount =>
+      _links?.where((l) => !_revoked.contains(l.token)).length ?? 0;
+
   @override
   Widget build(BuildContext context) {
+    // Loading, failing, and emptying out swap one surface for another; the
+    // section grows or shrinks to fit rather than jumping.
+    return AnimatedSize(
+      duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+      curve: Motion.emphasized,
+      alignment: Alignment.topCenter,
+      child: StateCrossFade(
+        alignment: Alignment.topCenter,
+        state: (_loading, _error != null, _liveCount == 0),
+        child: _content(context),
+      ),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final links = _links;
@@ -128,7 +154,8 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
         ),
       );
     }
-    if (links == null || links.isEmpty) {
+    final live = _liveCount;
+    if (links == null || live == 0) {
       return ListTile(
         leading: const Icon(Icons.public),
         title: const Text('Public links'),
@@ -151,7 +178,7 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
           leading: const Icon(Icons.public),
           title: const Text('Public links'),
           subtitle: Text(
-            '${links.length} ${links.length == 1 ? 'link is' : 'links are'} '
+            '$live ${live == 1 ? 'link is' : 'links are'} '
             'readable by anyone holding the URL',
           ),
           trailing: IconButton(
@@ -161,36 +188,45 @@ class _PublicLinksSectionState extends State<PublicLinksSection> {
           ),
         ),
         for (final link in links)
-          ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 32, right: 8),
-            leading: Icon(_iconFor(link.target), size: 20),
-            title: Text(link.title, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              link.expiresAt == null
-                  ? '${link.target.noun} · shared '
-                        '${settings.formatDate(link.createdAt)}'
-                  : '${link.target.noun} · expires '
-                        '${settings.formatDate(link.expiresAt!)}',
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.content_copy, size: 18),
-                  tooltip: 'Copy link',
-                  onPressed: () => _copy(link),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.link_off, size: 18),
-                  tooltip: 'Revoke link',
-                  onPressed: () => _revoke(link),
-                ),
-              ],
-            ),
+          AnimatedReveal(
+            key: ValueKey(link.token),
+            child: _revoked.contains(link.token)
+                ? null
+                : _linkTile(link, settings),
           ),
       ],
+    );
+  }
+
+  Widget _linkTile(ShareLink link, SettingsStore settings) {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.only(left: 32, right: 8),
+      leading: Icon(_iconFor(link.target), size: 20),
+      title: Text(link.title, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        link.expiresAt == null
+            ? '${link.target.noun} · shared '
+                  '${settings.formatDate(link.createdAt)}'
+            : '${link.target.noun} · expires '
+                  '${settings.formatDate(link.expiresAt!)}',
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.content_copy, size: 18),
+            tooltip: 'Copy link',
+            onPressed: () => _copy(link),
+          ),
+          IconButton(
+            icon: const Icon(Icons.link_off, size: 18),
+            tooltip: 'Revoke link',
+            onPressed: () => _revoke(link),
+          ),
+        ],
+      ),
     );
   }
 

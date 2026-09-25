@@ -11,6 +11,7 @@ import '../../util/backup.dart';
 import '../../util/download.dart';
 import '../../util/note_export.dart';
 import '../../util/snack.dart';
+import '../animated_reveal.dart';
 import '../file_drop.dart';
 
 /// Human-readable exports plus a portable zip backup/restore that includes
@@ -247,18 +248,24 @@ class _ExportSectionState extends State<ExportSection> {
             ],
           ),
         ),
-        if (_status != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_status!, style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(value: _progress),
-              ],
-            ),
-          ),
+        AnimatedReveal(
+          child: _status == null
+              ? null
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _status!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(value: _progress),
+                    ],
+                  ),
+                ),
+        ),
       ],
     );
   }

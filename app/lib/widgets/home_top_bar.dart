@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
 import 'app_logo.dart';
+import 'pin_icon.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/chat_screen.dart';
@@ -490,7 +491,7 @@ class HomeTopBar extends StatelessWidget {
           onPressed: selectedCount == 0 ? null : onSetColorSelected,
         ),
         IconButton(
-          icon: Icon(pinSelected ? Icons.push_pin_outlined : Icons.push_pin),
+          icon: PinIcon(pinned: !pinSelected),
           tooltip: pinSelected ? 'Pin selected notes' : 'Unpin selected notes',
           onPressed: selectedCount == 0 ? null : onPinSelected,
         ),

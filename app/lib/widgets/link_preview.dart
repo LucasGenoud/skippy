@@ -8,6 +8,8 @@ import '../models/link_preview.dart';
 import '../models/note.dart';
 import '../state/link_preview_cache.dart';
 import '../util/linkify.dart';
+import '../util/motion.dart';
+import 'state_cross_fade.dart';
 
 /// A compact link-preview strip: a thumbnail on the left, the page title and
 /// site on the right. Tapping it opens the URL. While metadata loads (or when
@@ -116,32 +118,38 @@ class _Strip extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      height: 1.2,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
+              // The bare host cross-fades to the page's title once the
+              // preview arrives, rather than the text swapping in one frame.
+              child: StateCrossFade(
+                state: rich,
+                alignment: AlignmentDirectional.centerStart,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      subtitle,
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
                       ),
                     ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -248,15 +256,16 @@ class _Thumb extends StatelessWidget {
     if (image != null && image!.isNotEmpty) {
       final provider = _previewImageProvider(image!);
       if (provider == null) return _faviconTile(context, tile, favicon, size);
-      return SizedBox(
+      // The tile shows through until the thumbnail has faded in over it.
+      return Container(
         width: size,
         height: size,
+        color: tile,
         child: Image(
           image: provider,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          loadingBuilder: (context, child, progress) =>
-              progress == null ? child : ColoredBox(color: tile),
+          frameBuilder: Motion.fadeInFrame,
           errorBuilder: (context, _, _) =>
               _faviconTile(context, tile, favicon, size),
         ),
@@ -288,6 +297,7 @@ class _Thumb extends StatelessWidget {
               width: 22,
               height: 22,
               fit: BoxFit.contain,
+              frameBuilder: Motion.fadeInFrame,
               errorBuilder: (context, _, _) => globe,
             ),
     );

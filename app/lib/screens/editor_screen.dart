@@ -32,6 +32,8 @@ import '../util/snack.dart';
 import '../util/widget_payload.dart';
 import 'history_screen.dart';
 import '../widgets/checklist/animated_checklist.dart';
+import '../widgets/animated_presence.dart';
+import '../widgets/animated_reveal.dart';
 import '../widgets/audio_player.dart';
 import '../widgets/board/move_to_stage_sheet.dart';
 import '../widgets/color_picker.dart';
@@ -46,11 +48,13 @@ import '../widgets/link_summary_indicator.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/paste_files.dart';
 import '../widgets/pick_image.dart';
+import '../widgets/pin_icon.dart';
 import '../widgets/reminder_picker.dart';
 import '../widgets/screen_width.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
+import '../widgets/state_cross_fade.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
 /// debounces the network write); empty notes are discarded on close, exactly
@@ -1072,7 +1076,7 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
           if (!trashed) ...[
             IconButton(
-              icon: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined),
+              icon: PinIcon(pinned: pinned),
               tooltip: pinned ? 'Unpin' : 'Pin',
               onPressed: _togglePin,
             ),
@@ -1329,56 +1333,84 @@ class _EditorScreenState extends State<EditorScreen> {
                                     trashed: trashed,
                                     query: query,
                                   ),
-                                  if (note?.summarizingLinks ?? false)
-                                    const Padding(
-                                      padding: EdgeInsets.only(top: 12),
-                                      child: LinkSummaryIndicator(),
-                                    ),
+                                  AnimatedReveal(
+                                    child: (note?.summarizingLinks ?? false)
+                                        ? const Padding(
+                                            padding: EdgeInsets.only(top: 12),
+                                            child: LinkSummaryIndicator(),
+                                          )
+                                        : null,
+                                  ),
                                   // Images sit directly under the text; other
                                   // files follow as download tiles.
-                                  ..._buildAttachments(note),
-                                  if (note != null &&
-                                      (note.reminderAt != null ||
-                                          settings.locationReminderForNote(
-                                                note.id,
-                                              ) !=
-                                              null ||
-                                          labels.isNotEmpty))
-                                    _metaChips(note, settings, labels),
+                                  AnimatedPresence(
+                                    layout: (children) => Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: children,
+                                    ),
+                                    children: _buildAttachments(note),
+                                  ),
+                                  AnimatedReveal(
+                                    child:
+                                        note != null &&
+                                            (note.reminderAt != null ||
+                                                settings.locationReminderForNote(
+                                                      note.id,
+                                                    ) !=
+                                                    null ||
+                                                labels.isNotEmpty)
+                                        ? _metaChips(note, settings, labels)
+                                        : null,
+                                  ),
                                   // Rich preview cards for any links in the
                                   // note, kept as the very last thing so they
                                   // always sit below everything else.
-                                  if (note != null &&
-                                      findUrls(noteLinkText(note)).isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 12),
-                                      child: LinkPreviewList(
-                                        text: noteLinkText(note),
-                                        onSummarize:
-                                            !trashed &&
-                                                !note.isChecklist &&
-                                                !note.isAudio &&
-                                                settings.noteWritingAvailable
-                                            ? _summarizeUrl
-                                            : null,
-                                        summarizingUrls: _summarizingUrls,
-                                      ),
-                                    ),
+                                  AnimatedReveal(
+                                    child:
+                                        note == null ||
+                                            findUrls(noteLinkText(note)).isEmpty
+                                        ? null
+                                        : Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 12,
+                                            ),
+                                            child: LinkPreviewList(
+                                              text: noteLinkText(note),
+                                              onSummarize:
+                                                  !trashed &&
+                                                      !note.isChecklist &&
+                                                      !note.isAudio &&
+                                                      settings
+                                                          .noteWritingAvailable
+                                                  ? _summarizeUrl
+                                                  : null,
+                                              summarizingUrls: _summarizingUrls,
+                                            ),
+                                          ),
+                                  ),
                                 ],
                               ),
                             ),
                           ),
                           // Formatting accessory bar while editing markdown.
-                          if (_kind == NoteKind.markdown &&
-                              !_previewMarkdown &&
-                              !_finding &&
-                              !trashed)
-                            MarkdownToolbar(
-                              controller: _contentController,
-                              focusNode: _contentFocus,
-                            ),
-                          if (_uploading)
-                            const LinearProgressIndicator(minHeight: 2),
+                          AnimatedReveal(
+                            child:
+                                _kind == NoteKind.markdown &&
+                                    !_previewMarkdown &&
+                                    !_finding &&
+                                    !trashed
+                                ? MarkdownToolbar(
+                                    controller: _contentController,
+                                    focusNode: _contentFocus,
+                                  )
+                                : null,
+                          ),
+                          AnimatedReveal(
+                            child: _uploading
+                                ? const LinearProgressIndicator(minHeight: 2)
+                                : null,
+                          ),
                           DecoratedBox(
                             key: widget.modal
                                 ? null
@@ -1543,26 +1575,42 @@ class _EditorScreenState extends State<EditorScreen> {
         onIndentItem: trashed ? null : _indentItem,
       );
     }
-    if (_kind == NoteKind.markdown && _previewMarkdown) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        // MarkdownBody's selectable mode owns the selection paint and gesture
-        // handling. Wrapping it in a SelectionArea creates a second, offset
-        // selection highlight on web.
-        child: MarkdownBody(
-          data: _contentController.text.isEmpty
-              ? '*Nothing to preview*'
-              : _contentController.text,
-          selectable: true,
-          // A tap on preview text returns to its markdown source. Drag and
-          // long-press gestures remain owned by the selectable text.
-          onTapText: trashed ? null : _editMarkdownFromPreview,
-          onTapLink: (text, href, title) {
-            if (href != null) launchSafeLink(href);
-          },
-        ),
+    if (_kind == NoteKind.markdown) {
+      // Source and preview cross-fade in place rather than cutting over.
+      return StateCrossFade(
+        state: _previewMarkdown,
+        child: _previewMarkdown
+            ? _markdownPreview(trashed: trashed)
+            : _textEditor(trashed: trashed, query: query),
       );
     }
+    return _textEditor(trashed: trashed, query: query);
+  }
+
+  Widget _markdownPreview({required bool trashed}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      // MarkdownBody's selectable mode owns the selection paint and gesture
+      // handling. Wrapping it in a SelectionArea creates a second, offset
+      // selection highlight on web.
+      child: MarkdownBody(
+        data: _contentController.text.isEmpty
+            ? '*Nothing to preview*'
+            : _contentController.text,
+        selectable: true,
+        // A tap on preview text returns to its markdown source. Drag and
+        // long-press gestures remain owned by the selectable text.
+        onTapText: trashed ? null : _editMarkdownFromPreview,
+        onTapLink: (text, href, title) {
+          if (href != null) {
+            launchSafeLink(href);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _textEditor({required bool trashed, required String query}) {
     return HighlightedTextField(
       controller: _contentController,
       focusNode: _contentFocus,
@@ -1602,9 +1650,13 @@ class _EditorScreenState extends State<EditorScreen> {
             onSelectionChanged: (selection) =>
                 _setMarkdownPreview(selection.single),
           ),
-          if (!_previewMarkdown) ...[
-            const SizedBox(width: 12),
-            Expanded(
+          const SizedBox(width: 12),
+          // Held in place and faded, so the switch beside it never shifts.
+          Expanded(
+            child: AnimatedOpacity(
+              opacity: _previewMarkdown ? 0 : 1,
+              duration: Motion.fast,
+              curve: Motion.standard,
               child: Text(
                 'Markdown syntax stays visible while formatting is styled',
                 maxLines: 2,
@@ -1614,7 +1666,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1649,29 +1701,42 @@ class _EditorScreenState extends State<EditorScreen> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: AudioPlayerBar(url: _store.fileUrl(clip)),
           ),
-        if (note?.transcribing ?? false)
-          const Padding(
-            padding: EdgeInsets.only(top: 8, bottom: 8),
-            child: TranscribingIndicator(),
-          )
-        else ...[
-          if (note?.transcriptFailed ?? false)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 4),
-              child: TranscriptFailed(
-                onRetry: trashed || _noteId == null
-                    ? null
-                    : () => _store.retranscribe(_noteId!),
-              ),
-            ),
-          HighlightedTextField(
-            controller: _contentController,
-            focusNode: _contentFocus,
-            readOnly: trashed,
-            query: query,
-            autofocus: false,
+        // Transcribing, failed, and the transcript itself come and go as the
+        // server works; each grows in or out rather than jumping.
+        AnimatedPresence(
+          layout: (children) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
           ),
-        ],
+          children: [
+            if (note?.transcribing ?? false)
+              const Padding(
+                key: ValueKey('transcribing'),
+                padding: EdgeInsets.only(top: 8, bottom: 8),
+                child: TranscribingIndicator(),
+              ),
+            if (!(note?.transcribing ?? false) &&
+                (note?.transcriptFailed ?? false))
+              Padding(
+                key: const ValueKey('transcript-failed'),
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: TranscriptFailed(
+                  onRetry: trashed || _noteId == null
+                      ? null
+                      : () => _store.retranscribe(_noteId!),
+                ),
+              ),
+            if (!(note?.transcribing ?? false))
+              HighlightedTextField(
+                key: const ValueKey('transcript'),
+                controller: _contentController,
+                focusNode: _contentFocus,
+                readOnly: trashed,
+                query: query,
+                autofocus: false,
+              ),
+          ],
+        ),
       ],
     );
   }
@@ -1679,43 +1744,54 @@ class _EditorScreenState extends State<EditorScreen> {
   /// Reminder and label chips shown under the note content.
   Widget _metaChips(Note note, SettingsStore settings, List<Label> labels) {
     final trashed = note.trashed;
+    final chips = <Widget>[
+      if (note.reminderAt != null)
+        InputChip(
+          key: const ValueKey('reminder'),
+          avatar: const Icon(Icons.alarm, size: 16),
+          label: Text(_reminderLabel(note, settings)),
+          visualDensity: VisualDensity.compact,
+          onPressed: trashed ? null : _editReminder,
+          onDeleted: trashed
+              ? null
+              : () {
+                  _store.setReminder(note.id, null);
+                  setState(() {});
+                },
+        ),
+      if (settings.locationReminderForNote(note.id)
+          case final locationReminder?)
+        if (settings.savedLocationById(locationReminder.locationId)
+            case final location?)
+          InputChip(
+            key: const ValueKey('location-reminder'),
+            avatar: const Icon(Icons.location_on_outlined, size: 16),
+            label: Text('${locationReminder.label} · ${location.name}'),
+            visualDensity: VisualDensity.compact,
+            onPressed: trashed ? null : _editReminder,
+            onDeleted: trashed
+                ? null
+                : () {
+                    settings.removeLocationReminder(note.id);
+                    setState(() {});
+                  },
+          ),
+      for (final label in labels) _labelChip(context, label, trashed, note.id),
+    ];
+    // Spacing lives on each chip rather than on the Wrap, so a chip collapsing
+    // out takes its gap with it.
     return Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: AnimatedPresence(
+        axis: Axis.horizontal,
+        layout: (children) => Wrap(runSpacing: 8, children: children),
         children: [
-          if (note.reminderAt != null)
-            InputChip(
-              avatar: const Icon(Icons.alarm, size: 16),
-              label: Text(_reminderLabel(note, settings)),
-              visualDensity: VisualDensity.compact,
-              onPressed: trashed ? null : _editReminder,
-              onDeleted: trashed
-                  ? null
-                  : () {
-                      _store.setReminder(note.id, null);
-                      setState(() {});
-                    },
+          for (final chip in chips)
+            Padding(
+              key: chip.key,
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: chip,
             ),
-          if (settings.locationReminderForNote(note.id)
-              case final locationReminder?)
-            if (settings.savedLocationById(locationReminder.locationId)
-                case final location?)
-              InputChip(
-                avatar: const Icon(Icons.location_on_outlined, size: 16),
-                label: Text('${locationReminder.label} · ${location.name}'),
-                visualDensity: VisualDensity.compact,
-                onPressed: trashed ? null : _editReminder,
-                onDeleted: trashed
-                    ? null
-                    : () {
-                        settings.removeLocationReminder(note.id);
-                        setState(() {});
-                      },
-              ),
-          for (final label in labels)
-            _labelChip(context, label, trashed, note.id),
         ],
       ),
     );
@@ -1737,6 +1813,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final tint = labelColor(label, scheme.onSurfaceVariant);
     final tinted = label.color != null;
     return InputChip(
+      key: ValueKey('label-${label.id}'),
       avatar: Icon(labelIcon(label), size: 16, color: tint),
       label: Text(label.name),
       visualDensity: VisualDensity.compact,
@@ -1774,21 +1851,25 @@ class _EditorScreenState extends State<EditorScreen> {
     return [
       for (final attachment in attachments.where((a) => a.isImage))
         ImageAttachmentTile(
+          key: ValueKey(attachment.id),
           attachment: attachment,
           url: _store.fileUrl(attachment),
           onRemove: remove(attachment),
         ),
-      for (final file in pendingImages) UploadingAttachmentTile(file: file),
+      for (final file in pendingImages)
+        UploadingAttachmentTile(key: ObjectKey(file), file: file),
       // Audio clips are played by the audio-note body, not listed as files.
       for (final attachment in attachments.where(
         (a) => !a.isImage && !a.isAudio,
       ))
         FileAttachmentTile(
+          key: ValueKey(attachment.id),
           attachment: attachment,
           url: _store.fileUrl(attachment),
           onRemove: remove(attachment),
         ),
-      for (final file in pendingFiles) UploadingAttachmentTile(file: file),
+      for (final file in pendingFiles)
+        UploadingAttachmentTile(key: ObjectKey(file), file: file),
     ];
   }
 }

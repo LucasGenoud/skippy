@@ -278,7 +278,14 @@ class AppDialog extends StatelessWidget {
     titlePadding: icon == null
         ? kModalTitlePadding
         : const EdgeInsets.fromLTRB(kModalInset, kSpaceLg, kModalInset, 0),
-    content: content,
+    // A dialog grows and shrinks with what it holds (a spinner giving way to a
+    // form, an error line appearing) instead of jumping to the new size.
+    content: AnimatedSize(
+      duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+      curve: Motion.emphasized,
+      alignment: Alignment.topCenter,
+      child: content,
+    ),
     contentPadding: kModalContentPadding,
     actions: actions,
     scrollable: scrollable,

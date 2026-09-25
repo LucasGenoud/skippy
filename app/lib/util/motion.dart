@@ -67,6 +67,28 @@ class Motion {
   static Future<void> waitForOverlayDismissal(BuildContext context) =>
       Future<void>.delayed(overlayDismissalDuration(context));
 
+  /// An [Image.frameBuilder] that fades a picture in once its first frame is
+  /// decoded instead of popping it over its placeholder. An image already in
+  /// the cache arrives synchronously and shows at once, so scrolling back to
+  /// it never flickers.
+  static Widget fadeInFrame(
+    BuildContext context,
+    Widget child,
+    int? frame,
+    bool wasSynchronouslyLoaded,
+  ) {
+    if (wasSynchronouslyLoaded || reduced(context)) {
+      return child;
+    }
+
+    return AnimatedOpacity(
+      opacity: frame == null ? 0 : 1,
+      duration: base,
+      curve: standard,
+      child: child,
+    );
+  }
+
   /// True when the OS "reduce motion" accessibility setting is on. Callers skip
   /// or shorten decorative animation so the app stays comfortable to use.
   ///

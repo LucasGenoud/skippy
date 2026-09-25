@@ -6,6 +6,8 @@ import '../models/share_link.dart';
 import '../theme.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
+import 'form_error_banner.dart';
+import 'state_cross_fade.dart';
 
 /// What a [PublicLinkDialog] publishes: one target, plus the words to describe
 /// it. Built by the caller because only it knows whether "this" is a note, the
@@ -218,6 +220,79 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
     }
   }
 
+  /// What the dialog holds right now: a spinner, the live link, or the form
+  /// that creates one.
+  Widget _body(ShareLink? link) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (link != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _LinkRow(
+            url: publicShareUrl(widget.api.baseUrl, link),
+            onCopy: _copy,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(
+                link.expiresAt == null
+                    ? Icons.all_inclusive
+                    : Icons.schedule_outlined,
+                size: 16,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  link.expiresAt == null
+                      ? 'Works until you revoke it'
+                      : 'Stops working on ${_dateLabel(link.expiresAt!)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Sharing ${widget.target.title}',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<_LinkLifetime>(
+          initialValue: _lifetime,
+          decoration: const InputDecoration(
+            labelText: 'Link lasts',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (final option in _LinkLifetime.values)
+              DropdownMenuItem(value: option, child: Text(option.label)),
+          ],
+          onChanged: (value) =>
+              setState(() => _lifetime = value ?? _LinkLifetime.forever),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -238,68 +313,11 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (link != null) ...[
-            _LinkRow(
-              url: publicShareUrl(widget.api.baseUrl, link),
-              onCopy: _copy,
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(
-                  link.expiresAt == null
-                      ? Icons.all_inclusive
-                      : Icons.schedule_outlined,
-                  size: 16,
-                  color: scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    link.expiresAt == null
-                        ? 'Works until you revoke it'
-                        : 'Stops working on ${_dateLabel(link.expiresAt!)}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
-            Text(
-              'Sharing ${widget.target.title}',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<_LinkLifetime>(
-              initialValue: _lifetime,
-              decoration: const InputDecoration(
-                labelText: 'Link lasts',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                for (final option in _LinkLifetime.values)
-                  DropdownMenuItem(value: option, child: Text(option.label)),
-              ],
-              onChanged: (value) =>
-                  setState(() => _lifetime = value ?? _LinkLifetime.forever),
-            ),
-          ],
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                _error!,
-                style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
-              ),
-            ),
+          StateCrossFade(state: (_loading, link == null), child: _body(link)),
+          AnimatedFormError(
+            message: _error,
+            padding: const EdgeInsets.only(top: 12),
+          ),
         ],
       ),
       actions: [

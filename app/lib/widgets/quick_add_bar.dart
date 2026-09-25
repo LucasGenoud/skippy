@@ -27,6 +27,7 @@ import 'labels_sheet.dart';
 import 'markdown_toolbar.dart';
 import 'paste_files.dart';
 import 'pick_image.dart';
+import 'pin_icon.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
 
@@ -661,9 +662,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(
-                      _pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                    ),
+                    icon: PinIcon(pinned: _pinned),
                     iconSize: 20,
                     visualDensity: VisualDensity.compact,
                     tooltip: _pinned ? 'Unpin' : 'Pin',

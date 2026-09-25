@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api/api_client.dart';
+import '../state_cross_fade.dart';
 
 /// Run a settings probe (LLM test, notification test), folding transport
 /// errors into the same `(ok, error)` shape the server reports.
@@ -57,29 +58,38 @@ class ProbeRow extends StatelessWidget {
           label: Text(label),
         ),
         const SizedBox(width: 12),
-        if (result != null)
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  result.ok ? Icons.check_circle : Icons.error_outline,
-                  size: 18,
-                  color: result.ok ? scheme.primary : scheme.error,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    result.ok ? successText : (result.error ?? 'failed'),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: result.ok ? scheme.onSurfaceVariant : scheme.error,
-                    ),
+        // Fades in beside the button, and cross-fades when a retest flips it.
+        Expanded(
+          child: StateCrossFade(
+            state: result,
+            alignment: AlignmentDirectional.centerStart,
+            child: result == null
+                ? const SizedBox.shrink()
+                : Row(
+                    children: [
+                      Icon(
+                        result.ok ? Icons.check_circle : Icons.error_outline,
+                        size: 18,
+                        color: result.ok ? scheme.primary : scheme.error,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          result.ok ? successText : (result.error ?? 'failed'),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: result.ok
+                                    ? scheme.onSurfaceVariant
+                                    : scheme.error,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
           ),
+        ),
       ],
     );
   }
