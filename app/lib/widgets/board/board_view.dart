@@ -194,20 +194,34 @@ class _BoardViewState extends State<BoardView> {
             controller: _boardController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            // The exits and add-column tile follow the stage columns. The
-            // empty state's add button disappears with the first stage.
-            itemCount: board.columns.length + 1 + actions.length,
+            // The exits follow the stage columns, then the add-column tile.
+            // Both exits share one slot, stacked, so they read as a pair of
+            // destinations rather than two more columns.
+            itemCount: board.columns.length + (actions.isEmpty ? 0 : 1) + 1,
             itemBuilder: (context, index) {
-              if (index == board.columns.length) {
-                return const _AddColumnTile();
+              if (index == board.columns.length && actions.isNotEmpty) {
+                return Container(
+                  width: 180,
+                  margin: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final (i, trash) in actions.indexed) ...[
+                        if (i > 0) const SizedBox(height: 12),
+                        Expanded(
+                          child: _BoardActionTarget(
+                            trash: trash,
+                            onWillDrop: (id) => _canDropOnAction(id, trash),
+                            onDrop: (id) => _dropOnAction(id, trash),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
               }
               if (index >= board.columns.length) {
-                final trash = actions[index - board.columns.length - 1];
-                return _BoardActionTarget(
-                  trash: trash,
-                  onWillDrop: (id) => _canDropOnAction(id, trash),
-                  onDrop: (id) => _dropOnAction(id, trash),
-                );
+                return const _AddColumnTile();
               }
               final column = board.columns[index];
               final collapsed = _collapsedStageIds.contains(column.stage?.id);
@@ -406,18 +420,24 @@ class _BoardActionTarget extends StatelessWidget {
       onAcceptWithDetails: (details) => onDrop(details.data),
       builder: (context, candidate, _) {
         final active = candidate.isNotEmpty;
-        return Container(
-          width: compact ? null : 180,
+        // Trash lights up red: the drop is destructive, and the same cue the
+        // sidebar's Trash row gives.
+        final activeFill = trash
+            ? scheme.errorContainer
+            : scheme.primaryContainer;
+        final activeBorder = trash ? scheme.error : scheme.primary;
+        return AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.standard,
           height: compact ? 32 : null,
-          margin: compact ? null : const EdgeInsets.only(right: 12),
           padding: compact
               ? const EdgeInsets.symmetric(horizontal: 12)
               : const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: active ? scheme.primaryContainer : boardColumnColor(scheme),
+            color: active ? activeFill : boardColumnColor(scheme),
             borderRadius: kBorderRadius,
             border: Border.all(
-              color: active ? scheme.primary : boardColumnBorderColor(scheme),
+              color: active ? activeBorder : boardColumnBorderColor(scheme),
             ),
           ),
           child: compact
@@ -613,8 +633,7 @@ class _StageStripState extends State<_StageStrip> {
                   ),
                 ),
               ),
-            // Keep Add column beside the stages, before the board exits.
-            const _AddColumnChip(),
+            // The board exits follow the stages; Add column comes last.
             for (final trash in widget.actions)
               Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -625,6 +644,7 @@ class _StageStripState extends State<_StageStrip> {
                   onDrop: (id) => widget.onDropAction(id, trash),
                 ),
               ),
+            const _AddColumnChip(),
           ],
         ),
       ),

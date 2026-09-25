@@ -245,7 +245,19 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                       padding: const EdgeInsets.all(8),
                       child: SizedBox(
                         width: double.infinity,
-                        child: FilledButton.tonalIcon(
+                        // Quiet grey, not the accent: every column has one,
+                        // and a row of tinted buttons outshouted the cards. A
+                        // shade darker than the trough so it still reads as a
+                        // button.
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.07),
+                          ),
                           onPressed: () => addCardToStage(context, _stageId),
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text('Add note'),

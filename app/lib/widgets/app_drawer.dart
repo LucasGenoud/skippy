@@ -250,6 +250,7 @@ class AppSidebar extends StatelessWidget {
                   label: entry.$3,
                   isSelected: selection == entry.$1,
                   isOpen: isOpen,
+                  danger: entry.$1 == ViewSelection.trash,
                   onTap: () => onSelect(entry.$1),
                   willAcceptNote: (id) => acceptsAny(
                     id,
@@ -328,6 +329,9 @@ class _SidebarItem extends StatelessWidget {
   final bool isSelected;
   final bool isOpen;
   final bool action;
+
+  /// A destructive destination (Trash): its drop highlight is red.
+  final bool danger;
   final VoidCallback onTap;
 
   /// Overrides the icon's colour (a label's custom colour). Null keeps the
@@ -350,6 +354,7 @@ class _SidebarItem extends StatelessWidget {
     required this.isSelected,
     required this.isOpen,
     this.action = false,
+    this.danger = false,
     required this.onTap,
     this.iconColor,
     this.onAcceptNote,
@@ -371,15 +376,18 @@ class _SidebarItem extends StatelessWidget {
 
   Widget _buildItem(BuildContext context, {required bool dropTarget}) {
     final scheme = Theme.of(context).colorScheme;
+    final dropForeground = danger
+        ? scheme.onErrorContainer
+        : scheme.onPrimaryContainer;
     final Color foreground = dropTarget
-        ? scheme.onPrimaryContainer
+        ? dropForeground
         : (action
               ? scheme.onSurfaceVariant.withValues(alpha: 0.72)
               : (isSelected
                     ? scheme.onSecondaryContainer
                     : scheme.onSurfaceVariant));
     final Color labelColor = dropTarget
-        ? scheme.onPrimaryContainer
+        ? dropForeground
         : (action
               ? scheme.onSurfaceVariant.withValues(alpha: 0.72)
               : (isSelected ? scheme.onSecondaryContainer : scheme.onSurface));
@@ -390,6 +398,7 @@ class _SidebarItem extends StatelessWidget {
         child: _RowHighlight(
           selected: isSelected,
           dropTarget: dropTarget,
+          danger: danger,
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
@@ -455,11 +464,13 @@ class _SidebarItem extends StatelessWidget {
 class _RowHighlight extends StatelessWidget {
   final bool selected;
   final bool dropTarget;
+  final bool danger;
   final Widget child;
 
   const _RowHighlight({
     required this.selected,
     required this.dropTarget,
+    this.danger = false,
     required this.child,
   });
 
@@ -473,14 +484,18 @@ class _RowHighlight extends StatelessWidget {
           decoration: BoxDecoration(
             color: Color.lerp(
               Color.lerp(Colors.transparent, scheme.secondaryContainer, sel),
-              scheme.primaryContainer,
+              danger ? scheme.errorContainer : scheme.primaryContainer,
               drop,
             ),
             borderRadius: radius,
             // Kept even at zero opacity: a border that appears only while
             // dragging would inset the row and shift its contents.
             border: Border.all(
-              color: Color.lerp(Colors.transparent, scheme.primary, drop)!,
+              color: Color.lerp(
+                Colors.transparent,
+                danger ? scheme.error : scheme.primary,
+                drop,
+              )!,
               width: 1.5,
             ),
           ),
