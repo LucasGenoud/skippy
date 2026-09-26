@@ -92,8 +92,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `README.md`: concise project entry point and documentation link.
 - `mkdocs-material/docs/`: product, setup, deployment, API, and design documentation.
 - `Dockerfile`: builds Flutter web, compiles the Rust binary, and produces the full-stack runtime image.
-- `docker-compose.yml`: base app service; the simple/all overrides add Whisper, Tesseract, and Garage. None defines Watchtower.
-- `garage.toml`: bundled S3-compatible Garage configuration.
+- `docker-compose.yml`, `docker-compose.simple.yml`, `docker-compose.all.yml`: three self-contained stacks, each run alone with `-f`: the app on disk storage; plus Whisper and Tesseract; plus Garage (its config inlined) for S3 storage. A change to the server service belongs in all three. None defines Watchtower.
 - `.forgejo/workflows/build.yml`: full-stack image build and registry push on the `homeserver-runner` label.
 - `mkdocs-material/docs/`: public overview and self-hosting setup guides.
 

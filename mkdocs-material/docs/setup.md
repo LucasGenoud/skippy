@@ -28,13 +28,13 @@ text recognition, semantic search, and AI are optional and off by default.
 
 ## 2. Add Whisper and Tesseract
 
-The repository has the service definitions and their connection URLs. Clone
-it, then start the base and simple overlays together:
+`docker-compose.simple.yml` is a complete stack: Skippy, Whisper, and
+Tesseract, already wired together. Download it into an empty directory and
+start it:
 
 ```sh
-git clone https://github.com/LucasGenoud/skippy.git
-cd skippy
-docker compose -f docker-compose.yml -f docker-compose.simple.yml up -d server whisper tesseract
+curl -fsSLO https://raw.githubusercontent.com/LucasGenoud/skippy/main/docker-compose.simple.yml
+docker compose -f docker-compose.simple.yml up -d server whisper tesseract
 ```
 
 Whisper transcribes audio; Tesseract reads text in uploaded images. The server
@@ -44,10 +44,17 @@ in `.env` to codes installed in the Tesseract image.
 
 ## 3. Full stack: add Garage and configure the optional services
 
-Use the same repository. The third overlay adds Garage for S3-compatible
-attachment storage; the app still keeps its SQLite database in `app_data`.
-Create `.env` next to the Compose files. The five Garage/S3 secret entries
-must have real values; the other entries are optional:
+`docker-compose.all.yml` is also complete on its own: Skippy, Whisper,
+Tesseract, and Garage for S3-compatible attachment storage, with Garage's
+configuration built in. The app still keeps its SQLite database in `app_data`.
+Download it into an empty directory:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/LucasGenoud/skippy/main/docker-compose.all.yml
+```
+
+Create `.env` next to it. The five Garage/S3 secret entries must have real
+values; the other entries are optional:
 
 ```dotenv title=".env"
 # Browser address when serving behind a public reverse proxy; blank for localhost.
@@ -100,12 +107,11 @@ printf 'S3_SECRET_KEY=%s\nGARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key" "$secret
 Start the four application services:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.simple.yml -f docker-compose.all.yml up -d server whisper tesseract garage
+docker compose -f docker-compose.all.yml up -d server whisper tesseract garage
 ```
 
-Garage starts with one node and creates its default bucket automatically.
-`garage.toml` from the repository must stay beside the Compose files. Leave
-the optional settings blank until you have an external embedding or AI service
+Garage starts with one node and creates its default bucket automatically; no
+other file is needed. Leave the optional settings blank until you have an external embedding or AI service
 or an SMTP server; Whisper and Tesseract work without them.
 
 ## Install on a device
@@ -139,7 +145,8 @@ seven days.
 
 ## Documentation site
 
-The repository's base Compose file also defines the documentation container:
+Every Compose file also defines the documentation container. Start it with
+the same `-f` as the stack, for example:
 
 ```sh
 docker compose up -d docs
@@ -164,19 +171,19 @@ override them.
 | `UPLOADS` | Local attachment directory. | `/data/uploads` |
 | `WEB` | Bundled web app directory. | `/app/web` |
 | `STORAGE` | Attachment store: `disk` or `s3`. | `disk` |
-| `S3_URL` | S3 endpoint when using `s3`. | Unset; full overlay uses `http://garage:3900` |
+| `S3_URL` | S3 endpoint when using `s3`. | Unset; `docker-compose.all.yml` uses `http://garage:3900` |
 | `S3_REGION` | S3 region. | `garage` |
 | `S3_ACCESS_KEY` | S3 access key; required for `s3`. | Unset |
 | `S3_SECRET_KEY` | S3 secret key; required for `s3`. | Unset |
 | `S3_BUCKET_PREFIX` | Prefix for attachment buckets. | `sticky-notes-` |
-| `GARAGE_RPC_SECRET` | Garage node secret; required in the full overlay. | Unset |
+| `GARAGE_RPC_SECRET` | Garage node secret; required by `docker-compose.all.yml`. | Unset |
 | `GARAGE_DEFAULT_ACCESS_KEY` | Garage key; match `S3_ACCESS_KEY`. | Unset |
 | `GARAGE_DEFAULT_SECRET_KEY` | Garage secret; match `S3_SECRET_KEY`. | Unset |
 | `GARAGE_DEFAULT_BUCKET` | Garage's initial bucket. | `sticky-notes-default` |
-| `WHISPER_URL` | Audio transcription endpoint. | Unset; simple overlay uses `http://whisper:9000` |
-| `ASR_MODEL` | Whisper model size in the bundled service. | `base` in the simple overlay |
-| `ASR_ENGINE` | Whisper inference engine in the bundled service. | `faster_whisper` in the simple overlay |
-| `OCR_URL` | Image text recognition endpoint. | Unset; simple overlay uses `http://tesseract:8884` |
+| `WHISPER_URL` | Audio transcription endpoint. | Unset; simple and all stacks use `http://whisper:9000` |
+| `ASR_MODEL` | Whisper model size in the bundled service. | `base` in the simple and all stacks |
+| `ASR_ENGINE` | Whisper inference engine in the bundled service. | `faster_whisper` in the simple and all stacks |
+| `OCR_URL` | Image text recognition endpoint. | Unset; simple and all stacks use `http://tesseract:8884` |
 | `OCR_LANGUAGES` | Tesseract language codes, such as `eng` or `fra+eng`. | `eng` |
 | `EMBED_URL` | OpenAI-compatible embeddings API base URL; enables search. | Unset |
 | `EMBED_MODEL` | Embedding model name. | `bge-m3` |

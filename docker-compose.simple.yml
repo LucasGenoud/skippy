@@ -1,14 +1,40 @@
+# Skippy with transcription (Whisper) and image text recognition (Tesseract).
+# Runs on its own: docker compose -f docker-compose.simple.yml up -d
 services:
   server:
+    image: ghcr.io/lucasgenoud/skippy:latest
+    ports:
+      - "8787:8787"
     environment:
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      EMBED_URL: ${EMBED_URL:-}
+      EMBED_MODEL: ${EMBED_MODEL:-bge-m3}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
       WHISPER_URL: http://whisper:9000
       OCR_URL: http://tesseract:8884
       OCR_LANGUAGES: ${OCR_LANGUAGES:-eng}
+      STORAGE: disk
+      ALLOW_PRIVATE_USER_ENDPOINTS: ${ALLOW_PRIVATE_USER_ENDPOINTS:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_LABELING: ${LLM_LABELING:-}
+      LLM_CHAT: ${LLM_CHAT:-}
+      LLM_WRITING: ${LLM_WRITING:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - app_data:/data
     depends_on:
       whisper:
         condition: service_healthy
       tesseract:
         condition: service_started
+    restart: unless-stopped
 
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
@@ -33,5 +59,12 @@ services:
       - "127.0.0.1:8884:8884"
     restart: unless-stopped
 
+  docs:
+    image: ghcr.io/lucasgenoud/skippy-docs:latest
+    ports:
+      - "${DOCS_PORT:-8123}:8123"
+    restart: unless-stopped
+
 volumes:
+  app_data:
   whisper_cache:

@@ -58,17 +58,19 @@ volumes:
   app_data:
 ```
 
-The repository includes three Compose variants:
+The repository includes three Compose files. Each is a complete stack on its
+own; pick one:
 
 ```sh
 docker compose up -d
-docker compose -f docker-compose.yml -f docker-compose.simple.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.simple.yml -f docker-compose.all.yml up -d
+docker compose -f docker-compose.simple.yml up -d
+docker compose -f docker-compose.all.yml up -d
 ```
 
-The base file uses disk storage. The simple variant adds Whisper and
-Tesseract. The all variant adds Garage for S3-compatible attachment storage.
-The documentation site runs separately on port `8123`:
+`docker-compose.yml` is Skippy with disk storage. `docker-compose.simple.yml`
+adds Whisper and Tesseract. `docker-compose.all.yml` adds those plus Garage for
+S3-compatible attachment storage, and needs the Garage secrets in `.env`. Each
+file also defines the documentation site on port `8123`:
 
 ```sh
 docker compose up -d docs

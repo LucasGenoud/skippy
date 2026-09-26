@@ -1,3 +1,4 @@
+# Skippy on disk storage. Runs on its own: docker compose up -d
 services:
   server:
     image: ghcr.io/lucasgenoud/skippy:latest
