@@ -22,8 +22,6 @@ import '../util/home_widgets.dart';
 import '../util/keyboard.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
-import '../util/location_geofences.dart';
-import '../util/location_reminder_grants.dart';
 import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/note_export.dart';
@@ -50,7 +48,7 @@ import '../widgets/note_zoom.dart';
 import '../widgets/paste_files.dart';
 import '../widgets/pick_image.dart';
 import '../widgets/pin_icon.dart';
-import '../widgets/reminder_picker.dart';
+import '../widgets/reminders/reminder_editing.dart';
 import '../widgets/screen_width.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
@@ -564,16 +562,14 @@ class _EditorScreenState extends State<EditorScreen> {
       // materialize here the way the note-level reminder has to.
       final noteId = _noteId;
       if (noteId == null) return;
-      final current = _store.noteById(noteId)?.reminderForItem(itemId);
-      final selection = await ReminderPicker.show(
+      final changed = await editItemReminder(
         context,
-        current: current?.at,
-        currentRepeat: current?.repeat,
-        use24hTime: _settings.use24hTime,
+        noteId: noteId,
+        itemId: itemId,
       );
-      if (!mounted || selection == null) return;
-      _store.setItemReminder(noteId, itemId, selection.at, selection.repeat);
-      setState(() {});
+      if (mounted && changed) {
+        setState(() {});
+      }
     } finally {
       _reminderPickerOpen = false;
     }
@@ -914,44 +910,17 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
     try {
-      final settings = context.read<SettingsStore>();
-      final selection = await ReminderPicker.show(
+      final changed = await editNoteReminder(
         context,
-        current: _note?.reminderAt,
-        currentRepeat: _note?.reminderRepeat,
-        currentLocation: settings.locationReminderForNote(_noteId),
-        savedLocations: settings.savedLocations,
-        locationMonitored: LocationGeofences.supported,
-        use24hTime: settings.use24hTime,
+        noteId: _noteId,
+        ensureNote: () {
+          _ensureNote();
+          return _noteId!;
+        },
       );
-      if (!mounted || selection == null) return;
-      if (selection.locationId != null) {
-        final granted = await ensureLocationReminderGrants();
-        if (!mounted || !granted) return;
-        _ensureNote();
-        final added = settings.setLocationReminder(
-          _noteId!,
-          selection.locationId!,
-          selection.locationTrigger!,
-          repeats: selection.locationRepeats,
-        );
-        if (!added) {
-          showAppSnack(
-            'You can have up to 20 active location reminders.',
-            icon: Icons.location_disabled_outlined,
-            kind: SnackKind.warning,
-          );
-          return;
-        }
-        _store.setReminder(_noteId!, null);
+      if (mounted && changed) {
         setState(() {});
-        return;
       }
-      if (selection.at != null) _ensureNote();
-      if (_noteId == null) return;
-      settings.removeLocationReminder(_noteId!);
-      _store.setReminder(_noteId!, selection.at, selection.repeat);
-      setState(() {});
     } finally {
       _reminderPickerOpen = false;
     }

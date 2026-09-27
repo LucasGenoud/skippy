@@ -34,6 +34,7 @@ import '../widgets/note_card.dart';
 import '../widgets/note_zoom.dart';
 import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
+import '../widgets/reminders/reminders_view.dart';
 import '../widgets/saved_view_dialog.dart';
 import '../widgets/screen_width.dart';
 import '../widgets/search_filters_sheet.dart';
@@ -890,6 +891,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                               selectedIds: _selectedNoteIds,
                                               onSelectionChanged:
                                                   _toggleNoteSelection,
+                                            ),
+                                          )
+                                        // Reminders fall on days rather than
+                                        // in a grid, so they get an agenda and
+                                        // a calendar of their own.
+                                        else if (_selection.view ==
+                                            NoteView.reminders)
+                                          Positioned.fill(
+                                            child: RemindersView(
+                                              query: _effectiveQuery,
                                             ),
                                           )
                                         else

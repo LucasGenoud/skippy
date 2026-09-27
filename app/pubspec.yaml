@@ -1,7 +1,7 @@
 name: skippy
 description: "A cross-platform notes app with a Rust backend."
 publish_to: 'none'
-version: 1.7.0+19
+version: 1.8.0+20
 
 environment:
   sdk: ^3.12.0

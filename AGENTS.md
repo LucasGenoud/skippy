@@ -174,6 +174,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/screens/chat_screen.dart`: streamed notes chat, citations, and write confirmation/result UI.
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
+- `app/lib/widgets/reminders/`: the Reminders view (agenda by day, month calendar, place reminders; calendar beside the agenda on wide screens, a tab on phones) and the shared reminder editing helpers the editor also uses. Its rules live in `state/reminder_agenda.dart`.
 - `app/lib/widgets/note_card.dart`: card rendering for all note types.
 - `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card
   for a note's reminder and by the checklist editor for a row's.
