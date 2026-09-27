@@ -1,7 +1,6 @@
 import 'package:skippy/models/collection.dart';
 import 'dart:async';
 
-import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -13,6 +12,7 @@ import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/screens/editor_screen.dart';
+import 'package:skippy/widgets/note_zoom.dart';
 import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/screens/history_screen.dart';
 import 'package:skippy/screens/home_screen.dart';
@@ -147,9 +147,7 @@ void main() {
         store,
         SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
       );
-      final container = find.byWidgetPredicate(
-        (widget) => widget is OpenContainer<void>,
-      );
+      final container = find.byWidgetPredicate((widget) => widget is NoteZoom);
       await tester.pumpWidget(card);
       expect(container, findsNothing);
 
@@ -1699,6 +1697,73 @@ void main() {
 
       expect(find.byType(EditorScreen), findsNothing);
       expect(find.text('Open note'), findsOneWidget);
+    });
+
+    group('zoom route edge swipe', () {
+      Future<void> openZoomed(WidgetTester tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote('n1', title: 'Swipe me');
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            Builder(
+              builder: (context) => FilledButton(
+                onPressed: () => Navigator.of(context).push(
+                  NoteZoomRoute(
+                    builder: (_) => const EditorScreen(noteId: 'n1'),
+                  ),
+                ),
+                child: const Text('Open note'),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Open note'));
+        await tester.pumpAndSettle();
+        expect(find.text('Open note'), findsNothing);
+      }
+
+      testWidgets('the note follows the finger and shrinks', (tester) async {
+        await openZoomed(tester);
+
+        final gesture = await tester.startGesture(const Offset(8, 300));
+        await gesture.moveBy(const Offset(40, 0));
+        await gesture.moveBy(const Offset(120, 60));
+        await tester.pump();
+
+        final rect = tester.getRect(find.byType(EditorScreen));
+        expect(rect.width, lessThan(390));
+        expect(rect.left, greaterThan(100));
+        expect(rect.top, greaterThan(0));
+        // The list shows through behind the carried note.
+        expect(find.text('Open note'), findsOneWidget);
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(find.byType(EditorScreen), findsNothing);
+        expect(find.text('Open note'), findsOneWidget);
+      });
+
+      testWidgets('a short drag springs the note back', (tester) async {
+        await openZoomed(tester);
+
+        final gesture = await tester.startGesture(const Offset(8, 300));
+        await gesture.moveBy(const Offset(20, 0));
+        await gesture.moveBy(const Offset(20, 0));
+        await tester.pump();
+        expect(tester.getRect(find.byType(EditorScreen)).width, lessThan(390));
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(find.byType(EditorScreen)),
+          const Rect.fromLTWH(0, 0, 390, 844),
+        );
+        expect(find.text('Open note'), findsNothing);
+      });
     });
 
     testWidgets('adding media puts the keyboard away before the picker', (

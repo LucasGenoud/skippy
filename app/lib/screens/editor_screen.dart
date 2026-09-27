@@ -46,6 +46,7 @@ import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/link_summary_indicator.dart';
 import '../widgets/markdown_toolbar.dart';
+import '../widgets/note_zoom.dart';
 import '../widgets/paste_files.dart';
 import '../widgets/pick_image.dart';
 import '../widgets/pin_icon.dart';
@@ -285,6 +286,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _previewMarkdown = false;
   bool _reminderPickerOpen = false;
   double _edgeSwipeDistance = 0;
+  Offset _edgeSwipeOrigin = Offset.zero;
   bool _edgeSwipeDismissed = false;
 
   // Undo/redo session history (see EditorHistory for the grouping rules).
@@ -1496,7 +1498,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     ..onStart = _onEdgeSwipeStart
                     ..onUpdate = _onEdgeSwipeUpdate
                     ..onEnd = _onEdgeSwipeEnd
-                    ..onCancel = _resetEdgeSwipe;
+                    ..onCancel = _onEdgeSwipeCancel;
                 },
               ),
         },
@@ -1515,22 +1517,55 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  void _onEdgeSwipeStart(DragStartDetails _) {
+  /// The zoom route carrying this editor, when it can follow the finger.
+  NoteZoomRoute? get _zoomRoute => switch (ModalRoute.of(context)) {
+    final NoteZoomRoute route => route,
+    _ => null,
+  };
+
+  void _onEdgeSwipeStart(DragStartDetails details) {
     _edgeSwipeDistance = 0;
+    _edgeSwipeOrigin = details.globalPosition;
     _edgeSwipeDismissed = false;
+    _zoomRoute?.startDrag(details.globalPosition);
   }
 
   void _onEdgeSwipeUpdate(DragUpdateDetails details) {
     _edgeSwipeDistance += details.delta.dx;
+
+    // In a zoom route the note follows the finger and the release decides.
+    final zoom = _zoomRoute;
+    if (zoom != null) {
+      zoom.updateDrag(details.globalPosition - _edgeSwipeOrigin);
+      return;
+    }
+
     if (_edgeSwipeDistance >= _edgeDismissDistance) {
       _dismissFromEdgeSwipe();
     }
   }
 
   void _onEdgeSwipeEnd(DragEndDetails details) {
-    if (details.velocity.pixelsPerSecond.dx >= _edgeDismissFlingVelocity) {
+    final velocity = details.velocity.pixelsPerSecond.dx;
+    final zoom = _zoomRoute;
+    if (zoom != null) {
+      final flungBack = velocity <= -_edgeDismissFlingVelocity;
+      final far = _edgeSwipeDistance >= _edgeDismissDistance;
+      zoom.endDrag(
+        dismiss: velocity >= _edgeDismissFlingVelocity || (far && !flungBack),
+      );
+      _resetEdgeSwipe();
+      return;
+    }
+
+    if (velocity >= _edgeDismissFlingVelocity) {
       _dismissFromEdgeSwipe();
     }
+    _resetEdgeSwipe();
+  }
+
+  void _onEdgeSwipeCancel() {
+    _zoomRoute?.endDrag(dismiss: false);
     _resetEdgeSwipe();
   }
 

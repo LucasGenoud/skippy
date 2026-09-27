@@ -11,6 +11,7 @@ import '../theme.dart';
 import '../util/linkify.dart';
 import '../util/motion.dart';
 import '../util/note_routes.dart';
+import '../widgets/note_zoom.dart';
 import 'editor_screen.dart';
 
 /// Ask questions about your notes. Each turn the server retrieves the most
@@ -176,10 +177,9 @@ class _ChatScreenState extends State<ChatScreen> {
     openNoteEditor(
       context,
       noteId: id,
-      // Narrow layouts get a plain fullscreen push (there's no enclosing
-      // OpenContainer to morph from on this screen).
+      // Narrow layouts get a fullscreen push with no card to morph from.
       openFullscreen: () => Navigator.of(context).push(
-        MaterialPageRoute(
+        NoteZoomRoute(
           settings: RouteSettings(name: noteRouteName(id)),
           builder: (_) => EditorScreen(noteId: id),
         ),

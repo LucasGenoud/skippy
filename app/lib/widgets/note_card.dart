@@ -1,5 +1,4 @@
 import 'collection_settings.dart';
-import 'package:animations/animations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable;
 import 'package:flutter/material.dart';
 import '../theme.dart';
@@ -9,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../models/note.dart';
 import '../screens/editor_screen.dart';
+import 'note_zoom.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
@@ -40,7 +40,7 @@ import '../util/motion.dart';
 import '../util/platform.dart';
 import 'screen_width.dart';
 
-/// A note in the grid. Narrow layouts use [OpenContainer] to morph into the
+/// A note in the grid. Narrow layouts use [NoteZoom] to morph into the
 /// fullscreen editor; wide layouts open their own modal from the card.
 class NoteTile extends StatefulWidget {
   final Note note;
@@ -247,11 +247,9 @@ class _NoteTileState extends State<NoteTile> {
           context,
           noteId: copy.id,
           sourceRect: morphSourceRect(context),
-          openFullscreen: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => EditorScreen(noteId: copy.id),
-            ),
-          ),
+          openFullscreen: () => Navigator.of(
+            context,
+          ).push(NoteZoomRoute(builder: (_) => EditorScreen(noteId: copy.id))),
         );
       },
     );
@@ -483,19 +481,13 @@ class _NoteTileState extends State<NoteTile> {
               ),
             ),
           )
-        : OpenContainer<void>(
+        : NoteZoom(
             routeSettings: RouteSettings(name: noteRouteName(note.id)),
-            transitionDuration: Motion.slow,
-            transitionType: ContainerTransitionType.fade,
-            closedElevation: 0,
-            openElevation: 0,
             closedColor: fill ?? scheme.surface,
-            middleColor: fill ?? scheme.surface,
             openColor: fill ?? scheme.surface,
             closedShape: cardShape,
-            tappable: false,
             closedBuilder: (context, open) => closedCard(open),
-            openBuilder: (context, close) => EditorScreen(
+            openBuilder: (context) => EditorScreen(
               noteId: note.id,
               openedFromBoard: widget.openedFromBoard,
             ),

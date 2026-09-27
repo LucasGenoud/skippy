@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/note_zoom.dart';
+
 /// The route name every editor showing an existing note carries.
 ///
 /// Names are what let an open request that arrives from outside the widget tree
@@ -33,7 +35,7 @@ class OpenNoteRoutes extends NavigatorObserver {
       return;
     }
     navigator.push(
-      MaterialPageRoute<void>(
+      NoteZoomRoute(
         settings: RouteSettings(name: name),
         builder: build,
       ),

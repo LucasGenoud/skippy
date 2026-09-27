@@ -11,6 +11,7 @@ import '../../util/motion.dart';
 import '../form_dialog.dart';
 import '../masonry.dart';
 import '../note_card.dart';
+import '../note_zoom.dart';
 import 'stage_editor.dart';
 
 /// One column of the board: a header and the cards filed in it.
@@ -334,7 +335,7 @@ Future<void> addCardToStage(BuildContext context, String? stageId) {
     stageId: stageId,
     openedFromBoard: true,
     openFullscreen: () => Navigator.of(context).push(
-      MaterialPageRoute(
+      NoteZoomRoute(
         builder: (_) => EditorScreen(stageId: stageId, openedFromBoard: true),
       ),
     ),

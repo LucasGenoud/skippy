@@ -1,4 +1,3 @@
-import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +8,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
+import 'note_zoom.dart';
 import 'recording_sheet.dart';
 
 /// FABs that morph into the editor via container transform: a mini one for a
@@ -39,17 +39,13 @@ class NewNoteFabs extends StatelessWidget {
       return Tooltip(
         message: tooltip,
         child: _HoverLift(
-          child: OpenContainer<void>(
-            transitionDuration: Motion.slow,
-            transitionType: ContainerTransitionType.fade,
+          child: NoteZoom(
             closedElevation: 4,
             closedColor: color,
-            middleColor: scheme.surface,
             openColor: scheme.surface,
             closedShape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kRadius),
             ),
-            tappable: false,
             closedBuilder: (context, open) => InkWell(
               customBorder: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(kRadius),
@@ -67,7 +63,7 @@ class NewNoteFabs extends StatelessWidget {
                 child: Icon(icon, size: size / 2, color: onColor),
               ),
             ),
-            openBuilder: (context, close) =>
+            openBuilder: (context) =>
                 EditorScreen(noteId: null, kind: kind, labelIds: labelIds),
           ),
         ),

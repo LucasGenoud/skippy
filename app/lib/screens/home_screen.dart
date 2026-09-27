@@ -31,6 +31,7 @@ import '../widgets/home_top_bar.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
+import '../widgets/note_zoom.dart';
 import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/saved_view_dialog.dart';
@@ -362,7 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
       kind: kind,
       labelIds: _composeLabelIds,
       openFullscreen: () => Navigator.of(context).push(
-        MaterialPageRoute(
+        NoteZoomRoute(
           builder: (_) => EditorScreen(kind: kind, labelIds: _composeLabelIds),
         ),
       ),
