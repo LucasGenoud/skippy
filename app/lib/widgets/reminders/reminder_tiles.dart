@@ -34,6 +34,9 @@ enum ReminderTimeStyle {
 /// A rounded surface holding a run of rows, rising off the canvas like a card.
 /// Rows that leave (checked off, rescheduled, removed) shrink out instead of
 /// popping.
+///
+/// Rows are opaque and run edge to edge, so their tap highlight fills the
+/// rounded shape; the border is drawn over them rather than under.
 class ReminderGroup extends StatelessWidget {
   final List<Widget> children;
 
@@ -42,20 +45,20 @@ class ReminderGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
+        borderRadius: kBorderRadius,
+      ),
+      foregroundDecoration: BoxDecoration(
         borderRadius: kBorderRadius,
         border: Border.all(color: hairlineColor(scheme)),
       ),
       child: ClipRRect(
         borderRadius: kBorderRadius,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: kSpaceXs),
-          child: AnimatedPresence(
-            layout: (children) => Column(children: children),
-            children: children,
-          ),
+        child: AnimatedPresence(
+          layout: (children) => Column(children: children),
+          children: children,
         ),
       ),
     );

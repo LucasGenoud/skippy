@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/note.dart';
@@ -7,6 +8,7 @@ import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/util/snack.dart';
+import 'package:skippy/widgets/reminders/reminder_tiles.dart';
 import 'package:skippy/widgets/reminders/reminders_view.dart';
 
 import 'board_widget_test.dart' show flushTimers, setViewport;
@@ -178,6 +180,40 @@ void main() {
     expect(find.text('Pay rent'), findsOneWidget);
     expect(find.text('Milk'), findsNothing);
     expect(find.text('Water the plants'), findsNothing);
+    await flushTimers(tester);
+  });
+
+  testWidgets('a group keeps its side border under its rows', (tester) async {
+    await setViewport(tester, const Size(420, 1000));
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+
+    // A row's opaque fill must not paint over the group's hairline.
+    final group = find.byType(ReminderGroup).first;
+    final box = tester.renderObject<RenderBox>(group);
+    final boundary =
+        tester.renderObject<RenderObject>(
+              find
+                  .ancestor(of: group, matching: find.byType(RepaintBoundary))
+                  .first,
+            )
+            as RenderRepaintBoundary;
+    final surface = Theme.of(tester.element(group)).colorScheme.surface;
+    final origin = box.localToGlobal(Offset.zero, ancestor: boundary);
+    final edge = await tester.runAsync(() async {
+      final image = await boundary.toImage();
+      final bytes = (await image.toByteData())!;
+      final x = origin.dx.round();
+      final y = (origin.dy + box.size.height / 2).round();
+      final i = (y * image.width + x) * 4;
+      return Color.fromARGB(
+        bytes.getUint8(i + 3),
+        bytes.getUint8(i),
+        bytes.getUint8(i + 1),
+        bytes.getUint8(i + 2),
+      );
+    });
+    expect(edge, isNot(surface));
     await flushTimers(tester);
   });
 }
