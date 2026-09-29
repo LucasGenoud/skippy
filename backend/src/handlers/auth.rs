@@ -359,6 +359,9 @@ pub async fn reset_password(
         .update_user(&user.id, &user.name, &user.email, &password_hash)
         .await?;
     state.repo.delete_sessions_for_user(&user.id).await?;
+    // Tokens too: a reset is how someone takes an account back, and a token
+    // left behind would keep whoever they took it back from inside.
+    state.repo.delete_api_tokens_for_user(&user.id).await?;
     // A fresh password clears the failed-login penalty; otherwise someone who
     // locked themselves out has to wait out the window they just fixed.
     state.auth_attempts.reset(&format!("login:{}", user.email));

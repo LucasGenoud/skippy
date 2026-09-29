@@ -14,6 +14,7 @@ mod cors;
 mod events;
 mod labels;
 mod llm;
+mod mcp;
 mod notes;
 mod notify;
 mod ocr;

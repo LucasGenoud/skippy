@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:skippy/api/api_client.dart';
+import 'package:skippy/models/api_token.dart';
 import 'package:skippy/models/chat.dart';
 import 'package:skippy/models/link_preview.dart';
 import 'package:skippy/models/note.dart';
@@ -699,6 +700,35 @@ class FakeApi implements Api {
   @override
   Future<void> deleteShareLink(String token) =>
       _run('deleteShareLink', () => shareLinks.remove(token));
+
+  // -- personal access tokens -------------------------------------------------
+
+  /// Tokens keyed by id.
+  final Map<String, ApiToken> apiTokens = {};
+
+  int _apiTokens = 0;
+
+  @override
+  Future<List<ApiToken>> fetchApiTokens() =>
+      _run('fetchApiTokens', () => apiTokens.values.toList());
+
+  @override
+  Future<CreatedApiToken> createApiToken(String name, TokenScope scope) =>
+      _run('createApiToken', () {
+        final id = 'api-${_apiTokens++}';
+        final token = ApiToken(
+          id: id,
+          name: name,
+          scope: scope,
+          createdAt: DateTime(2026, 1, 1),
+        );
+        apiTokens[id] = token;
+        return CreatedApiToken(token: token, secret: 'skp_secret_$id');
+      });
+
+  @override
+  Future<void> deleteApiToken(String id) =>
+      _run('deleteApiToken', () => apiTokens.remove(id));
 
   @override
   Future<PublicShare> fetchPublicShare(String token) => _run(

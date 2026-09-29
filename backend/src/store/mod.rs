@@ -5,6 +5,7 @@ mod sqlite_infrastructure;
 mod sqlite_rows;
 mod sqlite_schema;
 mod sqlite_sharing;
+mod sqlite_tokens;
 mod sqlite_views;
 
 #[derive(Debug)]

@@ -6,6 +6,7 @@ use rand_core::OsRng;
 
 use crate::AppState;
 use crate::error::ApiError;
+use crate::models::TokenScope;
 
 /// Argon2id, the hybrid variant, named rather than left to `Argon2::default()`
 /// so a change in the crate's default can't quietly move us off it.
@@ -56,6 +57,29 @@ impl FromRequestParts<AppState> for AuthUser {
             .await?
             .ok_or(ApiError::Unauthorized)?;
         Ok(AuthUser(user_id))
+    }
+}
+
+/// Extractor for the MCP endpoint: the account behind a personal access
+/// token, and what the token may do. Sessions are not accepted here, and
+/// [`AuthUser`] accepts no personal token, so neither credential opens the
+/// other's door.
+pub struct TokenUser {
+    pub user_id: String,
+    pub scope: TokenScope,
+}
+
+impl FromRequestParts<AppState> for TokenUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
+        let token = bearer_token(parts).ok_or(ApiError::Unauthorized)?;
+        let (user_id, scope) = state
+            .repo
+            .api_token_owner(&token)
+            .await?
+            .ok_or(ApiError::Unauthorized)?;
+        Ok(TokenUser { user_id, scope })
     }
 }
 

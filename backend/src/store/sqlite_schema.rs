@@ -14,6 +14,20 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT NOT NULL
 ) STRICT;
 
+-- Personal access tokens for the MCP endpoint. Like a session, a row holds a
+-- SHA-256 digest of the token, never the token itself; its owner sees the
+-- secret once, when it is created.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (trim(name) <> ''),
+    digest TEXT NOT NULL UNIQUE,
+    scope TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS api_tokens_user ON api_tokens(user_id);
+
 -- One-shot password reset grants. The row holds a SHA-256 digest of the
 -- token, never the token itself, so a database copy cannot be used to reset
 -- anyone's password. A row is deleted the moment it is redeemed, and a new

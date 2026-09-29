@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/api_token.dart';
 import '../models/chat.dart';
 import '../models/link_preview.dart';
 import '../models/note.dart';
@@ -202,6 +203,15 @@ abstract class Api {
 
   /// Revoke a link. The page it served stops resolving immediately.
   Future<void> deleteShareLink(String token);
+
+  // personal access tokens, for MCP clients
+  Future<List<ApiToken>> fetchApiTokens();
+
+  /// Create a token; the result carries its secret, which is never sent again.
+  Future<CreatedApiToken> createApiToken(String name, TokenScope scope);
+
+  /// Revoke a token. A client using it is refused from its next request.
+  Future<void> deleteApiToken(String id);
 
   /// Read a public link's payload. Deliberately unauthenticated: the token is
   /// the credential, and the reader usually has no account at all.
@@ -854,6 +864,35 @@ class ApiClient extends _ApiTransport implements Api {
     _decode(
       await _client.delete(_uri('/share-links/$token'), headers: _headers()),
     );
+  }
+
+  // -- personal access tokens ------------------------------------------------
+
+  @override
+  Future<List<ApiToken>> fetchApiTokens() async {
+    final data =
+        _decode(await _client.get(_uri('/tokens'), headers: _headers()))
+            as List;
+    return data
+        .map((j) => ApiToken.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<CreatedApiToken> createApiToken(String name, TokenScope scope) async {
+    final data = _decode(
+      await _client.post(
+        _uri('/tokens'),
+        headers: _headers(),
+        body: jsonEncode({'name': name, 'scope': scope.wire}),
+      ),
+    );
+    return CreatedApiToken.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> deleteApiToken(String id) async {
+    _decode(await _client.delete(_uri('/tokens/$id'), headers: _headers()));
   }
 
   @override

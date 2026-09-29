@@ -330,6 +330,17 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         )
         .route("/llm/test", post(handlers::llm_test))
         .route("/notify/test", post(handlers::notify_test))
+        .route(
+            "/tokens",
+            get(handlers::list_api_tokens).post(handlers::create_api_token),
+        )
+        .route(
+            "/tokens/{id}",
+            axum::routing::delete(handlers::delete_api_token),
+        )
+        // Authenticated by a personal access token rather than a session.
+        // See `handlers::mcp`.
+        .route("/mcp", post(handlers::mcp_post).get(handlers::mcp_get))
         .route("/chat", get(handlers::chat_ws))
         .route("/ws", get(handlers::ws_handler))
         .with_state(state);

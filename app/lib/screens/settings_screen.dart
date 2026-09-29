@@ -14,6 +14,7 @@ import '../widgets/settings/llm_section.dart';
 import '../widgets/settings/managed_note.dart';
 import '../widgets/settings/notify_section.dart';
 import '../widgets/settings/palette_section.dart';
+import '../widgets/settings/ai_access_section.dart';
 import '../widgets/settings/public_links_section.dart';
 import '../widgets/settings/saved_locations_section.dart';
 import '../widgets/shortcut_help.dart';
@@ -244,6 +245,7 @@ class SettingsScreen extends StatelessWidget {
               const Divider(height: 32),
               const _SectionHeader('Sharing'),
               const PublicLinksSection(),
+              const AiAccessSection(),
               const Divider(height: 32),
               const _SectionHeader('Data'),
               const ExportSection(),

@@ -12,6 +12,8 @@ mod background;
 mod chat;
 mod events;
 mod labels;
+mod mcp;
+mod mcp_tools;
 mod notes;
 mod probes;
 mod search;
@@ -19,6 +21,7 @@ mod settings;
 mod share_links;
 mod sharing;
 mod stages;
+mod tokens;
 mod unfurl;
 mod versions;
 mod workspaces;
@@ -33,6 +36,7 @@ pub use auth::{
 pub use chat::chat_ws;
 pub use events::ws_handler;
 pub use labels::{create_label, delete_label, list_labels, update_label};
+pub use mcp::{mcp_get, mcp_post};
 pub use notes::{
     apply_note_update, create_note, create_note_for_user, delete_note, get_note, list_notes,
     purge_old_trash, purge_trash, reorder_notes, set_item_reminder, update_note,
@@ -43,6 +47,7 @@ pub use settings::{get_settings, put_settings};
 pub use share_links::{create_share_link, delete_share_link, list_share_links, public_share};
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use stages::{create_stage, delete_stage, list_stages, update_stage};
+pub use tokens::{create_api_token, delete_api_token, list_api_tokens};
 pub use unfurl::{summarize_url, unfurl};
 pub use versions::{list_note_versions, restore_note_version};
 pub use workspaces::{

@@ -14,6 +14,8 @@ Windows. It works offline and syncs when a device reconnects.
 - Real-time collaboration and offline edits.
 - Optional transcription, image text recognition, semantic search, and AI
   tools.
+- An MCP server for AI assistants such as Claude. See
+  [Connect an AI assistant](setup.md#connect-an-ai-assistant).
 
 ## Screenshots
 

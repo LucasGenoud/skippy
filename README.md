@@ -40,6 +40,7 @@ Open <http://localhost:8123>. The app itself remains available at
 - Semantic search, optional transcription, OCR, and OpenAI-compatible AI tools
 - Share-sheet intake, keyboard shortcuts, dark mode, exports, and home-screen widgets
 - Import from Google Keep through a Google Takeout export
+- An MCP server, so AI assistants such as Claude can search, read, and add to notes
 
 ## Docker deployment
 
@@ -165,6 +166,8 @@ Authenticated JSON endpoints live under `/api`. The main groups are:
 - `/search`, `/chat`, `/settings`, `/unfurl`, and `/ws`
 - `/notes/{id}/versions`, `/notes/{id}/attachments`, and item reminders
 - `/health` and `/capabilities` for service status
+- `/tokens` for personal access tokens, and `/mcp`, a Model Context Protocol
+  server that AI assistants reach with one of those tokens
 
 Attachments use signed, expiring URLs. Optional search, transcription, OCR,
 and AI routes report unavailable services instead of preventing startup.

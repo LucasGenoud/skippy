@@ -143,6 +143,28 @@ flutter run --release -d <ios-device-id>
 An app installed with a free Apple developer account needs refreshing every
 seven days.
 
+## Connect an AI assistant
+
+Skippy includes a Model Context Protocol (MCP) server, so an assistant such
+as Claude can search and read your notes and, if you allow it, create notes
+and add to them. It cannot delete, move, or share anything.
+
+1. In Skippy, open Settings, then Sharing, and choose **New token** under
+   Assistant access (MCP).
+2. Name the token and choose **Read only** or **Read and add**.
+3. Copy the token. It is shown once.
+
+For Claude Code, the dialog shows a ready command:
+
+```sh
+claude mcp add --transport http skippy https://notes.example.com/api/mcp --header "Authorization: Bearer skp_..."
+```
+
+Any other MCP client connects to `https://<your server>/api/mcp` over
+Streamable HTTP with the header `Authorization: Bearer <token>`. Revoke a
+token in the same Settings section; resetting your password revokes all of
+them.
+
 ## Documentation site
 
 Every Compose file also defines the documentation container. Start it with

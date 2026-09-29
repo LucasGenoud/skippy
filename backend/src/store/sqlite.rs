@@ -51,7 +51,7 @@ pub(super) const SHARE_LINK_COLUMNS: &str =
     "SELECT token, created_by, target, note_id, workspace_id, collection_id, label_id, created_at, expires_at
      FROM share_links";
 
-fn session_token_digest(token: &str) -> String {
+pub(super) fn session_token_digest(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 

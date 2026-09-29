@@ -167,6 +167,15 @@ async fn a_mailed_link_sets_a_new_password_and_ends_every_old_session() {
     let (state, sent) = state_with_mail().await;
     let app = build_app(state);
     let (session, _) = register(&app, "ada").await;
+    let (_, created) = send(
+        &app,
+        "POST",
+        "/api/tokens",
+        Some(&session),
+        Some(json!({"name": "agent", "scope": "read"})),
+    )
+    .await;
+    let api_token = created["secret"].as_str().unwrap().to_string();
 
     assert_eq!(
         request_reset(&app, "ADA@example.test").await,
@@ -197,6 +206,11 @@ async fn a_mailed_link_sets_a_new_password_and_ends_every_old_session() {
 
     // The session held before the reset no longer authenticates.
     let (status, _) = send(&app, "GET", "/api/auth/me", Some(&session), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Nor does a personal access token.
+    let ping = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"});
+    let (status, _) = send(&app, "POST", "/api/mcp", Some(&api_token), Some(ping)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 

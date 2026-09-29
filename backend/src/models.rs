@@ -560,6 +560,59 @@ pub struct CreateShareLink {
     pub expires_at: Option<String>,
 }
 
+/// What a personal access token lets an MCP client do. Stored as its wire
+/// name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TokenScope {
+    /// Search, list and read notes.
+    Read,
+    /// Also create notes and add to them.
+    Write,
+}
+
+impl TokenScope {
+    pub fn wire(self) -> &'static str {
+        match self {
+            TokenScope::Read => "read",
+            TokenScope::Write => "write",
+        }
+    }
+
+    pub fn from_wire(value: &str) -> Option<Self> {
+        match value {
+            "read" => Some(TokenScope::Read),
+            "write" => Some(TokenScope::Write),
+            _ => None,
+        }
+    }
+}
+
+/// A personal access token as its owner sees it listed: never the secret.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiTokenView {
+    pub id: String,
+    pub name: String,
+    pub scope: TokenScope,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+/// A token just created: the only time its secret is ever sent.
+#[derive(Debug, Serialize)]
+pub struct CreatedApiToken {
+    #[serde(flatten)]
+    pub token: ApiTokenView,
+    pub secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateApiToken {
+    pub name: String,
+    /// `read` or `write`; anything else is refused rather than defaulted.
+    pub scope: String,
+}
+
 /// A note as served to an anonymous reader.
 ///
 /// Deliberately its own struct rather than a trimmed [`NoteView`]: everything
