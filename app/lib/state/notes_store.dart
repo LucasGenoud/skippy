@@ -10,6 +10,7 @@ import '../models/note.dart';
 import '../models/workspace.dart';
 import '../util/backup.dart';
 import '../util/connectivity.dart';
+import '../util/keep_import.dart';
 import 'checklist_tree.dart';
 import 'local_cache.dart';
 import '../models/saved_view.dart';
@@ -966,6 +967,124 @@ class NotesStore extends ChangeNotifier {
     }
   }
 
+  /// Add the notes of a Google Keep export to [collectionId] in [workspaceId],
+  /// beside what is already there. A label is matched to the workspace's by
+  /// name, ignoring case, and created when it has none.
+  ///
+  /// Direct, awaited calls like [restoreBackup], for truthful progress; it is
+  /// likewise refused while offline.
+  Future<KeepImportResult> importKeep(
+    KeepArchive archive, {
+    required String workspaceId,
+    required String collectionId,
+    KeepTrash trash = KeepTrash.skip,
+    BackupProgress? onProgress,
+  }) async {
+    flushForBackground();
+    await _drainQueue();
+    if (_connectionDown || _queue.isNotEmpty) {
+      throw const BackupRestoreException(
+        'Connect to the server before importing',
+        restoredNotes: 0,
+      );
+    }
+
+    // Oldest first, each placed ahead of the last, so the most recently
+    // edited note ends up at the front as it was in Keep.
+    final notes = [
+      for (final note in archive.notes)
+        if (trash == KeepTrash.include || !note.trashed) note,
+    ]..sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
+    final total = notes.fold<int>(
+      0,
+      (count, note) => count + 1 + note.attachments.length,
+    );
+    final labelIds = {
+      for (final label in labelsInWorkspace(workspaceId))
+        label.name.toLowerCase(): label.id,
+    };
+    var position = _frontPosition();
+    var completed = 0;
+    var importedNotes = 0;
+    var importedAttachments = 0;
+    var createdLabels = 0;
+
+    _restoringBackup = true;
+    notifyListeners();
+    try {
+      for (final keep in notes) {
+        final noteLabels = <String>{};
+        for (final name in keep.labels) {
+          var id = labelIds[name.toLowerCase()];
+          if (id == null) {
+            id = _uuid.v4();
+            await api.createLabel(id, name, workspaceId: workspaceId);
+            labelIds[name.toLowerCase()] = id;
+            createdLabels++;
+          }
+          noteLabels.add(id);
+        }
+
+        final note = Note(
+          id: _uuid.v4(),
+          workspaceId: workspaceId,
+          collectionId: collectionId,
+          kind: keep.kind,
+          title: keep.title,
+          content: keep.content,
+          items: [
+            for (final item in keep.items)
+              ChecklistItem(id: _uuid.v4(), text: item.text, done: item.done),
+          ],
+          color: keep.color,
+          pinned: keep.pinned,
+          archived: keep.archived,
+          trashed: keep.trashed,
+          position: position,
+          createdAt: keep.createdAt,
+          updatedAt: keep.updatedAt,
+          labelIds: noteLabels,
+          owner: currentUserId == null
+              ? null
+              : UserRef(id: currentUserId!, name: ''),
+        );
+        position -= _frontGap;
+        await api.createNote(note, preserveTimestamps: true);
+        importedNotes++;
+        onProgress?.call(++completed, total);
+
+        for (final attachment in keep.attachments) {
+          await api.uploadAttachment(
+            note.id,
+            attachment.bytes,
+            attachment.mime,
+            attachment.filename,
+          );
+          importedAttachments++;
+          onProgress?.call(++completed, total);
+        }
+      }
+      return KeepImportResult(
+        notes: importedNotes,
+        attachments: importedAttachments,
+        labels: createdLabels,
+      );
+    } catch (error) {
+      final message = error is ApiException
+          ? error.serverMessage
+          : 'Import could not be completed';
+      throw BackupRestoreException(message, restoredNotes: importedNotes);
+    } finally {
+      _restoringBackup = false;
+      await refresh();
+      notifyListeners();
+      if (_reloadPending) {
+        _reloadPending = false;
+        load();
+      }
+    }
+  }
+
   Note? noteById(String id) {
     for (final n in _notes) {
       if (n.id == id) return n;
@@ -1553,12 +1672,15 @@ class NotesStore extends ChangeNotifier {
     return note;
   }
 
+  /// Gap between neighbouring notes placed at the front of the grid.
+  static const _frontGap = 1024.0;
+
   double _frontPosition() {
     double min = 0;
     for (final n in _notes) {
       if (n.position < min) min = n.position;
     }
-    return min - 1024.0;
+    return min - _frontGap;
   }
 
   /// Debounced content autosave from the editor (title, body, checklist).

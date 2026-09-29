@@ -6,9 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
 import '../../models/note.dart';
+import '../../models/workspace.dart';
 import '../../state/notes_store.dart';
 import '../../util/backup.dart';
 import '../../util/download.dart';
+import '../../util/keep_import.dart';
 import '../../util/note_export.dart';
 import '../../util/snack.dart';
 import '../animated_reveal.dart';
@@ -200,6 +202,84 @@ class _ExportSectionState extends State<ExportSection> {
     }
   }
 
+  Future<void> _importKeep() async {
+    final picked = await pickAnyFiles();
+    if (!mounted || picked.isEmpty) return;
+
+    final KeepArchive archive;
+    try {
+      archive = parseKeepArchive(picked.first.bytes);
+    } on FormatException catch (error) {
+      showAppSnack(
+        error.message,
+        icon: Icons.error_outline,
+        kind: SnackKind.danger,
+      );
+      return;
+    }
+
+    final store = context.read<NotesStore>();
+    final choice = await showDialog<KeepImportChoice>(
+      context: context,
+      builder: (context) => KeepImportDialog(
+        archive: archive,
+        workspaces: store.workspaces,
+        initialWorkspaceId: store.activeWorkspaceId,
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _status = 'Importing from Google Keep…';
+      _progress = 0;
+    });
+    try {
+      final result = await store.importKeep(
+        archive,
+        workspaceId: choice.workspaceId,
+        collectionId: choice.collectionId,
+        trash: choice.trash,
+        onProgress: (done, total) {
+          if (!mounted) return;
+          setState(() {
+            _status = 'Importing… $done of $total';
+            _progress = total == 0 ? null : done / total;
+          });
+        },
+      );
+      if (mounted) {
+        showAppSnack(
+          'Imported ${result.notes} '
+          '${result.notes == 1 ? 'note' : 'notes'} and '
+          '${result.attachments} '
+          '${result.attachments == 1 ? 'file' : 'files'} from Google Keep',
+          icon: Icons.check_circle_outline,
+        );
+      }
+    } on BackupRestoreException catch (error) {
+      if (mounted) {
+        final partial = error.restoredNotes == 0
+            ? error.message
+            : '${error.message}. ${error.restoredNotes} notes were imported '
+                  'before it stopped.';
+        showAppSnack(
+          partial,
+          icon: Icons.error_outline,
+          kind: SnackKind.danger,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _status = null;
+          _progress = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -215,7 +295,9 @@ class _ExportSectionState extends State<ExportSection> {
             'including notes, labels, board columns, reminders, trash, and '
             'attached files. Workspaces shared with you and collaboration '
             'access are excluded. Restoring replaces your owned workspace '
-            'data; readable formats exclude trash and attached file bytes.',
+            'data; readable formats exclude trash and attached file bytes. '
+            'A Google Keep export from Google Takeout is added to your notes '
+            'without replacing any.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -236,6 +318,12 @@ class _ExportSectionState extends State<ExportSection> {
                 icon: const Icon(Icons.settings_backup_restore, size: 18),
                 label: const Text('Restore backup'),
                 onPressed: _busy ? null : _restoreBackup,
+              ),
+              OutlinedButton.icon(
+                key: const Key('import-keep'),
+                icon: const Icon(Icons.move_to_inbox_outlined, size: 18),
+                label: const Text('Import from Google Keep'),
+                onPressed: _busy ? null : _importKeep,
               ),
               for (final format in ExportFormat.values)
                 OutlinedButton.icon(
@@ -346,6 +434,161 @@ class _RestoreBackupDialogState extends State<RestoreBackupDialog> {
               : () => Navigator.pop(context, Set<String>.from(_selected)),
           icon: const Icon(Icons.settings_backup_restore),
           label: const Text('Replace and restore'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Where a Google Keep import goes, as [KeepImportDialog] returns it.
+class KeepImportChoice {
+  final String workspaceId;
+  final String collectionId;
+  final KeepTrash trash;
+
+  const KeepImportChoice({
+    required this.workspaceId,
+    required this.collectionId,
+    required this.trash,
+  });
+}
+
+class KeepImportDialog extends StatefulWidget {
+  final KeepArchive archive;
+  final List<Workspace> workspaces;
+  final String? initialWorkspaceId;
+
+  const KeepImportDialog({
+    super.key,
+    required this.archive,
+    required this.workspaces,
+    this.initialWorkspaceId,
+  });
+
+  @override
+  State<KeepImportDialog> createState() => _KeepImportDialogState();
+}
+
+class _KeepImportDialogState extends State<KeepImportDialog> {
+  late String? _workspaceId = _initialWorkspace();
+  late String? _collectionId = _firstCollection(_workspaceId);
+  bool _includeTrash = false;
+
+  String? _initialWorkspace() {
+    final ids = {for (final w in widget.workspaces) w.id};
+    if (ids.contains(widget.initialWorkspaceId)) {
+      return widget.initialWorkspaceId;
+    }
+    return widget.workspaces.firstOrNull?.id;
+  }
+
+  Workspace? _workspace(String? id) =>
+      widget.workspaces.where((w) => w.id == id).firstOrNull;
+
+  String? _firstCollection(String? workspaceId) =>
+      _workspace(workspaceId)?.collections.firstOrNull?.id;
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = widget.archive.notes;
+    final trashed = notes.where((n) => n.trashed).length;
+    final kept = notes.length - trashed;
+    final files = notes.fold<int>(0, (n, note) => n + note.attachments.length);
+    final collections = _workspace(_workspaceId)?.collections ?? const [];
+    final scheme = Theme.of(context).colorScheme;
+
+    return AppDialog(
+      title: const Text('Import from Google Keep'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '$kept ${kept == 1 ? 'note' : 'notes'} and $files '
+                '${files == 1 ? 'file' : 'files'} will be added. Existing '
+                'notes are not changed, and labels with the same name are '
+                'shared.',
+              ),
+              if (widget.archive.missingFiles > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${widget.archive.missingFiles} attached '
+                  '${widget.archive.missingFiles == 1 ? 'file is' : 'files are'} '
+                  'missing from the export or larger than 25 MB, and will be '
+                  'skipped.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              ],
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                key: const Key('keep-import-workspace'),
+                initialValue: _workspaceId,
+                decoration: const InputDecoration(labelText: 'Workspace'),
+                items: [
+                  for (final workspace in widget.workspaces)
+                    DropdownMenuItem(
+                      value: workspace.id,
+                      child: Text(workspace.name),
+                    ),
+                ],
+                onChanged: (id) => setState(() {
+                  _workspaceId = id;
+                  _collectionId = _firstCollection(id);
+                }),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                // Rebuilt per workspace, so its value always belongs to it.
+                key: ValueKey('keep-import-collection-$_workspaceId'),
+                initialValue: _collectionId,
+                decoration: const InputDecoration(labelText: 'Collection'),
+                items: [
+                  for (final collection in collections)
+                    DropdownMenuItem(
+                      value: collection.id,
+                      child: Text(collection.name),
+                    ),
+                ],
+                onChanged: (id) => setState(() => _collectionId = id),
+              ),
+              if (trashed > 0)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _includeTrash,
+                  title: Text(
+                    'Also import $trashed ${trashed == 1 ? 'note' : 'notes'} '
+                    "from Keep's trash",
+                  ),
+                  subtitle: const Text('They go to the trash here too'),
+                  onChanged: (checked) =>
+                      setState(() => _includeTrash = checked ?? false),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          key: const Key('keep-import-confirm'),
+          onPressed: _workspaceId == null || _collectionId == null
+              ? null
+              : () => Navigator.pop(
+                  context,
+                  KeepImportChoice(
+                    workspaceId: _workspaceId!,
+                    collectionId: _collectionId!,
+                    trash: _includeTrash ? KeepTrash.include : KeepTrash.skip,
+                  ),
+                ),
+          icon: const Icon(Icons.move_to_inbox_outlined),
+          label: const Text('Import'),
         ),
       ],
     );

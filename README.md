@@ -39,6 +39,7 @@ Open <http://localhost:8123>. The app itself remains available at
 - Offline edits with automatic synchronization when the connection returns
 - Semantic search, optional transcription, OCR, and OpenAI-compatible AI tools
 - Share-sheet intake, keyboard shortcuts, dark mode, exports, and home-screen widgets
+- Import from Google Keep through a Google Takeout export
 
 ## Docker deployment
 
