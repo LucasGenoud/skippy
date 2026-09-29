@@ -62,6 +62,7 @@ Format touched Dart files with `dart format`. Format touched Rust files with `ca
 - `state/board_layout.dart`: grouping notes into board columns.
 - `state/note_conversion.dart`: conversion between text, markdown, and checklist content.
 - `state/checklist_tree.dart`: the pure rules for nested checklists (which rows form a subtree, what a check cascades to, what may be indented).
+- `state/note_links.dart`: the `[[id|Title]]` note-link syntax, backlinks, link candidates, and the rules that make a link move and delete as one unit in the editor.
 - `state/pending_operation.dart`: persisted optimistic operation types and JSON encoding.
 
 The WebSocket is a change nudge, not a stream of note patches. Multiple notifications are debounced and lead to a refetch. Last-write-wins remains the collaboration model.
@@ -121,10 +122,12 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/events.rs`: ordinary change-event WebSocket.
 - `backend/src/handlers/unfurl.rs`: authenticated link-preview endpoint and cache integration.
 - `backend/src/handlers/probes.rs`: tests for unsaved LLM and notification configurations.
+- `backend/src/handlers/tokens.rs`: personal access tokens (list, create, revoke), managed only from a session.
+- `backend/src/handlers/mcp.rs`: the stateless Streamable HTTP MCP endpoint (JSON-RPC framing, version negotiation); `mcp_tools.rs` holds its tools.
 - `backend/src/handlers/background.rs`: shared post-write jobs for versions, search, auto-labeling, and notifications.
 - `backend/src/store/mod.rs`: shared SQLite result and cleanup types.
 - `backend/src/store/sqlite.rs`: SQLite account, workspace, note, and taxonomy implementation plus shared helpers.
-- `backend/src/store/sqlite_attachments.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`: focused SQLite repository implementations.
+- `backend/src/store/sqlite_attachments.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`, `sqlite_tokens.rs`: focused SQLite repository implementations.
 - `backend/src/store/sqlite_schema.rs`: current clean-break schema creation.
 - `backend/src/store/sqlite_rows.rs`: SQL row structs and conversion into domain models.
 - `backend/src/cleanup.rs`: durable retry worker for attachment and vector cleanup enqueued by relational deletes.
@@ -139,11 +142,13 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/notify.rs`: reminder scheduler (notes and checklist items) and
   the ntfy/Telegram/SMTP connectors.
 - `backend/src/unfurl.rs`: outbound URL validation, SSRF protections, fetching, and metadata parsing.
+- `backend/src/note_links.rs`: reads `[[id|Title]]` links, to show them as titles to search and the LLM and to remap them in workspace copies.
 - `backend/src/ws.rs`: per-user event fan-out hub.
 - `backend/tests/api/main.rs`: modular API integration test entry point.
 - `backend/tests/api/helpers.rs`: real-router harness and deterministic fake services.
 - `backend/tests/api/*.rs`: behavior grouped by API feature.
 - `backend/tests/api/stages.rs`: board columns, including the rules that keep them independent of labels.
+- `backend/tests/api/mcp.rs`: token lifecycle, the MCP handshake, scope enforcement, and that tools see only what the account sees.
 - `backend/tests/s3.rs`: S3 file-store behavior against a local fake server.
 
 ### Flutter client
@@ -188,6 +193,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations.
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
+- `app/lib/util/keep_import.dart`: pure parsing of a Google Takeout Keep zip; `NotesStore.importKeep` adds the result without replacing anything.
 - `app/lib/util/linkify.dart`, `highlight.dart`, `mime.dart`, `note_image.dart`: pure display/content helpers.
 - `app/lib/util/network_error.dart`: plain-language wording for requests that never reached the server. Paired with `ApiException.serverMessage`/`statusSummary`, these guarantee every failure the UI shows carries text, including empty bodies and proxy error pages.
 - `app/lib/util/motion.dart`, `snack.dart`, `label_style.dart`: shared UI conventions.
@@ -277,6 +283,14 @@ A checklist item can carry a reminder of its own, stored in `note_item_reminders
 On the client, item reminders live on `Note.itemReminders`, never on `ChecklistItem`, for the same reason: items travel in content patches, version snapshots, and the editor's undo stack, and a reminder belongs in none of those. `plannedReminders` arms one alarm per note reminder and per item reminder, competing for the same 64 slots; a note alarm's notification id is unchanged, and an item's payload carries `noteId#itemId` so an alarm armed by an older build still parses.
 
 Client-generated UUIDs allow offline creation. Empty drafts remain local until meaningful text or a file exists. The server rejects reused note ids with 409 Conflict, so preserve the serial queue's create-before-update ordering.
+
+### Note links
+
+A note links to another by writing `[[id|Title]]` into its text or markdown body. The id is what the link follows; the title is only what shows where the live title is unknown (the editor source, exports, a note the reader cannot reach). The syntax belongs to the client (`state/note_links.dart`); the server only reads it (`note_links.rs`). Backlinks are computed on the client from notes it already holds, so they are participant-scoped for free and need no table. Anything that gives notes new ids must remap links between them: workspace duplication does it on the server, backup restore on the client. Readable exports drop the ids; JSON and backups keep them.
+
+### MCP and personal access tokens
+
+`/api/mcp` accepts only personal access tokens, and every other route accepts only sessions; `TokenUser` and `AuthUser` are the two extractors that keep it that way. A token is `read` or `write`: write adds `create_note` and `append_to_note`, which go through `create_note_for_user` and `apply_note_update` so they get the same versioning, indexing, labeling, and notification as any other edit. Reads go through participant-scoped repository queries, and the vector index only nominates candidates. Tokens are stored as SHA-256 digests like sessions, shown once, and revoked by a password reset. Add a tool by extending `mcp_tools::definitions` and `mcp_tools::call` and covering it in `tests/api/mcp.rs`; keep destructive operations out.
 
 ### Settings
 
