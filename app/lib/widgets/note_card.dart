@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../models/note.dart';
 import '../screens/editor_screen.dart';
 import 'note_zoom.dart';
+import '../state/note_links.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/mime.dart';
@@ -729,7 +730,12 @@ class _NoteCardContent extends StatelessWidget {
                           child: IgnorePointer(
                             child: SingleChildScrollView(
                               physics: const NeverScrollableScrollPhysics(),
-                              child: _MarkdownPreview(content: note.content),
+                              child: _MarkdownPreview(
+                                content: markdownNoteLinks(
+                                  note.content,
+                                  titleFor: store.linkTitleFor,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -737,6 +743,7 @@ class _NoteCardContent extends StatelessWidget {
                     else if (!note.isChecklist && note.content.isNotEmpty)
                       LinkedText(
                         text: note.content,
+                        noteTitleFor: store.linkTitleFor,
                         query: query,
                         highlight: TextStyle(
                           backgroundColor: scheme.primary.withValues(

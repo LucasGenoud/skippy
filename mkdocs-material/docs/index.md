@@ -6,6 +6,8 @@ Windows. It works offline and syncs when a device reconnects.
 ## Features
 
 - Text, Markdown, checklist, and audio notes with files, images, and links.
+- Links between notes: type `[[` in a note to link another, and each note
+  lists the notes linking to it.
 - Workspaces, collections, labels, boards, reminders, search, and backups.
 - Real-time collaboration and offline edits.
 - Optional transcription, image text recognition, semantic search, and AI

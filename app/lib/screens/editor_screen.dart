@@ -16,6 +16,7 @@ import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../state/checklist_tree.dart';
 import '../state/editor_history.dart';
+import '../state/note_links.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/home_widgets.dart';
@@ -39,6 +40,7 @@ import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/editor/note_actions_button.dart';
+import '../widgets/editor/note_links_panel.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
@@ -282,6 +284,9 @@ class _EditorScreenState extends State<EditorScreen> {
   // their real attachment tile will appear once the network call resolves.
   final List<DroppedFile> _pendingUploads = [];
   bool _previewMarkdown = false;
+
+  /// What follows a `[[` being typed in the body; null when none is.
+  String? _linkQuery;
   bool _reminderPickerOpen = false;
   double _edgeSwipeDistance = 0;
   Offset _edgeSwipeOrigin = Offset.zero;
@@ -312,6 +317,8 @@ class _EditorScreenState extends State<EditorScreen> {
     );
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
+    _contentController.addListener(_syncLinkQuery);
+    _contentFocus.addListener(_syncLinkQuery);
     _findController.addListener(() => setState(() {}));
     _history = EditorHistory(_currentSnapshot());
     // A brand-new text/markdown note wants the body focused for immediate
@@ -1334,6 +1341,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                         ? _metaChips(note, settings, labels)
                                         : null,
                                   ),
+                                  AnimatedReveal(child: _linksSection(note)),
                                   // Rich preview cards for any links in the
                                   // note, kept as the very last thing so they
                                   // always sit below everything else.
@@ -1363,6 +1371,18 @@ class _EditorScreenState extends State<EditorScreen> {
                                 ],
                               ),
                             ),
+                          ),
+                          AnimatedReveal(
+                            child: _linkQuery == null || trashed
+                                ? null
+                                : NoteLinkPicker(
+                                    notes: _store.linkTargets(
+                                      _linkQuery!,
+                                      excludeId: _noteId,
+                                    ),
+                                    query: _linkQuery!,
+                                    onPick: _insertNoteLink,
+                                  ),
                           ),
                           // Formatting accessory bar while editing markdown.
                           AnimatedReveal(
@@ -1600,15 +1620,23 @@ class _EditorScreenState extends State<EditorScreen> {
       child: MarkdownBody(
         data: _contentController.text.isEmpty
             ? '*Nothing to preview*'
-            : _contentController.text,
+            : markdownNoteLinks(
+                _contentController.text,
+                titleFor: _store.linkTitleFor,
+              ),
         selectable: true,
         // A tap on preview text returns to its markdown source. Drag and
         // long-press gestures remain owned by the selectable text.
         onTapText: trashed ? null : _editMarkdownFromPreview,
         onTapLink: (text, href, title) {
-          if (href != null) {
-            launchSafeLink(href);
+          if (href == null) {
+            return;
           }
+          if (noteIdFromHref(href) case final String id) {
+            _openLinkedNote(id);
+            return;
+          }
+          launchSafeLink(href);
         },
       ),
     );
@@ -1689,6 +1717,100 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _editMarkdownFromPreview() {
     _setMarkdownPreview(false);
+  }
+
+  // -------------------------------------------------------------------
+  // Note links
+
+  /// Opens the link picker while a `[[` is being typed in the body.
+  void _syncLinkQuery() {
+    final selection = _contentController.selection;
+    final typing =
+        _contentFocus.hasFocus &&
+        selection.isValid &&
+        selection.isCollapsed &&
+        (_kind == NoteKind.text || _kind == NoteKind.markdown);
+    final query = typing
+        ? openLinkQuery(_contentController.text, selection.baseOffset)
+        : null;
+    if (query == _linkQuery) {
+      return;
+    }
+    setState(() => _linkQuery = query);
+  }
+
+  /// Replaces the `[[query` being typed with a link to [target].
+  void _insertNoteLink(Note target) {
+    final query = _linkQuery;
+    if (query == null) {
+      return;
+    }
+    final value = _contentController.value;
+    final caret = value.selection.baseOffset;
+    final start = caret - query.length - 2;
+    final token = noteLinkToken(target.id, noteLinkTitle(target));
+    final text = value.text;
+    final followedBySpace = caret < text.length && text[caret] == ' ';
+    final inserted = followedBySpace ? token : '$token ';
+    _contentController.value = TextEditingValue(
+      text: text.replaceRange(start, caret, inserted),
+      selection: TextSelection.collapsed(offset: start + inserted.length),
+    );
+    _contentFocus.requestFocus();
+  }
+
+  void _openLinkedNote(String id) {
+    openNoteEditor(
+      context,
+      noteId: id,
+      openFullscreen: () => Navigator.of(context).push(
+        NoteZoomRoute(
+          settings: RouteSettings(name: noteRouteName(id)),
+          builder: (_) => EditorScreen(noteId: id),
+        ),
+      ),
+    );
+  }
+
+  /// The notes [note] links to and the notes linking to it; null when there
+  /// are neither.
+  Widget? _linksSection(Note? note) {
+    if (note == null) {
+      return null;
+    }
+    final seen = <String>{};
+    final outgoing = [
+      for (final link in findNoteLinks(note.content))
+        if (link.noteId != note.id && seen.add(link.noteId))
+          switch (_store.linkTitleFor(link.noteId)) {
+            final String title => LinkedNoteRef(
+              id: link.noteId,
+              title: title,
+              reachable: true,
+            ),
+            null => LinkedNoteRef(
+              id: link.noteId,
+              title: link.title,
+              reachable: false,
+            ),
+          },
+    ];
+    final incoming = [
+      for (final source in _store.backlinks(note.id))
+        LinkedNoteRef(
+          id: source.id,
+          title: noteLinkTitle(source),
+          reachable: true,
+        ),
+    ];
+    if (outgoing.isEmpty && incoming.isEmpty) {
+      return null;
+    }
+    return NoteLinksSection(
+      outgoing: outgoing,
+      incoming: incoming,
+      onOpen: _openLinkedNote,
+    );
   }
 
   /// Audio note: the clip player on top, then the transcript, a live

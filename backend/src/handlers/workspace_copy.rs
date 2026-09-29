@@ -161,14 +161,21 @@ async fn copy_contents(
     if matches!(body.content, CopyContent::Structure) {
         return Ok(());
     }
-    let mut new_ids = Vec::new();
-    for view in state
+    let sources = state
         .repo
         .notes_for_user(user_id)
         .await?
         .into_iter()
         .filter(|n| n.note.workspace_id == source.id && !n.note.trashed)
-    {
+        .collect::<Vec<_>>();
+    // Every copy gets its id up front, so a link between two copied notes
+    // can point at the other copy whichever is written first.
+    let copy_ids = sources
+        .iter()
+        .map(|view| (view.note.id.clone(), super::new_id()))
+        .collect::<HashMap<_, _>>();
+    let mut new_ids = Vec::new();
+    for view in sources {
         let Some(mut note) = state
             .repo
             .note_record_for_user(&view.note.id, user_id)
@@ -176,7 +183,8 @@ async fn copy_contents(
         else {
             continue;
         };
-        note.id = super::new_id();
+        note.id = copy_ids[&view.note.id].clone();
+        note.content = crate::note_links::remap(&note.content, &copy_ids);
         note.workspace_id = target.id.clone();
         note.created_by = Some(user_id.into());
         note.last_editor_id = None;

@@ -15,6 +15,7 @@ import 'local_cache.dart';
 import '../models/saved_view.dart';
 import 'note_collection.dart';
 import 'note_conversion.dart';
+import 'note_links.dart';
 import 'pending_operation.dart';
 import 'pending_operation_executor.dart';
 import 'sync_retry_policy.dart';
@@ -763,6 +764,13 @@ class NotesStore extends ChangeNotifier {
         onProgress?.call(++completed, totalSteps);
       }
 
+      // Every restored note gets its id up front, so links between restored
+      // notes can point at each other's new ids.
+      final restoredIds = {
+        for (final workspace in selected)
+          for (final backupNote in workspace.notes) backupNote.id: _uuid.v4(),
+      };
+
       final defaultTarget = defaultWorkspace;
       for (final backupWorkspace in selected) {
         final String targetWorkspaceId;
@@ -859,7 +867,7 @@ class NotesStore extends ChangeNotifier {
         }
 
         for (final backupNote in backupWorkspace.notes) {
-          final noteId = _uuid.v4();
+          final noteId = restoredIds[backupNote.id]!;
           // An item with no id of its own gets a fresh one, so its reminder
           // has to follow it rather than the id it was archived under.
           final itemIdMap = <String, String>{};
@@ -879,7 +887,7 @@ class NotesStore extends ChangeNotifier {
                 collectionMap.values.first,
             kind: backupNote.kind,
             title: backupNote.title,
-            content: backupNote.content,
+            content: remapNoteLinks(backupNote.content, restoredIds),
             items: restoredItems,
             color: backupNote.color,
             pinned: backupNote.pinned,
@@ -964,6 +972,23 @@ class NotesStore extends ChangeNotifier {
     }
     return null;
   }
+
+  /// Current title of a linked note; null when it is not reachable here, so
+  /// the title stored in the link shows instead.
+  String? linkTitleFor(String id) {
+    final note = noteById(id);
+    if (note == null || note.trashed) {
+      return null;
+    }
+    return noteLinkTitle(note);
+  }
+
+  /// Notes linking to note [id].
+  List<Note> backlinks(String id) => backlinksTo(id, _notes);
+
+  /// Notes a link being typed as `[[query` could point at.
+  List<Note> linkTargets(String query, {String? excludeId}) =>
+      linkCandidates(_notes, query, excludeId: excludeId);
 
   Label? labelById(String id) {
     for (final l in _labels) {

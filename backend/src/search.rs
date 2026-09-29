@@ -467,7 +467,7 @@ impl SearchService {
 
     /// The searchable/embeddable plain text of a note: title, content, and
     /// checklist item texts. Also reused as the note text shown to the LLM
-    /// for auto-labeling and chat context.
+    /// for auto-labeling and chat context. Note links read as their titles.
     pub fn note_text(record: &NoteRecord) -> String {
         let items = record
             .items
@@ -475,7 +475,8 @@ impl SearchService {
             .map(|i| i.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        format!("{}\n{}\n{}", record.title, record.content, items)
+        let content = crate::note_links::plain_text(&record.content);
+        format!("{}\n{}\n{}", record.title, content, items)
             .trim()
             .to_string()
     }

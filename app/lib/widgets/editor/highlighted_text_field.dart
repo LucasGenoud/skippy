@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../state/note_links.dart';
 import '../../util/linkify.dart';
+import '../note_link_spans.dart';
 import '../paste_files.dart';
 
-/// The editor's body controller. On top of plain editing it does two things in
-/// [buildTextSpan]: styles URLs as blue underlined links and tints find-in-note
-/// matches when [query] is set. Folding both into the real editing controller
+/// The editor's body controller. On top of plain editing it does three things
+/// in [buildTextSpan]: styles URLs as blue underlined links, draws note links
+/// as their titles, and tints find-in-note matches when [query] is set. Folding both into the real editing controller
 /// keeps the field fully editable, including its default long-press behavior;
 /// a proxy read-only overlay isn't needed.
 class LinkifyingController extends TextEditingController {
@@ -17,6 +19,32 @@ class LinkifyingController extends TextEditingController {
   /// [buildTextSpan] re-runs with the new query. Notifying here instead would
   /// fire the editor's text listener mid-build (query is not a text change).
   String query = '';
+
+  /// A caret never rests inside a note link, so the link moves as one unit.
+  @override
+  set value(TextEditingValue newValue) {
+    final selection = newValue.selection;
+    if (!selection.isValid || !newValue.text.contains('[[')) {
+      super.value = newValue;
+      return;
+    }
+    final previous = value.selection;
+    final base = snapOutOfLinks(
+      newValue.text,
+      selection.baseOffset,
+      previous: previous.isValid ? previous.baseOffset : selection.baseOffset,
+    );
+    final extent = snapOutOfLinks(
+      newValue.text,
+      selection.extentOffset,
+      previous: previous.isValid
+          ? previous.extentOffset
+          : selection.extentOffset,
+    );
+    super.value = newValue.copyWith(
+      selection: selection.copyWith(baseOffset: base, extentOffset: extent),
+    );
+  }
 
   @override
   TextSpan buildTextSpan({
@@ -35,11 +63,13 @@ class LinkifyingController extends TextEditingController {
       color: scheme.onTertiaryContainer,
     );
 
-    final spans = buildLinkedSpans(
+    final spans = noteLinkedSpans(
       text: text,
       query: query,
       linkStyle: linkStyle,
+      noteStyle: noteLinkStyle(scheme, style),
       highlight: query.isEmpty ? null : highlight,
+      display: NoteLinkDisplay.source,
     );
     return TextSpan(style: style, children: spans);
   }
@@ -198,6 +228,23 @@ class MarkdownEditingController extends LinkifyingController {
       );
     }
 
+    // Last among the structural ranges, so a link's hidden parts stay hidden
+    // whatever markdown styling its title picked up.
+    for (final link in findNoteLinks(text)) {
+      ranges
+        ..add(
+          _MarkdownStyleRange(link.start, link.titleStart, kHiddenLinkStyle),
+        )
+        ..add(
+          _MarkdownStyleRange(
+            link.titleStart,
+            link.titleEnd,
+            noteLinkStyle(scheme, null),
+          ),
+        )
+        ..add(_MarkdownStyleRange(link.titleEnd, link.end, kHiddenLinkStyle));
+    }
+
     final query = this.query.trim();
     if (query.isNotEmpty) {
       final source = text.toLowerCase();
@@ -312,6 +359,7 @@ class HighlightedTextField extends StatelessWidget {
       // The body of a note is prose. Flutter's default (`none`) actively
       // turns the keyboard's own capitalization off.
       textCapitalization: TextCapitalization.sentences,
+      inputFormatters: const [NoteLinkFormatter()],
       // An image committed by the keyboard (Gboard's clipboard panel) attaches
       // to the note instead of being refused; null outside a PasteFileArea.
       contentInsertionConfiguration: PasteFileArea.insertionOf(context),

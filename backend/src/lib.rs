@@ -7,6 +7,7 @@ pub mod files;
 pub mod handlers;
 pub mod llm;
 pub mod models;
+pub mod note_links;
 pub mod notify;
 pub mod ocr;
 mod outbound;

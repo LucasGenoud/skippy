@@ -12,6 +12,8 @@ import 'package:skippy/util/backup.dart';
 
 import 'fake_api.dart';
 
+const homeNoteId = '44444444-4444-4444-8444-444444444444';
+
 void main() {
   final created = DateTime.utc(2020, 1, 2, 3, 4, 5);
   final updated = DateTime.utc(2021, 6, 7, 8, 9, 10);
@@ -289,7 +291,7 @@ void main() {
             ],
             notes: [
               BackupNote(
-                id: 'backup-home-note',
+                id: homeNoteId,
                 collectionId: 'reading',
                 kind: NoteKind.text,
                 title: 'Home',
@@ -321,7 +323,7 @@ void main() {
                 id: 'backup-project-note',
                 kind: NoteKind.markdown,
                 title: 'Imported',
-                content: '**kept**',
+                content: '**kept** [[$homeNoteId|Home]]',
                 items: const [],
                 color: 'green',
                 pinned: true,
@@ -412,6 +414,8 @@ void main() {
         (note) => note.title == 'Imported',
       );
       expect(restoredProject.trashed, isTrue);
+      // Restored notes get new ids, and links between them follow.
+      expect(restoredProject.content, '**kept** [[${restoredHome.id}|Home]]');
       expect(restoredProject.attachments.single.filename, 'doc.txt');
     },
   );

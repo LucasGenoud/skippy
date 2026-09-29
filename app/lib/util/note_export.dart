@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/note.dart';
+import '../state/note_links.dart';
 import '../models/workspace.dart';
 
 /// Serialization targets for a bulk note export.
@@ -131,8 +132,9 @@ String _toMarkdown(
       }
       buf.writeln();
     } else if (n.content.trim().isNotEmpty) {
-      // text and markdown notes both round-trip as their raw body.
-      buf.writeln('${n.content.trimRight()}\n');
+      // text and markdown notes both round-trip as their raw body, less the
+      // ids of their note links, which mean nothing outside Skippy.
+      buf.writeln('${plainNoteLinks(n.content).trimRight()}\n');
     }
     final labels = _labelNames(n, names);
     if (labels.isNotEmpty) {
@@ -157,7 +159,7 @@ String noteToPlainText(Note note, {List<String> labels = const []}) {
     }
     buf.writeln();
   } else if (note.content.trim().isNotEmpty) {
-    buf.writeln('${note.content.trimRight()}\n');
+    buf.writeln('${plainNoteLinks(note.content).trimRight()}\n');
   }
   if (labels.isNotEmpty) buf.writeln('Labels: ${labels.join(', ')}\n');
   return buf.toString();

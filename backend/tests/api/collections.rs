@@ -362,3 +362,45 @@ async fn collections_failed_copy_rolls_back_destination() {
     assert_eq!(notes.as_array().unwrap().len(), 1);
     assert_eq!(notes[0]["id"], note["id"]);
 }
+
+#[tokio::test]
+async fn collections_copy_points_links_at_the_copies() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let w = workspace(&app, &ada).await;
+    let wid = w["id"].as_str().unwrap();
+    let target = create_note(&app, &ada, json!({"title":"Groceries"})).await;
+    let target_id = target["id"].as_str().unwrap();
+    create_note(
+        &app,
+        &ada,
+        json!({"title":"Plan","content":format!("buy [[{target_id}|Groceries]]")}),
+    )
+    .await;
+
+    let (status, copy) = send(
+        &app,
+        "POST",
+        &format!("/api/workspaces/{wid}/duplicate"),
+        Some(&ada),
+        Some(json!({"name":"Copy","content":"notes"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{copy}");
+
+    let (_, notes) = send(&app, "GET", "/api/notes", Some(&ada), None).await;
+    let copied = |title: &str| {
+        notes
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["workspace_id"] == copy["id"] && n["title"] == title)
+            .unwrap()
+            .clone()
+    };
+    let copied_target = copied("Groceries")["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        copied("Plan")["content"],
+        format!("buy [[{copied_target}|Groceries]]")
+    );
+}

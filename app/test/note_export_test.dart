@@ -95,6 +95,22 @@ void main() {
     expect(txt, contains('—' * 40));
   });
 
+  test('readable exports show note links as their titles', () {
+    final linking = Note(
+      id: 'n3',
+      content: 'see [[11111111-1111-4111-8111-111111111111|Groceries]]',
+      createdAt: base,
+      updatedAt: base,
+    );
+
+    for (final format in [ExportFormat.markdown, ExportFormat.text]) {
+      final out = exportNotes([linking], format, now: now);
+      expect(out, contains('see Groceries'));
+      expect(out, isNot(contains('[[')));
+    }
+    expect(noteToPlainText(linking), contains('see Groceries'));
+  });
+
   test('empty note list still produces a valid document', () {
     final json = exportNotes([], ExportFormat.json, now: now);
     expect((jsonDecode(json) as Map)['notes'], isEmpty);
