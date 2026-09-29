@@ -32,6 +32,7 @@ import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
 import '../widgets/note_card.dart';
 import '../widgets/note_zoom.dart';
+import '../widgets/page_header.dart';
 import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/reminders/reminders_view.dart';
@@ -1304,10 +1305,7 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
         child: Text(
           text.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            letterSpacing: 1.2,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+          style: sectionLabelStyle(Theme.of(context)),
         ),
       ),
       pad,
@@ -1436,41 +1434,16 @@ class _ViewHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      // 8px inset aligns the title with the grid's cards (see _alignedToGrid).
-      padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              if (isTrash && hasTrashedNotes)
-                TextButton.icon(
-                  onPressed: onEmptyTrash,
-                  icon: const Icon(Icons.delete_forever_outlined, size: 20),
-                  label: const Text('Empty trash'),
-                ),
-            ],
-          ),
-          if (isTrash)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                'Notes in Trash are deleted after 7 days',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ),
-        ],
-      ),
+    return PageHeader(
+      title: title,
+      subtitle: isTrash ? 'Notes in Trash are deleted after 7 days' : null,
+      trailing: isTrash && hasTrashedNotes
+          ? TextButton.icon(
+              onPressed: onEmptyTrash,
+              icon: const Icon(Icons.delete_forever_outlined, size: 20),
+              label: const Text('Empty trash'),
+            )
+          : null,
     );
   }
 }

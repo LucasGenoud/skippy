@@ -92,10 +92,11 @@ class ReminderGroupHeader extends StatelessWidget {
       color: scheme.onSurfaceVariant,
     );
     return Padding(
+      // Inset like the grid's section labels.
       padding: const EdgeInsets.fromLTRB(
-        kSpaceXs,
+        kSpaceSm,
         kSpaceLg,
-        kSpaceXs,
+        kSpaceSm,
         kSpaceSm,
       ),
       child: Row(

@@ -309,10 +309,7 @@ class _SidebarSectionHeader extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 overflow: TextOverflow.clip,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  letterSpacing: 1.1,
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: sectionLabelStyle(Theme.of(context)),
               ),
             ],
           ),

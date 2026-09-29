@@ -16,6 +16,7 @@ import '../../util/snack.dart';
 import '../animated_presence.dart';
 import '../animated_reveal.dart';
 import '../empty_state.dart';
+import '../page_header.dart';
 import 'reminder_calendar.dart';
 import 'reminder_editing.dart';
 import 'reminder_tiles.dart';
@@ -418,56 +419,33 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final mode = this.mode;
+    // The grid opens a gap above its own header; match it.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(kSpaceXs, kSpaceLg, 0, kSpaceXs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Reminders', style: theme.textTheme.headlineSmall),
-                const SizedBox(height: 2),
-                AnimatedSwitcher(
-                  duration: Motion.fast,
-                  layoutBuilder: (current, previous) => Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: [...previous, ?current],
+      padding: const EdgeInsets.only(top: kSpaceLg),
+      child: PageHeader(
+        title: 'Reminders',
+        subtitle: summary,
+        trailing: mode == null
+            ? null
+            : SegmentedButton<_Mode>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: const [
+                  ButtonSegment(
+                    value: _Mode.agenda,
+                    icon: Icon(Icons.view_agenda_outlined),
+                    tooltip: 'Agenda',
                   ),
-                  child: Text(
-                    summary,
-                    key: ValueKey(summary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                  ButtonSegment(
+                    value: _Mode.calendar,
+                    icon: Icon(Icons.calendar_month_outlined),
+                    tooltip: 'Calendar',
                   ),
-                ),
-              ],
-            ),
-          ),
-          if (mode != null)
-            SegmentedButton<_Mode>(
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: const [
-                ButtonSegment(
-                  value: _Mode.agenda,
-                  icon: Icon(Icons.view_agenda_outlined),
-                  tooltip: 'Agenda',
-                ),
-                ButtonSegment(
-                  value: _Mode.calendar,
-                  icon: Icon(Icons.calendar_month_outlined),
-                  tooltip: 'Calendar',
-                ),
-              ],
-              selected: {mode!},
-              onSelectionChanged: (selected) => onMode?.call(selected.single),
-            ),
-        ],
+                ],
+                selected: {mode},
+                onSelectionChanged: (selected) => onMode?.call(selected.single),
+              ),
       ),
     );
   }

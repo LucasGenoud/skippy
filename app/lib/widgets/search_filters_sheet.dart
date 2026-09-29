@@ -233,13 +233,7 @@ class _Group extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title.toUpperCase(),
-            style: theme.textTheme.labelSmall?.copyWith(
-              letterSpacing: 1.1,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          Text(title.toUpperCase(), style: sectionLabelStyle(theme)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,

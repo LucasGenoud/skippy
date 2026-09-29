@@ -9,6 +9,7 @@ import '../models/workspace.dart';
 import '../state/notes_store.dart';
 import '../util/motion.dart';
 import '../util/label_style.dart';
+import '../theme.dart';
 import '../state/settings_store.dart' show PaletteEntry;
 import '../util/snack.dart';
 import '../util/workspace_stats.dart';
@@ -142,10 +143,7 @@ class SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          letterSpacing: 1.2,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+        style: sectionLabelStyle(Theme.of(context)),
       ),
     );
   }

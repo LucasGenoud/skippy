@@ -105,6 +105,13 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
 Color hairlineColor(ColorScheme scheme) =>
     scheme.outlineVariant.withValues(alpha: 0.8);
 
+/// The small caps over a group: "PINNED" above the grid, a sidebar section, a
+/// settings section, a filter sheet's group. Callers upper-case the text.
+/// Muted rather than accented: the accent marks what is selected, and a
+/// header in it competes with the selection below it.
+TextStyle? sectionLabelStyle(ThemeData theme) => theme.textTheme.labelSmall
+    ?.copyWith(letterSpacing: 1.2, color: theme.colorScheme.onSurfaceVariant);
+
 /// The wash behind a filter that excludes rather than matches: `hasnot:link`
 /// on a chip, and the same operator tinted inside the search box.
 ///

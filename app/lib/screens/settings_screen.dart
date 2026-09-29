@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../theme.dart';
 import '../state/settings_store.dart';
 import '../util/app_version.dart';
 import '../widgets/settings/account_section.dart';
@@ -287,10 +288,7 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          letterSpacing: 1.2,
-          color: Theme.of(context).colorScheme.primary,
-        ),
+        style: sectionLabelStyle(Theme.of(context)),
       ),
     );
   }
