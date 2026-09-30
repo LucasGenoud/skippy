@@ -1,11 +1,9 @@
 import '../widgets/collection_settings.dart';
 import '../widgets/form_dialog.dart';
-import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
-
 import 'package:animations/animations.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -120,8 +118,7 @@ class EditorScreen extends StatefulWidget {
 bool wantsModalEditor(BuildContext context) =>
     ScreenWidth.isAtLeast(context, 600);
 
-/// Width the wide-layout modal grows to. [_EditorMorph] needs it up front to
-/// know how far the opening surface has to scale.
+/// Width the wide-layout modal grows to.
 const double _modalMaxWidth = 600;
 
 /// Only a gesture that begins within this left-hand edge can dismiss the
@@ -181,42 +178,62 @@ Future<void> openNoteEditor(
     barrierLabel: 'Close note',
     barrierColor: Colors.black.withValues(alpha: 0.45),
     transitionDuration: Motion.slow,
+    // The morph wraps the dialog itself in the page, where its laid-out size
+    // is known, so the route adds no transition of its own for it.
     transitionBuilder: (context, animation, secondaryAnimation, child) =>
         sourceRect == null || Motion.reduced(context)
         ? FadeScaleTransition(animation: animation, child: child)
-        : _EditorMorph(animation: animation, source: sourceRect, child: child),
-    pageBuilder: (context, animation, secondaryAnimation) => Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: _modalMaxWidth,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        : child,
+    pageBuilder: (context, animation, secondaryAnimation) {
+      final Widget dialog = ClipRRect(
+        borderRadius: BorderRadius.circular(kRadius),
+        child: EditorScreen(
+          noteId: noteId,
+          kind: kind,
+          modal: true,
+          labelIds: labelIds,
+          stageId: stageId,
+          openedFromBoard: openedFromBoard,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(kRadius),
-          child: EditorScreen(
-            noteId: noteId,
-            kind: kind,
-            modal: true,
-            labelIds: labelIds,
-            stageId: stageId,
-            openedFromBoard: openedFromBoard,
+      );
+      return Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: _modalMaxWidth,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
           ),
+          child: sourceRect == null || Motion.reduced(context)
+              ? dialog
+              : _EditorMorph(
+                  animation: animation,
+                  source: sourceRect,
+                  child: dialog,
+                ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
 /// The desktop half of the card→editor container transform: the modal grows out
-/// of the card (or button) that opened it and shrinks back into it on close,
-/// mirroring the fullscreen [OpenContainer] morph phones get.
+/// of the card (or row) that opened it and shrinks back into it on close,
+/// mirroring the fullscreen [NoteZoomRoute] morph phones get.
 ///
-/// It scales and slides the finished dialog rather than tweening its box,
-/// because the modal hugs its content, its final height isn't known when the
-/// route starts, and re-laying the editor out on every frame of a 250ms
-/// transition is exactly the kind of work that makes a morph stutter. The
-/// surface reaches full opacity early on, so the growing note reads as one
-/// opaque object leaving the grid instead of a fade.
+/// The visible box runs from the source's bounds to the dialog's. The dialog
+/// is scaled to the box's width and cut off at its height:
+///
+/// ```text
+///   t = 0    +==== reminder row ====+    box = source
+///   t = 1       +---------------+        box = dialog
+///               |    editor     |        scale = box.width / dialog.width
+///               +---------------+        clip  = box.height / scale
+/// ```
+///
+/// Scaling the whole dialog by width alone would leave a wide, short source (a
+/// reminder row, a list-mode card) under a full-height dialog that slides to
+/// it instead of shrinking into it. The surface reaches full opacity early
+/// on, so the growing note reads as one opaque object leaving the grid
+/// instead of a fade.
 class _EditorMorph extends StatelessWidget {
   final Animation<double> animation;
 
@@ -233,34 +250,157 @@ class _EditorMorph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screen = MediaQuery.sizeOf(context);
-    // The dialog is centred in the route and as wide as its constraints allow,
-    // so both ends of the flight are known without measuring anything.
-    final center = screen.center(Offset.zero);
-    final width = math.min(_modalMaxWidth, screen.width);
-
     return AnimatedBuilder(
       animation: animation,
       child: child,
       builder: (context, child) {
-        // Emphasized on the way out of the card, calmer on the way back in.
+        // Emphasized on the way out of the card, calmer on the way back in,
+        // easing into the card rather than arriving at full speed.
         final curve = animation.status == AnimationStatus.reverse
-            ? Motion.standard
+            ? Motion.standard.flipped
             : Motion.emphasized;
         final t = curve.transform(animation.value.clamp(0.0, 1.0));
-        final scale = lerpDouble(source.width / width, 1.0, t)!;
-        final origin = Offset.lerp(source.center, center, t)!;
-        return Transform.translate(
-          offset: origin - center,
-          // Alignment.center is the child's centre, which is the dialog's
-          // centre too, so the surface swells around its own middle.
-          child: Transform.scale(
-            scale: scale,
-            child: Opacity(opacity: (t * 4).clamp(0.0, 1.0), child: child),
-          ),
+        return _MorphBox(
+          source: source,
+          progress: t,
+          child: Opacity(opacity: (t * 4).clamp(0.0, 1.0), child: child),
         );
       },
     );
+  }
+}
+
+/// Paints its child through [_EditorMorph]'s box. The dialog keeps its
+/// final layout throughout: it hugs its content, so its size is only known
+/// after layout, and laying the editor out again on every frame of a 250ms
+/// transition is exactly the kind of work that makes a morph stutter.
+class _MorphBox extends SingleChildRenderObjectWidget {
+  final Rect source;
+  final double progress;
+
+  const _MorphBox({
+    required this.source,
+    required this.progress,
+    required super.child,
+  });
+
+  @override
+  _RenderMorphBox createRenderObject(BuildContext context) =>
+      _RenderMorphBox(source: source, progress: progress);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMorphBox renderObject) {
+    renderObject
+      ..source = source
+      ..progress = progress;
+  }
+}
+
+class _RenderMorphBox extends RenderProxyBox {
+  _RenderMorphBox({required this._source, required this._progress});
+
+  /// In global coordinates, like [morphSourceRect] measures it.
+  Rect _source;
+  set source(Rect value) {
+    if (value == _source) {
+      return;
+    }
+    _source = value;
+    markNeedsPaint();
+  }
+
+  double _progress;
+  set progress(double value) {
+    if (value == _progress) {
+      return;
+    }
+    _progress = value;
+    markNeedsPaint();
+  }
+
+  final LayerHandle<ClipRRectLayer> _clip = LayerHandle();
+
+  bool get _resting => _progress >= 1 || size.isEmpty;
+
+  /// Where the box is now, in this dialog's coordinates.
+  Rect get _box {
+    final toLocal = Matrix4.tryInvert(getTransformTo(null));
+    if (toLocal == null) {
+      return Offset.zero & size;
+    }
+    final source = MatrixUtils.transformRect(toLocal, _source);
+    return Rect.lerp(source, Offset.zero & size, _progress)!;
+  }
+
+  /// Maps the dialog onto [box], scaled to its width.
+  Matrix4 _transformFor(Rect box) {
+    final scale = box.width / size.width;
+    return Matrix4.translationValues(box.left, box.top, 0)
+      ..scaleByDouble(scale, scale, 1, 1);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (_resting) {
+      _clip.layer = null;
+      super.paint(context, offset);
+      return;
+    }
+
+    final box = _box;
+    final scale = box.width / size.width;
+    // Radius and height are in the dialog's own, unscaled coordinates.
+    final clip = RRect.fromLTRBR(
+      0,
+      0,
+      size.width,
+      box.height / scale,
+      Radius.circular(kRadius / scale),
+    );
+    context.pushTransform(
+      needsCompositing,
+      offset,
+      _transformFor(box),
+      (context, offset) => _clip.layer = context.pushClipRRect(
+        needsCompositing,
+        offset,
+        clip.outerRect,
+        clip,
+        super.paint,
+        oldLayer: _clip.layer,
+      ),
+    );
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (_resting) {
+      return super.hitTest(result, position: position);
+    }
+
+    final box = _box;
+    if (!box.contains(position)) {
+      return false;
+    }
+    return result.addWithPaintTransform(
+      transform: _transformFor(box),
+      position: position,
+      hitTest: (result, position) => super.hitTest(result, position: position),
+    );
+  }
+
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    if (!_resting) {
+      transform.multiply(_transformFor(_box));
+    }
+    super.applyPaintTransform(child, transform);
+  }
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    super.dispose();
   }
 }
 

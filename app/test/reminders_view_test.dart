@@ -5,8 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/models/saved_location.dart';
+import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/reminders/reminder_tiles.dart';
 import 'package:skippy/widgets/reminders/reminders_view.dart';
@@ -169,6 +171,39 @@ void main() {
     // Carrying a row onto the calendar is a pointer affordance.
     variant: TargetPlatformVariant.only(TargetPlatform.macOS),
   );
+
+  testWidgets('a wide row grows into the editor and shrinks back into it', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1024, 768));
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final row = tester.getRect(
+      find.ancestor(
+        of: find.text('Pay rent'),
+        matching: find.byType(ReminderTile),
+      ),
+    );
+
+    // A row is wider than the dialog and far shorter, so the dialog has to
+    // start as the row itself rather than a full-height copy centred on it.
+    await tester.tap(find.text('Pay rent'));
+    await tester.pump();
+    final opening = tester.getRect(find.byType(EditorScreen));
+    expect(opening.topLeft, offsetMoreOrLessEquals(row.topLeft, epsilon: 1));
+    expect(opening.width, moreOrLessEquals(row.width, epsilon: 1));
+
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.byType(EditorScreen))).pop();
+    await tester.pump();
+    await tester.pump(Motion.slow - const Duration(milliseconds: 10));
+    final closing = tester.getRect(find.byType(EditorScreen));
+    expect(closing.topLeft, offsetMoreOrLessEquals(row.topLeft, epsilon: 1));
+    expect(closing.width, moreOrLessEquals(row.width, epsilon: 1));
+
+    await tester.pumpAndSettle();
+    await flushTimers(tester);
+  });
 
   testWidgets('the search box narrows reminders like it does the grid', (
     tester,
