@@ -7,6 +7,7 @@ import 'app_logo.dart';
 import 'pin_icon.dart';
 import 'package:provider/provider.dart';
 
+import '../models/workspace.dart' show AiFeature;
 import '../screens/chat_screen.dart';
 import '../screens/settings_screen.dart';
 import '../state/auth_store.dart';
@@ -107,6 +108,14 @@ class HomeTopBar extends StatelessWidget {
   static const double barHeight = 60;
   static const double _pillHeight = 40;
 
+  /// Notes chat needs the server's retrieval, and the open workspace to allow
+  /// chat with a provider from its owner.
+  static bool _chatAvailable(BuildContext context) =>
+      context.select<SettingsStore, bool>((s) => s.semanticSearchCapable) &&
+      context.select<NotesStore, bool>(
+        (s) => s.aiIn(s.activeWorkspaceId).allows(AiFeature.chat),
+      );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -202,9 +211,7 @@ class HomeTopBar extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Notes chat: only when the user configured an LLM (and the
-                // server can do the retrieval side).
-                if (settings.notesChatAvailable)
+                if (_chatAvailable(context))
                   IconButton(
                     icon: const Icon(Icons.forum_outlined),
                     tooltip: 'Chat with your notes',
@@ -297,7 +304,7 @@ class HomeTopBar extends StatelessWidget {
   /// clear + semantic-search. Sort/theme/settings tuck into the avatar menu,
   /// and branding lives in the drawer.
   Widget _narrowBar(BuildContext context, ColorScheme scheme) {
-    final chatAvailable = context.watch<SettingsStore>().notesChatAvailable;
+    final chatAvailable = _chatAvailable(context);
 
     return Container(
       height: barHeight,

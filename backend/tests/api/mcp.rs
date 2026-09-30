@@ -331,3 +331,73 @@ async fn semantic_search_ranks_by_meaning_within_what_the_account_sees() {
     assert_eq!(hits[0]["id"], groceries["id"]);
     assert!(hits.iter().all(|h| h["title"] != "Bob"));
 }
+
+#[tokio::test]
+async fn assistants_cannot_reach_a_workspace_closed_to_them() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let secret = api_token(&app, &ada, "write").await;
+    let (_, private) = send(
+        &app,
+        "POST",
+        "/api/workspaces",
+        Some(&ada),
+        Some(json!({"name":"Private"})),
+    )
+    .await;
+    let private_id = private["id"].as_str().unwrap();
+    let hidden = create_note(
+        &app,
+        &ada,
+        json!({"title":"Secret plan","workspace_id":private_id}),
+    )
+    .await;
+    let open = create_note(&app, &ada, json!({"title":"Open plan"})).await;
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/workspaces/{private_id}"),
+        Some(&ada),
+        Some(json!({"ai":{"assistant_access":false}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let found = call(&app, &secret, "search_notes", json!({"query":"plan"})).await;
+    let hits = found["structuredContent"]["notes"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "{found}");
+    assert_eq!(hits[0]["id"], open["id"]);
+
+    let listed = call(&app, &secret, "list_notes", json!({})).await;
+    let listed = listed["structuredContent"]["notes"].as_array().unwrap();
+    assert!(listed.iter().all(|n| n["id"] != hidden["id"]));
+
+    let got = call(&app, &secret, "get_note", json!({"id":hidden["id"]})).await;
+    assert_eq!(got["isError"], true);
+    let appended = call(
+        &app,
+        &secret,
+        "append_to_note",
+        json!({"id":hidden["id"],"text":"leak"}),
+    )
+    .await;
+    assert_eq!(appended["isError"], true);
+    let created = call(
+        &app,
+        &secret,
+        "create_note",
+        json!({"title":"Sneak","workspace_id":private_id}),
+    )
+    .await;
+    assert_eq!(created["isError"], true);
+
+    let workspaces = call(&app, &secret, "list_workspaces", json!({})).await;
+    let workspaces = workspaces["structuredContent"]["workspaces"]
+        .as_array()
+        .unwrap();
+    assert!(workspaces.iter().all(|w| w["id"] != private_id));
+
+    let hidden_path = format!("/api/notes/{}", hidden["id"].as_str().unwrap());
+    let (_, note) = send(&app, "GET", &hidden_path, Some(&ada), None).await;
+    assert_eq!(note["content"], "", "the refused append wrote nothing");
+}

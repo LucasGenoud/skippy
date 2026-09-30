@@ -8,13 +8,13 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::{KIND_AUDIO, KIND_CHECKLIST, KIND_MARKDOWN, NoteRecord, NoteView, UpdateNote};
 
+use super::workspace_ai::{AiFeature, workspace_ai};
 use super::{apply_note_update, require_participant};
 
 const MAX_REWRITE_CHARS: usize = 20_000;
@@ -26,12 +26,6 @@ pub struct RewriteRequest {
 }
 
 #[derive(Deserialize)]
-struct RewriteTask {
-    id: String,
-    prompt: String,
-}
-
-#[derive(Deserialize)]
 struct RewriteReply {
     title: String,
     #[serde(default)]
@@ -40,8 +34,8 @@ struct RewriteReply {
     items: Vec<String>,
 }
 
-/// Clean up a note or correct its grammar with the requesting user's enabled
-/// LLM. The model's response is deliberately constrained to the editable text
+/// Clean up a note or correct its grammar with the provider of the workspace
+/// holding it. The model's response is deliberately constrained to the editable text
 /// fields; note kind, checklist completion state, labels, and attachments are
 /// never model-controlled.
 pub async fn rewrite_note(
@@ -62,19 +56,21 @@ pub async fn rewrite_note(
         ));
     }
 
-    let settings = state.repo.settings_for_user(&user_id).await?;
-    let effective = state.managed.overlay(settings.as_deref());
-    let llm_settings = crate::assist::parse_llm_settings_value(&effective);
-    let Some(cfg) = llm_settings.config.filter(|_| llm_settings.writing) else {
+    let ai = workspace_ai(&state, &record.workspace_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let Some(cfg) = ai.config(AiFeature::Writing) else {
         return Err(ApiError::Unavailable("AI note editing is not enabled"));
     };
-    let instruction = rewrite_instruction(&effective, &request.task_id)?;
+    let instruction = ai
+        .task_prompt(&request.task_id)
+        .ok_or_else(|| ApiError::BadRequest("unknown AI rewrite task".to_string()))?;
 
     let reply = state
         .llm
         .complete(
-            &cfg,
-            rewrite_messages(&record, &instruction, &llm_settings.prompt),
+            cfg,
+            rewrite_messages(&record, instruction, &ai.settings().prompt),
         )
         .await
         .map_err(ApiError::Internal)?;
@@ -167,33 +163,6 @@ fn rewrite_messages(
         )),
         crate::llm::ChatMessage::user(note),
     ]
-}
-
-fn rewrite_instruction(settings: &Value, task_id: &str) -> ApiResult<String> {
-    const DEFAULTS: [(&str, &str); 2] = [
-        (
-            "concise",
-            "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information.",
-        ),
-        (
-            "grammar",
-            "Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, or change tone.",
-        ),
-    ];
-    if let Some(tasks) = settings["llm_rewrite_tasks"].as_array() {
-        for value in tasks {
-            let Ok(task) = serde_json::from_value::<RewriteTask>(value.clone()) else {
-                continue;
-            };
-            let prompt = task.prompt.trim();
-            if task.id == task_id && !prompt.is_empty() && prompt.chars().count() <= 4_000 {
-                return Ok(prompt.to_string());
-            }
-        }
-    } else if let Some((_, prompt)) = DEFAULTS.iter().find(|(id, _)| *id == task_id) {
-        return Ok((*prompt).to_string());
-    }
-    Err(ApiError::BadRequest("unknown AI rewrite task".to_string()))
 }
 
 fn parse_reply(reply: &str, record: &NoteRecord) -> ApiResult<RewriteReply> {

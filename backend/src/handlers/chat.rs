@@ -13,7 +13,9 @@ use tokio::sync::OwnedSemaphorePermit;
 use crate::AppState;
 use crate::models::*;
 
+use super::workspace_ai::{AiFeature, WorkspaceAi, workspace_ai};
 use super::{apply_note_update, create_note_for_user, new_id};
+use crate::error::ApiResult;
 
 /// One chat turn from the client.
 #[derive(Deserialize)]
@@ -138,23 +140,11 @@ async fn chat_loop(
         return;
     }
 
-    // Preconditions: retrieval needs the server-side embedder, generation
-    // needs the user's own LLM config with chat enabled.
+    // Preconditions: retrieval needs the server-side embedder.
     let Some(search) = state.search.clone() else {
         send_error(
             &mut sink,
             "chat needs semantic search enabled on this server",
-        )
-        .await;
-        return;
-    };
-    let settings = state.repo.settings_for_user(&user_id).await.ok().flatten();
-    let effective = state.managed.overlay(settings.as_deref());
-    let llm_settings = crate::assist::parse_llm_settings_value(&effective);
-    let Some(cfg) = llm_settings.config.filter(|_| llm_settings.chat) else {
-        send_error(
-            &mut sink,
-            "configure an AI provider in Settings to use chat",
         )
         .await;
         return;
@@ -167,14 +157,31 @@ async fn chat_loop(
         .collect();
 
     // Scope the turn to the open workspace and therefore its vector
-    // collection. An unscoped turn searches each workspace represented in the
-    // caller's visible notes.
+    // collection, and answer it with that workspace's AI. An unscoped turn
+    // runs on the caller's default workspace and searches each workspace
+    // represented in their visible notes that has chat on.
     let workspace_id = request
         .workspace_id
         .as_deref()
         .map(str::trim)
         .filter(|w| !w.is_empty())
         .map(str::to_owned);
+    let ai = match chat_ai(&state, &user_id, workspace_id.as_deref()).await {
+        Ok(ai) => ai,
+        Err(message) => {
+            send_error(&mut sink, message).await;
+            return;
+        }
+    };
+    let Some(cfg) = ai.config(AiFeature::Chat) else {
+        send_error(
+            &mut sink,
+            "chat is off in this workspace, or its owner has no AI provider",
+        )
+        .await;
+        return;
+    };
+    let llm_settings = ai.settings();
     let allowed_notes = match &workspace_id {
         Some(id) => match super::workspace_note_ids(&state, &user_id, id).await {
             Ok(ids) => Some(ids),
@@ -187,13 +194,8 @@ async fn chat_loop(
     };
     let search_workspaces: Vec<String> = match &workspace_id {
         Some(id) => vec![id.clone()],
-        None => match state.repo.notes_for_user(&user_id).await {
-            Ok(notes) => notes
-                .into_iter()
-                .map(|view| view.note.workspace_id)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect(),
+        None => match chat_workspaces(&state, &user_id).await {
+            Ok(ids) => ids,
             Err(_) => {
                 send_error(&mut sink, "could not load workspaces").await;
                 return;
@@ -210,7 +212,7 @@ async fn chat_loop(
     let decision = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
         state.llm.complete(
-            &cfg,
+            cfg,
             crate::assist::route_messages(&history, message, &llm_settings.prompt),
         ),
     )
@@ -293,7 +295,7 @@ async fn chat_loop(
             &state,
             &TurnContext {
                 user_id: &user_id,
-                cfg: &cfg,
+                cfg,
                 workspace_id: workspace_id.as_deref(),
                 prompt: &llm_settings.prompt,
                 permissions: crate::assist::WritePermissions {
@@ -335,7 +337,7 @@ async fn chat_loop(
         }
     };
 
-    let mut tokens = match state.llm.stream(&cfg, messages).await {
+    let mut tokens = match state.llm.stream(cfg, messages).await {
         Ok(tokens) => tokens,
         Err(e) => {
             send_error(&mut sink, &format!("{e:#}")).await;
@@ -377,6 +379,57 @@ async fn chat_loop(
             }
         }
     }
+}
+
+/// The AI a turn runs on: the open workspace's, which the caller must belong
+/// to, or their default workspace's.
+async fn chat_ai(
+    state: &AppState,
+    user_id: &str,
+    workspace_id: Option<&str>,
+) -> Result<WorkspaceAi, &'static str> {
+    const UNAVAILABLE: &str = "that workspace is not available";
+    let id = match workspace_id {
+        Some(id) => {
+            if !state
+                .repo
+                .is_workspace_member(id, user_id)
+                .await
+                .unwrap_or(false)
+            {
+                return Err(UNAVAILABLE);
+            }
+            id.to_string()
+        }
+        None => super::resolve_workspace(state, user_id, None)
+            .await
+            .map_err(|_| UNAVAILABLE)?,
+    };
+    match workspace_ai(state, &id).await {
+        Ok(Some(ai)) => Ok(ai),
+        _ => Err(UNAVAILABLE),
+    }
+}
+
+/// Every workspace an unscoped turn may read: those holding a note the caller
+/// can see, less the ones whose owner turned chat off.
+async fn chat_workspaces(state: &AppState, user_id: &str) -> ApiResult<Vec<String>> {
+    let ids: HashSet<String> = state
+        .repo
+        .notes_for_user(user_id)
+        .await?
+        .into_iter()
+        .map(|view| view.note.workspace_id)
+        .collect();
+    let mut open = Vec::new();
+    for id in ids {
+        if let Some(ai) = workspace_ai(state, &id).await?
+            && ai.allows(AiFeature::Chat)
+        {
+            open.push(id);
+        }
+    }
+    Ok(open)
 }
 
 /// The chat write path: ask the model to turn the user's create/append request

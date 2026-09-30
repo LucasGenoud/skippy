@@ -67,6 +67,7 @@ async fn copy_workspace(
         board_enabled: true,
         is_default: false,
         created_at: super::now(),
+        ai: AiSwitches::default(),
     };
     state.repo.insert_workspace_copy(&target).await?;
     let result = copy_contents(&state, &user_id, &source, &target, &body).await;
@@ -79,13 +80,7 @@ async fn copy_workspace(
     }
     state.repo.finish_workspace_copy(&target.id).await?;
     state.notify_user(&user_id);
-    let view = state
-        .repo
-        .workspaces_for_user(&user_id)
-        .await?
-        .into_iter()
-        .find(|w| w.id == target.id)
-        .ok_or(ApiError::NotFound)?;
+    let view = super::workspaces::view_of(&state, &target.id, &user_id).await?;
     Ok((StatusCode::CREATED, Json(view)))
 }
 

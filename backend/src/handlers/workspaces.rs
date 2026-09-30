@@ -14,7 +14,7 @@ use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
-use super::{CHANGED_MSG, new_id, now};
+use super::{CHANGED_MSG, new_id, now, workspace_ai};
 
 fn validate_name(name: &str) -> ApiResult<String> {
     let name = name.trim();
@@ -63,18 +63,24 @@ async fn require_owner(
 }
 
 /// Serve one workspace as the caller sees it, straight after a change.
-async fn view_of(state: &AppState, workspace_id: &str, user_id: &str) -> ApiResult<WorkspaceView> {
-    state
+pub(super) async fn view_of(
+    state: &AppState,
+    workspace_id: &str,
+    user_id: &str,
+) -> ApiResult<WorkspaceView> {
+    let view = state
         .repo
         .workspaces_for_user(user_id)
         .await?
         .into_iter()
         .find(|w| w.id == workspace_id)
-        .ok_or(ApiError::NotFound)
+        .ok_or(ApiError::NotFound)?;
+    let mut views = workspace_ai::resolve_views(state, vec![view]).await?;
+    Ok(views.remove(0))
 }
 
 /// Push a change event to everyone in the workspace.
-async fn notify_workspace(state: &AppState, workspace_id: &str) {
+pub(super) async fn notify_workspace(state: &AppState, workspace_id: &str) {
     if let Ok(ids) = state.repo.workspace_member_ids(workspace_id).await {
         state.hub.notify(&ids, CHANGED_MSG);
     }
@@ -92,12 +98,12 @@ pub async fn list_workspaces(
 /// workspace. A user without a workspace has nowhere to put notes, and
 /// [`super::resolve_workspace`] depends on there always being one.
 pub async fn ensure_workspaces(state: &AppState, user_id: &str) -> ApiResult<Vec<WorkspaceView>> {
-    let workspaces = state.repo.workspaces_for_user(user_id).await?;
-    if !workspaces.is_empty() {
-        return Ok(workspaces);
+    let mut workspaces = state.repo.workspaces_for_user(user_id).await?;
+    if workspaces.is_empty() {
+        create_default_workspace(state, user_id).await?;
+        workspaces = state.repo.workspaces_for_user(user_id).await?;
     }
-    create_default_workspace(state, user_id).await?;
-    Ok(state.repo.workspaces_for_user(user_id).await?)
+    workspace_ai::resolve_views(state, workspaces).await
 }
 
 /// The workspace an account starts with. Created during registration, and
@@ -111,6 +117,7 @@ pub async fn create_default_workspace(state: &AppState, user_id: &str) -> ApiRes
         board_enabled: true,
         is_default: true,
         created_at: now(),
+        ai: AiSwitches::default(),
     };
     state.repo.insert_workspace(&workspace).await?;
     Ok(workspace)
@@ -134,6 +141,7 @@ pub async fn create_workspace(
         // Only the workspace created with the account is the default one.
         is_default: false,
         created_at: now(),
+        ai: AiSwitches::default(),
     };
     state.repo.insert_workspace(&workspace).await?;
     state.notify_user(&user_id);
@@ -162,6 +170,14 @@ pub async fn update_workspace(
     }
     if let Some(board_enabled) = body.board_enabled {
         workspace.board_enabled = board_enabled;
+    }
+    if let Some(ai) = body.ai {
+        let switches = &mut workspace.ai;
+        switches.enabled = ai.enabled.unwrap_or(switches.enabled);
+        switches.labeling = ai.labeling.unwrap_or(switches.labeling);
+        switches.chat = ai.chat.unwrap_or(switches.chat);
+        switches.writing = ai.writing.unwrap_or(switches.writing);
+        switches.assistant_access = ai.assistant_access.unwrap_or(switches.assistant_access);
     }
     if !workspace.notes_enabled && !workspace.board_enabled {
         return Err(ApiError::BadRequest(

@@ -26,4 +26,5 @@ mod sharing;
 mod stages;
 mod unfurl;
 mod versions;
+mod workspace_ai;
 mod workspaces;

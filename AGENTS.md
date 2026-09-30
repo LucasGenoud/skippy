@@ -125,6 +125,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/tokens.rs`: personal access tokens (list, create, revoke), managed only from a session.
 - `backend/src/handlers/mcp.rs`: the stateless Streamable HTTP MCP endpoint (JSON-RPC framing, version negotiation); `mcp_tools.rs` holds its tools.
 - `backend/src/handlers/background.rs`: shared post-write jobs for versions, search, auto-labeling, and notifications.
+- `backend/src/handlers/workspace_ai.rs`: the AI a workspace runs on, its owner's provider behind its own switches. Every AI read site resolves through it.
 - `backend/src/store/mod.rs`: shared SQLite result and cleanup types.
 - `backend/src/store/sqlite.rs`: SQLite account, workspace, note, and taxonomy implementation plus shared helpers.
 - `backend/src/store/sqlite_attachments.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`, `sqlite_tokens.rs`: focused SQLite repository implementations.
@@ -149,6 +150,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/tests/api/*.rs`: behavior grouped by API feature.
 - `backend/tests/api/stages.rs`: board columns, including the rules that keep them independent of labels.
 - `backend/tests/api/mcp.rs`: token lifecycle, the MCP handshake, scope enforcement, and that tools see only what the account sees.
+- `backend/tests/api/workspace_ai.rs`: owner-provider AI for members, per-workspace switches, and what members learn about the owner's setup.
 - `backend/tests/s3.rs`: S3 file-store behavior against a local fake server.
 
 ### Flutter client
@@ -175,7 +177,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/screens/home_screen.dart`: main coordinator for views, selection, search, reorder, navigation, keyboard shortcuts, and share intake.
 - `app/lib/screens/editor_screen.dart`: note-kind editing, drafts, attachments, recording, find-in-note, and save lifecycle.
 - `app/lib/screens/history_screen.dart`: version display and restore.
-- `app/lib/screens/settings_screen.dart`: settings composition and optional-service probes.
+- `app/lib/screens/settings_screen.dart`: the account settings index. A phone opens one page at a time; a wide window keeps the index beside the open page.
+- `app/lib/widgets/settings/settings_pages.dart`: the `SettingsPage` groups (account, appearance, reminders, AI & search, sharing & access, backup & import, about) and each page's rows.
 - `app/lib/screens/chat_screen.dart`: streamed notes chat, citations, and write confirmation/result UI.
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
@@ -190,6 +193,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/editor/`: extracted editor attachment, text-field, and bottom-bar pieces.
 - `app/lib/widgets/settings/`: extracted settings sections and shared managed/probe UI.
 - `app/lib/widgets/workspace_menu.dart`: workspace switcher, create/rename, roster management, and the move-a-note picker.
+- `app/lib/widgets/workspace_ai_section.dart`: a workspace's AI switches, editable by its owner and read-only for members.
 - `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations.
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
@@ -290,7 +294,13 @@ A note links to another by writing `[[id|Title]]` into its text or markdown body
 
 ### MCP and personal access tokens
 
-`/api/mcp` accepts only personal access tokens, and every other route accepts only sessions; `TokenUser` and `AuthUser` are the two extractors that keep it that way. A token is `read` or `write`: write adds `create_note` and `append_to_note`, which go through `create_note_for_user` and `apply_note_update` so they get the same versioning, indexing, labeling, and notification as any other edit. Reads go through participant-scoped repository queries, and the vector index only nominates candidates. Tokens are stored as SHA-256 digests like sessions, shown once, and revoked by a password reset. Add a tool by extending `mcp_tools::definitions` and `mcp_tools::call` and covering it in `tests/api/mcp.rs`; keep destructive operations out.
+`/api/mcp` accepts only personal access tokens, and every other route accepts only sessions; `TokenUser` and `AuthUser` are the two extractors that keep it that way. A token is `read` or `write`: write adds `create_note` and `append_to_note`, which go through `create_note_for_user` and `apply_note_update` so they get the same versioning, indexing, labeling, and notification as any other edit. Reads go through participant-scoped repository queries, and the vector index only nominates candidates. A token belongs to a person, but a workspace's owner decides whether any token reaches its notes: `assistant_access` off hides the workspace from every tool, reads and writes alike. Tokens are stored as SHA-256 digests like sessions, shown once, and revoked by a password reset. Add a tool by extending `mcp_tools::definitions` and `mcp_tools::call` and covering it in `tests/api/mcp.rs`; keep destructive operations out.
+
+### Workspace AI
+
+Every AI feature acting on a workspace's notes (labeling, link summaries, rewrites, chat) runs on the workspace owner's provider, whoever triggered it, and only while the workspace's switches allow it. `handlers::workspace_ai` is the single place that resolves this; a new AI feature goes through it rather than reading the acting user's settings. The provider, key, custom instructions, behavior choices and rewrite task prompts stay in the owner's settings document. Members' clients see only `WorkspaceView.ai`: the switches in effect, `provider_ready`, and rewrite task ids and names. Saving settings that change either nudges the members of the owner's workspaces.
+
+The switches (`ai_enabled`, `ai_labeling`, `ai_chat`, `ai_writing`, `assistant_access` on `workspaces`) default on, only the owner changes them, and `enabled` gates the three features without overwriting them. A server-pinned `LLM_LABELING`/`LLM_CHAT`/`LLM_WRITING` overrides the matching switch in every workspace. The one-time upgrade seeded each existing workspace from its owner's old personal `llm_*` toggles: a feature the owner had turned off stays off. On the client, `NotesStore.aiIn(workspaceId)` answers for a note or the open workspace; a note reached through a direct share, from a workspace the user is not in, gets no AI. Backups carry the switches.
 
 ### Settings
 
@@ -348,7 +358,7 @@ The workspace-owned schema includes a transactional, one-time collections migrat
 
 ### Add a setting or optional capability
 
-For an ordinary setting, update all `SettingsStore` default/load/save paths and the relevant UI. For a managed setting, also update backend config parsing, descriptors, secret redaction, and effective-value helpers. For an optional service, keep startup wiring, `AppState`, `/api/capabilities`, settings visibility, disabled endpoint behavior, and test fakes aligned.
+For an ordinary setting, update all `SettingsStore` default/load/save paths and the relevant UI, on the `SettingsPage` someone would look under. A setting every member of a workspace should share belongs on the workspace (see Workspace AI), not in the settings document. For a managed setting, also update backend config parsing, descriptors, secret redaction, and effective-value helpers. For an optional service, keep startup wiring, `AppState`, `/api/capabilities`, settings visibility, disabled endpoint behavior, and test fakes aligned.
 
 ### Add a platform-specific feature
 

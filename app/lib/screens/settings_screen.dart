@@ -1,332 +1,203 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../state/auth_store.dart';
 import '../theme.dart';
-import '../state/settings_store.dart';
-import '../util/app_version.dart';
-import '../widgets/settings/account_section.dart';
-import '../widgets/settings/accent_color.dart';
-import '../widgets/settings/device_notifications_tile.dart';
-import '../widgets/settings/embedding_section.dart';
-import '../widgets/settings/export_section.dart';
-import '../widgets/settings/grid_layout_section.dart';
-import '../widgets/settings/llm_section.dart';
-import '../widgets/settings/managed_note.dart';
-import '../widgets/settings/notify_section.dart';
-import '../widgets/settings/palette_section.dart';
-import '../widgets/settings/ai_access_section.dart';
-import '../widgets/settings/public_links_section.dart';
-import '../widgets/settings/saved_locations_section.dart';
-import '../widgets/shortcut_help.dart';
+import '../util/motion.dart';
+import '../widgets/screen_width.dart';
+import '../widgets/settings/settings_pages.dart';
+import '../widgets/state_cross_fade.dart';
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+export '../widgets/settings/settings_pages.dart' show SettingsPage;
 
-  static Route<void> route() =>
-      MaterialPageRoute(builder: (_) => const SettingsScreen());
+/// The account's settings, as an index of [SettingsPage]s. A phone opens each
+/// page on its own; a wide window keeps the index beside the open page.
+///
+/// ```text
+///   narrow                  wide
+///   ┌─────────────┐         ┌────────────┬──────────────────┐
+///   │ (Me)      › │         │ Account    │ Appearance       │
+///   │ Appearance› │   ──►   │▐Appearance │  THEME           │
+///   │ Reminders › │         │ Reminders  │  Theme  [Auto]   │
+///   └─────────────┘         └────────────┴──────────────────┘
+/// ```
+class SettingsScreen extends StatefulWidget {
+  /// The page to open on. Null shows the index on a phone, and Account beside
+  /// it on a wide window.
+  final SettingsPage? page;
+
+  const SettingsScreen({super.key, this.page});
+
+  static Route<void> route({SettingsPage? page}) =>
+      MaterialPageRoute(builder: (_) => SettingsScreen(page: page));
+
+  /// Wide enough for the index and a page side by side.
+  static const double splitBreakpoint = 840;
+  static const double _indexWidth = 300;
+  static const double _pageMaxWidth = 640;
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late SettingsPage _selected = widget.page ?? SettingsPage.account;
 
   @override
   Widget build(BuildContext context) {
-    final settings = context.watch<SettingsStore>();
-    final scheme = Theme.of(context).colorScheme;
-    final now = DateTime.now();
+    // Settings is a sheet of rows, not cards on a canvas, so the whole page is
+    // the surface those rows are printed on.
+    final background = Theme.of(context).colorScheme.surface;
+    if (ScreenWidth.isAtLeast(context, SettingsScreen.splitBreakpoint)) {
+      return Scaffold(
+        backgroundColor: background,
+        appBar: AppBar(title: const Text('Settings')),
+        body: _split(),
+      );
+    }
 
+    final page = widget.page;
     return Scaffold(
-      // Settings is a single sheet of rows, not cards on a canvas, so the
-      // whole page is the surface those rows are printed on. Leaving it on the
-      // canvas made it the one screen in the app where nothing sat on paper.
-      backgroundColor: scheme.surface,
-      appBar: AppBar(title: const Text('Settings')),
+      backgroundColor: background,
+      appBar: AppBar(title: Text(page?.title ?? 'Settings')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            children: [
-              const _SectionHeader('Account'),
-              const AccountSection(),
-              const Divider(height: 32),
-              const _SectionHeader('Appearance'),
-              ListTile(
-                leading: const Icon(Icons.brightness_6_outlined),
-                title: const Text('Theme'),
-                trailing: SegmentedButton<ThemeMode>(
-                  segments: const [
-                    ButtonSegment(value: ThemeMode.system, label: Text('Auto')),
-                    ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                    ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
-                  ],
-                  selected: {settings.themeMode},
-                  onSelectionChanged: (s) => settings.setThemeMode(s.first),
-                  showSelectedIcon: false,
-                ),
-              ),
-              const AccentColorTile(),
-              const GridLayoutSection(),
-              const Divider(height: 32),
-              const _SectionHeader('Features'),
-              _FeatureToggle(
-                icon: Icons.auto_awesome,
-                title: 'Semantic search',
-                available: 'Search your notes by meaning, not just keywords',
-                capable: settings.semanticSearchCapable,
-                value: settings.semanticSearchEnabled,
-                onChanged: settings.setSemanticSearchEnabled,
-              ),
-              if (settings.semanticSearchCapable) const EmbeddingStatsTile(),
-              ListTile(
-                leading: const Icon(Icons.mic_none),
-                title: const Text('Audio notes'),
-                subtitle: Text(
-                  settings.audioTranscriptionCapable
-                      ? 'Record and play voice notes; local Whisper transcribes them'
-                      : 'Record and play voice notes; transcription needs local Whisper',
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.image_search_outlined),
-                title: const Text('Text in images'),
-                subtitle: Text(
-                  settings.imageOcrCapable
-                      ? 'Uploaded pictures are read so you can search the words in them'
-                      : 'Searching the words inside pictures needs local OCR',
-                ),
-              ),
-              const Divider(height: 32),
-              const _SectionHeader('AI'),
-              const LlmConfigTile(),
-              const LlmBehaviorTile(),
-              SwitchListTile(
-                secondary: const Icon(Icons.label_outline),
-                title: const Text('Automatic labeling'),
-                subtitle: ManagedToggleSubtitle(
-                  managed: settings.isManaged('llm_labeling'),
-                  text: settings.llmConfigured
-                      ? 'Apply your existing labels to new and edited notes'
-                      : 'Configure an AI provider first',
-                ),
-                value: settings.llmConfigured && settings.llmLabelingEnabled,
-                onChanged:
-                    settings.llmConfigured &&
-                        !settings.isManaged('llm_labeling')
-                    ? settings.setLlmLabelingEnabled
-                    : null,
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.forum_outlined),
-                title: const Text('Notes chat'),
-                subtitle: ManagedToggleSubtitle(
-                  managed: settings.isManaged('llm_chat'),
-                  text: !settings.semanticSearchCapable
-                      ? 'Requires semantic search on this server'
-                      : settings.llmConfigured
-                      ? 'Ask questions about your notes'
-                      : 'Configure an AI provider first',
-                ),
-                value:
-                    settings.llmConfigured &&
-                    settings.semanticSearchCapable &&
-                    settings.llmChatEnabled,
-                onChanged:
-                    settings.llmConfigured &&
-                        settings.semanticSearchCapable &&
-                        !settings.isManaged('llm_chat')
-                    ? settings.setLlmChatEnabled
-                    : null,
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.auto_fix_high_outlined),
-                title: const Text('AI note editing'),
-                subtitle: ManagedToggleSubtitle(
-                  managed: settings.isManaged('llm_writing'),
-                  text: settings.llmConfigured
-                      ? 'Add cleanup and grammar actions to each note menu'
-                      : 'Configure an AI provider first',
-                ),
-                value: settings.llmConfigured && settings.llmWritingEnabled,
-                onChanged:
-                    settings.llmConfigured && !settings.isManaged('llm_writing')
-                    ? settings.setLlmWritingEnabled
-                    : null,
-              ),
-              const LlmRewriteTasksTile(),
-              const Divider(height: 32),
-              const _SectionHeader('Notifications'),
-              const NotifyConfigTile(),
-              SwitchListTile(
-                secondary: const Icon(Icons.notifications_active_outlined),
-                title: const Text('Reminder notifications'),
-                subtitle: Text(
-                  settings.notifyConfigured
-                      ? 'Send a push when a note\'s reminder comes due'
-                      : 'Configure a channel first',
-                ),
-                value:
-                    settings.notifyConfigured &&
-                    settings.reminderNotificationsEnabled,
-                onChanged: settings.notifyConfigured
-                    ? settings.setReminderNotificationsEnabled
-                    : null,
-              ),
-              const DeviceNotificationsTile(),
-              const Divider(height: 32),
-              const _SectionHeader('Saved locations'),
-              const SavedLocationsSection(),
-              const Divider(height: 32),
-              const _SectionHeader('Date & time'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: DropdownButtonFormField<AppDateFormat>(
-                  initialValue: settings.dateFormat,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: 'Date format',
-                    helperText: 'Today: ${settings.formatDate(now)}',
-                    prefixIcon: const Icon(Icons.calendar_today_outlined),
-                    border: const OutlineInputBorder(),
-                  ),
-                  onChanged: (format) {
-                    if (format != null) settings.setDateFormat(format);
-                  },
-                  items: [
-                    for (final format in AppDateFormat.values)
-                      DropdownMenuItem(
-                        value: format,
-                        child: Text('${format.label} (${format.example})'),
-                      ),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.schedule_outlined),
-                title: const Text('Time format'),
-                subtitle: Text('Now: ${settings.formatClock(now)}'),
-                trailing: SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('12h')),
-                    ButtonSegment(value: true, label: Text('24h')),
-                  ],
-                  selected: {settings.use24hTime},
-                  onSelectionChanged: (s) => settings.setUse24hTime(s.first),
-                  showSelectedIcon: false,
-                ),
-              ),
-              const Divider(height: 32),
-              const _SectionHeader('Note colors'),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  'Personalize the colors available for your notes. '
-                  'Each color has a light-theme and a dark-theme shade.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              for (final entry in settings.palette)
-                PaletteRow(key: ValueKey(entry.key), entry: entry),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
-                  children: [
-                    TextButton.icon(
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add color'),
-                      onPressed: () => PaletteEditDialog.show(context, null),
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: settings.resetPalette,
-                      child: const Text('Reset to defaults'),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 32),
-              const _SectionHeader('Sharing'),
-              const PublicLinksSection(),
-              const AiAccessSection(),
-              const Divider(height: 32),
-              const _SectionHeader('Data'),
-              const ExportSection(),
-              const Divider(height: 32),
-              const _SectionHeader('Help'),
-              ListTile(
-                leading: const Icon(Icons.keyboard_outlined),
-                title: const Text('Keyboard shortcuts'),
-                subtitle: const Text('Also opens with ? on the notes screen'),
-                onTap: () => showShortcutHelp(context),
-              ),
-              const Divider(height: 32),
-              const _SectionHeader('About'),
-              const ListTile(
-                leading: Icon(Icons.phone_android_outlined),
-                title: Text('Client version'),
-                subtitle: Text(clientVersion),
-              ),
-              ListTile(
-                leading: const Icon(Icons.dns_outlined),
-                title: const Text('Server version'),
-                subtitle: Text(settings.serverVersion ?? 'Unavailable'),
-              ),
-              const Divider(height: 32),
-              const _SectionHeader('Danger zone'),
-              const DeleteAccountTile(),
-            ],
+          constraints: const BoxConstraints(
+            maxWidth: SettingsScreen._pageMaxWidth,
           ),
+          child: page == null ? _index() : SettingsPageBody(page: page),
         ),
       ),
     );
   }
-}
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader(this.title);
+  Widget _index() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      children: [
+        _AccountRow(onTap: () => _push(SettingsPage.account)),
+        const Divider(height: 16),
+        for (final page in SettingsPage.values)
+          if (page != SettingsPage.account)
+            ListTile(
+              leading: Icon(page.icon),
+              title: Text(page.title),
+              subtitle: Text(page.summary(context)),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _push(page),
+            ),
+      ],
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: sectionLabelStyle(Theme.of(context)),
-      ),
+  void _push(SettingsPage page) =>
+      Navigator.of(context).push(SettingsScreen.route(page: page));
+
+  Widget _split() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: SettingsScreen._indexWidth,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
+            children: [
+              for (final page in SettingsPage.values)
+                _IndexRow(
+                  page: page,
+                  selected: page == _selected,
+                  onTap: () => setState(() => _selected = page),
+                ),
+            ],
+          ),
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: StateCrossFade(
+            state: _selected,
+            child: Align(
+              alignment: AlignmentDirectional.topStart,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: SettingsScreen._pageMaxWidth,
+                ),
+                child: Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 16),
+                  child: SettingsPageBody(page: _selected, titled: true),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// A toggle for an optional, service-backed feature. When the server doesn't
-/// advertise the capability the switch is disabled and explains why, so the
-/// preference is still visible but clearly inert.
-class _FeatureToggle extends StatelessWidget {
-  final IconData icon;
-  final String title;
+/// The account as the index's first row: who is signed in.
+class _AccountRow extends StatelessWidget {
+  final VoidCallback onTap;
 
-  /// Subtitle shown when the backing service is running.
-  final String available;
-  final bool capable;
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  const _AccountRow({required this.onTap});
 
-  const _FeatureToggle({
-    required this.icon,
-    required this.title,
-    required this.available,
-    required this.capable,
-    required this.value,
-    required this.onChanged,
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AuthStore?>()?.user;
+    final scheme = Theme.of(context).colorScheme;
+    final name = user?.name.trim() ?? '';
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: scheme.primaryContainer,
+        foregroundColor: scheme.onPrimaryContainer,
+        child: name.isEmpty
+            ? Icon(SettingsPage.account.icon)
+            : Text(name.characters.first.toUpperCase()),
+      ),
+      title: Text(name.isEmpty ? SettingsPage.account.title : name),
+      subtitle: Text(SettingsPage.account.summary(context)),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
+  }
+}
+
+/// A page in the wide index. The selection fill fades in rather than
+/// snapping, like the app sidebar's.
+class _IndexRow extends StatelessWidget {
+  final SettingsPage page;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _IndexRow({
+    required this.page,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      secondary: Icon(icon),
-      title: Text(title),
-      subtitle: Text(capable ? available : 'Not available on this server'),
-      // Off and inert when the service isn't running.
-      value: capable && value,
-      onChanged: capable ? onChanged : null,
+    final scheme = Theme.of(context).colorScheme;
+    final target = selected ? 1.0 : 0.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: TweenAnimationBuilder<double>(
+        // begin == end, so a row that starts selected doesn't fade in.
+        tween: Tween<double>(begin: target, end: target),
+        duration: Motion.fast,
+        curve: Motion.standard,
+        builder: (context, t, child) => Material(
+          color: Color.lerp(Colors.transparent, scheme.secondaryContainer, t),
+          borderRadius: BorderRadius.circular(kRadius),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
+        // No summary: the page itself is open beside the index.
+        child: ListTile(
+          leading: Icon(page.icon),
+          title: Text(page.title),
+          onTap: onTap,
+        ),
+      ),
     );
   }
 }

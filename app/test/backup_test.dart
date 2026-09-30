@@ -75,6 +75,12 @@ void main() {
             ],
             name: 'Travel',
             notesEnabled: false,
+            // What the backup keeps is the owner's switches, never the
+            // provider behind them.
+            ai: WorkspaceAi(
+              providerReady: true,
+              switches: AiSwitches(labeling: false, assistantAccess: false),
+            ),
             savedViews: [
               SavedView(
                 id: 'pinned',
@@ -122,6 +128,11 @@ void main() {
       expect(travel.savedViews.single.query, 'is:pinned');
       expect(travel.notesEnabled, isFalse);
       expect(travel.boardEnabled, isTrue);
+      expect(
+        travel.aiSwitches,
+        const AiSwitches(labeling: false, assistantAccess: false),
+      );
+      expect(restored.workspaces.first.aiSwitches, const AiSwitches());
       expect(travel.labels.single.name, 'Travel');
       expect(travel.labels.single.position, 12);
       expect(travel.stages.single.name, 'Ready');
@@ -316,6 +327,7 @@ void main() {
             name: 'New project',
             isDefault: false,
             boardEnabled: false,
+            aiSwitches: const AiSwitches(chat: false),
             labels: const [],
             stages: const [],
             notes: [
@@ -397,6 +409,13 @@ void main() {
             .singleWhere((workspace) => workspace.name == 'New project')
             .boardEnabled,
         isFalse,
+      );
+      expect(
+        api.workspaces.values
+            .singleWhere((workspace) => workspace.name == 'New project')
+            .ai
+            .switches,
+        const AiSwitches(chat: false),
       );
       expect(api.notes, isNot(contains('old-default')));
       expect(api.notes, isNot(contains('old-project')));

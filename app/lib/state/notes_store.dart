@@ -802,6 +802,12 @@ class NotesStore extends ChangeNotifier {
             boardEnabled: backupWorkspace.boardEnabled,
           );
         }
+        if (backupWorkspace.aiSwitches != const AiSwitches()) {
+          await api.updateWorkspaceAi(
+            targetWorkspaceId,
+            backupWorkspace.aiSwitches,
+          );
+        }
 
         final currentTargets = await api.fetchWorkspaces();
         for (final target in currentTargets.where(
@@ -2368,6 +2374,26 @@ class NotesStore extends ChangeNotifier {
       ),
     );
   }
+
+  /// Set a workspace's AI switches. Like its views, only the owner changes
+  /// them, and every member gets the AI they allow.
+  void updateWorkspaceAi(String id, AiSwitches switches) {
+    final i = _workspaces.indexWhere((w) => w.id == id);
+    if (i == -1 || !_workspaces[i].isOwnedBy(currentUserId)) return;
+    final workspace = _workspaces[i];
+    _workspaces[i] = workspace.copyWith(
+      ai: workspace.ai.copyWith(switches: switches),
+    );
+    notifyListeners();
+    _enqueue(
+      PendingOp(PendingOpKind.workspaceAi, id: id, data: switches.toJson()),
+    );
+  }
+
+  /// The AI in workspace [id]. A note reached through a direct share, from a
+  /// workspace this user is not in, gets none: that owner's setup is not
+  /// visible from here.
+  WorkspaceAi aiIn(String? id) => workspaceById(id)?.ai ?? const WorkspaceAi();
 
   /// Whether [id] can be deleted: you own it and it isn't your default one.
   bool canDeleteWorkspace(String id) {

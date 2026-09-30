@@ -386,6 +386,21 @@ pub async fn configure_llm(app: &Router, token: &str) {
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
 
+/// Flip AI switches on the caller's default workspace.
+pub async fn set_default_workspace_ai(app: &Router, token: &str, switches: Value) {
+    let (_, workspaces) = send(app, "GET", "/api/workspaces", Some(token), None).await;
+    let id = workspaces[0]["id"].as_str().unwrap();
+    let (status, body) = send(
+        app,
+        "PATCH",
+        &format!("/api/workspaces/{id}"),
+        Some(token),
+        Some(json!({ "ai": switches })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "set workspace AI: {body}");
+}
+
 pub async fn make_label(app: &Router, token: &str, name: &str) -> String {
     let (status, body) = send(
         app,

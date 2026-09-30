@@ -7,6 +7,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note.dart';
+import '../models/workspace.dart' show AiFeature, WorkspaceAi;
 import '../screens/editor_screen.dart';
 import 'note_zoom.dart';
 import '../state/note_links.dart';
@@ -1189,12 +1190,12 @@ class _NoteActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final aiEditingEnabled = context.select<SettingsStore, bool>(
-      (settings) => settings.noteWritingAvailable,
+    // AI editing follows the note's workspace: its switch, its owner's tasks.
+    final ai = context.select<NotesStore, WorkspaceAi>(
+      (store) => store.aiIn(note.workspaceId),
     );
-    final rewriteTasks = context.select<SettingsStore, List<NoteRewriteTask>>(
-      (settings) => settings.llmRewriteTasks,
-    );
+    final aiEditingEnabled = ai.allows(AiFeature.writing);
+    final rewriteTasks = ai.rewriteTasks;
     final hasReminder = context.select<SettingsStore, bool>(
       (settings) =>
           note.reminderAt != null ||

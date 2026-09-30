@@ -20,13 +20,16 @@ import 'fake_api.dart';
 
 /// Pump the Settings screen with a loaded settings store (its managed map is
 /// whatever the FakeApi returns) and the notes store the export section needs.
+/// Phone width, so [page] opens alone and no page means the index.
 Future<SettingsStore> pumpSettings(
   WidgetTester tester,
   FakeApi api, {
+  SettingsPage? page,
   AuthStore? authStore,
+  Size size = const Size(500, 3000),
 }) async {
-  // Tall surface so the whole settings list builds (no lazy off-screen tiles).
-  tester.view.physicalSize = const Size(1200, 6000);
+  // Tall surface so the whole page builds (no lazy off-screen tiles).
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final settings = SettingsStore(api: api);
@@ -42,7 +45,7 @@ Future<SettingsStore> pumpSettings(
         ChangeNotifierProvider.value(value: notes),
         ChangeNotifierProvider.value(value: auth),
       ],
-      child: const MaterialApp(home: SettingsScreen()),
+      child: MaterialApp(home: SettingsScreen(page: page)),
     ),
   );
   await tester.pumpAndSettle();
@@ -50,10 +53,52 @@ Future<SettingsStore> pumpSettings(
 }
 
 void main() {
+  testWidgets('the index names every page and says where each stands', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    api.settings = {'llm_base_url': 'http://x/v1', 'llm_model': 'llama3.1'};
+    await pumpSettings(tester, api);
+
+    expect(find.text('Me Example'), findsOneWidget);
+    expect(find.text('me@example.test'), findsOneWidget);
+    for (final page in SettingsPage.values.skip(1)) {
+      expect(find.text(page.title), findsOneWidget, reason: page.title);
+    }
+    expect(find.text('Provider: llama3.1'), findsOneWidget);
+    expect(find.text('Automatic theme · Comfortable grid'), findsOneWidget);
+
+    await tester.tap(find.text('Reminders'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reminders on this device'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Me Example'));
+    await tester.pumpAndSettle();
+    expect(find.text('Change your sign-in password'), findsOneWidget);
+  });
+
+  testWidgets('a wide window keeps the index beside the open page', (
+    tester,
+  ) async {
+    await pumpSettings(tester, FakeApi(), size: const Size(1200, 1600));
+
+    // Account opens first, next to the index.
+    expect(find.text('Change your sign-in password'), findsOneWidget);
+    expect(find.text('Backup & import'), findsOneWidget);
+
+    await tester.tap(find.text('Backup & import'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create backup'), findsOneWidget);
+    expect(find.text('Change your sign-in password'), findsNothing);
+    // Still one route: the page swapped in place.
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
   testWidgets('settings shows client and server build versions', (
     tester,
   ) async {
-    await pumpSettings(tester, FakeApi());
+    await pumpSettings(tester, FakeApi(), page: SettingsPage.about);
 
     expect(find.text('Client version'), findsOneWidget);
     expect(find.text(clientVersion), findsOneWidget);
@@ -64,7 +109,7 @@ void main() {
   testWidgets('backup and restore actions are available in settings', (
     tester,
   ) async {
-    await pumpSettings(tester, FakeApi());
+    await pumpSettings(tester, FakeApi(), page: SettingsPage.data);
 
     expect(find.text('Create backup'), findsOneWidget);
     expect(find.text('Restore backup'), findsOneWidget);
@@ -120,18 +165,17 @@ void main() {
     tester,
   ) async {
     final api = FakeApi();
-    await pumpSettings(tester, api);
+    await pumpSettings(tester, api, page: SettingsPage.account);
 
     expect(find.text('Me Example'), findsOneWidget);
     expect(find.text('me@example.test'), findsOneWidget);
     expect(find.text('Change your sign-in password'), findsOneWidget);
     expect(find.text('Delete account'), findsOneWidget);
     expect(find.text('DANGER ZONE'), findsOneWidget);
-    expect(find.text('Create backup'), findsOneWidget);
-    expect(find.text('Restore backup'), findsOneWidget);
+    // Deleting the account sits with the account, last.
     expect(
       tester.getTopLeft(find.text('Delete account')).dy,
-      greaterThan(tester.getTopLeft(find.text('Keyboard shortcuts')).dy),
+      greaterThan(tester.getTopLeft(find.text('Password')).dy),
     );
 
     await tester.tap(find.text('Email').first);
@@ -164,7 +208,12 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'notes_cache_$cacheKey': '{"notes":[]}',
     });
-    await pumpSettings(tester, FakeApi(), authStore: auth);
+    await pumpSettings(
+      tester,
+      FakeApi(),
+      page: SettingsPage.account,
+      authStore: auth,
+    );
 
     await tester.tap(find.text('Delete account').first);
     await tester.pumpAndSettle();
@@ -199,7 +248,7 @@ void main() {
       ),
       'llm_api_key': const ManagedSetting(secret: true),
     };
-    await pumpSettings(tester, api);
+    await pumpSettings(tester, api, page: SettingsPage.ai);
 
     // The AI provider row flags that something is server-managed.
     expect(find.text('Managed by the server'), findsWidgets);
@@ -224,36 +273,11 @@ void main() {
     expect(find.text('Set by the server'), findsWidgets);
   });
 
-  testWidgets('a managed toggle is locked while the others stay live', (
-    tester,
-  ) async {
-    final api = FakeApi();
-    api.settings = {
-      'llm_base_url': 'http://user/v1',
-      'llm_model': 'user-model',
-    };
-    api.managedSettings = {
-      'llm_chat': const ManagedSetting(secret: false, value: false),
-    };
-    await pumpSettings(tester, api);
-
-    final chat = tester.widget<SwitchListTile>(
-      find.widgetWithText(SwitchListTile, 'Notes chat'),
-    );
-    expect(chat.onChanged, isNull);
-    expect(chat.value, isFalse);
-    // Configured and unmanaged, so this one is still the user's to flip.
-    final labeling = tester.widget<SwitchListTile>(
-      find.widgetWithText(SwitchListTile, 'Automatic labeling'),
-    );
-    expect(labeling.onChanged, isNotNull);
-  });
-
   testWidgets('with nothing managed, all LLM fields are editable', (
     tester,
   ) async {
     final api = FakeApi();
-    await pumpSettings(tester, api);
+    await pumpSettings(tester, api, page: SettingsPage.ai);
     expect(find.text('Managed by the server'), findsNothing);
 
     await tester.ensureVisible(find.text('AI provider'));
@@ -274,7 +298,7 @@ void main() {
     final now = DateTime.utc(2026);
     api.notes['a'] = Note(id: 'a', createdAt: now, updatedAt: now);
     api.notes['b'] = Note(id: 'b', createdAt: now, updatedAt: now);
-    await pumpSettings(tester, api);
+    await pumpSettings(tester, api, page: SettingsPage.ai);
 
     // Diagnostics from the (fake) index are rendered.
     expect(find.text('Embedding index'), findsOneWidget);
@@ -310,7 +334,7 @@ void main() {
       passwordReset: false,
       serverVersion: 'test-server',
     );
-    await pumpSettings(tester, api);
+    await pumpSettings(tester, api, page: SettingsPage.ai);
     expect(find.text('Embedding index'), findsNothing);
   });
 
@@ -318,7 +342,11 @@ void main() {
     tester,
   ) async {
     final api = FakeApi();
-    final settings = await pumpSettings(tester, api);
+    final settings = await pumpSettings(
+      tester,
+      api,
+      page: SettingsPage.appearance,
+    );
     expect(settings.gridDensity, GridDensity.comfortable);
     expect(settings.gridWidth, GridWidth.medium);
 
@@ -344,7 +372,11 @@ void main() {
 
   testWidgets('date format uses the standard form dropdown', (tester) async {
     final api = FakeApi();
-    final settings = await pumpSettings(tester, api);
+    final settings = await pumpSettings(
+      tester,
+      api,
+      page: SettingsPage.appearance,
+    );
 
     expect(settings.dateFormat, AppDateFormat.dayFirst);
     expect(settings.use24hTime, isTrue);
@@ -363,7 +395,11 @@ void main() {
   });
 
   testWidgets('saved locations can be created in settings', (tester) async {
-    final settings = await pumpSettings(tester, FakeApi());
+    final settings = await pumpSettings(
+      tester,
+      FakeApi(),
+      page: SettingsPage.reminders,
+    );
 
     await tester.ensureVisible(find.text('Add saved location'));
     await tester.tap(find.text('Add saved location'));

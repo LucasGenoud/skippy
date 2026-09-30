@@ -103,21 +103,12 @@ async fn auto_labeling_skipped_when_unconfigured_off_or_labelless() {
         "unconfigured user must not call the LLM"
     );
 
-    // Configured but toggled off.
+    // Configured but toggled off in the workspace.
     let (state, calls) = state_with_llm(r#"["work"]"#).await;
     let app = build_app(state);
     let (token, _) = register(&app, "bob").await;
-    let (status, _) = send(
-        &app,
-        "PUT",
-        "/api/settings",
-        Some(&token),
-        Some(json!({
-            "llm_base_url": "http://fake/v1", "llm_model": "m", "llm_labeling": false
-        })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    configure_llm(&app, &token).await;
+    set_default_workspace_ai(&app, &token, json!({"labeling": false})).await;
     make_label(&app, &token, "work").await;
     create_note(&app, &token, json!({"title": "meeting"})).await;
     settle_labeling().await;
@@ -272,7 +263,7 @@ async fn llm_test_endpoint_probes_and_validates() {
 }
 
 #[tokio::test]
-async fn note_rewrite_requires_opt_in_and_updates_content() {
+async fn note_rewrite_follows_the_workspace_switch_and_updates_content() {
     let (state, calls) =
         state_with_llm(r#"{"title":"Short title","content":"Correct sentence."}"#).await;
     let app = build_app(state);
@@ -286,6 +277,7 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     .await;
     let id = note["id"].as_str().unwrap();
 
+    set_default_workspace_ai(&app, &token, json!({"labeling": false, "writing": false})).await;
     let (status, _) = send(
         &app,
         "POST",
@@ -297,6 +289,7 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(calls.lock().unwrap().is_empty());
 
+    set_default_workspace_ai(&app, &token, json!({"writing": true})).await;
     let (status, _) = send(
         &app,
         "PUT",
@@ -305,8 +298,6 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
         Some(json!({
             "llm_base_url": "http://fake/v1",
             "llm_model": "test-model",
-            "llm_labeling": false,
-            "llm_writing": true,
             "llm_prompt": "Use terse sentences",
         })),
     )
@@ -358,7 +349,6 @@ async fn note_rewrite_requires_opt_in_and_updates_content() {
         Some(json!({
             "llm_base_url": "http://fake/v1",
             "llm_model": "test-model",
-            "llm_writing": true,
             "llm_rewrite_tasks": [{
                 "id": "friendly",
                 "name": "Make friendly",
@@ -422,10 +412,10 @@ async fn managed_settings_override_the_users_llm_config() {
     assert_eq!(configs[0].model, "test-model");
 }
 
-/// A managed boolean turns the feature off for everyone, whatever each user
-/// stored for themselves.
+/// A managed boolean turns the feature off for everyone, whatever each
+/// workspace's owner switched on.
 #[tokio::test]
-async fn a_managed_toggle_disables_the_feature_for_the_user() {
+async fn a_managed_toggle_overrides_the_workspace_switch() {
     let (state, configs) = state_with_llm_configs(r#"["work"]"#).await;
     let managed = ManagedSettings::from_lookup(|key| {
         if key == "LLM_LABELING" {
@@ -436,19 +426,8 @@ async fn a_managed_toggle_disables_the_feature_for_the_user() {
     });
     let app = build_app(state.with_managed(managed));
     let (token, _) = register(&app, "ada").await;
-    let (status, _) = send(
-        &app,
-        "PUT",
-        "/api/settings",
-        Some(&token),
-        Some(json!({
-            "llm_base_url": "http://fake/v1",
-            "llm_model": "test-model",
-            "llm_labeling": true,
-        })),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    configure_llm(&app, &token).await;
+    set_default_workspace_ai(&app, &token, json!({"labeling": true})).await;
     let label_id = make_label(&app, &token, "work").await;
 
     create_note(&app, &token, json!({"title": "Standup notes"})).await;

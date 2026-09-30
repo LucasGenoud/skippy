@@ -2,6 +2,7 @@ import '../models/collection.dart';
 import '../api/api_client.dart';
 import '../models/note.dart';
 import '../models/saved_view.dart';
+import '../models/workspace.dart';
 import 'pending_operation.dart';
 
 typedef PendingNoteLookup = Note? Function(String id);
@@ -84,6 +85,8 @@ class PendingOperationExecutor {
           notesEnabled: op.data['notesEnabled'] as bool? ?? true,
           boardEnabled: op.data['boardEnabled'] as bool? ?? true,
         );
+      case PendingOpKind.workspaceAi:
+        return api.updateWorkspaceAi(op.id!, AiSwitches.fromJson(op.data));
       case PendingOpKind.savedViewPut:
         return api.putSavedView(
           op.data['workspaceId'] as String,

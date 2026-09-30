@@ -227,13 +227,11 @@ class SettingsStore extends ChangeNotifier {
   // LLM integration (OpenAI-compatible endpoint; Ollama works via its /v1
   // API). Unlike the features above there is no server capability: each user
   // brings their own endpoint/key/model, and the backend reads these same
-  // llm_* keys out of the settings document when labeling or chatting.
+  // llm_* keys out of the settings document to run AI in the workspaces the
+  // user owns. Which features run is each workspace's switches, not here.
   String llmBaseUrl = '';
   String llmApiKey = '';
   String llmModel = '';
-  bool llmLabelingEnabled = true;
-  bool llmChatEnabled = true;
-  bool llmWritingEnabled = false;
   String llmPrompt = '';
   bool autoSummarizeLinks = false;
   UrlSummaryLength linkSummaryLength = UrlSummaryLength.short;
@@ -263,12 +261,6 @@ class SettingsStore extends ChangeNotifier {
   Map<String, Object?> _ownManagedValues = {};
 
   bool get llmConfigured => llmBaseUrl.isNotEmpty && llmModel.isNotEmpty;
-  bool get autoLabelingAvailable => llmConfigured && llmLabelingEnabled;
-  // Chat retrieval runs on the server's embedder, so it additionally needs
-  // the semantic-search capability.
-  bool get notesChatAvailable =>
-      llmConfigured && llmChatEnabled && semanticSearchCapable;
-  bool get noteWritingAvailable => llmConfigured && llmWritingEnabled;
 
   // Reminder notifications (ntfy, Telegram, …). Like the LLM config there is
   // no server capability: the channels in [kNotifyChannels] describe which
@@ -394,18 +386,9 @@ class SettingsStore extends ChangeNotifier {
       return m.secret ? '' : (m.value as String? ?? '');
     }
 
-    bool? flag(String key) {
-      final m = managed[key];
-      if (m == null || m.value is! bool) return null;
-      return m.value as bool;
-    }
-
     llmBaseUrl = text('llm_base_url') ?? llmBaseUrl;
     llmApiKey = text('llm_api_key') ?? llmApiKey;
     llmModel = text('llm_model') ?? llmModel;
-    llmLabelingEnabled = flag('llm_labeling') ?? llmLabelingEnabled;
-    llmChatEnabled = flag('llm_chat') ?? llmChatEnabled;
-    llmWritingEnabled = flag('llm_writing') ?? llmWritingEnabled;
     // Notification keys are managed the same way (a deployment's own SMTP
     // server), so the dialog shows what will really be used and
     // [notifyConfigured] counts a channel the server completes.
@@ -450,9 +433,6 @@ class SettingsStore extends ChangeNotifier {
     llmBaseUrl = ((json['llm_base_url'] as String?) ?? '').trim();
     llmApiKey = ((json['llm_api_key'] as String?) ?? '').trim();
     llmModel = ((json['llm_model'] as String?) ?? '').trim();
-    llmLabelingEnabled = json['llm_labeling'] != false;
-    llmChatEnabled = json['llm_chat'] != false;
-    llmWritingEnabled = json['llm_writing'] == true;
     llmPrompt = ((json['llm_prompt'] as String?) ?? '').trim();
     autoSummarizeLinks = json['auto_summarize_links'] == true;
     linkSummaryLength = switch (json['link_summary_length']) {
@@ -484,9 +464,6 @@ class SettingsStore extends ChangeNotifier {
       'llm_base_url': llmBaseUrl,
       'llm_api_key': llmApiKey,
       'llm_model': llmModel,
-      'llm_labeling': llmLabelingEnabled,
-      'llm_chat': llmChatEnabled,
-      'llm_writing': llmWritingEnabled,
       for (final key in kNotifyFieldKeys) key: notifyValues[key],
     };
     reminderNotificationsEnabled = json['reminder_notifications'] != false;
@@ -551,9 +528,6 @@ class SettingsStore extends ChangeNotifier {
     'llm_base_url': llmBaseUrl,
     'llm_api_key': llmApiKey,
     'llm_model': llmModel,
-    'llm_labeling': llmLabelingEnabled,
-    'llm_chat': llmChatEnabled,
-    'llm_writing': llmWritingEnabled,
     'llm_prompt': llmPrompt,
     'auto_summarize_links': autoSummarizeLinks,
     'link_summary_length': linkSummaryLength.name,
@@ -666,11 +640,6 @@ class SettingsStore extends ChangeNotifier {
     llmApiKey = apiKey.trim();
     llmModel = model.trim();
   });
-  void setLlmLabelingEnabled(bool value) =>
-      _mutate(() => llmLabelingEnabled = value);
-  void setLlmChatEnabled(bool value) => _mutate(() => llmChatEnabled = value);
-  void setLlmWritingEnabled(bool value) =>
-      _mutate(() => llmWritingEnabled = value);
   void setLinkSummarySettings({
     required bool automatically,
     required UrlSummaryLength length,

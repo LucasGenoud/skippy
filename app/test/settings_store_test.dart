@@ -373,7 +373,7 @@ void main() {
     },
   );
 
-  test('llm config persists, roundtrips, and gates availability', () async {
+  test('llm config persists and roundtrips', () async {
     api.capabilities = (
       semanticSearch: true,
       audioTranscription: false,
@@ -383,13 +383,7 @@ void main() {
     );
     await settings.load();
 
-    // Unconfigured: nothing available, whatever the toggles say.
     expect(settings.llmConfigured, isFalse);
-    expect(settings.llmLabelingEnabled, isTrue); // toggles default on
-    expect(settings.llmChatEnabled, isTrue);
-    expect(settings.llmWritingEnabled, isFalse);
-    expect(settings.autoLabelingAvailable, isFalse);
-    expect(settings.notesChatAvailable, isFalse);
 
     settings.setLlmConfig(
       baseUrl: ' http://localhost:11434/v1 ',
@@ -397,11 +391,6 @@ void main() {
       model: ' llama3.1 ',
     );
     expect(settings.llmConfigured, isTrue);
-    expect(settings.autoLabelingAvailable, isTrue);
-    expect(settings.notesChatAvailable, isTrue);
-    expect(settings.noteWritingAvailable, isFalse);
-    settings.setLlmLabelingEnabled(false);
-    settings.setLlmWritingEnabled(true);
     settings.setLlmRewriteTasks(const [
       NoteRewriteTask(
         id: 'friendly',
@@ -419,16 +408,15 @@ void main() {
       automatically: true,
       length: UrlSummaryLength.long,
     );
-    expect(settings.autoLabelingAvailable, isFalse);
     await settleSave();
 
     // The persisted keys are exactly the backend's contract, trimmed.
     expect(api.settings['llm_base_url'], 'http://localhost:11434/v1');
     expect(api.settings['llm_api_key'], '');
     expect(api.settings['llm_model'], 'llama3.1');
-    expect(api.settings['llm_labeling'], isFalse);
-    expect(api.settings['llm_chat'], isTrue);
-    expect(api.settings['llm_writing'], isTrue);
+    // Which features run is each workspace's, not the account's.
+    expect(api.settings.containsKey('llm_labeling'), isFalse);
+    expect(api.settings.containsKey('llm_writing'), isFalse);
     expect(api.settings['llm_prompt'], 'Reply in French');
     expect(api.settings['auto_summarize_links'], isTrue);
     expect(api.settings['link_summary_length'], 'long');
@@ -448,9 +436,6 @@ void main() {
     await other.load();
     expect(other.llmConfigured, isTrue);
     expect(other.llmModel, 'llama3.1');
-    expect(other.llmLabelingEnabled, isFalse);
-    expect(other.notesChatAvailable, isTrue);
-    expect(other.noteWritingAvailable, isTrue);
     expect(other.llmPrompt, 'Reply in French');
     expect(other.autoSummarizeLinks, isTrue);
     expect(other.linkSummaryLength, UrlSummaryLength.long);
@@ -458,21 +443,6 @@ void main() {
     expect(other.llmChatCreateEnabled, isFalse);
     expect(other.llmChatOrganizeEnabled, isFalse);
     other.dispose();
-
-    // No semantic search on the server: chat unavailable even when configured.
-    api.capabilities = (
-      semanticSearch: false,
-      audioTranscription: false,
-      imageOcr: false,
-      passwordReset: false,
-      serverVersion: 'test-server',
-    );
-    final third = SettingsStore(api: api);
-    await third.load();
-    expect(third.llmConfigured, isTrue);
-    expect(third.notesChatAvailable, isFalse);
-    expect(third.autoLabelingAvailable, isFalse); // labeling was toggled off
-    third.dispose();
   });
 
   test('LLM settings belong to the user', () async {
@@ -523,13 +493,12 @@ void main() {
     expect(settings.llmModel, 'managed-model');
     // Secret is never held client-side, even though the user doc had one.
     expect(settings.llmApiKey, '');
-    // Managed toggle reflected; the unmanaged one keeps its default.
-    expect(settings.llmChatEnabled, isFalse);
-    expect(settings.llmLabelingEnabled, isTrue);
 
     // Locked keys report as managed; untouched ones don't.
     expect(settings.isManaged('llm_base_url'), isTrue);
     expect(settings.isManaged('llm_api_key'), isTrue);
+    // A pinned feature toggle locks every workspace's switch for it.
+    expect(settings.isManaged('llm_chat'), isTrue);
     expect(settings.isManaged('llm_labeling'), isFalse);
   });
 
@@ -538,7 +507,6 @@ void main() {
       'llm_base_url': 'http://user/v1',
       'llm_api_key': 'sk-user',
       'llm_model': 'user-model',
-      'llm_chat': true,
     };
     api.managedSettings = {
       'llm_base_url': const ManagedSetting(
@@ -546,7 +514,6 @@ void main() {
         value: 'http://managed/v1',
       ),
       'llm_api_key': const ManagedSetting(secret: true),
-      'llm_chat': const ManagedSetting(secret: false, value: false),
     };
     await settings.load();
 
@@ -558,7 +525,6 @@ void main() {
 
     expect(api.settings['llm_base_url'], 'http://user/v1');
     expect(api.settings['llm_api_key'], 'sk-user');
-    expect(api.settings['llm_chat'], isTrue);
     // Unmanaged keys still persist what the store holds.
     expect(api.settings['llm_model'], 'user-model');
     expect(api.settings['theme'], 'dark');

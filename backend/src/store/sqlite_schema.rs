@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS workspaces (
     board_enabled INTEGER NOT NULL DEFAULT 1 CHECK (board_enabled IN (0, 1)),
     is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
     created_at TEXT NOT NULL,
+    ai_enabled INTEGER NOT NULL DEFAULT 1 CHECK (ai_enabled IN (0, 1)),
+    ai_labeling INTEGER NOT NULL DEFAULT 1 CHECK (ai_labeling IN (0, 1)),
+    ai_chat INTEGER NOT NULL DEFAULT 1 CHECK (ai_chat IN (0, 1)),
+    ai_writing INTEGER NOT NULL DEFAULT 1 CHECK (ai_writing IN (0, 1)),
+    assistant_access INTEGER NOT NULL DEFAULT 1 CHECK (assistant_access IN (0, 1)),
     CHECK (notes_enabled = 1 OR board_enabled = 1)
 ) STRICT;
 
@@ -284,6 +289,7 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
     migrate_collections(pool).await?;
     migrate_grid_span(pool).await?;
+    migrate_workspace_ai(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS workspace_copies (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE) STRICT").execute(pool).await?;
     import_personal_views(pool).await?;
     Ok(())
@@ -295,6 +301,41 @@ async fn migrate_grid_span(pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query(
             "ALTER TABLE notes ADD COLUMN grid_span INTEGER NOT NULL DEFAULT 1 CHECK (grid_span BETWEEN 1 AND 3)",
         )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// AI switches moved from each user's settings onto their workspaces. An
+/// upgraded workspace starts from its owner's old choices: a feature they had
+/// turned off stays off, and everything else starts on.
+async fn migrate_workspace_ai(pool: &SqlitePool) -> anyhow::Result<()> {
+    const SWITCHES: [(&str, &str); 5] = [
+        ("ai_enabled", ""),
+        ("ai_labeling", "llm_labeling"),
+        ("ai_chat", "llm_chat"),
+        ("ai_writing", "llm_writing"),
+        ("assistant_access", ""),
+    ];
+    let mut tx = pool.begin().await?;
+    if table_has_column(&mut tx, "workspaces", "ai_enabled").await? {
+        return Ok(());
+    }
+    for (column, _) in SWITCHES {
+        sqlx::query(&format!(
+            "ALTER TABLE workspaces ADD COLUMN {column} INTEGER NOT NULL DEFAULT 1 CHECK ({column} IN (0, 1))"
+        ))
+        .execute(&mut *tx)
+        .await?;
+    }
+    for (column, setting) in SWITCHES.into_iter().filter(|(_, s)| !s.is_empty()) {
+        sqlx::query(&format!(
+            "UPDATE workspaces SET {column} = 0 WHERE owner_id IN (
+                 SELECT user_id FROM user_settings WHERE json_type(data, '$.{setting}') = 'false'
+             )"
+        ))
         .execute(&mut *tx)
         .await?;
     }
@@ -611,6 +652,7 @@ mod tests {
             board_enabled: true,
             is_default: true,
             created_at: "now".into(),
+            ai: Default::default(),
         };
         repo.insert_workspace(&original).await.unwrap();
         let copy = Workspace {
@@ -632,6 +674,55 @@ mod tests {
         assert!(repo.cleanup_stats().await.unwrap().pending > 0);
         repo.pool.close().await;
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn workspace_ai_switches_start_from_the_owners_settings() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::raw_sql(super::SCHEMA).execute(&pool).await.unwrap();
+        // The table as it was before the switches existed.
+        for column in [
+            "ai_enabled",
+            "ai_labeling",
+            "ai_chat",
+            "ai_writing",
+            "assistant_access",
+        ] {
+            sqlx::query(&format!("ALTER TABLE workspaces DROP COLUMN {column}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        sqlx::raw_sql(
+            r#"INSERT INTO users VALUES ('u','User','u@test','hash','now'), ('v','Other','v@test','hash','now');
+            INSERT INTO user_settings VALUES ('u', '{"llm_labeling": false, "llm_chat": true}');
+            INSERT INTO workspaces(id,owner_id,name,created_at) VALUES('w','u','Work','now'), ('x','v','Other','now');"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        super::initialize(&pool).await.unwrap();
+        super::initialize(&pool).await.unwrap();
+
+        let switches = |id: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
+                    "SELECT ai_enabled, ai_labeling, ai_chat, ai_writing, assistant_access
+                     FROM workspaces WHERE id = ?",
+                )
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        assert_eq!(switches("w").await, (1, 0, 1, 1, 1));
+        assert_eq!(switches("x").await, (1, 1, 1, 1, 1));
     }
 
     #[tokio::test]

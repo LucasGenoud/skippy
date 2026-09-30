@@ -1,7 +1,8 @@
 //! The tools the MCP endpoint offers. Every read goes through the same
 //! participant-scoped repository queries as the app, and every write through
 //! the note pipelines the HTTP handlers and chat use, so an AI client sees and
-//! changes exactly what its token's owner could, with the same side effects.
+//! changes exactly what its token's owner could, with the same side effects,
+//! less any workspace whose owner closed it to assistants.
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,6 +25,7 @@ const SNIPPET_CHARS: usize = 200;
 /// Where a note reached through a direct share, in a workspace its reader is
 /// not part of, says it lives.
 const SHARED_WORKSPACE: &str = "Shared with you";
+const CLOSED: &str = "assistants are turned off in that workspace";
 
 type Outcome = Result<Value, String>;
 
@@ -248,6 +250,9 @@ async fn get_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
         .await
         .map_err(|e| message(e.into()))?
         .ok_or_else(|| message(ApiError::NotFound))?;
+    if !open_to_assistants(state, &view.note.workspace_id).await? {
+        return Err(message(ApiError::NotFound));
+    }
     let names = Names::load(state, user_id).await?;
     let others = visible_notes(state, user_id).await?;
     let title_of = |id: &str| {
@@ -302,9 +307,12 @@ async fn get_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
 }
 
 async fn list_workspaces(state: &AppState, user_id: &str) -> Outcome {
-    let workspaces = workspaces::ensure_workspaces(state, user_id)
+    let workspaces: Vec<WorkspaceView> = workspaces::ensure_workspaces(state, user_id)
         .await
-        .map_err(message)?;
+        .map_err(message)?
+        .into_iter()
+        .filter(|w| w.ai.switches.assistant_access)
+        .collect();
     let labels = state
         .repo
         .labels_for_user(user_id)
@@ -354,6 +362,9 @@ async fn create_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
     let workspace_id = resolve_workspace(state, user_id, optional(args, "workspace_id"))
         .await
         .map_err(message)?;
+    if !open_to_assistants(state, &workspace_id).await? {
+        return Err(CLOSED.into());
+    }
     let (label_ids, unknown_labels) =
         labels_named(state, user_id, &workspace_id, &strings(args, "labels")).await?;
     let (content, items) = if kind == KIND_CHECKLIST {
@@ -398,6 +409,9 @@ async fn append_to_note(state: &AppState, user_id: &str, args: &Value) -> Outcom
         .await
         .map_err(|e| message(e.into()))?
         .ok_or_else(|| message(ApiError::NotFound))?;
+    if !open_to_assistants(state, &record.workspace_id).await? {
+        return Err(message(ApiError::NotFound));
+    }
     if record.trashed {
         return Err("that note is in the trash".into());
     }
@@ -475,16 +489,37 @@ impl Names {
     }
 }
 
-/// Everything the account can read, less the trash.
+/// Everything the account can read, less the trash and the workspaces closed
+/// to assistants.
 async fn visible_notes(state: &AppState, user_id: &str) -> Result<Vec<NoteView>, String> {
-    Ok(state
+    let notes: Vec<NoteView> = state
         .repo
         .notes_for_user(user_id)
         .await
         .map_err(|e| message(e.into()))?
         .into_iter()
         .filter(|v| !v.note.trashed)
+        .collect();
+    let mut open = HashMap::new();
+    for id in notes.iter().map(|v| &v.note.workspace_id) {
+        if !open.contains_key(id) {
+            open.insert(id.clone(), open_to_assistants(state, id).await?);
+        }
+    }
+    Ok(notes
+        .into_iter()
+        .filter(|v| open[&v.note.workspace_id])
         .collect())
+}
+
+/// Whether the workspace's owner lets assistants reach its notes.
+async fn open_to_assistants(state: &AppState, workspace_id: &str) -> Result<bool, String> {
+    Ok(state
+        .repo
+        .workspace(workspace_id)
+        .await
+        .map_err(|e| message(e.into()))?
+        .is_some_and(|w| w.ai.assistant_access))
 }
 
 /// A note's body as a reader sees it: links as titles, a checklist as rows.

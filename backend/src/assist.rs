@@ -31,18 +31,12 @@ const ROUTE_MESSAGE_CHARS: usize = 500;
 
 /// LLM-related keys parsed out of a user's settings document. The document is
 /// otherwise client-owned and opaque; these keys are the shared contract with
-/// the app's `SettingsStore`.
+/// the app's `SettingsStore`. Which features run is not here: that is each
+/// workspace's switches (see `handlers::workspace_ai`).
 #[derive(Debug, PartialEq)]
 pub struct LlmSettings {
     /// Present only when base URL and model are both set.
     pub config: Option<LlmConfig>,
-    /// Auto-labeling toggle; defaults on (it only matters once configured).
-    pub labeling: bool,
-    /// Notes-chat toggle; defaults on.
-    pub chat: bool,
-    /// Note cleanup and grammar-correction toggle; defaults off because these
-    /// actions directly change note content.
-    pub writing: bool,
     /// Whether newly added links should be summarized into text/Markdown notes.
     pub auto_summarize_links: bool,
     pub link_summary_length: LinkSummaryLength,
@@ -108,9 +102,6 @@ pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
     });
     LlmSettings {
         config,
-        labeling: value["llm_labeling"] != false,
-        chat: value["llm_chat"] != false,
-        writing: value["llm_writing"] == true,
         auto_summarize_links: value["auto_summarize_links"] == true,
         link_summary_length: serde_json::from_value(value["link_summary_length"].clone())
             .unwrap_or_default(),
@@ -119,6 +110,63 @@ pub fn parse_llm_settings_value(value: &serde_json::Value) -> LlmSettings {
         chat_edit: value["llm_chat_edit"] != false,
         chat_organize: value["llm_chat_organize"] != false,
     }
+}
+
+/// A rewrite task from the settings document: `name` labels it in the note
+/// menu, `prompt` is what the model is told to do.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RewriteTask {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub prompt: String,
+}
+
+/// Longest task instruction the server will send to a model.
+const MAX_REWRITE_PROMPT_CHARS: usize = 4_000;
+
+/// The rewrite tasks a settings document offers. A document that never set
+/// any gets the two defaults; one that emptied its list gets none.
+pub fn rewrite_tasks(settings: &serde_json::Value) -> Vec<RewriteTask> {
+    let Some(tasks) = settings["llm_rewrite_tasks"].as_array() else {
+        return default_rewrite_tasks();
+    };
+    tasks
+        .iter()
+        .filter_map(|value| serde_json::from_value::<RewriteTask>(value.clone()).ok())
+        .map(|task| RewriteTask {
+            id: task.id.trim().to_string(),
+            name: task.name.trim().to_string(),
+            prompt: task.prompt.trim().to_string(),
+        })
+        .filter(|task| {
+            !task.id.is_empty()
+                && !task.name.is_empty()
+                && !task.prompt.is_empty()
+                && task.prompt.chars().count() <= MAX_REWRITE_PROMPT_CHARS
+        })
+        .collect()
+}
+
+/// Mirrors the app's `kDefaultNoteRewriteTasks`.
+fn default_rewrite_tasks() -> Vec<RewriteTask> {
+    let task = |id: &str, name: &str, prompt: &str| RewriteTask {
+        id: id.to_string(),
+        name: name.to_string(),
+        prompt: prompt.to_string(),
+    };
+    vec![
+        task(
+            "concise",
+            "Make concise",
+            "Clean up this note and make it concise. Preserve every important fact, intent, and task; do not add new information.",
+        ),
+        task(
+            "grammar",
+            "Fix grammar",
+            "Fix grammar, spelling, punctuation, and syntax only. Do not summarize, rephrase for style, add information, remove information, or change tone.",
+        ),
+    ]
 }
 
 fn custom_prompt(prompt: &str) -> String {
@@ -663,6 +711,7 @@ fn with_conversation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn all_writes() -> WritePermissions {
         WritePermissions {
@@ -690,21 +739,34 @@ mod tests {
         // Model missing -> unconfigured.
         let s = parse_llm_settings(Some(r#"{"llm_base_url":"http://x/v1"}"#));
         assert_eq!(s.config, None);
-        assert!(s.labeling && s.chat);
     }
 
     #[test]
     fn parse_settings_full() {
         let s = parse_llm_settings(Some(
-            r#"{"llm_base_url":" http://x/v1 ","llm_api_key":"k","llm_model":"m",
-                "llm_labeling":false,"llm_chat":true}"#,
+            r#"{"llm_base_url":" http://x/v1 ","llm_api_key":"k","llm_model":"m"}"#,
         ));
         let cfg = s.config.expect("configured");
         assert_eq!(cfg.base_url, "http://x/v1");
         assert_eq!(cfg.api_key, "k");
         assert_eq!(cfg.model, "m");
-        assert!(!s.labeling);
-        assert!(s.chat);
+    }
+
+    #[test]
+    fn rewrite_tasks_default_until_the_list_is_set() {
+        let names = |doc: serde_json::Value| -> Vec<String> {
+            rewrite_tasks(&doc).into_iter().map(|t| t.name).collect()
+        };
+        assert_eq!(names(json!({})), ["Make concise", "Fix grammar"]);
+        assert!(names(json!({"llm_rewrite_tasks": []})).is_empty());
+        assert_eq!(
+            names(json!({"llm_rewrite_tasks": [
+                {"id": "a", "name": "Shorten", "prompt": "Shorter."},
+                {"id": "b", "name": "", "prompt": "No name."},
+                {"id": "c", "name": "Empty", "prompt": " "},
+            ]})),
+            ["Shorten"]
+        );
     }
 
     #[test]

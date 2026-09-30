@@ -15,6 +15,7 @@ enum PendingOpKind {
   workspaceCreate('workspaceCreate'),
   workspaceRename('workspaceRename'),
   workspaceViews('workspaceViews'),
+  workspaceAi('workspaceAi'),
   savedViewPut('savedViewPut'),
   savedViewDelete('savedViewDelete'),
   workspaceDelete('workspaceDelete'),

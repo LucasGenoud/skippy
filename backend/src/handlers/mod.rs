@@ -24,6 +24,7 @@ mod stages;
 mod tokens;
 mod unfurl;
 mod versions;
+mod workspace_ai;
 mod workspaces;
 pub use workspaces::{delete_smart_view, put_smart_view};
 mod writing;

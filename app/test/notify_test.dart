@@ -100,7 +100,9 @@ void main() {
         ChangeNotifierProvider.value(value: store),
         ChangeNotifierProvider.value(value: settings),
       ],
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(
+        home: SettingsScreen(page: SettingsPage.reminders),
+      ),
     );
 
     Finder notifySwitch() => find.ancestor(

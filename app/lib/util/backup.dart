@@ -51,6 +51,10 @@ class BackupWorkspace {
   final bool isDefault;
   final bool notesEnabled;
   final bool boardEnabled;
+
+  /// Which AI the workspace allowed. A backup from before workspaces had
+  /// switches reads as everything on.
+  final AiSwitches aiSwitches;
   final List<BackupLabel> labels;
   final List<BackupStage> stages;
   final List<BackupNote> notes;
@@ -63,6 +67,7 @@ class BackupWorkspace {
     required this.isDefault,
     this.notesEnabled = true,
     this.boardEnabled = true,
+    this.aiSwitches = const AiSwitches(),
     required this.labels,
     required this.stages,
     required this.notes,
@@ -312,6 +317,7 @@ Future<Uint8List> createBackupArchive({
       'is_default': workspace.isDefault,
       'notes_enabled': workspace.notesEnabled,
       'board_enabled': workspace.boardEnabled,
+      'ai': workspace.ai.switches.toJson(),
       'collections': [for (final c in workspace.collections) c.toJson()],
       'smart_views': [for (final view in workspace.savedViews) view.toJson()],
       'labels': [
@@ -485,6 +491,7 @@ BackupBundle parseBackupArchive(Uint8List bytes) {
         isDefault: isDefault,
         notesEnabled: notesEnabled,
         boardEnabled: boardEnabled,
+        aiSwitches: AiSwitches.fromJson(map['ai']),
         savedViews: _readSavedViews(map['smart_views']),
         collections: collections,
         labels: parsed.labels,

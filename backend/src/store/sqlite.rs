@@ -544,6 +544,11 @@ impl SqliteRepository {
                     board_enabled: workspace.board_enabled,
                     is_default: workspace.is_default,
                     created_at: workspace.created_at,
+                    // Resolved against the owner's provider by the handlers.
+                    ai: WorkspaceAiView {
+                        switches: workspace.ai,
+                        ..Default::default()
+                    },
                 }
             })
             .collect())
@@ -568,8 +573,9 @@ impl SqliteRepository {
     pub async fn insert_workspace(&self, workspace: &Workspace) -> RepoResult<()> {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO workspaces
-                (id, owner_id, name, notes_enabled, board_enabled, is_default, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (id, owner_id, name, notes_enabled, board_enabled, is_default, created_at,
+                 ai_enabled, ai_labeling, ai_chat, ai_writing, assistant_access)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&workspace.id)
         .bind(&workspace.owner_id)
@@ -578,6 +584,11 @@ impl SqliteRepository {
         .bind(workspace.board_enabled as i64)
         .bind(workspace.is_default as i64)
         .bind(&workspace.created_at)
+        .bind(workspace.ai.enabled as i64)
+        .bind(workspace.ai.labeling as i64)
+        .bind(workspace.ai.chat as i64)
+        .bind(workspace.ai.writing as i64)
+        .bind(workspace.ai.assistant_access as i64)
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
@@ -591,12 +602,18 @@ impl SqliteRepository {
     pub async fn update_workspace(&self, workspace: &Workspace) -> RepoResult<bool> {
         let result = sqlx::query(
             "UPDATE workspaces
-             SET name = ?, notes_enabled = ?, board_enabled = ?
+             SET name = ?, notes_enabled = ?, board_enabled = ?, ai_enabled = ?,
+                 ai_labeling = ?, ai_chat = ?, ai_writing = ?, assistant_access = ?
              WHERE id = ?",
         )
         .bind(&workspace.name)
         .bind(workspace.notes_enabled as i64)
         .bind(workspace.board_enabled as i64)
+        .bind(workspace.ai.enabled as i64)
+        .bind(workspace.ai.labeling as i64)
+        .bind(workspace.ai.chat as i64)
+        .bind(workspace.ai.writing as i64)
+        .bind(workspace.ai.assistant_access as i64)
         .bind(&workspace.id)
         .execute(&self.pool)
         .await?;

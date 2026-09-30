@@ -14,6 +14,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../models/workspace.dart' show AiFeature;
 import '../state/checklist_tree.dart';
 import '../state/editor_history.dart';
 import '../state/note_links.dart';
@@ -761,12 +762,17 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  /// AI editing follows the note's workspace, whose owner runs it.
+  bool _aiWritingAvailable(Note note) =>
+      _store.aiIn(note.workspaceId).allows(AiFeature.writing);
+
   Future<void> _summarizeUrl(String url) async {
     if (!_summarizingUrls.add(url)) return;
     setState(() {});
     try {
       final summary = (await _store.api.summarizeUrl(
         url,
+        noteId: _noteId!,
         length: _settings.linkSummaryLength,
       )).trim();
       if (!mounted || summary.isEmpty) return;
@@ -1162,10 +1168,10 @@ class _EditorScreenState extends State<EditorScreen> {
                     note == null ||
                     note.isEmpty ||
                     note.isAudio ||
-                    !_settings.noteWritingAvailable
+                    !_aiWritingAvailable(note)
                 ? null
                 : _rewriteWithAi,
-            rewriteTasks: _settings.llmRewriteTasks,
+            rewriteTasks: _store.aiIn(note?.workspaceId).rewriteTasks,
             rewriting: note != null && _store.isRewritingNote(note.id),
             gridSpan: note?.gridSpan ?? 1,
             onGridSpan: trashed || note == null
@@ -1360,8 +1366,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                                   !trashed &&
                                                       !note.isChecklist &&
                                                       !note.isAudio &&
-                                                      settings
-                                                          .noteWritingAvailable
+                                                      _aiWritingAvailable(note)
                                                   ? _summarizeUrl
                                                   : null,
                                               summarizingUrls: _summarizingUrls,

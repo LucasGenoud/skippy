@@ -282,52 +282,59 @@ class _ExportSectionState extends State<ExportSection> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final store = context.watch<NotesStore>();
     final count = store.notesForExport.length;
+    // One row per job, each saying what it touches, rather than one paragraph
+    // over a wall of buttons.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Text(
-            'Create a complete zip backup of every workspace you own, '
-            'including notes, labels, board columns, reminders, trash, and '
-            'attached files. Workspaces shared with you and collaboration '
-            'access are excluded. Restoring replaces your owned workspace '
-            'data; readable formats exclude trash and attached file bytes. '
-            'A Google Keep export from Google Takeout is added to your notes '
-            'without replacing any.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ListTile(
+          leading: const Icon(Icons.inventory_2_outlined),
+          title: const Text('Create backup'),
+          subtitle: const Text(
+            'A zip of every workspace you own: notes, labels, board columns, '
+            'reminders, trash, and attached files',
           ),
+          enabled: !_busy,
+          onTap: _exportBackup,
+        ),
+        ListTile(
+          leading: const Icon(Icons.settings_backup_restore),
+          title: const Text('Restore backup'),
+          subtitle: const Text(
+            'Replaces the workspaces you pick with their backed-up copy',
+          ),
+          enabled: !_busy,
+          onTap: _restoreBackup,
+        ),
+        ListTile(
+          key: const Key('import-keep'),
+          leading: const Icon(Icons.move_to_inbox_outlined),
+          title: const Text('Import from Google Keep'),
+          subtitle: const Text(
+            'Adds the notes from a Google Takeout export, replacing nothing',
+          ),
+          enabled: !_busy,
+          onTap: _importKeep,
+        ),
+        ListTile(
+          leading: const Icon(Icons.download_outlined),
+          title: const Text('Export notes'),
+          subtitle: const Text(
+            'A readable copy, without trash or attached files',
+          ),
+          enabled: !_busy && count > 0,
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsetsDirectional.fromSTEB(56, 0, 16, 0),
+          // Siblings, so one compact chip row rather than a button each.
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              FilledButton.icon(
-                icon: const Icon(Icons.inventory_2_outlined, size: 18),
-                label: const Text('Create backup'),
-                onPressed: _busy ? null : _exportBackup,
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.settings_backup_restore, size: 18),
-                label: const Text('Restore backup'),
-                onPressed: _busy ? null : _restoreBackup,
-              ),
-              OutlinedButton.icon(
-                key: const Key('import-keep'),
-                icon: const Icon(Icons.move_to_inbox_outlined, size: 18),
-                label: const Text('Import from Google Keep'),
-                onPressed: _busy ? null : _importKeep,
-              ),
               for (final format in ExportFormat.values)
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.download_outlined, size: 18),
+                ActionChip(
                   label: Text(format.label),
                   onPressed: _busy || count == 0
                       ? null

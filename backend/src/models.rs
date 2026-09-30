@@ -121,6 +121,61 @@ pub struct Workspace {
     /// so a user always has somewhere for their notes to live.
     pub is_default: bool,
     pub created_at: String,
+    pub ai: AiSwitches,
+}
+
+/// What AI a workspace allows. Only the owner flips these, and every member
+/// gets the same AI there, run on the owner's provider. `enabled` gates the
+/// three features without overwriting them, so turning AI back on restores
+/// what was on before.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct AiSwitches {
+    pub enabled: bool,
+    pub labeling: bool,
+    pub chat: bool,
+    pub writing: bool,
+    /// Whether personal access tokens (MCP) may read and write its notes.
+    pub assistant_access: bool,
+}
+
+impl Default for AiSwitches {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            labeling: true,
+            chat: true,
+            writing: true,
+            assistant_access: true,
+        }
+    }
+}
+
+/// A PATCH of [`AiSwitches`]: a named switch changes, the rest keep theirs.
+#[derive(Debug, Default, Deserialize)]
+pub struct AiSwitchesPatch {
+    pub enabled: Option<bool>,
+    pub labeling: Option<bool>,
+    pub chat: Option<bool>,
+    pub writing: Option<bool>,
+    pub assistant_access: Option<bool>,
+}
+
+/// A workspace's AI as its members' clients see it: the switches in effect
+/// (a server-pinned toggle wins), whether the owner has a provider to run
+/// them, and the owner's rewrite tasks by name. The provider, its key, and
+/// the task instructions stay on the server.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct WorkspaceAiView {
+    #[serde(flatten)]
+    pub switches: AiSwitches,
+    pub provider_ready: bool,
+    pub rewrite_tasks: Vec<RewriteTaskName>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RewriteTaskName {
+    pub id: String,
+    pub name: String,
 }
 
 /// A workspace as served to one of its members, with the roster resolved to
@@ -138,6 +193,7 @@ pub struct WorkspaceView {
     pub members: Vec<UserPublic>,
     pub is_default: bool,
     pub created_at: String,
+    pub ai: WorkspaceAiView,
 }
 
 /// A member-managed container. Deleted containers remain as trash provenance.
@@ -179,6 +235,8 @@ pub struct UpdateWorkspace {
     pub name: Option<String>,
     pub notes_enabled: Option<bool>,
     pub board_enabled: Option<bool>,
+    #[serde(default)]
+    pub ai: Option<AiSwitchesPatch>,
 }
 
 #[derive(Debug, Deserialize)]

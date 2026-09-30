@@ -399,6 +399,16 @@ class FakeApi implements Api {
   });
 
   @override
+  Future<Workspace> updateWorkspaceAi(String id, AiSwitches switches) =>
+      _run('updateWorkspaceAi:$id', () {
+        final existing = workspaces[id];
+        if (existing == null) throw ApiException(404, '{"error":"not found"}');
+        return workspaces[id] = existing.copyWith(
+          ai: existing.ai.copyWith(switches: switches),
+        );
+      });
+
+  @override
   Future<void> deleteWorkspace(String id) => _run('deleteWorkspace:$id', () {
     if (workspaces.remove(id) == null) {
       throw ApiException(404, '{"error":"not found"}');
@@ -979,6 +989,7 @@ class FakeApi implements Api {
   @override
   Future<String> summarizeUrl(
     String url, {
+    required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
   }) => _run(
     'summarizeUrl:$url',

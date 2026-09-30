@@ -279,7 +279,7 @@ void main() {
     });
   });
 
-  group('Settings AI section', () {
+  group('Settings AI page', () {
     late FakeApi api;
     late NotesStore store;
     late SettingsStore settings;
@@ -300,97 +300,8 @@ void main() {
         ChangeNotifierProvider.value(value: store),
         ChangeNotifierProvider.value(value: settings),
       ],
-      child: const MaterialApp(home: SettingsScreen()),
+      child: const MaterialApp(home: SettingsScreen(page: SettingsPage.ai)),
     );
-
-    Finder aiSwitch(String title) => find.ancestor(
-      of: find.text(title),
-      matching: find.byType(SwitchListTile),
-    );
-
-    testWidgets('toggles unlock once an AI provider is configured', (
-      tester,
-    ) async {
-      settings.semanticSearchCapable = true;
-      await tester.pumpWidget(harness());
-      // Scroll to the last of the three provider-backed rows, so every one of
-      // them is built before they are counted.
-      await tester.scrollUntilVisible(find.text('AI note editing'), 200);
-
-      // Unconfigured: every provider-backed feature is inert and explains why.
-      expect(find.text('Configure an AI provider first'), findsNWidgets(3));
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('Automatic labeling')).onChanged,
-        isNull,
-      );
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('Notes chat')).onChanged,
-        isNull,
-      );
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('AI note editing')).onChanged,
-        isNull,
-      );
-
-      settings.setLlmConfig(
-        baseUrl: 'http://localhost:11434/v1',
-        apiKey: '',
-        model: 'llama3.1',
-      );
-      await tester.pump();
-
-      // The provider tile may have scrolled off; bring it back to check the
-      // configured summary.
-      await tester.scrollUntilVisible(
-        find.text('AI provider'),
-        -200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.textContaining('llama3.1 @ localhost'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('Notes chat'), 200);
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('Automatic labeling')).onChanged,
-        isNotNull,
-      );
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('Notes chat')).onChanged,
-        isNotNull,
-      );
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('AI note editing')).onChanged,
-        isNotNull,
-      );
-      // Flush the settings-save debounce so no timers leak.
-      await tester.pump(const Duration(milliseconds: 700));
-    });
-
-    testWidgets('notes chat stays gated on the server capability', (
-      tester,
-    ) async {
-      settings.semanticSearchCapable = false;
-      settings.setLlmConfig(
-        baseUrl: 'http://localhost:11434/v1',
-        apiKey: '',
-        model: 'llama3.1',
-      );
-      await tester.pumpWidget(harness());
-      await tester.scrollUntilVisible(find.text('Notes chat'), 200);
-
-      expect(
-        find.text('Requires semantic search on this server'),
-        findsOneWidget,
-      );
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('Notes chat')).onChanged,
-        isNull,
-      );
-      // Labeling doesn't need the server: it unlocks regardless.
-      expect(
-        tester.widget<SwitchListTile>(aiSwitch('Automatic labeling')).onChanged,
-        isNotNull,
-      );
-      await tester.pump(const Duration(milliseconds: 700));
-    });
 
     testWidgets('provider dialog saves the config', (tester) async {
       await tester.pumpWidget(harness());

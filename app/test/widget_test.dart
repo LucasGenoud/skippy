@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/workspace.dart';
 import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/widgets/note_zoom.dart';
@@ -766,12 +767,16 @@ void main() {
           'n1',
           title: 'AI actions',
           content: 'this sentence needs fixing',
+          workspaceId: 'w-default',
+        );
+        api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+          ai: const WorkspaceAi(
+            providerReady: true,
+            rewriteTasks: kDefaultNoteRewriteTasks,
+          ),
         );
         await store.load();
-        final settings = SettingsStore(api: api)
-          ..llmBaseUrl = 'http://fake/v1'
-          ..llmModel = 'test-model'
-          ..llmWritingEnabled = true;
+        final settings = SettingsStore(api: api);
         await tester.pumpWidget(
           MultiProvider(
             providers: [
@@ -1585,13 +1590,17 @@ void main() {
 
     testWidgets('adds an optional URL summary to the note', (tester) async {
       const url = 'https://example.com/article';
-      api.notes['n1'] = serverNote('n1', content: url);
+      api.notes['n1'] = serverNote(
+        'n1',
+        content: url,
+        workspaceId: 'w-default',
+      );
       api.urlSummaries[url] = 'A very short summary.';
+      api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+        ai: const WorkspaceAi(providerReady: true),
+      );
       await store.load();
-      final settings = SettingsStore(api: api)
-        ..llmBaseUrl = 'http://fake/v1'
-        ..llmModel = 'test-model'
-        ..llmWritingEnabled = true;
+      final settings = SettingsStore(api: api);
       await tester.pumpWidget(
         harness(store, const EditorScreen(noteId: 'n1'), settings: settings),
       );

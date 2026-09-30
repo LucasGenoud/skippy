@@ -5,6 +5,17 @@ use crate::helpers::*;
 /// Drive one real /api/chat turn: spawn the app on a TCP port, connect with a
 /// WS client, send a request frame, and collect frames until done/error.
 async fn chat_turn(state: AppState, token: &str, message: &str, history: Value) -> Vec<Value> {
+    chat_turn_in(state, token, message, history, None).await
+}
+
+/// [`chat_turn`] with the workspace the client has open.
+async fn chat_turn_in(
+    state: AppState,
+    token: &str,
+    message: &str,
+    history: Value,
+    workspace_id: Option<&str>,
+) -> Vec<Value> {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
@@ -19,7 +30,13 @@ async fn chat_turn(state: AppState, token: &str, message: &str, history: Value) 
         .await
         .expect("ws connect");
     ws.send(WsMessage::text(
-        json!({"token": token, "message": message, "history": history}).to_string(),
+        json!({
+            "token": token,
+            "message": message,
+            "history": history,
+            "workspace_id": workspace_id,
+        })
+        .to_string(),
     ))
     .await
     .unwrap();
@@ -508,4 +525,65 @@ async fn chat_updates_note_properties_and_returns_an_undo_patch() {
     assert_eq!(note["title"], "Launch plan");
     assert_eq!(note["color"], "#ff0000");
     assert_eq!(note["archived"], true);
+}
+
+/// A member chatting in someone else's workspace is answered by its owner's
+/// provider, and only while the owner leaves chat on there.
+#[tokio::test]
+async fn chat_in_a_workspace_runs_on_its_owners_provider() {
+    let (llm, _) = FakeLlm::new_seq(&[r#"{"search": null}"#, "Hello."]);
+    let configs = llm.configs();
+    let index = Arc::new(
+        SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64")
+            .await
+            .unwrap(),
+    );
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    let app = build_app(state.clone());
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+    configure_llm(&app, &ada).await;
+    let (_, team) = send(
+        &app,
+        "POST",
+        "/api/workspaces",
+        Some(&ada),
+        Some(json!({"name": "Team"})),
+    )
+    .await;
+    let team = team["id"].as_str().unwrap().to_string();
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/workspaces/{team}/members"),
+        Some(&ada),
+        Some(json!({"email": test_email("bob")})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let frames = chat_turn_in(state.clone(), &bob, "hi", json!([]), Some(&team)).await;
+    assert_eq!(frames.last().unwrap()["type"], "done", "{frames:?}");
+    assert_eq!(configs.lock().unwrap()[0].base_url, "http://fake/v1");
+
+    // Without a provider of his own, his own workspace has no chat.
+    let frames = chat_turn_in(state.clone(), &bob, "hi", json!([]), None).await;
+    assert_eq!(frames.last().unwrap()["type"], "error", "{frames:?}");
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        &format!("/api/workspaces/{team}"),
+        Some(&ada),
+        Some(json!({"ai": {"chat": false}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let calls_before = configs.lock().unwrap().len();
+    let frames = chat_turn_in(state, &bob, "hi", json!([]), Some(&team)).await;
+    assert_eq!(frames.last().unwrap()["type"], "error", "{frames:?}");
+    assert_eq!(configs.lock().unwrap().len(), calls_before);
 }

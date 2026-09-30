@@ -194,7 +194,7 @@ void main() {
     final settings = tester
         .element(find.byType(AnimatedMasonry))
         .read<SettingsStore>();
-    settings.setLlmLabelingEnabled(!settings.llmLabelingEnabled);
+    settings.setLlmConfig(baseUrl: 'http://x/v1', apiKey: '', model: 'm');
     await tester.pumpAndSettle();
     expect(
       tester.widget<AnimatedMasonry>(find.byType(AnimatedMasonry)),

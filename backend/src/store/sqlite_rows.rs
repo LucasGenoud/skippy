@@ -1,6 +1,8 @@
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::models::{ItemReminder, NoteRecord, NoteVersion, ShareLink, User, Workspace};
+use crate::models::{
+    AiSwitches, ItemReminder, NoteRecord, NoteVersion, ShareLink, User, Workspace,
+};
 
 pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
     let items_json: String = row.get("items");
@@ -61,6 +63,13 @@ pub(super) fn workspace_from_row(row: &SqliteRow) -> Workspace {
         board_enabled: row.get::<i64, _>("board_enabled") != 0,
         is_default: row.get::<i64, _>("is_default") != 0,
         created_at: row.get("created_at"),
+        ai: AiSwitches {
+            enabled: row.get::<i64, _>("ai_enabled") != 0,
+            labeling: row.get::<i64, _>("ai_labeling") != 0,
+            chat: row.get::<i64, _>("ai_chat") != 0,
+            writing: row.get::<i64, _>("ai_writing") != 0,
+            assistant_access: row.get::<i64, _>("assistant_access") != 0,
+        },
     }
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
+import 'package:skippy/models/workspace.dart';
 import 'package:skippy/state/pending_operation.dart';
 import 'package:skippy/state/pending_operation_executor.dart';
 
@@ -92,6 +93,13 @@ void main() {
       );
       await executor.run(
         const PendingOp(
+          PendingOpKind.workspaceAi,
+          id: 'w-default',
+          data: {'enabled': true, 'labeling': false},
+        ),
+      );
+      await executor.run(
+        const PendingOp(
           PendingOpKind.leaveWorkspace,
           id: 'w-default',
           data: {'userId': 'u2'},
@@ -113,6 +121,7 @@ void main() {
         api.log,
         containsAllInOrder([
           'updateWorkspaceViews:w-default:false:true',
+          'updateWorkspaceAi:w-default',
           'removeWorkspaceMember:w-default:u2',
           'removeCollaborator:n1:u2',
           'deleteAttachment:a1',
@@ -120,6 +129,11 @@ void main() {
         ]),
       );
       expect(api.notes['n1']?.collaborators, isEmpty);
+      // A switch the queued op leaves out is on.
+      expect(
+        api.workspaces['w-default']!.ai.switches,
+        const AiSwitches(labeling: false),
+      );
     },
   );
 }

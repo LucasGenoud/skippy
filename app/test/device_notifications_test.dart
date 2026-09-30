@@ -92,7 +92,7 @@ void main() {
       child: MaterialApp(
         // showAppSnack posts through the app-wide messenger, as in main.dart.
         scaffoldMessengerKey: scaffoldMessengerKey,
-        home: const SettingsScreen(),
+        home: const SettingsScreen(page: SettingsPage.reminders),
       ),
     );
 

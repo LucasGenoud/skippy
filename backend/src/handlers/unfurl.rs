@@ -13,7 +13,10 @@ use crate::AppState;
 use crate::assist::{LinkSummaryLength, LlmSettings};
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
+use crate::llm::LlmConfig;
 use crate::unfurl::{self, LinkPreview};
+
+use super::workspace_ai::{AiFeature, workspace_ai};
 
 /// How long a cached preview stays fresh.
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
@@ -31,6 +34,11 @@ pub struct SummarizeRequest {
     url: String,
     #[serde(default)]
     length: Option<LinkSummaryLength>,
+    /// The note the summary is for; its workspace decides whether AI editing
+    /// is on and whose provider writes it. Absent means the caller's default
+    /// workspace.
+    #[serde(default)]
+    note_id: Option<String>,
 }
 
 /// Fetch link metadata for `?url=`. Auth-gated (the server makes an outbound
@@ -57,7 +65,7 @@ pub async fn unfurl(
     Ok(Json(preview))
 }
 
-/// Fetch a page and ask the user's enabled writing model for one very short
+/// Fetch a page and ask the workspace's writing model for one very short
 /// summary. This is deliberately explicit and synchronous: fetching arbitrary
 /// URLs and spending model tokens only happens after a button press.
 pub async fn summarize_url(
@@ -65,11 +73,22 @@ pub async fn summarize_url(
     AuthUser(user_id): AuthUser,
     Json(body): Json<SummarizeRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let settings = state.repo.settings_for_user(&user_id).await?;
-    let effective = state.managed.overlay(settings.as_deref());
-    let llm_settings = crate::assist::parse_llm_settings_value(&effective);
+    let workspace_id = match body.note_id.as_deref() {
+        Some(note_id) => {
+            super::require_participant(&state, note_id, &user_id)
+                .await?
+                .workspace_id
+        }
+        None => super::resolve_workspace(&state, &user_id, None).await?,
+    };
+    let ai = workspace_ai(&state, &workspace_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let Some(cfg) = ai.config(AiFeature::Writing) else {
+        return Err(ApiError::Unavailable("AI note editing is not enabled"));
+    };
     let summary =
-        summarize_with_settings(&state, &llm_settings, body.url.trim(), body.length).await?;
+        summarize_with_settings(&state, cfg, ai.settings(), body.url.trim(), body.length).await?;
     Ok(Json(serde_json::json!({"summary": summary})))
 }
 
@@ -78,17 +97,11 @@ pub async fn summarize_url(
 /// identical.
 pub(crate) async fn summarize_with_settings(
     state: &AppState,
+    cfg: &LlmConfig,
     llm_settings: &LlmSettings,
     url: &str,
     length: Option<LinkSummaryLength>,
 ) -> ApiResult<String> {
-    let Some(cfg) = llm_settings
-        .config
-        .as_ref()
-        .filter(|_| llm_settings.writing)
-    else {
-        return Err(ApiError::Unavailable("AI note editing is not enabled"));
-    };
     let text = unfurl::page_text_for(url.trim(), unfurl::allow_private())
         .await
         .map_err(|e| ApiError::BadRequest(format!("{e:#}")))?;

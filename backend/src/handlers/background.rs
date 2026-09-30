@@ -6,6 +6,7 @@ use crate::AppState;
 use crate::models::*;
 
 use super::CHANGED_MSG;
+use super::workspace_ai::{AiFeature, WorkspaceAi, workspace_ai};
 
 impl AppState {
     /// Push a change event to everyone who can see the note.
@@ -291,20 +292,19 @@ impl AppState {
         let note_id = note_id.to_string();
         let user_id = user_id.to_string();
         tokio::spawn(async move {
-            let settings = match state.repo.settings_for_user(&user_id).await {
-                Ok(settings) => settings,
+            let ai = match state.note_workspace_ai(&note_id).await {
+                Ok(Some(ai)) => ai,
+                Ok(None) => return,
                 Err(error) => {
                     state.report_background_failure("auto_summary_settings", &format!("{error:?}"));
                     return;
                 }
             };
-            let llm_settings = crate::assist::parse_llm_settings_value(
-                &state.managed.overlay(settings.as_deref()),
-            );
-            if !llm_settings.auto_summarize_links
-                || !llm_settings.writing
-                || llm_settings.config.is_none()
-            {
+            let Some(cfg) = ai.config(AiFeature::Writing) else {
+                return;
+            };
+            let llm_settings = ai.settings();
+            if !llm_settings.auto_summarize_links {
                 return;
             }
             *state
@@ -332,7 +332,8 @@ impl AppState {
                 }
                 let summary = match super::unfurl::summarize_with_settings(
                     &state,
-                    &llm_settings,
+                    cfg,
+                    llm_settings,
                     &url,
                     Some(llm_settings.link_summary_length),
                 )
@@ -397,22 +398,29 @@ impl AppState {
         });
     }
 
+    /// The AI of the workspace holding `note_id`, None once the note is gone.
+    async fn note_workspace_ai(
+        &self,
+        note_id: &str,
+    ) -> crate::error::ApiResult<Option<WorkspaceAi>> {
+        let Some(record) = self.repo.note_record(note_id).await? else {
+            return Ok(None);
+        };
+        workspace_ai(self, &record.workspace_id).await
+    }
+
     async fn run_auto_labeling(&self, note_id: &str, user_id: &str) {
-        let settings = match self.repo.settings_for_user(user_id).await {
-            Ok(s) => s,
+        let ai = match self.note_workspace_ai(note_id).await {
+            Ok(Some(ai)) => ai,
+            Ok(None) => return,
             Err(error) => {
                 self.report_background_failure("auto_label_settings", &format!("{error:?}"));
                 return;
             }
         };
-        let effective = self.managed.overlay(settings.as_deref());
-        let llm_settings = crate::assist::parse_llm_settings_value(&effective);
-        let Some(cfg) = llm_settings.config else {
+        let Some(cfg) = ai.config(AiFeature::Labeling) else {
             return;
         };
-        if !llm_settings.labeling {
-            return;
-        }
         let record = match self.repo.note_record(note_id).await {
             Ok(Some(record)) => record,
             Ok(None) => return,
@@ -456,8 +464,8 @@ impl AppState {
             }
         };
         let names: Vec<String> = labels.iter().map(|l| l.name.clone()).collect();
-        let messages = crate::assist::labeling_messages(&names, &text, &llm_settings.prompt);
-        let reply = match self.llm.complete(&cfg, messages).await {
+        let messages = crate::assist::labeling_messages(&names, &text, &ai.settings().prompt);
+        let reply = match self.llm.complete(cfg, messages).await {
             Ok(reply) => reply,
             Err(e) => {
                 self.report_background_failure("auto_label_completion", &e);

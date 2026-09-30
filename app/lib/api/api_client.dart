@@ -133,6 +133,9 @@ abstract class Api {
     required bool notesEnabled,
     required bool boardEnabled,
   });
+
+  /// Set which AI the workspace allows. Owner only.
+  Future<Workspace> updateWorkspaceAi(String id, AiSwitches switches);
   Future<Workspace> duplicateWorkspace(
     String id,
     String name,
@@ -331,10 +334,11 @@ abstract class Api {
   /// when the server rejects the URL (invalid/blocked) or the fetch fails.
   Future<LinkPreview?> unfurl(String url);
 
-  /// Fetch a webpage and ask the user's enabled writing model for a very
-  /// short plain-text summary.
+  /// Fetch a webpage and ask the writing model of [noteId]'s workspace for a
+  /// very short plain-text summary.
   Future<String> summarizeUrl(
     String url, {
+    required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
   });
 
@@ -566,6 +570,18 @@ class ApiClient extends _ApiTransport implements Api {
           'notes_enabled': notesEnabled,
           'board_enabled': boardEnabled,
         }),
+      ),
+    );
+    return Workspace.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<Workspace> updateWorkspaceAi(String id, AiSwitches switches) async {
+    final data = _decode(
+      await _client.patch(
+        _uri('/workspaces/$id'),
+        headers: _headers(),
+        body: jsonEncode({'ai': switches.toJson()}),
       ),
     );
     return Workspace.fromJson(data as Map<String, dynamic>);
@@ -1158,13 +1174,18 @@ class ApiClient extends _ApiTransport implements Api {
   @override
   Future<String> summarizeUrl(
     String url, {
+    required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
   }) async {
     final data = _decode(
       await _client.post(
         _uri('/unfurl/summary'),
         headers: _headers(),
-        body: jsonEncode({'url': url, 'length': length.name}),
+        body: jsonEncode({
+          'url': url,
+          'note_id': noteId,
+          'length': length.name,
+        }),
       ),
     );
     return (data as Map<String, dynamic>)['summary'] as String;

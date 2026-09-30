@@ -618,11 +618,19 @@ void main() {
       await tester.tap(find.text('Workspace settings'));
       await tester.pumpAndSettle();
 
+      // The settings page is pushed over the home grid: scroll its own list.
       await tester.scrollUntilVisible(
         find.text('Delete workspace'),
         300,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: find
+            .descendant(
+              of: find.byType(WorkspaceSettingsScreen),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
+      await tester.ensureVisible(find.text('Delete workspace'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Delete workspace'));
       await tester.pumpAndSettle();
 

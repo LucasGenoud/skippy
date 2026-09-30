@@ -143,14 +143,29 @@ flutter run --release -d <ios-device-id>
 An app installed with a free Apple developer account needs refreshing every
 seven days.
 
+## AI in a workspace
+
+Automatic labeling, notes chat, and AI note editing run on the AI provider
+of the workspace's owner, for everyone in the workspace. Members do not need
+a provider of their own, and never see the owner's key.
+
+1. Open Settings, then AI & search, and set up **AI provider**. Any
+   OpenAI-compatible API works, including Ollama.
+2. Every workspace you own now has AI. To turn it off, or to turn off one
+   feature, open the workspace's settings and use the switches under AI.
+
+Only the owner can change these switches. A server can also pin a feature on
+or off for every workspace with `LLM_LABELING`, `LLM_CHAT`, or
+`LLM_WRITING`.
+
 ## Connect an AI assistant
 
 Skippy includes a Model Context Protocol (MCP) server, so an assistant such
 as Claude can search and read your notes and, if you allow it, create notes
 and add to them. It cannot delete, move, or share anything.
 
-1. In Skippy, open Settings, then Sharing, and choose **New token** under
-   Assistant access (MCP).
+1. In Skippy, open Settings, then Sharing & access, and choose **New token**
+   under Assistant access (MCP).
 2. Name the token and choose **Read only** or **Read and add**.
 3. Copy the token. It is shown once.
 
@@ -164,6 +179,9 @@ Any other MCP client connects to `https://<your server>/api/mcp` over
 Streamable HTTP with the header `Authorization: Bearer <token>`. Revoke a
 token in the same Settings section; resetting your password revokes all of
 them.
+
+A token reaches every workspace you belong to, except one whose owner turned
+off **Assistant access (MCP)** in its settings.
 
 ## Documentation site
 
@@ -214,9 +232,9 @@ override them.
 | `LLM_BASE_URL` | Server-managed AI API base URL. | Unset |
 | `LLM_API_KEY` | Server-managed AI API key. | Unset |
 | `LLM_MODEL` | Server-managed AI model. | Unset |
-| `LLM_LABELING` | Pin automatic AI labeling (`true`/`false`). | Unset; per-user setting |
-| `LLM_CHAT` | Pin notes chat (`true`/`false`). | Unset; per-user setting |
-| `LLM_WRITING` | Pin AI writing (`true`/`false`). | Unset; per-user setting |
+| `LLM_LABELING` | Pin automatic AI labeling (`true`/`false`) in every workspace. | Unset; each workspace's switch |
+| `LLM_CHAT` | Pin notes chat (`true`/`false`) in every workspace. | Unset; each workspace's switch |
+| `LLM_WRITING` | Pin AI writing (`true`/`false`) in every workspace. | Unset; each workspace's switch |
 | `SMTP_HOST` | Server-managed mail host. | Unset |
 | `SMTP_PORT` | Server-managed mail port. | Unset |
 | `SMTP_SECURITY` | Server-managed mail security mode. | Unset |

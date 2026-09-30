@@ -15,12 +15,13 @@ import '../util/snack.dart';
 import '../util/workspace_stats.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/form_dialog.dart';
+import '../widgets/workspace_ai_section.dart';
 import '../widgets/workspace_menu.dart';
 import 'workspace_stats_screen.dart';
 import '../widgets/form_error_banner.dart';
 
 /// Settings for one workspace: its name, which views it offers, who is in it,
-/// what it holds, and how to delete or leave it.
+/// what AI it allows, what it holds, and how to delete or leave it.
 ///
 /// A page rather than a dialog at every width, unlike the short forms that go
 /// through [showFormDialog]: these settings belong to the workspace the way the
@@ -120,6 +121,9 @@ class WorkspaceSettingsScreen extends StatelessWidget {
               const Divider(height: 32),
               const SectionHeader('People'),
               _PeopleSection(workspace: workspace, isOwner: isOwner),
+              const Divider(height: 32),
+              const SectionHeader('AI'),
+              WorkspaceAiSection(workspace: workspace, isOwner: isOwner),
               const Divider(height: 32),
               const SectionHeader('Danger zone'),
               _DangerZone(workspace: workspace, isOwner: isOwner),
