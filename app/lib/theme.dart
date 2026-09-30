@@ -214,7 +214,11 @@ Color _onAccent(Color fill) {
       : Colors.white;
 }
 
-ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
+ThemeData buildTheme(
+  Brightness brightness, {
+  Color seed = kDefaultAccent,
+  String? fontFamily,
+}) {
   final light = brightness == Brightness.light;
   Color neutral(double lightness) => _neutral(seed, lightness, light: light);
 
@@ -264,6 +268,8 @@ ThemeData buildTheme(Brightness brightness, {Color seed = kDefaultAccent}) {
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
+    // Null keeps the platform's own UI font.
+    fontFamily: fontFamily,
     scaffoldBackgroundColor: canvas,
     splashFactory: InkSparkle.splashFactory,
   );

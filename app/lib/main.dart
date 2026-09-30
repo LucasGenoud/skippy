@@ -22,6 +22,7 @@ import 'state/reminder_scheduler.dart';
 import 'state/settings_store.dart';
 import 'state/share_intake.dart';
 import 'theme.dart';
+import 'util/app_fonts.dart';
 import 'util/home_widgets.dart';
 import 'util/local_notifications.dart';
 import 'util/motion.dart';
@@ -341,6 +342,10 @@ class _SkippyAppState extends State<SkippyApp> {
     super.dispose();
   }
 
+  /// The chosen typeface once it can be drawn, the platform's until then.
+  String? _fontFamily(SettingsStore? settings) =>
+      AppFontLoader.instance.resolve(settings?.font ?? AppFont.system);
+
   @override
   Widget build(BuildContext context) {
     final store = _store;
@@ -355,7 +360,7 @@ class _SkippyAppState extends State<SkippyApp> {
         if (settings != null) ChangeNotifierProvider.value(value: settings),
       ],
       child: ListenableBuilder(
-        listenable: Listenable.merge([?settings]),
+        listenable: Listenable.merge([?settings, AppFontLoader.instance]),
         builder: (context, _) => MaterialApp(
           title: 'Skippy',
           debugShowCheckedModeBanner: false,
@@ -390,10 +395,12 @@ class _SkippyAppState extends State<SkippyApp> {
           theme: buildTheme(
             Brightness.light,
             seed: settings?.accentColor ?? kDefaultAccent,
+            fontFamily: _fontFamily(settings),
           ),
           darkTheme: buildTheme(
             Brightness.dark,
             seed: settings?.accentColor ?? kDefaultAccent,
+            fontFamily: _fontFamily(settings),
           ),
           themeMode: settings?.themeMode ?? ThemeMode.system,
           // Reads `_store` live instead of the `store` local above. This

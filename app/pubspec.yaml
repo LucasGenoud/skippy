@@ -1,7 +1,7 @@
 name: skippy
 description: "A cross-platform notes app with a Rust backend."
 publish_to: 'none'
-version: 1.12.1+27
+version: 1.13.0+28
 
 environment:
   sdk: ^3.12.0
@@ -54,6 +54,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.svg
+    # Loaded on demand by AppFontLoader, so not declared under `fonts:`.
+    - assets/fonts/Inter/
+    - assets/fonts/Nunito/
+    - assets/fonts/Lora/
+    - assets/fonts/JetBrainsMono/
 
 flutter_launcher_icons:
   image_path: "launcher_assets/icon.png"

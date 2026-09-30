@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/util/app_fonts.dart';
 import 'package:skippy/models/notify_channels.dart';
 import 'package:skippy/models/saved_location.dart';
 import 'package:skippy/theme.dart';
@@ -28,6 +29,7 @@ void main() {
 
   test('defaults are sane before and after loading empty settings', () async {
     expect(settings.themeMode, ThemeMode.system);
+    expect(settings.font, AppFont.system);
     expect(settings.dateFormat, AppDateFormat.dayFirst);
     expect(settings.use24hTime, isTrue);
     expect(settings.gridDensity, GridDensity.comfortable);
@@ -53,6 +55,7 @@ void main() {
   test('mutations persist to the server and roundtrip', () async {
     await settings.load();
     settings.setThemeMode(ThemeMode.dark);
+    settings.setFont(AppFont.lora);
     settings.setDateFormat(AppDateFormat.numericEU);
     settings.setUse24hTime(true);
     settings.setDefaultListMode(true);
@@ -67,6 +70,7 @@ void main() {
     await settleSave();
 
     expect(api.settings['theme'], 'dark');
+    expect(api.settings['font'], 'lora');
     expect(api.settings['date_format'], 'numericEU');
     expect(api.settings['time_format'], '24h');
     expect(api.settings['default_view'], 'list');
@@ -84,6 +88,7 @@ void main() {
     final other = SettingsStore(api: api);
     await other.load();
     expect(other.themeMode, ThemeMode.dark);
+    expect(other.font, AppFont.lora);
     expect(other.dateFormat, AppDateFormat.numericEU);
     expect(other.use24hTime, isTrue);
     expect(other.defaultListMode, isTrue);
@@ -284,6 +289,7 @@ void main() {
   test('malformed settings fall back to defaults per field', () async {
     api.settings = {
       'theme': 'disco',
+      'font': 'comic-sans',
       'date_format': 'whenever',
       'palette': [
         {'key': 'ok', 'name': 'OK', 'light': '#112233', 'dark': '#445566'},
@@ -293,6 +299,7 @@ void main() {
     };
     await settings.load();
     expect(settings.themeMode, ThemeMode.system);
+    expect(settings.font, AppFont.system);
     expect(settings.dateFormat, AppDateFormat.dayFirst);
     // Only the valid palette entry survives.
     expect(settings.palette.single.key, 'ok');

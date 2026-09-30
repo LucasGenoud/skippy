@@ -20,6 +20,18 @@ const seeds = <String, Color>{
 };
 
 void main() {
+  test('a chosen font sets every text style, none keeps the platform one', () {
+    final chosen = buildTheme(Brightness.light, fontFamily: 'Lora');
+    expect(chosen.textTheme.bodyMedium?.fontFamily, 'Lora');
+    expect(chosen.textTheme.titleSmall?.fontFamily, 'Lora');
+
+    final platform = buildTheme(Brightness.light);
+    expect(
+      platform.textTheme.bodyMedium?.fontFamily,
+      platform.typography.black.bodyMedium?.fontFamily,
+    );
+  });
+
   group('the depth model reads', () {
     // The bug this pins: white cards on an F8F9FA canvas differed by 1.04:1,
     // so the app looked like one flat sheet on anything but a good display.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +7,7 @@ import '../../screens/workspace_settings_screen.dart';
 import '../../state/auth_store.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
+import '../../util/app_fonts.dart';
 import '../../util/app_version.dart';
 import '../page_header.dart';
 import '../shortcut_help.dart';
@@ -135,6 +138,7 @@ class SettingsPageBody extends StatelessWidget {
         ),
       ),
       const AccentColorTile(),
+      const _FontField(),
       const Divider(height: 32),
       const SectionHeader('Notes grid'),
       const GridLayoutSection(),
@@ -360,6 +364,55 @@ class _WorkspaceAiLink extends StatelessWidget {
 }
 
 /// A quiet line explaining the rows under a section header.
+/// Picks the typeface the whole app is set in. Each option is drawn in its
+/// own face, so opening the list starts loading every one.
+class _FontField extends StatelessWidget {
+  const _FontField();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsStore>();
+
+    // The family a theme without one falls back to, so "System default"
+    // previews the platform font even while another face is in use.
+    final platformFamily = Theme.of(
+      context,
+    ).typography.black.bodyMedium?.fontFamily;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: DropdownButtonFormField<AppFont>(
+        initialValue: settings.font,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Font',
+          prefixIcon: Icon(Icons.text_fields),
+          border: OutlineInputBorder(),
+        ),
+        onTap: () {
+          for (final font in AppFont.values) {
+            unawaited(AppFontLoader.instance.load(font));
+          }
+        },
+        onChanged: (font) {
+          if (font != null) {
+            settings.setFont(font);
+          }
+        },
+        items: [
+          for (final font in AppFont.values)
+            DropdownMenuItem(
+              value: font,
+              child: Text(
+                font.label,
+                style: TextStyle(fontFamily: font.family ?? platformFamily),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Hint extends StatelessWidget {
   final String text;
 

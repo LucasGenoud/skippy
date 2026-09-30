@@ -8,6 +8,7 @@ import '../models/notify_channels.dart';
 import '../models/note.dart';
 import '../models/saved_location.dart';
 import '../theme.dart';
+import '../util/app_fonts.dart';
 
 /// One entry in the user's note-color palette.
 class PaletteEntry {
@@ -190,6 +191,7 @@ class SettingsStore extends ChangeNotifier {
 
   ThemeMode themeMode = ThemeMode.system;
   Color accentColor = kDefaultAccent;
+  AppFont font = AppFont.system;
   AppDateFormat dateFormat = AppDateFormat.dayFirst;
   bool use24hTime = true;
   bool defaultListMode = false;
@@ -405,6 +407,7 @@ class SettingsStore extends ChangeNotifier {
     };
     accentColor =
         PaletteEntry.hexToColor(json['accent'] as String?) ?? kDefaultAccent;
+    font = AppFont.values.asNameMap()[json['font']] ?? AppFont.system;
     dateFormat =
         AppDateFormat.values.asNameMap()[json['date_format']] ??
         AppDateFormat.dayFirst;
@@ -514,6 +517,7 @@ class SettingsStore extends ChangeNotifier {
       ThemeMode.system => 'system',
     },
     'accent': PaletteEntry.colorToHex(accentColor),
+    'font': font.name,
     'date_format': dateFormat.name,
     'time_format': use24hTime ? '24h' : '12h',
     'default_view': defaultListMode ? 'list' : 'grid',
@@ -591,6 +595,7 @@ class SettingsStore extends ChangeNotifier {
 
   void setThemeMode(ThemeMode mode) => _mutate(() => themeMode = mode);
   void setAccentColor(Color color) => _mutate(() => accentColor = color);
+  void setFont(AppFont value) => _mutate(() => font = value);
 
   /// Cycle every top-bar theme option, including following the host system.
   void cycleThemeMode() => _mutate(() {

@@ -11,6 +11,7 @@ import 'package:skippy/state/auth_store.dart';
 import 'package:skippy/state/local_cache.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/util/app_fonts.dart';
 import 'package:skippy/util/backup.dart';
 import 'package:skippy/util/app_version.dart';
 import 'package:skippy/widgets/settings/export_section.dart';
@@ -391,6 +392,25 @@ void main() {
     await tester.tap(find.text('Day.month.year (15.07.2026)'));
     await tester.pumpAndSettle();
     expect(settings.dateFormat, AppDateFormat.numericEU);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('the font dropdown sets the app typeface', (tester) async {
+    final settings = await pumpSettings(
+      tester,
+      FakeApi(),
+      page: SettingsPage.appearance,
+    );
+    expect(settings.font, AppFont.system);
+
+    final picker = find.byType(DropdownButtonFormField<AppFont>);
+    await tester.ensureVisible(picker);
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lora').last);
+    await tester.pumpAndSettle();
+
+    expect(settings.font, AppFont.lora);
     await tester.pump(const Duration(milliseconds: 600));
   });
 

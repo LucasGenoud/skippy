@@ -201,6 +201,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/util/linkify.dart`, `highlight.dart`, `mime.dart`, `note_image.dart`: pure display/content helpers.
 - `app/lib/util/network_error.dart`: plain-language wording for requests that never reached the server. Paired with `ApiException.serverMessage`/`statusSummary`, these guarantee every failure the UI shows carries text, including empty bodies and proxy error pages.
 - `app/lib/util/motion.dart`, `snack.dart`, `label_style.dart`: shared UI conventions.
+- `app/lib/util/app_fonts.dart`: the selectable typefaces and their on-demand loader. The fonts are plain assets, not pubspec `fonts:`, because the web engine downloads every declared font before its first frame.
 - `app/test/fake_api.dart`: in-memory implementation of the full `Api` seam.
 - `app/test/notes_store_test.dart`, `settings_store_test.dart`: state and synchronization coverage.
 - `app/test/widget_test.dart` and feature test files: widget and integration-style client behavior.
