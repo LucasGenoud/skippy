@@ -19,7 +19,7 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "STICKY_NOTES_DB=sticky_notes.db STICKY_NOTES_SEMANTIC=off ./target/debug/sticky-notes-server"
+        "DB=sticky_notes.db ./target/debug/sticky-notes-server"
       ],
       "cwd": "backend",
       "port": 8787
@@ -29,7 +29,7 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "STICKY_NOTES_ADDR=0.0.0.0:8790 STICKY_NOTES_DB=sticky_notes.db STICKY_NOTES_SEMANTIC=off ./target/debug/sticky-notes-server"
+        "ADDR=0.0.0.0:8790 DB=sticky_notes.db PUBLIC_URL=http://localhost:8790 ./target/debug/sticky-notes-server"
       ],
       "cwd": "backend",
       "port": 8790
