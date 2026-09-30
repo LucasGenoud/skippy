@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -173,6 +174,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   static const Duration _moveDuration = Duration(milliseconds: 240);
   static const int _buildBatchSize = 20;
 
+  /// How long the pointer has to stay on one target before the grid reflows
+  /// around it. Sweeping across a large grid would otherwise re-lay out every
+  /// card passed on the way.
+  static const Duration _reorderSettle = Duration(milliseconds: 100);
+
   /// How tall a slot held open for an incoming card is. The card's own height
   /// is unknowable while it belongs to somewhere else, so this is a stand-in
   /// big enough to read as a card-shaped opening.
@@ -245,6 +251,8 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   bool _snapFrame = true;
 
   Offset? _lastGlobalDragPoint;
+  Timer? _reorderTimer;
+  List<String>? _pendingOrder;
   late final Ticker _autoScrollTicker;
   Duration _lastTick = Duration.zero;
 
@@ -260,6 +268,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   @override
   void dispose() {
     widget.scrollController?.removeListener(_onScroll);
+    _reorderTimer?.cancel();
     _autoScrollTicker.dispose();
     super.dispose();
   }
@@ -533,15 +542,63 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
   void _onDragMove(Offset globalPosition) {
     _lastGlobalDragPoint = globalPosition;
-    _reorderToPointer(globalPosition);
+    _scheduleReorder(globalPosition);
     _updateAutoScroll(globalPosition);
   }
 
-  void _reorderToPointer(Offset globalPosition) {
+  // Debounced on the target rather than the pointer, so jitter inside one
+  // card does not keep postponing its reorder.
+  void _scheduleReorder(Offset globalPosition) {
+    final next = _orderAtPointer(globalPosition);
+    if (next == null) {
+      return;
+    }
+
+    if (listEquals(next, _orderIds)) {
+      _cancelPendingReorder();
+      return;
+    }
+
+    if (listEquals(next, _pendingOrder)) {
+      return;
+    }
+
+    _pendingOrder = next;
+    _reorderTimer?.cancel();
+    _reorderTimer = Timer(_reorderSettle, _applyPendingReorder);
+  }
+
+  // Re-read at the pointer, since the grid may have scrolled or changed
+  // since the target was chosen.
+  void _applyPendingReorder() {
+    _cancelPendingReorder();
+    final point = _lastGlobalDragPoint;
+    final next = point == null ? null : _orderAtPointer(point);
+    if (next == null || listEquals(next, _orderIds)) {
+      return;
+    }
+
+    setState(() {
+      _orderIds = next;
+      _invalidateLayout();
+    });
+    _dragChangedOrder = true;
+    HapticFeedback.selectionClick();
+  }
+
+  void _cancelPendingReorder() {
+    _reorderTimer?.cancel();
+    _reorderTimer = null;
+    _pendingOrder = null;
+  }
+
+  /// The order with the dragged cards moved to the target under the pointer,
+  /// or null when the pointer is over no target.
+  List<String>? _orderAtPointer(Offset globalPosition) {
     final draggingId = _draggingId;
-    if (draggingId == null) return;
+    if (draggingId == null) return null;
     final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.attached) return;
+    if (box == null || !box.attached) return null;
     final local = box.globalToLocal(globalPosition);
     final layout = _computeLayout(box.size.width);
 
@@ -566,7 +623,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         local.dy > layout.totalHeight &&
         local.dx >= 0 &&
         local.dx <= box.size.width;
-    if (targetId == null && !atEnd) return;
+    if (targetId == null && !atEnd) return null;
 
     final from = _orderIds.indexOf(draggingId);
     final targetIndex = targetId == null
@@ -583,14 +640,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     final insertAt = targetId == null
         ? remaining.length
         : remaining.indexOf(targetId) + (targetIndex > from ? 1 : 0);
-    final next = [...remaining]..insertAll(insertAt, moving);
-    if (listEquals(next, _orderIds)) return;
-    setState(() {
-      _orderIds = next;
-      _invalidateLayout();
-    });
-    _dragChangedOrder = true;
-    HapticFeedback.selectionClick();
+    return [...remaining]..insertAll(insertAt, moving);
   }
 
   /// [tookIt] records that a [DragTarget] accepted the card. The consumer owns
@@ -600,6 +650,10 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   /// behavior in a generic masonry widget.
   void _onDragEnd({bool selectWhenStationary = false, bool tookIt = false}) {
     _stopAutoScroll();
+    // A drop before the pointer settled still lands where it was held.
+    if (_reorderTimer != null) {
+      _applyPendingReorder();
+    }
     _lastGlobalDragPoint = null;
     final draggingId = _draggingId;
     if (draggingId == null) return;
@@ -704,7 +758,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       controller.jumpTo(next);
       // The grid moved under a stationary pointer; re-evaluate the target.
       if (_lastGlobalDragPoint != null) {
-        _reorderToPointer(_lastGlobalDragPoint!);
+        _scheduleReorder(_lastGlobalDragPoint!);
       }
     }
   }

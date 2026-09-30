@@ -1185,6 +1185,99 @@ void main() {
       },
     );
 
+    group('reflow waits for the pointer to settle', () {
+      final notes = [
+        for (final id in ['AAA', 'BBB', 'CCC', 'DDD', 'EEE'])
+          serverNote(id, title: id),
+      ];
+
+      Future<void> pumpGrid(
+        WidgetTester tester,
+        void Function(MasonryReorder) onReorder,
+      ) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: AnimatedMasonry(
+                  notes: notes,
+                  columns: 1,
+                  onReorder: (reorder) {
+                    onReorder(reorder);
+                    return MasonryReorderDecision.keep;
+                  },
+                  itemBuilder: (context, note) => SizedBox(
+                    height: 80,
+                    child: Card(child: Center(child: Text(note.title))),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      // Where the tile is headed, not where its glide has got to.
+      double slotOf(WidgetTester tester, String title) => tester
+          .widget<AnimatedPositioned>(
+            find.ancestor(
+              of: find.text(title),
+              matching: find.byType(AnimatedPositioned),
+            ),
+          )
+          .top!;
+
+      testWidgets(
+        'sweeping across cards leaves them be; resting on one reflows',
+        variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+        (tester) async {
+          await pumpGrid(tester, (_) {});
+          final bbb = slotOf(tester, 'BBB');
+
+          final gesture = await tester.startGesture(
+            tester.getCenter(find.text('AAA')),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          for (final target in ['BBB', 'CCC', 'DDD']) {
+            await gesture.moveTo(tester.getCenter(find.text(target)));
+            await tester.pump(const Duration(milliseconds: 10));
+          }
+          expect(slotOf(tester, 'BBB'), bbb);
+
+          // Jitter inside one card must not keep postponing its reorder.
+          for (var i = 0; i < 6; i++) {
+            await gesture.moveBy(const Offset(0, 2));
+            await tester.pump(const Duration(milliseconds: 20));
+          }
+          expect(slotOf(tester, 'BBB'), 0);
+
+          await gesture.up();
+          await tester.pumpAndSettle();
+        },
+      );
+
+      testWidgets(
+        'a drop before the pointer settles lands where it was held',
+        variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+        (tester) async {
+          MasonryReorder? reported;
+          await pumpGrid(tester, (reorder) => reported = reorder);
+
+          final gesture = await tester.startGesture(
+            tester.getCenter(find.text('AAA')),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          await gesture.moveTo(tester.getCenter(find.text('CCC')));
+          await tester.pump(const Duration(milliseconds: 10));
+          await gesture.up();
+          await tester.pumpAndSettle();
+
+          expect(reported?.orderedIds, ['BBB', 'CCC', 'AAA', 'DDD', 'EEE']);
+        },
+      );
+    });
+
     testWidgets('touch long-press selects in place but movement reorders', (
       tester,
     ) async {
