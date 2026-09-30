@@ -35,6 +35,11 @@ class ImageAttachmentTile extends StatelessWidget {
       barrierLabel: 'Close image',
       barrierColor: Colors.black,
       transitionDuration: const Duration(milliseconds: 180),
+      transitionBuilder: (context, animation, secondaryAnimation, child) =>
+          FadeTransition(
+            opacity: animation.drive(CurveTween(curve: Motion.standard)),
+            child: child,
+          ),
       pageBuilder: (context, animation, secondaryAnimation) => Scaffold(
         key: const Key('image-viewer'),
         backgroundColor: Colors.black,

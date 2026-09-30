@@ -11,6 +11,7 @@ import '../../theme.dart';
 import '../../util/motion.dart';
 import '../../util/search_query.dart';
 import '../empty_state.dart';
+import '../rolling_count.dart';
 import 'board_column_view.dart';
 import 'stage_editor.dart';
 import '../screen_width.dart';
@@ -752,8 +753,8 @@ class _StageChip extends StatelessWidget {
               child: Text(column.title),
             ),
             const SizedBox(width: 6),
-            Text(
-              '${column.totalCount}',
+            RollingCount(
+              count: column.totalCount,
               style: Theme.of(
                 context,
               ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),

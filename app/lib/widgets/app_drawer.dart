@@ -82,6 +82,7 @@ class AppSidebar extends StatelessWidget {
       ),
       child: AnimatedContainer(
         duration: Motion.base,
+        curve: Motion.emphasized,
         width: isOpen ? 268 : 72,
         child: ClipRect(
           child: ListView(

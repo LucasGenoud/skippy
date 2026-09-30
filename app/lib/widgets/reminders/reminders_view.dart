@@ -631,6 +631,8 @@ class _EarlierActions extends StatelessWidget {
       children: [
         AnimatedSwitcher(
           duration: Motion.fast,
+          switchInCurve: Motion.standard,
+          switchOutCurve: Motion.standard,
           child: expanded
               ? TextButton(onPressed: onClear, child: const Text('Clear all'))
               : const SizedBox.shrink(),

@@ -44,6 +44,8 @@ class PageHeader extends StatelessWidget {
                   const SizedBox(height: 2),
                   AnimatedSwitcher(
                     duration: Motion.fast,
+                    switchInCurve: Motion.standard,
+                    switchOutCurve: Motion.standard,
                     layoutBuilder: (current, previous) => Stack(
                       alignment: AlignmentDirectional.centerStart,
                       children: [...previous, ?current],

@@ -10,6 +10,7 @@ import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/widgets/board/board_column_view.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/board/move_to_stage_sheet.dart';
+import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/form_dialog.dart';
 import 'package:skippy/widgets/masonry.dart';
@@ -142,100 +143,84 @@ void main() {
     await tester.pumpWidget(boardApp(store));
     await tester.pumpAndSettle();
 
-    final chip = find.byWidgetPredicate(
-      (widget) => widget.runtimeType.toString() == '_CountChip',
-    );
-    final width = tester.getSize(chip.at(1)).width;
+    final chip = find
+        .byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_CountChip',
+        )
+        .at(1);
+    Finder digit(String text) =>
+        find.descendant(of: chip, matching: find.text(text));
+    double rise(String text) =>
+        tester.getCenter(digit(text)).dy - tester.getCenter(chip).dy;
+    final width = tester.getSize(chip).width;
+
+    // 9 -> 10: the new digit comes up from below, the old one leaves upward.
     api.notes['n9'] = serverNote(
       'n9',
       title: 'card 9',
     ).copyWith(stageId: 'todo');
     await store.load();
     await tester.pump();
-    expect(tester.getSize(chip.at(1)).width, width);
-    expect(
-      tester
-          .widget<SlideTransition>(
-            find
-                .ancestor(
-                  of: find.text('10'),
-                  matching: find.byType(SlideTransition),
-                )
-                .first,
-          )
-          .position
-          .value
-          .dy,
-      1,
-    );
-    expect(
-      tester
-          .widget<SlideTransition>(
-            find
-                .ancestor(
-                  of: find.text('9'),
-                  matching: find.byType(SlideTransition),
-                )
-                .first,
-          )
-          .position
-          .value
-          .dy,
-      0,
-    );
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(
-      tester
-          .widget<SlideTransition>(
-            find
-                .ancestor(
-                  of: find.text('9'),
-                  matching: find.byType(SlideTransition),
-                )
-                .first,
-          )
-          .position
-          .value
-          .dy,
-      lessThan(0),
-    );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 1));
+    final start = rise('0');
+    expect(start, greaterThan(0));
+    expect(tester.getSize(chip).width, width);
 
+    // Eased, not linear: a quarter of the way in, most of the travel is done.
+    await tester.pump(Motion.base ~/ 4);
+    expect(rise('0'), inExclusiveRange(0, start / 2));
+    expect(rise('9'), lessThan(0));
+    await tester.pumpAndSettle();
+    expect(digit('10'), findsOneWidget);
+    expect(tester.getSize(chip).width, width);
+
+    // 10 -> 9 rolls the other way.
     api.notes.remove('n9');
     await store.load();
     await tester.pump();
-    expect(
-      tester
-          .widget<SlideTransition>(
-            find
-                .ancestor(
-                  of: find.text('9'),
-                  matching: find.byType(SlideTransition),
-                )
-                .first,
-          )
-          .position
-          .value
-          .dy,
-      -1,
-    );
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(
-      tester
-          .widget<SlideTransition>(
-            find
-                .ancestor(
-                  of: find.text('10'),
-                  matching: find.byType(SlideTransition),
-                )
-                .first,
-          )
-          .position
-          .value
-          .dy,
-      greaterThan(0),
-    );
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(rise('9'), lessThan(0));
+    expect(rise('0'), greaterThanOrEqualTo(0));
     await tester.pumpAndSettle();
+    expect(digit('9'), findsOneWidget);
+    await flushTimers(tester);
+  });
+
+  testWidgets('a column count rolls only the digits that change', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(1200, 900));
+    for (var i = 0; i < 12; i++) {
+      api.notes['n$i'] = serverNote(
+        'n$i',
+        title: 'card $i',
+      ).copyWith(stageId: 'todo');
+    }
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    final chip = find
+        .byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_CountChip',
+        )
+        .at(1);
+    Finder digit(String text) =>
+        find.descendant(of: chip, matching: find.text(text));
+
+    api.notes['n12'] = serverNote(
+      'n12',
+      title: 'card 12',
+    ).copyWith(stageId: 'todo');
+    await store.load();
+    await tester.pump();
+    final tens = tester.getCenter(digit('1')).dy;
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(Motion.base ~/ 5);
+      expect(tester.getCenter(digit('1')).dy, tens);
+    }
+    await tester.pumpAndSettle();
+    expect(digit('13'), findsOneWidget);
     await flushTimers(tester);
   });
 

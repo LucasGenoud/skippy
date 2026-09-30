@@ -590,11 +590,14 @@ class _TypingDotsState extends State<_TypingDots>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
               child: Opacity(
-                // Each dot pulses on a phase-shifted triangle wave.
+                // Each dot pulses on a phase-shifted triangle wave, eased so
+                // it turns around softly instead of bouncing off its peaks.
                 opacity:
                     0.25 +
                     0.75 *
-                        (1 - ((_controller.value + i / 3) % 1 * 2 - 1).abs()),
+                        Curves.easeInOutCubic.transform(
+                          1 - ((_controller.value + i / 3) % 1 * 2 - 1).abs(),
+                        ),
                 child: Container(
                   width: 7,
                   height: 7,

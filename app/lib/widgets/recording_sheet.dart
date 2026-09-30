@@ -187,7 +187,13 @@ class _RecordingSheetState extends State<RecordingSheet>
           AnimatedBuilder(
             animation: _pulse,
             builder: (context, _) => Opacity(
-              opacity: _ready ? (0.3 + 0.7 * _pulse.value) : 0.3,
+              opacity: _ready
+                  ? 0.3 +
+                        0.7 *
+                            Curves.easeInOutCubic.transform(
+                              1 - (_pulse.value * 2 - 1).abs(),
+                            )
+                  : 0.3,
               child: Container(
                 width: 10,
                 height: 10,

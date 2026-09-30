@@ -230,6 +230,7 @@ class HomeTopBar extends StatelessWidget {
                   icon: AnimatedSwitcher(
                     duration: Motion.base,
                     switchInCurve: Motion.standard,
+                    switchOutCurve: Motion.standard,
                     transitionBuilder: (child, animation) => RotationTransition(
                       turns: Tween<double>(
                         begin: 0.85,
@@ -615,7 +616,7 @@ class _SelectionBarState extends State<_SelectionBar>
             // The count changes as you pick notes, so it fades rather than
             // dropping, it's the one thing here that isn't a new control.
             child: FadeTransition(
-              opacity: _enter,
+              opacity: _enter.drive(CurveTween(curve: Motion.standard)),
               child: Text(
                 widget.label,
                 style: Theme.of(
