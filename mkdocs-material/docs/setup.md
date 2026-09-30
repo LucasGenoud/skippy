@@ -1,118 +1,138 @@
 # Set up Skippy
 
-Skippy serves the web app and API from one container. Open
-<http://localhost:8787> after starting any example below. A named volume keeps
-notes and attachments across container restarts.
+Skippy runs in Docker. There are three Compose files to choose from. Each one
+works on its own, so you only need the one that matches what you want.
 
-## 1. Basic: one container
+| Setup | File | What runs | `.env` file |
+| --- | --- | --- | --- |
+| [Basic](#basic) | `docker-compose.yml` | Skippy | Not needed |
+| [Voice and image text](#voice-and-image-text) | `docker-compose.simple.yml` | Skippy, Whisper, Tesseract | Not needed |
+| [Full](#full) | `docker-compose.all.yml` | Skippy, Whisper, Tesseract, Garage | Required |
 
-Save this as `compose.yaml` in an empty directory:
+- **Whisper** turns voice notes into text.
+- **Tesseract** reads the text in images, so you can search for it.
+- **Garage** stores attachments in S3-compatible storage instead of in the
+  Skippy volume.
 
-```yaml
-services:
-  skippy:
-    image: ghcr.io/lucasgenoud/skippy:latest
-    ports:
-      - "8787:8787"
-    volumes:
-      - skippy_data:/data
-    restart: unless-stopped
+Once Skippy is running, open <http://localhost:8787> and create an account.
+From another device, use port 8787 on your server's address.
 
-volumes:
-  skippy_data:
-```
+## Basic
 
-Run `docker compose up -d`. **No environment variables or `.env` file are
-needed.** SQLite and uploaded files live in `skippy_data`. Transcription, image
-text recognition, semantic search, and AI are optional and off by default.
-
-## 2. Add Whisper and Tesseract
-
-`docker-compose.simple.yml` is a complete stack: Skippy, Whisper, and
-Tesseract, already wired together. Download it into an empty directory and
-start it:
+Create a folder, download the file into it, and start Skippy:
 
 ```sh
+mkdir skippy && cd skippy
+curl -fsSLO https://raw.githubusercontent.com/LucasGenoud/skippy/main/docker-compose.yml
+docker compose -f docker-compose.yml up -d server
+```
+
+Notes and attachments are saved in the `app_data` volume. They are kept when
+the container restarts or updates.
+
+## Voice and image text
+
+This setup adds Whisper and Tesseract. Both are already connected to Skippy,
+so there is nothing to configure.
+
+```sh
+mkdir skippy && cd skippy
 curl -fsSLO https://raw.githubusercontent.com/LucasGenoud/skippy/main/docker-compose.simple.yml
 docker compose -f docker-compose.simple.yml up -d server whisper tesseract
 ```
 
-Whisper transcribes audio; Tesseract reads text in uploaded images. The server
-uses `http://whisper:9000` and `http://tesseract:8884` on the Compose network.
-No `.env` file is required. To change the OCR language, set `OCR_LANGUAGES`
-in `.env` to codes installed in the Tesseract image.
+On the first start, Skippy waits for Whisper to be ready. This can take a
+minute or two.
 
-## 3. Full stack: add Garage and configure the optional services
-
-`docker-compose.all.yml` is also complete on its own: Skippy, Whisper,
-Tesseract, and Garage for S3-compatible attachment storage, with Garage's
-configuration built in. The app still keeps its SQLite database in `app_data`.
-Download it into an empty directory:
-
-```sh
-curl -fsSLO https://raw.githubusercontent.com/LucasGenoud/skippy/main/docker-compose.all.yml
-```
-
-Create `.env` next to it. The five Garage/S3 secret entries must have real
-values; the other entries are optional:
+Tesseract reads English by default. To read other languages, create a `.env`
+file next to the Compose file, for example:
 
 ```dotenv title=".env"
-# Browser address when serving behind a public reverse proxy; blank for localhost.
-PUBLIC_URL=
-
-# External OpenAI-compatible embeddings service (not included in these containers).
-EMBED_URL=
-EMBED_MODEL=bge-m3
-EMBED_API_KEY=
-
-# Optional server-managed AI settings.
-ALLOW_PRIVATE_USER_ENDPOINTS=
-LLM_BASE_URL=
-LLM_API_KEY=
-LLM_MODEL=
-LLM_LABELING=
-LLM_CHAT=
-LLM_WRITING=
-
-# Optional server-managed email settings.
-SMTP_HOST=
-SMTP_PORT=
-SMTP_SECURITY=
-SMTP_USERNAME=
-SMTP_PASSWORD=
-SMTP_FROM=
-
-# OCR and optional documentation site.
-OCR_LANGUAGES=eng
-DOCS_PORT=8123
-
-# Required for Garage. Use the same access key and secret in each matching pair.
-GARAGE_RPC_SECRET=replace-with-random-hex
-S3_ACCESS_KEY=replace-with-garage-access-key
-GARAGE_DEFAULT_ACCESS_KEY=replace-with-the-same-access-key
-S3_SECRET_KEY=replace-with-garage-secret-key
-GARAGE_DEFAULT_SECRET_KEY=replace-with-the-same-secret-key
+OCR_LANGUAGES=fra+eng
 ```
 
-Generate values to paste into the last five lines:
+## Full
 
-```sh
-access_key="GK$(openssl rand -hex 16)"
-secret_key="$(openssl rand -hex 32)"
-printf 'GARAGE_RPC_SECRET='; openssl rand -hex 32
-printf 'S3_ACCESS_KEY=%s\nGARAGE_DEFAULT_ACCESS_KEY=%s\n' "$access_key" "$access_key"
-printf 'S3_SECRET_KEY=%s\nGARAGE_DEFAULT_SECRET_KEY=%s\n' "$secret_key" "$secret_key"
-```
+This setup adds Garage to store attachments. Notes stay in Skippy's database
+in `app_data`; only attachments go to Garage.
 
-Start the four application services:
+1. Download the file:
 
-```sh
-docker compose -f docker-compose.all.yml up -d server whisper tesseract garage
-```
+    ```sh
+    mkdir skippy && cd skippy
+    curl -fsSLO https://raw.githubusercontent.com/LucasGenoud/skippy/main/docker-compose.all.yml
+    ```
 
-Garage starts with one node and creates its default bucket automatically; no
-other file is needed. Leave the optional settings blank until you have an external embedding or AI service
-or an SMTP server; Whisper and Tesseract work without them.
+2. Create the Garage keys. Skippy and Garage must share the same access key
+   and secret key, so the script writes each one twice. Run it once:
+
+    ```sh
+    access_key="GK$(openssl rand -hex 12)"
+    secret_key="$(openssl rand -hex 32)"
+    cat >> .env <<EOF
+    GARAGE_RPC_SECRET=$(openssl rand -hex 32)
+    GARAGE_DEFAULT_ACCESS_KEY=$access_key
+    GARAGE_DEFAULT_SECRET_KEY=$secret_key
+    S3_ACCESS_KEY=$access_key
+    S3_SECRET_KEY=$secret_key
+    EOF
+    ```
+
+    Keep `.env` private. It holds the keys to your attachments.
+
+3. Start the stack:
+
+    ```sh
+    docker compose -f docker-compose.all.yml up -d server whisper tesseract garage
+    ```
+
+Garage sets itself up on the first start, including the bucket Skippy stores
+attachments in.
+
+## Everyday commands
+
+Replace `<file>` with the Compose file you use.
+
+| Task | Command |
+| --- | --- |
+| Update | `docker compose -f <file> pull`, then run your start command again |
+| Stop | `docker compose -f <file> down` (your data is kept) |
+| See the logs | `docker compose -f <file> logs -f server` |
+| Apply a change to `.env` | Run your start command again |
+
+## Switch to another setup
+
+Keep every setup in the same folder. All three files use the same `app_data`
+volume, so your notes and account come with you.
+
+1. Stop the current setup with `docker compose -f <file> down`.
+2. Download the new file and start it as shown in its section.
+
+!!! warning "Attachments do not move to or from Garage"
+
+    Basic and Voice and image text store attachments in `app_data`. Full
+    stores them in Garage. Skippy does not copy files from one to the other,
+    so after a switch, files uploaded before it no longer open. Pick Full
+    before you upload files if you want Garage.
+
+## Optional settings
+
+All three files read these settings from the `.env` file in the same folder.
+Leave a setting out to keep its feature off, or to let each user set it up in
+the app. After a change, run your start command again.
+
+| Setting | What it does |
+| --- | --- |
+| `PUBLIC_URL` | The address people use to reach Skippy, such as `https://notes.example.com`. Set it when Skippy runs behind a reverse proxy. Password reset emails link to it. |
+| `EMBED_URL` | Address of an OpenAI-compatible embeddings API. Turns on semantic search. None of the setups includes one. |
+| `EMBED_MODEL` | Embedding model name. Default: `bge-m3`. |
+| `EMBED_API_KEY` | Key for the embeddings API, if it needs one. |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | One AI provider for every user. Users cannot change it and never see the key. |
+| `LLM_LABELING`, `LLM_CHAT`, `LLM_WRITING` | `true` or `false`. Turns automatic labeling, notes chat, or AI writing on or off in every workspace. When unset, each workspace owner decides. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | One mail server for every user, for email reminders and password resets. Users then only enter their own address. |
+| `ALLOW_PRIVATE_USER_ENDPOINTS` | Lets users point their own AI, ntfy, or mail settings at hosts on your private network. Off by default. |
+| `OCR_LANGUAGES` | Languages Tesseract reads, such as `eng` or `fra+eng`. Default: `eng`. Voice and image text and Full only. |
+| `DOCS_PORT` | Port for the local copy of these docs. Default: `8123`. |
 
 ## Install on a device
 
@@ -185,62 +205,35 @@ off **Assistant access (MCP)** in its settings.
 
 ## Documentation site
 
-Every Compose file also defines the documentation container. Start it with
-the same `-f` as the stack, for example:
+Every Compose file can also run a local copy of these docs. Start the `docs`
+service with the same file, for example:
 
 ```sh
-docker compose up -d docs
+docker compose -f docker-compose.simple.yml up -d docs
 ```
 
-Open <http://localhost:8123>, or change `DOCS_PORT` in `.env`.
+Then open <http://localhost:8123>. To use another port, set `DOCS_PORT` in
+`.env`.
 
-## Environment variables
+## Advanced settings
 
-Defaults below describe the published Docker image and repository Compose
-files. **Unset** means no value is configured. Empty optional values in `.env`
-leave their feature disabled or editable per user. `DB`, `UPLOADS`, `WEB`, and
-`ADDR` are image defaults; the supplied Compose files do not forward them from
-`.env`. Set them under the server's `environment:` section if you need to
-override them.
+These are not read from `.env`. To change one, edit the `environment:` section
+of the service in your Compose file.
 
-| Variable | What it does | Default |
+| Setting | What it does | Default |
 | --- | --- | --- |
-| `PUBLIC_URL` | Public app URL for browser configuration and reset links. | Unset |
-| `ADDR` | Server listen address inside the container. | `0.0.0.0:8787` |
-| `DB` | SQLite database path. | `/data/sticky_notes.db` |
-| `UPLOADS` | Local attachment directory. | `/data/uploads` |
-| `WEB` | Bundled web app directory. | `/app/web` |
-| `STORAGE` | Attachment store: `disk` or `s3`. | `disk` |
-| `S3_URL` | S3 endpoint when using `s3`. | Unset; `docker-compose.all.yml` uses `http://garage:3900` |
+| `STORAGE` | Where attachments go: `disk` or `s3`. | `disk`; Full uses `s3` |
+| `S3_URL` | S3 endpoint. Required with `s3`. | Full uses `http://garage:3900` |
 | `S3_REGION` | S3 region. | `garage` |
-| `S3_ACCESS_KEY` | S3 access key; required for `s3`. | Unset |
-| `S3_SECRET_KEY` | S3 secret key; required for `s3`. | Unset |
-| `S3_BUCKET_PREFIX` | Prefix for attachment buckets. | `sticky-notes-` |
-| `GARAGE_RPC_SECRET` | Garage node secret; required by `docker-compose.all.yml`. | Unset |
-| `GARAGE_DEFAULT_ACCESS_KEY` | Garage key; match `S3_ACCESS_KEY`. | Unset |
-| `GARAGE_DEFAULT_SECRET_KEY` | Garage secret; match `S3_SECRET_KEY`. | Unset |
-| `GARAGE_DEFAULT_BUCKET` | Garage's initial bucket. | `sticky-notes-default` |
-| `WHISPER_URL` | Audio transcription endpoint. | Unset; simple and all stacks use `http://whisper:9000` |
-| `ASR_MODEL` | Whisper model size in the bundled service. | `base` in the simple and all stacks |
-| `ASR_ENGINE` | Whisper inference engine in the bundled service. | `faster_whisper` in the simple and all stacks |
-| `OCR_URL` | Image text recognition endpoint. | Unset; simple and all stacks use `http://tesseract:8884` |
-| `OCR_LANGUAGES` | Tesseract language codes, such as `eng` or `fra+eng`. | `eng` |
-| `EMBED_URL` | OpenAI-compatible embeddings API base URL; enables search. | Unset |
-| `EMBED_MODEL` | Embedding model name. | `bge-m3` |
-| `EMBED_API_KEY` | Embeddings API key, if needed. | Unset |
-| `ALLOW_PRIVATE_USER_ENDPOINTS` | Allow user-configured AI, ntfy, or mail on private hosts. | Off |
-| `LLM_BASE_URL` | Server-managed AI API base URL. | Unset |
-| `LLM_API_KEY` | Server-managed AI API key. | Unset |
-| `LLM_MODEL` | Server-managed AI model. | Unset |
-| `LLM_LABELING` | Pin automatic AI labeling (`true`/`false`) in every workspace. | Unset; each workspace's switch |
-| `LLM_CHAT` | Pin notes chat (`true`/`false`) in every workspace. | Unset; each workspace's switch |
-| `LLM_WRITING` | Pin AI writing (`true`/`false`) in every workspace. | Unset; each workspace's switch |
-| `SMTP_HOST` | Server-managed mail host. | Unset |
-| `SMTP_PORT` | Server-managed mail port. | Unset |
-| `SMTP_SECURITY` | Server-managed mail security mode. | Unset |
-| `SMTP_USERNAME` | Server-managed mail login. | Unset |
-| `SMTP_PASSWORD` | Server-managed mail password. | Unset |
-| `SMTP_FROM` | Server-managed sender address. | Unset |
-| `DOCS_PORT` | Host port for the optional documentation site. | `8123` |
-| `UNFURL_ALLOW_PRIVATE` | Allow link previews from private hosts; set in server environment. | Off |
-| `TELEGRAM_API` | Telegram Bot API base URL; set in server environment. | `https://api.telegram.org` |
+| `S3_BUCKET_PREFIX` | Attachments go in the bucket `<prefix>attachments`. In Full, change `GARAGE_DEFAULT_BUCKET` on the `garage` service to match. | `sticky-notes-` |
+| `WHISPER_URL` | Whisper address. Unset turns transcription off. | Unset; Voice and image text and Full use `http://whisper:9000` |
+| `OCR_URL` | Tesseract address. Unset turns image text off. | Unset; Voice and image text and Full use `http://tesseract:8884` |
+| `UNFURL_ALLOW_PRIVATE` | Allows link previews of hosts on your private network. | Off |
+| `TELEGRAM_API` | Telegram Bot API address. | `https://api.telegram.org` |
+| `ADDR` | Address the server listens on inside the container. | `0.0.0.0:8787` |
+| `DB` | Database file. | `/data/sticky_notes.db` |
+| `UPLOADS` | Attachment folder when `STORAGE` is `disk`. | `/data/uploads` |
+| `WEB` | Web app folder. | `/app/web` |
+
+The `whisper` service uses the `base` speech model, set by `ASR_MODEL`. A
+larger model such as `small` is more accurate but slower and uses more memory.

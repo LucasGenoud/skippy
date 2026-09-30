@@ -68,6 +68,8 @@ services:
 
   # Single node; creates its default bucket and imports the S3 key from the
   # GARAGE_DEFAULT_* values on first start. No manual garage CLI steps.
+  # The bucket is the one the server stores attachments in:
+  # S3_BUCKET_PREFIX (default sticky-notes-) followed by "attachments".
   garage:
     image: dxflrs/garage:v2.3.0
     command: ["/garage", "server", "--single-node", "--default-bucket"]
@@ -75,7 +77,7 @@ services:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?Set GARAGE_RPC_SECRET in .env}
       GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:?Set GARAGE_DEFAULT_ACCESS_KEY in .env}
       GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:?Set GARAGE_DEFAULT_SECRET_KEY in .env}
-      GARAGE_DEFAULT_BUCKET: sticky-notes-default
+      GARAGE_DEFAULT_BUCKET: sticky-notes-attachments
     configs:
       - source: garage
         target: /etc/garage.toml

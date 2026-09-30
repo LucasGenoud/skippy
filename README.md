@@ -85,27 +85,22 @@ Open the app at <http://localhost:8787> and the documentation at
 
 ## Configuration
 
-The defaults work for a local deployment. Set these variables in `.env` when
-you need optional services or a public URL:
+The defaults work for a local deployment. The Compose files read these
+variables from `.env`:
 
 | Variable | Purpose |
 | --- | --- |
-| `ADDR` | Listen address; defaults to `0.0.0.0:8787` |
-| `DB` | SQLite database path |
-| `UPLOADS` | Disk attachment directory |
 | `PUBLIC_URL` | Public browser URL and password-reset link base |
-| `STORAGE` | `disk` or `s3` attachment storage |
-| `WHISPER_URL` | Optional transcription service |
-| `OCR_URL` | Optional image text recognition service |
-| `EMBED_URL` | Optional OpenAI-compatible embeddings endpoint |
-| `EMBED_MODEL` | Embedding model name |
-| `EMBED_API_KEY` | Embedding service token |
-| `S3_URL` | S3-compatible endpoint when `STORAGE=s3` |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | S3 credentials |
+| `EMBED_URL` / `EMBED_MODEL` / `EMBED_API_KEY` | Optional OpenAI-compatible embeddings for semantic search |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | Optional server-managed AI provider |
+| `LLM_LABELING` / `LLM_CHAT` / `LLM_WRITING` | Pin an AI feature on or off in every workspace |
 | `SMTP_HOST` / `SMTP_USERNAME` / `SMTP_PASSWORD` | Optional email reminders and password reset |
+| `OCR_LANGUAGES` | Tesseract languages in the simple and all stacks |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `GARAGE_*` | Garage keys, required by `docker-compose.all.yml` |
 
-Unset optional variables to keep those features disabled. Secret values stay in
+`ADDR`, `DB`, `UPLOADS`, `STORAGE`, `WHISPER_URL`, `OCR_URL`, and `S3_URL` are
+set in the Compose files, not read from `.env`. Unset optional variables to
+keep those features disabled. Secret values stay in
 the server environment and are never returned to the client. See
 [Set up Skippy](mkdocs-material/docs/setup.md) for the complete Compose and
 environment-variable reference.
