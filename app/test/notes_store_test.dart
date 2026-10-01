@@ -700,6 +700,31 @@ void main() {
       expect(api.log.where((l) => l.startsWith('setItemReminder')), isEmpty);
     });
 
+    // The Reminders view's Undo on a checked-off row does exactly this: the
+    // server judges the reminder against the saved row, so the reopened row
+    // has to land first or the reminder is refused as belonging to a checked
+    // item.
+    test('come back with their row when a check is undone', () async {
+      await loadList();
+      final when = DateTime(2030, 1, 1, 9);
+      store.setItemReminder('n1', 'milk', when);
+      await settle();
+      store.setChecklistItemDone('n1', 'milk', true);
+      await settle();
+      expect(api.notes['n1']!.itemReminders, isEmpty);
+
+      store.setChecklistItemDone('n1', 'milk', false);
+      store.setItemReminder('n1', 'milk', when);
+      await settle();
+
+      expect(store.syncIssues, isEmpty);
+      expect(
+        api.notes['n1']!.reminderForItem('milk')?.at.toUtc(),
+        when.toUtc(),
+      );
+      expect(store.noteById('n1')!.reminderForItem('milk')?.at, when);
+    });
+
     test('are cancelled locally the moment their item is', () async {
       await loadList();
       store.setItemReminder('n1', 'milk', DateTime(2030));

@@ -2007,6 +2007,13 @@ class NotesStore extends ChangeNotifier {
       _materializeIfNeeded(noteId);
       return;
     }
+    // The server judges the reminder against the saved row, so an edit still
+    // waiting out its debounce (a row just reopened by Undo) is queued first.
+    final pendingSave = _saveDebounce.remove(noteId);
+    if (pendingSave != null) {
+      pendingSave.cancel();
+      _enqueueContentPatch(noteId);
+    }
     _enqueue(
       PendingOp(
         PendingOpKind.itemReminder,
