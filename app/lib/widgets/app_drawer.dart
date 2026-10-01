@@ -460,6 +460,10 @@ class _SidebarItem extends StatelessWidget {
 /// cross-fading, so a light/dark switch left the sidebar visibly trailing the
 /// rest of the app, the same reason [AppSidebar] paints its own fill.
 class _RowHighlight extends StatelessWidget {
+  static const double _markerWidth = 3;
+  static const double _markerInset = 12;
+  static const double _markerHalfHeight = 12;
+
   final bool selected;
   final bool dropTarget;
   final bool danger;
@@ -497,7 +501,27 @@ class _RowHighlight extends StatelessWidget {
               width: 1.5,
             ),
           ),
-          child: ClipRRect(borderRadius: radius, child: child),
+          // The marker carries the selection where the wash alone is close
+          // to the ground's own lightness. It grows from the row's middle.
+          child: Stack(
+            children: [
+              ClipRRect(borderRadius: radius, child: child),
+              Positioned(
+                left: 0,
+                width: _markerWidth,
+                top: _markerInset + (1 - sel) * _markerHalfHeight,
+                bottom: _markerInset + (1 - sel) * _markerHalfHeight,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: sel * (1 - drop)),
+                      borderRadius: BorderRadius.circular(_markerWidth),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       });
     });

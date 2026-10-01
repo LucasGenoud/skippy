@@ -503,9 +503,9 @@ class _NoteTileState extends State<NoteTile> {
         borderRadius: BorderRadius.circular(kRadius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.05),
-            blurRadius: _hovered ? 14 : 4,
-            offset: Offset(0, _hovered ? 5 : 1),
+            color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.09),
+            blurRadius: _hovered ? 14 : 8,
+            offset: Offset(0, _hovered ? 5 : 2),
           ),
         ],
       ),

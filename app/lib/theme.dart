@@ -109,8 +109,12 @@ Color hairlineColor(ColorScheme scheme) =>
 /// settings section, a filter sheet's group. Callers upper-case the text.
 /// Muted rather than accented: the accent marks what is selected, and a
 /// header in it competes with the selection below it.
-TextStyle? sectionLabelStyle(ThemeData theme) => theme.textTheme.labelSmall
-    ?.copyWith(letterSpacing: 1.2, color: theme.colorScheme.onSurfaceVariant);
+TextStyle? sectionLabelStyle(ThemeData theme) =>
+    theme.textTheme.labelSmall?.copyWith(
+      letterSpacing: 1.2,
+      fontWeight: FontWeight.w700,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
 /// The wash behind a filter that excludes rather than matches: `hasnot:link`
 /// on a chip, and the same operator tinted inside the search box.
@@ -125,13 +129,15 @@ TextStyle? sectionLabelStyle(ThemeData theme) => theme.textTheme.labelSmall
 /// with the accent someone picks in Settings instead of meaning something.
 ///
 /// Text on it is the app's ordinary body colour, like every other wash here
-/// (7:1 or better against it for every accent, in both themes). Colour is
+/// (5:1 or better against it for every accent, in both themes). Colour is
 /// never the only signal: where someone's accent is itself a red, the two
 /// washes land within about 1.1:1 of each other, so the chip also carries a
 /// block glyph and spells the negative operator out.
 Color excludedFilterColor(ColorScheme scheme) => Color.alphaBlend(
   scheme.error.withValues(
-    alpha: scheme.brightness == Brightness.light ? 0.22 : 0.20,
+    alpha: scheme.brightness == Brightness.light
+        ? _washAlphaLight
+        : _washAlphaDark,
   ),
   scheme.surface,
 );
@@ -169,6 +175,11 @@ Color boardColumnBorderColor(ColorScheme scheme) {
       .withLightness((trough.lightness + step).clamp(0.0, 1.0))
       .toColor();
 }
+
+/// How much accent a wash carries over [ColorScheme.surface]: the selected
+/// sidebar row, an active chip. [excludedFilterColor] is built the same way.
+const double _washAlphaLight = 0.34;
+const double _washAlphaDark = 0.30;
 
 /// How much of the accent's hue bleeds into the app's neutrals.
 ///
@@ -230,8 +241,8 @@ ThemeData buildTheme(
   // on its own reads as dirty paper, and a dark one deep enough to do the same
   // reads as a hole. So the light canvas stays a pale warm grey and its
   // troughs go deep, while the dark canvas stays put and its cards rise.
-  final canvas = neutral(light ? 0.940 : 0.070);
-  final surface = light ? Colors.white : neutral(0.155);
+  final canvas = neutral(light ? 0.912 : 0.060);
+  final surface = light ? Colors.white : neutral(0.165);
 
   // M3 derives `primary` by dropping the seed to tone 40 (tone 80 in dark) so
   // that accent-coloured *text* clears 4.5:1 on a surface. For a yellow seed
@@ -245,7 +256,7 @@ ThemeData buildTheme(
   final accent = seed;
   final onAccent = _onAccent(accent);
   final accentWash = Color.alphaBlend(
-    accent.withValues(alpha: light ? 0.22 : 0.20),
+    accent.withValues(alpha: light ? _washAlphaLight : _washAlphaDark),
     surface,
   );
   final seeded = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
