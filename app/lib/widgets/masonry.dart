@@ -177,7 +177,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   /// How long the pointer has to stay on one target before the grid reflows
   /// around it. Sweeping across a large grid would otherwise re-lay out every
   /// card passed on the way.
-  static const Duration _reorderSettle = Duration(milliseconds: 100);
+  static const Duration _reorderSettle = Duration(milliseconds: 50);
 
   /// How tall a slot held open for an incoming card is. The card's own height
   /// is unknowable while it belongs to somewhere else, so this is a stand-in
