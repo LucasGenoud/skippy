@@ -1,3 +1,4 @@
+import '../models/collection.dart';
 import '../models/note.dart';
 import '../util/search_query.dart';
 
@@ -78,7 +79,7 @@ class WorkspaceScope {
       (collectionId == null ||
           note.collectionId == collectionId ||
           (note.collectionId == null &&
-              collectionId == '${note.workspaceId}-general') ||
+              collectionId == NoteCollection.generalId(note.workspaceId)) ||
           (isDefault && !known.contains(note.workspaceId)));
 
   /// Whether content filed in [id] shows in this scope. Content from a

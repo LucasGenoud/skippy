@@ -9,7 +9,7 @@ use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
 
-use super::{workspace_ai, workspaces};
+use super::workspace_ai;
 
 const MAX_SETTINGS_BYTES: usize = 16 * 1024;
 
@@ -53,7 +53,7 @@ pub async fn put_settings(
     if workspace_ai::owner_view(&state, &user_id).await? != before {
         for workspace in state.repo.workspaces_for_user(&user_id).await? {
             if workspace.owner.id == user_id && !workspace.members.is_empty() {
-                workspaces::notify_workspace(&state, &workspace.id).await;
+                state.notify_workspace(&workspace.id).await;
             }
         }
     }

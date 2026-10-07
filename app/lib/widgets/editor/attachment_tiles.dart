@@ -10,6 +10,41 @@ import '../../util/download.dart';
 import '../../util/mime.dart';
 import '../../util/motion.dart';
 
+/// The tiles under a note in the editor: images first, then other files, each
+/// followed by placeholders for the ones still [uploading] so a tile appears
+/// where its attachment will land. Audio is played by the audio-note body, so
+/// it is not listed. A null [onRemove] makes the tiles read-only.
+List<Widget> attachmentTiles({
+  required List<Attachment> attachments,
+  required List<DroppedFile> uploading,
+  required String Function(Attachment) urlOf,
+  required void Function(Attachment)? onRemove,
+}) {
+  VoidCallback? remove(Attachment attachment) =>
+      onRemove == null ? null : () => onRemove(attachment);
+  bool isImage(DroppedFile file) => file.mime.startsWith('image/');
+  return [
+    for (final attachment in attachments.where((a) => a.isImage))
+      ImageAttachmentTile(
+        key: ValueKey(attachment.id),
+        attachment: attachment,
+        url: urlOf(attachment),
+        onRemove: remove(attachment),
+      ),
+    for (final file in uploading.where(isImage))
+      UploadingAttachmentTile(key: ObjectKey(file), file: file),
+    for (final attachment in attachments.where((a) => !a.isImage && !a.isAudio))
+      FileAttachmentTile(
+        key: ValueKey(attachment.id),
+        attachment: attachment,
+        url: urlOf(attachment),
+        onRemove: remove(attachment),
+      ),
+    for (final file in uploading.where((file) => !isImage(file)))
+      UploadingAttachmentTile(key: ObjectKey(file), file: file),
+  ];
+}
+
 /// An inline image attachment in the editor, with a hover remove button.
 /// A null [onRemove] (trashed note) hides the button.
 class ImageAttachmentTile extends StatelessWidget {

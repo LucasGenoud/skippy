@@ -510,13 +510,7 @@ class ApiClient extends _ApiTransport implements Api {
     if (email != null) body['email'] = email;
     if (currentPassword != null) body['current_password'] = currentPassword;
     if (newPassword != null) body['new_password'] = newPassword;
-    final data = _decode(
-      await _client.patch(
-        _uri('/auth/me'),
-        headers: _headers(),
-        body: jsonEncode(body),
-      ),
-    );
+    final data = await _patch('/auth/me', body);
     return AuthUser.fromJson(data as Map<String, dynamic>);
   }
 
@@ -524,9 +518,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<List<Workspace>> fetchWorkspaces() async {
-    final data =
-        _decode(await _client.get(_uri('/workspaces'), headers: _headers()))
-            as List;
+    final data = await _get('/workspaces') as List;
     return data
         .map((j) => Workspace.fromJson(j as Map<String, dynamic>))
         .toList();
@@ -534,25 +526,13 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<Workspace> createWorkspace(String id, String name) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/workspaces'),
-        headers: _headers(),
-        body: jsonEncode({'id': id, 'name': name}),
-      ),
-    );
+    final data = await _post('/workspaces', {'id': id, 'name': name});
     return Workspace.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<Workspace> renameWorkspace(String id, String name) async {
-    final data = _decode(
-      await _client.patch(
-        _uri('/workspaces/$id'),
-        headers: _headers(),
-        body: jsonEncode({'name': name}),
-      ),
-    );
+    final data = await _patch('/workspaces/$id', {'name': name});
     return Workspace.fromJson(data as Map<String, dynamic>);
   }
 
@@ -562,28 +542,16 @@ class ApiClient extends _ApiTransport implements Api {
     required bool notesEnabled,
     required bool boardEnabled,
   }) async {
-    final data = _decode(
-      await _client.patch(
-        _uri('/workspaces/$id'),
-        headers: _headers(),
-        body: jsonEncode({
-          'notes_enabled': notesEnabled,
-          'board_enabled': boardEnabled,
-        }),
-      ),
-    );
+    final data = await _patch('/workspaces/$id', {
+      'notes_enabled': notesEnabled,
+      'board_enabled': boardEnabled,
+    });
     return Workspace.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<Workspace> updateWorkspaceAi(String id, AiSwitches switches) async {
-    final data = _decode(
-      await _client.patch(
-        _uri('/workspaces/$id'),
-        headers: _headers(),
-        body: jsonEncode({'ai': switches.toJson()}),
-      ),
-    );
+    final data = await _patch('/workspaces/$id', {'ai': switches.toJson()});
     return Workspace.fromJson(data as Map<String, dynamic>);
   }
 
@@ -610,137 +578,97 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<void> putCollection(NoteCollection collection) async {
-    _decode(
-      await _client.put(
-        _uri(
-          '/workspaces/${collection.workspaceId}/collections/${collection.id}',
-        ),
-        headers: _headers(),
-        body: jsonEncode(collection.toJson()),
-      ),
+    await _put(
+      '/workspaces/${collection.workspaceId}/collections/${collection.id}',
+      collection.toJson(),
     );
   }
 
   @override
   Future<void> deleteCollection(String workspaceId, String id) async {
-    _decode(
-      await _client.delete(
-        _uri('/workspaces/$workspaceId/collections/$id'),
-        headers: _headers(),
-      ),
-    );
+    await _delete('/workspaces/$workspaceId/collections/$id');
   }
 
   @override
   Future<void> putSavedView(String workspaceId, SavedView view) async {
-    _decode(
-      await _client.put(
-        _uri('/workspaces/$workspaceId/smart-views/${view.id}'),
-        headers: _headers(),
-        body: jsonEncode(view.toJson()),
-      ),
+    await _put(
+      '/workspaces/$workspaceId/smart-views/${view.id}',
+      view.toJson(),
     );
   }
 
   @override
   Future<void> deleteSavedView(String workspaceId, String id) async {
-    _decode(
-      await _client.delete(
-        _uri('/workspaces/$workspaceId/smart-views/$id'),
-        headers: _headers(),
-      ),
-    );
+    await _delete('/workspaces/$workspaceId/smart-views/$id');
   }
 
   @override
   Future<void> deleteWorkspace(String id) async {
-    _decode(await _client.delete(_uri('/workspaces/$id'), headers: _headers()));
+    await _delete('/workspaces/$id');
   }
 
   @override
   Future<Workspace> addWorkspaceMember(String workspaceId, String email) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/workspaces/$workspaceId/members'),
-        headers: _headers(),
-        body: jsonEncode({'email': email}),
-      ),
-    );
+    final data = await _post('/workspaces/$workspaceId/members', {
+      'email': email,
+    });
     return Workspace.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<void> removeWorkspaceMember(String workspaceId, String userId) async {
-    _decode(
-      await _client.delete(
-        _uri('/workspaces/$workspaceId/members/$userId'),
-        headers: _headers(),
-      ),
-    );
+    await _delete('/workspaces/$workspaceId/members/$userId');
   }
 
   // -- notes ---------------------------------------------------------------
 
   @override
   Future<List<Note>> fetchNotes() async {
-    final data =
-        _decode(await _client.get(_uri('/notes'), headers: _headers())) as List;
+    final data = await _get('/notes') as List;
     return data.map((j) => Note.fromJson(j as Map<String, dynamic>)).toList();
   }
 
   @override
   Future<Note> createNote(Note note, {bool preserveTimestamps = false}) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/notes'),
-        headers: _headers(),
-        body: jsonEncode({
-          'id': note.id,
-          if (note.workspaceId.isNotEmpty) 'workspace_id': note.workspaceId,
-          'collection_id': note.collectionId,
-          'kind': note.kind.wire,
-          'title': note.title,
-          'content': note.content,
-          'items': Note.itemsToJson(note.items),
-          'color': note.color,
-          'pinned': note.pinned,
-          'position': note.position,
-          'grid_span': note.gridSpan,
-          if (note.reminderAt != null)
-            'reminder_at': note.reminderAt!.toUtc().toIso8601String(),
-          if (note.reminderRepeat != null)
-            'reminder_repeat': note.reminderRepeat!.wire,
-          // A checklist composed offline arrives with its item alarms in the
-          // same request; there is no note yet to hang a sub-resource off.
-          if (note.itemReminders.isNotEmpty)
-            'item_reminders': Note.itemRemindersToJson(note.itemReminders),
-          // A note composed inside a label view is already filed when it
-          // reaches the server; the draft never had a chance to PATCH them.
-          'label_ids': note.labelIds.toList(),
-          // Same for one composed inside a board column.
-          if (note.stageId != null) 'stage_id': note.stageId,
-          'stage_position': note.stagePosition,
-          if (preserveTimestamps) ...{
-            'archived': note.archived,
-            'trashed': note.trashed,
-            'created_at': note.createdAt.toUtc().toIso8601String(),
-            'updated_at': note.updatedAt.toUtc().toIso8601String(),
-          },
-        }),
-      ),
-    );
+    final data = await _post('/notes', {
+      'id': note.id,
+      if (note.workspaceId.isNotEmpty) 'workspace_id': note.workspaceId,
+      'collection_id': note.collectionId,
+      'kind': note.kind.wire,
+      'title': note.title,
+      'content': note.content,
+      'items': Note.itemsToJson(note.items),
+      'color': note.color,
+      'pinned': note.pinned,
+      'position': note.position,
+      'grid_span': note.gridSpan,
+      if (note.reminderAt != null)
+        'reminder_at': note.reminderAt!.toUtc().toIso8601String(),
+      if (note.reminderRepeat != null)
+        'reminder_repeat': note.reminderRepeat!.wire,
+      // A checklist composed offline arrives with its item alarms in the
+      // same request; there is no note yet to hang a sub-resource off.
+      if (note.itemReminders.isNotEmpty)
+        'item_reminders': Note.itemRemindersToJson(note.itemReminders),
+      // A note composed inside a label view is already filed when it
+      // reaches the server; the draft never had a chance to PATCH them.
+      'label_ids': note.labelIds.toList(),
+      // Same for one composed inside a board column.
+      if (note.stageId != null) 'stage_id': note.stageId,
+      'stage_position': note.stagePosition,
+      if (preserveTimestamps) ...{
+        'archived': note.archived,
+        'trashed': note.trashed,
+        'created_at': note.createdAt.toUtc().toIso8601String(),
+        'updated_at': note.updatedAt.toUtc().toIso8601String(),
+      },
+    });
     return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<Note> patchNote(String id, Map<String, dynamic> fields) async {
-    final data = _decode(
-      await _client.patch(
-        _uri('/notes/$id'),
-        headers: _headers(),
-        body: jsonEncode(fields),
-      ),
-    );
+    final data = await _patch('/notes/$id', fields);
     return Note.fromJson(data as Map<String, dynamic>);
   }
 
@@ -751,56 +679,31 @@ class ApiClient extends _ApiTransport implements Api {
     DateTime? at,
     ReminderRepeat? repeat,
   }) async {
-    _decode(
-      await _client.put(
-        _uri('/notes/$noteId/item-reminders/${Uri.encodeComponent(itemId)}'),
-        headers: _headers(),
-        body: jsonEncode({
-          'reminder_at': at?.toUtc().toIso8601String(),
-          'reminder_repeat': at == null ? null : repeat?.wire,
-        }),
-      ),
-    );
+    await _put('/notes/$noteId/item-reminders/${Uri.encodeComponent(itemId)}', {
+      'reminder_at': at?.toUtc().toIso8601String(),
+      'reminder_repeat': at == null ? null : repeat?.wire,
+    });
   }
 
   @override
   Future<Note> rewriteNote(String id, NoteRewriteTask task) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/notes/$id/rewrite'),
-        headers: _headers(),
-        body: jsonEncode({'task_id': task.id}),
-      ),
-    );
+    final data = await _post('/notes/$id/rewrite', {'task_id': task.id});
     return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<void> deleteNote(String id) async {
-    _decode(await _client.delete(_uri('/notes/$id'), headers: _headers()));
+    await _delete('/notes/$id');
   }
 
   @override
   Future<void> reorderNotes(List<String> ids) async {
-    _decode(
-      await _client.post(
-        _uri('/notes/reorder'),
-        headers: _headers(),
-        body: jsonEncode({'ids': ids}),
-      ),
-    );
+    await _post('/notes/reorder', {'ids': ids});
   }
 
   @override
   Future<List<NoteVersion>> fetchNoteVersions(String noteId) async {
-    final data =
-        _decode(
-              await _client.get(
-                _uri('/notes/$noteId/versions'),
-                headers: _headers(),
-              ),
-            )
-            as List;
+    final data = await _get('/notes/$noteId/versions') as List;
     return data
         .map((j) => NoteVersion.fromJson(j as Map<String, dynamic>))
         .toList();
@@ -808,25 +711,13 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<Note> restoreNoteVersion(String noteId, String versionId) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/notes/$noteId/versions/$versionId/restore'),
-        headers: _headers(),
-      ),
-    );
+    final data = await _post('/notes/$noteId/versions/$versionId/restore');
     return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<Map<String, List<String>>> fetchChecklistHistory() async {
-    final data =
-        _decode(
-              await _client.get(
-                _uri('/checklist-history'),
-                headers: _headers(),
-              ),
-            )
-            as List;
+    final data = await _get('/checklist-history') as List;
     final byNote = <String, List<String>>{};
     for (final entry in data) {
       final map = entry as Map;
@@ -841,9 +732,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<List<ShareLink>> fetchShareLinks() async {
-    final data =
-        _decode(await _client.get(_uri('/share-links'), headers: _headers()))
-            as List;
+    final data = await _get('/share-links') as List;
     return data
         .map((j) => ShareLink.fromJson(j as Map<String, dynamic>))
         .toList();
@@ -858,37 +747,27 @@ class ApiClient extends _ApiTransport implements Api {
     String? labelId,
     DateTime? expiresAt,
   }) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/share-links'),
-        headers: _headers(),
-        body: jsonEncode({
-          'target': target.wire,
-          'note_id': ?noteId,
-          'workspace_id': ?workspaceId,
-          'collection_id': ?collectionId,
-          'label_id': ?labelId,
-          'expires_at': ?expiresAt?.toUtc().toIso8601String(),
-        }),
-      ),
-    );
+    final data = await _post('/share-links', {
+      'target': target.wire,
+      'note_id': ?noteId,
+      'workspace_id': ?workspaceId,
+      'collection_id': ?collectionId,
+      'label_id': ?labelId,
+      'expires_at': ?expiresAt?.toUtc().toIso8601String(),
+    });
     return ShareLink.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<void> deleteShareLink(String token) async {
-    _decode(
-      await _client.delete(_uri('/share-links/$token'), headers: _headers()),
-    );
+    await _delete('/share-links/$token');
   }
 
   // -- personal access tokens ------------------------------------------------
 
   @override
   Future<List<ApiToken>> fetchApiTokens() async {
-    final data =
-        _decode(await _client.get(_uri('/tokens'), headers: _headers()))
-            as List;
+    final data = await _get('/tokens') as List;
     return data
         .map((j) => ApiToken.fromJson(j as Map<String, dynamic>))
         .toList();
@@ -896,19 +775,13 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<CreatedApiToken> createApiToken(String name, TokenScope scope) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/tokens'),
-        headers: _headers(),
-        body: jsonEncode({'name': name, 'scope': scope.wire}),
-      ),
-    );
+    final data = await _post('/tokens', {'name': name, 'scope': scope.wire});
     return CreatedApiToken.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<void> deleteApiToken(String id) async {
-    _decode(await _client.delete(_uri('/tokens/$id'), headers: _headers()));
+    await _delete('/tokens/$id');
   }
 
   @override
@@ -927,9 +800,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<List<Label>> fetchLabels() async {
-    final data =
-        _decode(await _client.get(_uri('/labels'), headers: _headers()))
-            as List;
+    final data = await _get('/labels') as List;
     return data.map((j) => Label.fromJson(j as Map<String, dynamic>)).toList();
   }
 
@@ -968,32 +839,24 @@ class ApiClient extends _ApiTransport implements Api {
     String? icon,
     double? position,
   }) async {
-    _decode(
-      await _client.patch(
-        _uri('/labels/$id'),
-        headers: _headers(),
-        body: jsonEncode({
-          'name': name,
-          'color': color ?? '',
-          'icon': icon ?? '',
-          'position': ?position,
-        }),
-      ),
-    );
+    await _patch('/labels/$id', {
+      'name': name,
+      'color': color ?? '',
+      'icon': icon ?? '',
+      'position': ?position,
+    });
   }
 
   @override
   Future<void> deleteLabel(String id) async {
-    _decode(await _client.delete(_uri('/labels/$id'), headers: _headers()));
+    await _delete('/labels/$id');
   }
 
   // -- stages ---------------------------------------------------------------
 
   @override
   Future<List<Stage>> fetchStages() async {
-    final data =
-        _decode(await _client.get(_uri('/stages'), headers: _headers()))
-            as List;
+    final data = await _get('/stages') as List;
     return data.map((j) => Stage.fromJson(j as Map<String, dynamic>)).toList();
   }
 
@@ -1031,46 +894,29 @@ class ApiClient extends _ApiTransport implements Api {
     String? color,
     double? position,
   }) async {
-    _decode(
-      await _client.patch(
-        _uri('/stages/$id'),
-        headers: _headers(),
-        body: jsonEncode({
-          'name': name,
-          'color': color ?? '',
-          'position': ?position,
-        }),
-      ),
-    );
+    await _patch('/stages/$id', {
+      'name': name,
+      'color': color ?? '',
+      'position': ?position,
+    });
   }
 
   @override
   Future<void> deleteStage(String id) async {
-    _decode(await _client.delete(_uri('/stages/$id'), headers: _headers()));
+    await _delete('/stages/$id');
   }
 
   // -- sharing ----------------------------------------------------------------
 
   @override
   Future<Note> addCollaborator(String noteId, String email) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/notes/$noteId/collaborators'),
-        headers: _headers(),
-        body: jsonEncode({'email': email}),
-      ),
-    );
+    final data = await _post('/notes/$noteId/collaborators', {'email': email});
     return Note.fromJson(data as Map<String, dynamic>);
   }
 
   @override
   Future<void> removeCollaborator(String noteId, String userId) async {
-    _decode(
-      await _client.delete(
-        _uri('/notes/$noteId/collaborators/$userId'),
-        headers: _headers(),
-      ),
-    );
+    await _delete('/notes/$noteId/collaborators/$userId');
   }
 
   // -- attachments --------------------------------------------------------------
@@ -1101,12 +947,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<void> deleteAttachment(String attachmentId) async {
-    _decode(
-      await _client.delete(
-        _uri('/attachments/$attachmentId'),
-        headers: _headers(),
-      ),
-    );
+    await _delete('/attachments/$attachmentId');
   }
 
   @override
@@ -1123,21 +964,13 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<Map<String, dynamic>> fetchSettings() async {
-    final data = _decode(
-      await _client.get(_uri('/settings'), headers: _headers()),
-    );
+    final data = await _get('/settings');
     return (data as Map?)?.cast<String, dynamic>() ?? {};
   }
 
   @override
   Future<void> putSettings(Map<String, dynamic> settings) async {
-    _decode(
-      await _client.put(
-        _uri('/settings'),
-        headers: _headers(),
-        body: jsonEncode(settings),
-      ),
-    );
+    await _put('/settings', settings);
   }
 
   @override
@@ -1177,17 +1010,11 @@ class ApiClient extends _ApiTransport implements Api {
     required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
   }) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/unfurl/summary'),
-        headers: _headers(),
-        body: jsonEncode({
-          'url': url,
-          'note_id': noteId,
-          'length': length.name,
-        }),
-      ),
-    );
+    final data = await _post('/unfurl/summary', {
+      'url': url,
+      'note_id': noteId,
+      'length': length.name,
+    });
     return (data as Map<String, dynamic>)['summary'] as String;
   }
 
@@ -1224,9 +1051,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<SearchStats> fetchSearchStats() async {
-    final data = _decode(
-      await _client.get(_uri('/search/stats'), headers: _headers()),
-    );
+    final data = await _get('/search/stats');
     return SearchStats.fromJson(
       ((data as Map?) ?? const {}).cast<String, dynamic>(),
     );
@@ -1234,17 +1059,13 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<int> reindexEmbeddings() async {
-    final data = _decode(
-      await _client.post(_uri('/search/reindex'), headers: _headers()),
-    );
+    final data = await _post('/search/reindex');
     return ((data as Map?)?['total'] as num?)?.toInt() ?? 0;
   }
 
   @override
   Future<({bool running, int done, int total})> fetchReindexStatus() async {
-    final data = _decode(
-      await _client.get(_uri('/search/reindex/status'), headers: _headers()),
-    );
+    final data = await _get('/search/reindex/status');
     final map = (data as Map?) ?? const {};
     return (
       running: map['running'] == true,
@@ -1255,9 +1076,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<Map<String, ManagedSetting>> fetchManagedSettings() async {
-    final data = _decode(
-      await _client.get(_uri('/managed-settings'), headers: _headers()),
-    );
+    final data = await _get('/managed-settings');
     final map = (data as Map?) ?? const {};
     return {
       for (final entry in map.entries)
@@ -1270,12 +1089,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<void> transcribeNote(String noteId) async {
-    _decode(
-      await _client.post(
-        _uri('/notes/$noteId/transcribe'),
-        headers: _headers(),
-      ),
-    );
+    await _post('/notes/$noteId/transcribe');
   }
 
   // -- live sync ---------------------------------------------------------------
@@ -1380,17 +1194,11 @@ class ApiClient extends _ApiTransport implements Api {
     required String apiKey,
     required String model,
   }) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/llm/test'),
-        headers: _headers(),
-        body: jsonEncode({
-          'base_url': baseUrl,
-          'api_key': apiKey,
-          'model': model,
-        }),
-      ),
-    );
+    final data = await _post('/llm/test', {
+      'base_url': baseUrl,
+      'api_key': apiKey,
+      'model': model,
+    });
     final map = (data as Map?) ?? const {};
     return (ok: map['ok'] == true, error: map['error'] as String?);
   }
@@ -1399,13 +1207,7 @@ class ApiClient extends _ApiTransport implements Api {
   Future<({bool ok, String? error})> testNotify(
     Map<String, String> config,
   ) async {
-    final data = _decode(
-      await _client.post(
-        _uri('/notify/test'),
-        headers: _headers(),
-        body: jsonEncode(config),
-      ),
-    );
+    final data = await _post('/notify/test', config);
     final map = (data as Map?) ?? const {};
     return (ok: map['ok'] == true, error: map['error'] as String?);
   }

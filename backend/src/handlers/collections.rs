@@ -36,8 +36,7 @@ pub async fn put_collection(
     if !state.repo.put_collection(&user_id, &body).await? {
         return Err(ApiError::NotFound);
     }
-    let audience = state.repo.workspace_member_ids(&workspace_id).await?;
-    state.hub.notify(&audience, super::CHANGED_MSG);
+    state.notify_workspace(&workspace_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -55,8 +54,7 @@ pub async fn delete_collection(
         state.notify_note(&id).await;
         state.index_note_later(&id);
     }
-    let audience = state.repo.workspace_member_ids(&workspace_id).await?;
-    state.hub.notify(&audience, super::CHANGED_MSG);
+    state.notify_workspace(&workspace_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

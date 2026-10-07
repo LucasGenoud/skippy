@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:skippy/api/api_client.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/models/workspace.dart';
 import 'package:skippy/state/pending_operation.dart';
@@ -30,6 +31,39 @@ void main() {
     expect(api.log.where((entry) => entry.startsWith('createNote:')), [
       'createNote:n1',
     ]);
+  });
+
+  test('a content patch guards against an edit made elsewhere', () async {
+    final api = FakeApi();
+    final note = Note(id: 'n1', createdAt: now, updatedAt: now);
+    final executor = PendingOperationExecutor(api: api, noteById: (_) => note);
+    await executor.run(const PendingOp(PendingOpKind.create, id: 'n1'));
+
+    // Someone else edits the note after this device last heard from it.
+    api.notes['n1'] = api.notes['n1']!.copyWith(
+      updatedAt: now.add(const Duration(minutes: 1)),
+    );
+
+    // Organizing the note carries no guard and goes through.
+    await executor.run(
+      const PendingOp(PendingOpKind.patch, id: 'n1', data: {'pinned': true}),
+    );
+    // The organizing write reported the new updated_at, so the next content
+    // edit is judged against it.
+    await executor.run(
+      const PendingOp(PendingOpKind.patch, id: 'n1', data: {'title': 'Mine'}),
+    );
+    expect(api.notes['n1']!.title, 'Mine');
+
+    api.notes['n1'] = api.notes['n1']!.copyWith(
+      updatedAt: now.add(const Duration(hours: 1)),
+    );
+    await expectLater(
+      executor.run(
+        const PendingOp(PendingOpKind.patch, id: 'n1', data: {'title': 'Old'}),
+      ),
+      throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 409)),
+    );
   });
 
   test('workspace metadata operations preserve their scoped fields', () async {

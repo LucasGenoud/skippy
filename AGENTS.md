@@ -64,6 +64,9 @@ Format touched Dart files with `dart format`. Format touched Rust files with `ca
 - `state/checklist_tree.dart`: the pure rules for nested checklists (which rows form a subtree, what a check cascades to, what may be indented).
 - `state/note_links.dart`: the `[[id|Title]]` note-link syntax, backlinks, link candidates, and the rules that make a link move and delete as one unit in the editor.
 - `state/pending_operation.dart`: persisted optimistic operation types and JSON encoding.
+- `state/sparse_position.dart`: the sparse `position` arithmetic every drag-reorder shares (cards, columns, labels, collections, smart views).
+- `state/bulk_import.dart`: the awaited server writes behind backup restore and Keep import; `NotesStore` only decides when one may run.
+- `state/notes_cache_doc.dart`: encoding of the offline snapshot (notes, taxonomy, queue, sync issues); `state/sync_issue.dart`: a write the server refused for good.
 
 The WebSocket is a change nudge, not a stream of note patches. Multiple notifications are debounced and lead to a refetch. Last-write-wins remains the collaboration model.
 
@@ -188,13 +191,13 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card
   for a note's reminder and by the checklist editor for a row's.
 - `app/lib/widgets/swipe_to_archive.dart`: the touch-only swipe that archives a card from the grid.
-- `app/lib/widgets/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions.
+- `app/lib/widgets/checklist/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions. Its `part` file `checklist_row_input.dart` holds the row text-input workarounds (empty-row marker, iOS space repair).
 - `app/lib/widgets/quick_add_bar.dart`: inline text, checklist, and markdown drafts plus image-note creation.
-- `app/lib/widgets/editor/`: extracted editor attachment, text-field, and bottom-bar pieces.
+- `app/lib/widgets/editor/`: extracted editor attachment, text-field, and bottom-bar pieces, the desktop open/close morph, and the home-screen widget help.
 - `app/lib/widgets/settings/`: extracted settings sections and shared managed/probe UI.
 - `app/lib/widgets/workspace_menu.dart`: workspace switcher, create/rename, roster management, and the move-a-note picker.
 - `app/lib/widgets/workspace_ai_section.dart`: a workspace's AI switches, editable by its owner and read-only for members.
-- `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations.
+- `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations. Both audio players draw `audio_player_view.dart`, so they look the same by construction.
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
 - `app/lib/util/keep_import.dart`: pure parsing of a Google Takeout Keep zip; `NotesStore.importKeep` adds the result without replacing anything.

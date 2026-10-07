@@ -129,14 +129,7 @@ pub(super) async fn workspace_note_ids(
     user_id: &str,
     workspace_id: &str,
 ) -> ApiResult<std::collections::HashSet<String>> {
-    Ok(state
-        .repo
-        .notes_for_user(user_id)
-        .await?
-        .into_iter()
-        .filter(|view| view.note.workspace_id == workspace_id)
-        .map(|view| view.note.id)
-        .collect())
+    Ok(state.repo.visible_note_ids_in(user_id, workspace_id).await?)
 }
 
 /// Resolve the workspace a request targets: the one it names, which the

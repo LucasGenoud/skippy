@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../models/collection.dart';
 import '../models/note.dart';
 import '../models/workspace.dart' show AiFeature, WorkspaceAi;
 import '../screens/editor_screen.dart';
@@ -380,7 +381,8 @@ class _NoteTileState extends State<NoteTile> {
             if (collections == null) return null;
             for (final collection in collections) {
               if (collection.id ==
-                  (note.collectionId ?? '${note.workspaceId}-general')) {
+                  (note.collectionId ??
+                      NoteCollection.generalId(note.workspaceId))) {
                 return '${collection.name}\u0001${collection.color ?? ''}\u0001${collection.icon ?? ''}';
               }
             }

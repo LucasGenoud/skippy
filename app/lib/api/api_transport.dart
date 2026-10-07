@@ -83,6 +83,30 @@ abstract class _ApiTransport {
     _decode(response, authed: false);
   }
 
+  // One authenticated JSON request on the timeout-bounded client, decoded.
+  // A [body] is sent as JSON.
+
+  Future<dynamic> _get(String path) async =>
+      _decode(await _client.get(_uri(path), headers: _headers()));
+
+  Future<dynamic> _post(String path, [Object? body]) async => _decode(
+    await _client.post(_uri(path), headers: _headers(), body: _json(body)),
+  );
+
+  Future<dynamic> _put(String path, [Object? body]) async => _decode(
+    await _client.put(_uri(path), headers: _headers(), body: _json(body)),
+  );
+
+  Future<dynamic> _patch(String path, [Object? body]) async => _decode(
+    await _client.patch(_uri(path), headers: _headers(), body: _json(body)),
+  );
+
+  Future<dynamic> _delete(String path, [Object? body]) async => _decode(
+    await _client.delete(_uri(path), headers: _headers(), body: _json(body)),
+  );
+
+  static String? _json(Object? body) => body == null ? null : jsonEncode(body);
+
   dynamic _decode(
     http.Response response, {
     bool authed = true,

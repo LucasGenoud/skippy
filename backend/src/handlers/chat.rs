@@ -7,7 +7,6 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
-use std::collections::HashSet;
 use tokio::sync::OwnedSemaphorePermit;
 
 use crate::AppState;
@@ -414,13 +413,7 @@ async fn chat_ai(
 /// Every workspace an unscoped turn may read: those holding a note the caller
 /// can see, less the ones whose owner turned chat off.
 async fn chat_workspaces(state: &AppState, user_id: &str) -> ApiResult<Vec<String>> {
-    let ids: HashSet<String> = state
-        .repo
-        .notes_for_user(user_id)
-        .await?
-        .into_iter()
-        .map(|view| view.note.workspace_id)
-        .collect();
+    let ids = state.repo.visible_note_workspaces(user_id).await?;
     let mut open = Vec::new();
     for id in ids {
         if let Some(ai) = workspace_ai(state, &id).await?

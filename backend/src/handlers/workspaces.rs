@@ -79,13 +79,6 @@ pub(super) async fn view_of(
     Ok(views.remove(0))
 }
 
-/// Push a change event to everyone in the workspace.
-pub(super) async fn notify_workspace(state: &AppState, workspace_id: &str) {
-    if let Ok(ids) = state.repo.workspace_member_ids(workspace_id).await {
-        state.hub.notify(&ids, CHANGED_MSG);
-    }
-}
-
 pub async fn list_workspaces(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
@@ -187,7 +180,7 @@ pub async fn update_workspace(
     if !state.repo.update_workspace(&workspace).await? {
         return Err(ApiError::NotFound);
     }
-    notify_workspace(&state, &id).await;
+    state.notify_workspace(&id).await;
     Ok(Json(view_of(&state, &id, &user_id).await?))
 }
 
@@ -234,7 +227,7 @@ pub async fn add_workspace_member(
         ));
     }
     state.repo.add_workspace_member(&id, &target.id).await?;
-    notify_workspace(&state, &id).await;
+    state.notify_workspace(&id).await;
     Ok(Json(view_of(&state, &id, &user_id).await?))
 }
 
@@ -293,7 +286,7 @@ pub async fn put_smart_view(
     {
         return Err(ApiError::NotFound);
     }
-    notify_workspace(&state, &workspace_id).await;
+    state.notify_workspace(&workspace_id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -309,6 +302,6 @@ pub async fn delete_smart_view(
     {
         return Err(ApiError::NotFound);
     }
-    notify_workspace(&state, &workspace_id).await;
+    state.notify_workspace(&workspace_id).await;
     Ok(StatusCode::NO_CONTENT)
 }

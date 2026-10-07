@@ -20,11 +20,15 @@ class NoteCollection {
     this.position = 0,
   });
 
+  /// Id of a workspace's base collection, which the server creates with the
+  /// workspace. Content that names no collection belongs there.
+  static String generalId(String workspaceId) => '$workspaceId-general';
+
   factory NoteCollection.general(
     String workspaceId, {
     String layout = 'masonry',
   }) => NoteCollection(
-    id: '$workspaceId-general',
+    id: generalId(workspaceId),
     workspaceId: workspaceId,
     name: 'General',
     layout: layout,

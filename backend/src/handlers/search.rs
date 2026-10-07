@@ -3,7 +3,6 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use serde::Deserialize;
-use std::collections::HashSet;
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -71,15 +70,7 @@ pub async fn semantic_search(
     };
     let workspace_ids: Vec<String> = match workspace {
         Some(workspace_id) => vec![workspace_id.to_string()],
-        None => state
-            .repo
-            .notes_for_user(&user_id)
-            .await?
-            .into_iter()
-            .map(|view| view.note.workspace_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect(),
+        None => state.repo.visible_note_workspaces(&user_id).await?,
     };
     let mut hits = Vec::with_capacity(limit);
     for (note_id, score) in search.search(&workspace_ids, query, fetch).await? {

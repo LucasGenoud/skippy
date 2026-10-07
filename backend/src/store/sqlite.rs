@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sha2::{Digest, Sha256};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -756,6 +756,40 @@ impl SqliteRepository {
         .await?;
         let records = rows.iter().map(note_from_row).collect();
         super::sqlite_views::build_note_views(&self.pool, records, user_id).await
+    }
+
+    /// Ids of the notes `user_id` can see in one workspace, without building
+    /// their views. Narrows search and chat retrieval to the open workspace.
+    pub async fn visible_note_ids_in(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+    ) -> RepoResult<HashSet<String>> {
+        let ids: Vec<String> = sqlx::query_scalar(&format!(
+            "SELECT id FROM notes WHERE workspace_id = ? AND {} AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)",
+            visible_notes("notes")
+        ))
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(ids.into_iter().collect())
+    }
+
+    /// Every workspace holding a note `user_id` can see, direct shares
+    /// included: the collections an unscoped search or chat reads.
+    pub async fn visible_note_workspaces(&self, user_id: &str) -> RepoResult<Vec<String>> {
+        Ok(sqlx::query_scalar(&format!(
+            "SELECT DISTINCT workspace_id FROM notes WHERE {} AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)",
+            visible_notes("notes")
+        ))
+        .bind(user_id)
+        .bind(user_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?)
     }
 
     pub async fn note_view(&self, note_id: &str, viewer_id: &str) -> RepoResult<Option<NoteView>> {

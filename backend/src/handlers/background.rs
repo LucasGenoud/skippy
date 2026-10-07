@@ -19,6 +19,17 @@ impl AppState {
         }
     }
 
+    /// Push a change event to everyone in the workspace, for workspace state
+    /// such as labels, stages, and collections.
+    pub(super) async fn notify_workspace(&self, workspace_id: &str) {
+        match self.repo.workspace_member_ids(workspace_id).await {
+            Ok(ids) => self.hub.notify(&ids, CHANGED_MSG),
+            Err(error) => {
+                self.report_background_failure("workspace_notification", &format!("{error:?}"));
+            }
+        }
+    }
+
     pub(super) fn notify_user(&self, user_id: &str) {
         self.hub
             .notify(std::slice::from_ref(&user_id.to_string()), CHANGED_MSG);

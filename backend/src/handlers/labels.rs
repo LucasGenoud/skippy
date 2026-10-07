@@ -48,15 +48,8 @@ pub async fn create_label(
         position,
     };
     state.repo.insert_label(&label).await?;
-    notify_workspace(&state, &label.workspace_id).await;
+    state.notify_workspace(&label.workspace_id).await;
     Ok((StatusCode::CREATED, Json(label)))
-}
-
-/// A label is workspace state: everyone in the workspace needs the change.
-async fn notify_workspace(state: &AppState, workspace_id: &str) {
-    if let Ok(ids) = state.repo.workspace_member_ids(workspace_id).await {
-        state.hub.notify(&ids, super::CHANGED_MSG);
-    }
 }
 
 /// Trim a presentation field; empty becomes `None` so the client's "clear"
@@ -94,7 +87,7 @@ pub async fn update_label(
     let label = find_label(&state, &user_id, &id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    notify_workspace(&state, &label.workspace_id).await;
+    state.notify_workspace(&label.workspace_id).await;
     Ok(Json(label))
 }
 
@@ -112,7 +105,7 @@ pub async fn delete_label(
         return Err(ApiError::NotFound);
     }
     if let Some(workspace_id) = workspace_id {
-        notify_workspace(&state, &workspace_id).await;
+        state.notify_workspace(&workspace_id).await;
     }
     Ok(StatusCode::NO_CONTENT)
 }

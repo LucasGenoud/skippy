@@ -1,6 +1,7 @@
 import '../models/note.dart';
 import '../util/search_query.dart';
 import 'note_collection.dart';
+import 'sparse_position.dart';
 
 /// One column of the board: a stage and the cards filed in it.
 ///
@@ -173,15 +174,7 @@ double? _positionOf(String movedId, List<Note> orderedPeers) {
   final below = index + 1 < orderedPeers.length
       ? orderedPeers[index + 1]
       : null;
-  return _positionBetween(above, below);
-}
-
-/// A sparse position between two cards in the same board ordering group.
-double _positionBetween(Note? above, Note? below) {
-  if (above == null && below == null) return 1024.0;
-  if (above == null) return below!.stagePosition - 1024.0;
-  if (below == null) return above.stagePosition + 1024.0;
-  return (above.stagePosition + below.stagePosition) / 2;
+  return positionBetween(above?.stagePosition, below?.stagePosition);
 }
 
 bool _sameOrder(List<String> a, List<String> b) {

@@ -13,10 +13,21 @@ typedef PendingNoteLookup = Note? Function(String id);
 /// this transport mapping separate makes the persisted operation contract
 /// testable without constructing the full application store.
 class PendingOperationExecutor {
-  const PendingOperationExecutor({required this.api, required this.noteById});
+  PendingOperationExecutor({
+    required this.api,
+    required this.noteById,
+    Map<String, String>? serverUpdatedAt,
+  }) : _serverUpdatedAt = serverUpdatedAt ?? {};
 
   final Api api;
   final PendingNoteLookup noteById;
+
+  /// Note id to the `updated_at` the server last reported. A content patch
+  /// sends it as `if_unmodified_since`, so an edit made offline cannot
+  /// silently overwrite one made elsewhere since.
+  final Map<String, String> _serverUpdatedAt;
+
+  static const _contentFields = {'kind', 'title', 'content', 'items'};
 
   /// Execute one queued write. Creates re-read the freshest note so edits made
   /// after enqueuing still go up, while filing follows queue order; a create for a note deleted in the meantime
@@ -28,12 +39,9 @@ class PendingOperationExecutor {
       case PendingOpKind.collectionDelete:
         return api.deleteCollection(op.data['workspaceId'] as String, op.id!);
       case PendingOpKind.create:
-        final note = noteById(op.id!);
-        return note == null
-            ? Future.value()
-            : api.createNote(Note.fromJson({...note.toJson(), ...op.data}));
+        return _create(op);
       case PendingOpKind.patch:
-        return api.patchNote(op.id!, op.data);
+        return _patch(op);
       case PendingOpKind.delete:
         return api.deleteNote(op.id!);
       case PendingOpKind.reorder:
@@ -117,5 +125,26 @@ class PendingOperationExecutor {
       case PendingOpKind.unknown:
         return Future<void>.value();
     }
+  }
+
+  Future<void> _create(PendingOp op) async {
+    final note = noteById(op.id!);
+    if (note == null) {
+      return;
+    }
+    final created = await api.createNote(
+      Note.fromJson({...note.toJson(), ...op.data}),
+    );
+    _serverUpdatedAt[op.id!] = created.updatedAt.toUtc().toIso8601String();
+  }
+
+  Future<void> _patch(PendingOp op) async {
+    final fields = Map<String, dynamic>.of(op.data);
+    final expected = _serverUpdatedAt[op.id!];
+    if (expected != null && fields.keys.any(_contentFields.contains)) {
+      fields['if_unmodified_since'] = expected;
+    }
+    final updated = await api.patchNote(op.id!, fields);
+    _serverUpdatedAt[op.id!] = updated.updatedAt.toUtc().toIso8601String();
   }
 }

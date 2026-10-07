@@ -1,9 +1,7 @@
 import '../widgets/collection_settings.dart';
-import '../widgets/form_dialog.dart';
 import 'package:animations/animations.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -35,8 +33,10 @@ import '../widgets/animated_reveal.dart';
 import '../widgets/audio_player.dart';
 import '../widgets/board/move_to_stage_sheet.dart';
 import '../widgets/color_picker.dart';
+import '../widgets/editor/add_to_home_screen_help.dart';
 import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
+import '../widgets/editor/editor_morph.dart';
 import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/editor/note_actions_button.dart';
 import '../widgets/editor/note_links_panel.dart';
@@ -204,7 +204,7 @@ Future<void> openNoteEditor(
           ),
           child: sourceRect == null || Motion.reduced(context)
               ? dialog
-              : _EditorMorph(
+              : EditorMorph(
                   animation: animation,
                   source: sourceRect,
                   child: dialog,
@@ -213,195 +213,6 @@ Future<void> openNoteEditor(
       );
     },
   );
-}
-
-/// The desktop half of the card→editor container transform: the modal grows out
-/// of the card (or row) that opened it and shrinks back into it on close,
-/// mirroring the fullscreen [NoteZoomRoute] morph phones get.
-///
-/// The visible box runs from the source's bounds to the dialog's. The dialog
-/// is scaled to the box's width and cut off at its height:
-///
-/// ```text
-///   t = 0    +==== reminder row ====+    box = source
-///   t = 1       +---------------+        box = dialog
-///               |    editor     |        scale = box.width / dialog.width
-///               +---------------+        clip  = box.height / scale
-/// ```
-///
-/// Scaling the whole dialog by width alone would leave a wide, short source (a
-/// reminder row, a list-mode card) under a full-height dialog that slides to
-/// it instead of shrinking into it. The surface reaches full opacity early
-/// on, so the growing note reads as one opaque object leaving the grid
-/// instead of a fade.
-class _EditorMorph extends StatelessWidget {
-  final Animation<double> animation;
-
-  /// Global bounds of the widget the editor is growing out of.
-  final Rect source;
-
-  final Widget child;
-
-  const _EditorMorph({
-    required this.animation,
-    required this.source,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      child: child,
-      builder: (context, child) {
-        // Emphasized on the way out of the card, calmer on the way back in,
-        // easing into the card rather than arriving at full speed.
-        final curve = animation.status == AnimationStatus.reverse
-            ? Motion.standard.flipped
-            : Motion.emphasized;
-        final t = curve.transform(animation.value.clamp(0.0, 1.0));
-        return _MorphBox(
-          source: source,
-          progress: t,
-          child: Opacity(opacity: (t * 4).clamp(0.0, 1.0), child: child),
-        );
-      },
-    );
-  }
-}
-
-/// Paints its child through [_EditorMorph]'s box. The dialog keeps its
-/// final layout throughout: it hugs its content, so its size is only known
-/// after layout, and laying the editor out again on every frame of a 250ms
-/// transition is exactly the kind of work that makes a morph stutter.
-class _MorphBox extends SingleChildRenderObjectWidget {
-  final Rect source;
-  final double progress;
-
-  const _MorphBox({
-    required this.source,
-    required this.progress,
-    required super.child,
-  });
-
-  @override
-  _RenderMorphBox createRenderObject(BuildContext context) =>
-      _RenderMorphBox(source: source, progress: progress);
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderMorphBox renderObject) {
-    renderObject
-      ..source = source
-      ..progress = progress;
-  }
-}
-
-class _RenderMorphBox extends RenderProxyBox {
-  _RenderMorphBox({required this._source, required this._progress});
-
-  /// In global coordinates, like [morphSourceRect] measures it.
-  Rect _source;
-  set source(Rect value) {
-    if (value == _source) {
-      return;
-    }
-    _source = value;
-    markNeedsPaint();
-  }
-
-  double _progress;
-  set progress(double value) {
-    if (value == _progress) {
-      return;
-    }
-    _progress = value;
-    markNeedsPaint();
-  }
-
-  final LayerHandle<ClipRRectLayer> _clip = LayerHandle();
-
-  bool get _resting => _progress >= 1 || size.isEmpty;
-
-  /// Where the box is now, in this dialog's coordinates.
-  Rect get _box {
-    final toLocal = Matrix4.tryInvert(getTransformTo(null));
-    if (toLocal == null) {
-      return Offset.zero & size;
-    }
-    final source = MatrixUtils.transformRect(toLocal, _source);
-    return Rect.lerp(source, Offset.zero & size, _progress)!;
-  }
-
-  /// Maps the dialog onto [box], scaled to its width.
-  Matrix4 _transformFor(Rect box) {
-    final scale = box.width / size.width;
-    return Matrix4.translationValues(box.left, box.top, 0)
-      ..scaleByDouble(scale, scale, 1, 1);
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    if (_resting) {
-      _clip.layer = null;
-      super.paint(context, offset);
-      return;
-    }
-
-    final box = _box;
-    final scale = box.width / size.width;
-    // Radius and height are in the dialog's own, unscaled coordinates.
-    final clip = RRect.fromLTRBR(
-      0,
-      0,
-      size.width,
-      box.height / scale,
-      Radius.circular(kRadius / scale),
-    );
-    context.pushTransform(
-      needsCompositing,
-      offset,
-      _transformFor(box),
-      (context, offset) => _clip.layer = context.pushClipRRect(
-        needsCompositing,
-        offset,
-        clip.outerRect,
-        clip,
-        super.paint,
-        oldLayer: _clip.layer,
-      ),
-    );
-  }
-
-  @override
-  bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    if (_resting) {
-      return super.hitTest(result, position: position);
-    }
-
-    final box = _box;
-    if (!box.contains(position)) {
-      return false;
-    }
-    return result.addWithPaintTransform(
-      transform: _transformFor(box),
-      position: position,
-      hitTest: (result, position) => super.hitTest(result, position: position),
-    );
-  }
-
-  @override
-  void applyPaintTransform(RenderBox child, Matrix4 transform) {
-    if (!_resting) {
-      transform.multiply(_transformFor(_box));
-    }
-    super.applyPaintTransform(child, transform);
-  }
-
-  @override
-  void dispose() {
-    _clip.layer = null;
-    super.dispose();
-  }
 }
 
 class _EditorScreenState extends State<EditorScreen> {
@@ -858,7 +669,7 @@ class _EditorScreenState extends State<EditorScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) =>
-          _AddToHomeScreenHelp(noteTitle: widgetDisplayTitle(note)),
+          AddToHomeScreenHelp(noteTitle: widgetDisplayTitle(note)),
     );
   }
 
@@ -2102,46 +1913,18 @@ class _EditorScreenState extends State<EditorScreen> {
   /// tiles in the same two groups, after their real counterparts, so a pick
   /// shows up immediately instead of only once the network call resolves.
   List<Widget> _buildAttachments(Note? note) {
-    final pendingImages = _pendingUploads.where(
-      (f) => f.mime.startsWith('image/'),
-    );
-    final pendingFiles = _pendingUploads.where(
-      (f) => !f.mime.startsWith('image/'),
-    );
-    if ((note == null || note.attachments.isEmpty) && _pendingUploads.isEmpty) {
-      return const [];
-    }
-    final attachments = note?.attachments ?? const <Attachment>[];
     final trashed = note?.trashed ?? false;
-    VoidCallback? remove(Attachment attachment) => trashed
-        ? null
-        : () {
-            _store.removeAttachment(note!.id, attachment.id);
-            setState(() {});
-          };
-    return [
-      for (final attachment in attachments.where((a) => a.isImage))
-        ImageAttachmentTile(
-          key: ValueKey(attachment.id),
-          attachment: attachment,
-          url: _store.fileUrl(attachment),
-          onRemove: remove(attachment),
-        ),
-      for (final file in pendingImages)
-        UploadingAttachmentTile(key: ObjectKey(file), file: file),
-      // Audio clips are played by the audio-note body, not listed as files.
-      for (final attachment in attachments.where(
-        (a) => !a.isImage && !a.isAudio,
-      ))
-        FileAttachmentTile(
-          key: ValueKey(attachment.id),
-          attachment: attachment,
-          url: _store.fileUrl(attachment),
-          onRemove: remove(attachment),
-        ),
-      for (final file in pendingFiles)
-        UploadingAttachmentTile(key: ObjectKey(file), file: file),
-    ];
+    return attachmentTiles(
+      attachments: note?.attachments ?? const [],
+      uploading: _pendingUploads,
+      urlOf: _store.fileUrl,
+      onRemove: trashed
+          ? null
+          : (attachment) {
+              _store.removeAttachment(note!.id, attachment.id);
+              setState(() {});
+            },
+    );
   }
 }
 
@@ -2158,96 +1941,5 @@ class _EdgeDismissGestureRecognizer extends HorizontalDragGestureRecognizer {
     if (event.position.dx <= edgeWidth) {
       super.addAllowedPointer(event);
     }
-  }
-}
-
-/// How to add a widget where the app cannot do it itself.
-///
-/// iOS exposes no API for placing a widget, so this walks through the system
-/// gesture instead. Naming the note in the last step matters: the widget's own
-/// picker is where the note is actually chosen, and it is not obvious that the
-/// choice happens there rather than here.
-class _AddToHomeScreenHelp extends StatelessWidget {
-  const _AddToHomeScreenHelp({required this.noteTitle});
-
-  final String noteTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    const steps = [
-      'Touch and hold an empty area of your Home Screen.',
-      'Tap the + button in the corner.',
-      'Search for Skippy and pick a widget size.',
-    ];
-    return AppDialog(
-      icon: const Icon(Icons.widgets_outlined),
-      title: const Text('Add a Skippy widget'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < steps.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _Step(number: i + 1, text: steps[i]),
-            ),
-          _Step(
-            number: steps.length + 1,
-            text:
-                'Touch and hold the new widget, tap Edit Widget, '
-                'then choose "$noteTitle".',
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Checklist items can be ticked straight from the widget.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Got it'),
-        ),
-      ],
-    );
-  }
-}
-
-class _Step extends StatelessWidget {
-  const _Step({required this.number, required this.text});
-
-  final int number;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.secondaryContainer,
-            shape: BoxShape.circle,
-          ),
-          child: Text(
-            '$number',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSecondaryContainer,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
-      ],
-    );
   }
 }

@@ -61,15 +61,8 @@ pub async fn create_stage(
         position,
     };
     state.repo.insert_stage(&stage).await?;
-    notify_workspace(&state, &stage.workspace_id).await;
+    state.notify_workspace(&stage.workspace_id).await;
     Ok((StatusCode::CREATED, Json(stage)))
-}
-
-/// A stage is workspace state: everyone in the workspace needs the change.
-async fn notify_workspace(state: &AppState, workspace_id: &str) {
-    if let Ok(ids) = state.repo.workspace_member_ids(workspace_id).await {
-        state.hub.notify(&ids, super::CHANGED_MSG);
-    }
 }
 
 /// Trim a presentation field; empty becomes `None` so the client's "clear"
@@ -99,7 +92,7 @@ pub async fn update_stage(
     let stage = find_stage(&state, &user_id, &id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    notify_workspace(&state, &stage.workspace_id).await;
+    state.notify_workspace(&stage.workspace_id).await;
     Ok(Json(stage))
 }
 
@@ -119,7 +112,7 @@ pub async fn delete_stage(
         return Err(ApiError::NotFound);
     }
     if let Some(workspace_id) = workspace_id {
-        notify_workspace(&state, &workspace_id).await;
+        state.notify_workspace(&workspace_id).await;
     }
     Ok(StatusCode::NO_CONTENT)
 }

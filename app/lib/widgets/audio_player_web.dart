@@ -1,11 +1,9 @@
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
-import '../theme.dart';
-import '../util/motion.dart';
 import 'package:web/web.dart' as web;
 
-import 'audio_waveform.dart';
+import 'audio_player_view.dart';
 
 /// Counterpart to the native flag: the browser always plays audio back, so the
 /// web build never shows the "not supported here" panel.
@@ -93,75 +91,14 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
     setState(() => _position = seconds);
   }
 
-  static String _clock(double seconds) {
-    if (!seconds.isFinite || seconds < 0) seconds = 0;
-    final total = seconds.round();
-    final m = (total ~/ 60).toString();
-    final s = (total % 60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final max = _duration > 0 ? _duration : 1.0;
-    final value = _position.clamp(0.0, max);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(kRadius),
-      ),
-      child: Row(
-        children: [
-          Material(
-            color: scheme.primary,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: _toggle,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                // Mirrors the native player's button: the triangle folds into
-                // the bars and back.
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: _playing ? 1.0 : 0.0),
-                  duration: Motion.fast,
-                  curve: Motion.standard,
-                  builder: (context, progress, _) => AnimatedIcon(
-                    icon: AnimatedIcons.play_pause,
-                    progress: AlwaysStoppedAnimation(progress),
-                    color: scheme.onPrimary,
-                    size: 22,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: AudioWaveform(
-              position: value.toDouble(),
-              duration: _duration,
-              playing: _playing,
-              activeColor: scheme.primary,
-              inactiveColor: scheme.onSurface.withValues(alpha: 0.14),
-              cursorColor: scheme.surface,
-              onSeek: _duration > 0 ? _seek : null,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8, left: 4),
-            child: Text(
-              '${_clock(_position)} / ${_clock(_duration)}',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
-        ],
-      ),
+    return AudioPlayerView(
+      playing: _playing,
+      position: _position,
+      duration: _duration,
+      onToggle: _toggle,
+      onSeek: _seek,
     );
   }
 }

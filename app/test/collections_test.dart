@@ -127,6 +127,25 @@ void main() {
     },
   );
 
+  test('renaming a column keeps it in its collection', () async {
+    final api = FakeApi();
+    api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+      collections: [reading, projects],
+    );
+    final store = NotesStore(api: api, currentUserId: 'u-me');
+    await store.load();
+    store.selectCollection(projects.id);
+    final todo = store.createStage('Todo');
+    store.createStage('Done');
+
+    store.updateStage(todo.id, name: 'To do');
+    store.moveStage(todo.id, 1);
+
+    expect(store.stages.map((s) => s.name), ['Done', 'To do']);
+    expect(store.stageById(todo.id)!.collectionId, projects.id);
+    store.dispose();
+  });
+
   test(
     'filters stay inside the active collection and moves clear columns',
     () async {
