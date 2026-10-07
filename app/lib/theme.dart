@@ -92,6 +92,11 @@ const double kDialogWidth = 420;
 const Radius kRadiusCorner = Radius.circular(kRadius);
 const BorderRadius kBorderRadius = BorderRadius.all(kRadiusCorner);
 
+/// Inset of a tappable list row inside a dialog or sheet. Paired with
+/// [kRoundedShape], its hover and press fill is a rounded tile with room
+/// around the text, not a square band with the text against its edge.
+const EdgeInsets kModalRowPadding = EdgeInsets.symmetric(horizontal: kSpaceSm);
+
 /// A [RoundedRectangleBorder] at [kRadius], for widgets whose `shape` we set.
 const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
   borderRadius: kBorderRadius,

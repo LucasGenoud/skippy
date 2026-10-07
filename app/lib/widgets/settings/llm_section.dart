@@ -7,6 +7,7 @@ import '../../state/settings_store.dart';
 import '../form_dialog.dart';
 import 'managed_note.dart';
 import 'probe_row.dart';
+import '../../theme.dart';
 
 /// Summary row for the user's LLM endpoint; taps into the config dialog.
 /// There is no server capability involved, availability is purely whether
@@ -138,7 +139,8 @@ class _LlmRewriteTasksDialogState extends State<_LlmRewriteTasksDialog> {
         const SizedBox(height: 12),
         for (var i = 0; i < _tasks.length; i++)
           ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: kModalRowPadding,
+            shape: kRoundedShape,
             title: Text(_tasks[i].name),
             subtitle: Text(
               _tasks[i].prompt,
@@ -331,7 +333,8 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
         ),
         const SizedBox(height: 8),
         CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
+          contentPadding: kModalRowPadding,
+          shape: kRoundedShape,
           title: const Text('Automatically summarize new links'),
           subtitle: const Text('In text and Markdown notes'),
           value: _autoSummarizeLinks,
@@ -359,19 +362,22 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
         ),
         const SizedBox(height: 8),
         CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
+          contentPadding: kModalRowPadding,
+          shape: kRoundedShape,
           title: const Text('Create notes'),
           value: _create,
           onChanged: (value) => setState(() => _create = value ?? false),
         ),
         CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
+          contentPadding: kModalRowPadding,
+          shape: kRoundedShape,
           title: const Text('Edit note content'),
           value: _edit,
           onChanged: (value) => setState(() => _edit = value ?? false),
         ),
         CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
+          contentPadding: kModalRowPadding,
+          shape: kRoundedShape,
           title: const Text('Organize notes'),
           subtitle: const Text('Pin, archive, trash, color, and reminders'),
           value: _organize,

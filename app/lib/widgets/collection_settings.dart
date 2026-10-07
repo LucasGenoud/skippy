@@ -76,7 +76,8 @@ class ManageCollectionsDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: kModalRowPadding,
+            shape: kRoundedShape,
             leading: const Icon(Icons.add),
             title: const Text('Create new collection'),
             onTap: () => CollectionSettings.show(context),
@@ -90,7 +91,8 @@ class ManageCollectionsDialog extends StatelessWidget {
                 StaggeredEntrance(
                   index: index,
                   child: ListTile(
-                    contentPadding: EdgeInsets.zero,
+                    contentPadding: kModalRowPadding,
+                    shape: kRoundedShape,
                     leading: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

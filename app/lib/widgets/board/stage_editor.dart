@@ -8,6 +8,7 @@ import '../settings/accent_color.dart';
 import '../drag_reorder_list.dart';
 import '../form_dialog.dart';
 import '../staggered_entrance.dart';
+import '../../theme.dart';
 
 /// Manage the board's columns: add, rename, recolour, remove.
 ///
@@ -41,7 +42,8 @@ class EditStagesDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: kModalRowPadding,
+            shape: kRoundedShape,
             leading: const Icon(Icons.add),
             title: const Text('Add column'),
             onTap: () => StageEditorDialog.show(context, null),
@@ -54,7 +56,8 @@ class EditStagesDialog extends StatelessWidget {
             rowBuilder: (context, stage, index, handle) => StaggeredEntrance(
               index: index,
               child: ListTile(
-                contentPadding: EdgeInsets.zero,
+                contentPadding: kModalRowPadding,
+                shape: kRoundedShape,
                 leading: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -79,7 +82,8 @@ class EditStagesDialog extends StatelessWidget {
             ('trash', 'Trash', Icons.delete_outline),
           ])
             SwitchListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: kModalRowPadding,
+              shape: kRoundedShape,
               secondary: Icon(icon),
               title: Text(label),
               subtitle: const Text('Show as a board drop column'),

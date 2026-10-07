@@ -11,6 +11,7 @@ import 'form_dialog.dart';
 import 'glyph_picker.dart';
 import 'settings/accent_color.dart' show kAccentPresets;
 import 'staggered_entrance.dart';
+import '../theme.dart';
 
 /// Create or edit a smart view: a name for the sidebar, the search it stands
 /// for, and the glyph it wears. Deliberately the same shape as the label
@@ -287,7 +288,8 @@ class EditSmartViewsDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: kModalRowPadding,
+            shape: kRoundedShape,
             leading: const Icon(Icons.add),
             title: const Text('Create new smart view'),
             onTap: () => SavedViewDialog.show(context),
@@ -303,7 +305,8 @@ class EditSmartViewsDialog extends StatelessWidget {
             rowBuilder: (context, view, index, handle) => StaggeredEntrance(
               index: index,
               child: ListTile(
-                contentPadding: EdgeInsets.zero,
+                contentPadding: kModalRowPadding,
+                shape: kRoundedShape,
                 leading: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

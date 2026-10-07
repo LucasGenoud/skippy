@@ -15,6 +15,7 @@ import '../../util/note_export.dart';
 import '../../util/snack.dart';
 import '../animated_reveal.dart';
 import '../file_drop.dart';
+import '../../theme.dart';
 
 /// Human-readable exports plus a portable zip backup/restore that includes
 /// attachment bytes. All paths are shared by web, desktop, Android, and iOS:
@@ -399,7 +400,8 @@ class _RestoreBackupDialogState extends State<RestoreBackupDialog> {
               const SizedBox(height: 12),
               for (final workspace in widget.backup.workspaces)
                 CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: kModalRowPadding,
+                  shape: kRoundedShape,
                   value: _selected.contains(workspace.id),
                   title: Text(workspace.name),
                   subtitle: Text(
@@ -563,7 +565,8 @@ class _KeepImportDialogState extends State<KeepImportDialog> {
               ),
               if (trashed > 0)
                 CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: kModalRowPadding,
+                  shape: kRoundedShape,
                   value: _includeTrash,
                   title: Text(
                     'Also import $trashed ${trashed == 1 ? 'note' : 'notes'} '

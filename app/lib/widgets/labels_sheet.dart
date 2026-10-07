@@ -295,7 +295,8 @@ class EditLabelsDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: kModalRowPadding,
+            shape: kRoundedShape,
             leading: const Icon(Icons.add),
             title: const Text('Create new label'),
             onTap: () => LabelEditorDialog.show(context, null),
@@ -308,7 +309,8 @@ class EditLabelsDialog extends StatelessWidget {
             rowBuilder: (context, label, index, handle) => StaggeredEntrance(
               index: index,
               child: ListTile(
-                contentPadding: EdgeInsets.zero,
+                contentPadding: kModalRowPadding,
+                shape: kRoundedShape,
                 leading: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

@@ -112,7 +112,8 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
                 RadioListTile<WorkspaceCopyContent>(
                   value: WorkspaceCopyContent.structure,
                   enabled: !_busy,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: kModalRowPadding,
+                  shape: kRoundedShape,
                   title: const Text('Structure only'),
                   subtitle: const Text(
                     'Collections, layouts, columns, labels and smart views.',
@@ -121,7 +122,8 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
                 RadioListTile<WorkspaceCopyContent>(
                   value: WorkspaceCopyContent.notes,
                   enabled: !_busy,
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: kModalRowPadding,
+                  shape: kRoundedShape,
                   title: const Text('Structure and notes'),
                   subtitle: const Text(
                     'Also includes archived notes and attachments.',
@@ -132,7 +134,8 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
           ),
           if (_content == WorkspaceCopyContent.notes)
             SwitchListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: kModalRowPadding,
+              shape: kRoundedShape,
               title: const Text('Copy reminders'),
               subtitle: const Text(
                 'Keep scheduled reminders in the copied notes.',

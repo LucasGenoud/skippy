@@ -87,7 +87,8 @@ class _ShareDialogState extends State<ShareDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: kModalRowPadding,
+            shape: kRoundedShape,
             leading: CircleAvatar(
               radius: 16,
               child: Text(
@@ -100,7 +101,8 @@ class _ShareDialogState extends State<ShareDialog> {
           ),
           for (final collaborator in note.collaborators)
             ListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: kModalRowPadding,
+              shape: kRoundedShape,
               dense: true,
               leading: CircleAvatar(
                 radius: 16,
@@ -184,7 +186,8 @@ class _ShareDialogState extends State<ShareDialog> {
             // enough to keep apart: one grants editing, the other grants
             // reading to anyone holding a URL.
             ListTile(
-              contentPadding: EdgeInsets.zero,
+              contentPadding: kModalRowPadding,
+              shape: kRoundedShape,
               leading: const Icon(Icons.link),
               title: const Text('Public link'),
               subtitle: const Text('Read-only, for people without an account'),
