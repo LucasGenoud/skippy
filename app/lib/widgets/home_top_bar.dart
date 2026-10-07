@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
+import 'animated_presence.dart';
 import 'app_logo.dart';
 import 'pin_icon.dart';
 import 'package:provider/provider.dart';
@@ -119,7 +120,39 @@ class HomeTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    if (selectionMode) return _selectionBar(context, scheme);
+
+    // One switcher drives selection mode both ways: the selection bar's
+    // actions drop in on entry and lift back out on exit, and the browsing
+    // bar fades in behind them as they leave.
+    return AnimatedSwitcher(
+      duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+      layoutBuilder: (current, previous) =>
+          Stack(fit: StackFit.passthrough, children: [...previous, ?current]),
+      transitionBuilder: (child, animation) {
+        if (child.key == _selectingKey) {
+          return _BarTransition(animation: animation, child: child);
+        }
+        return FadeTransition(
+          opacity: animation.drive(
+            CurveTween(curve: const Interval(0.4, 1, curve: Motion.standard)),
+          ),
+          child: child,
+        );
+      },
+      child: selectionMode
+          ? KeyedSubtree(
+              key: _selectingKey,
+              child: _selectionBar(context, scheme),
+            )
+          : KeyedSubtree(key: _browsingKey, child: _browsingBar(context)),
+    );
+  }
+
+  static const _selectingKey = ValueKey('selecting');
+  static const _browsingKey = ValueKey('browsing');
+
+  Widget _browsingBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final settings = context.watch<SettingsStore>();
     final themeAction = _currentThemeAction(settings.themeMode);
     final isNarrow = !ScreenWidth.isAtLeast(context, 650);
@@ -211,18 +244,29 @@ class HomeTopBar extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_chatAvailable(context))
-                  IconButton(
-                    icon: const Icon(Icons.forum_outlined),
-                    tooltip: 'Chat with your notes',
-                    onPressed: () => ChatScreen.open(context),
-                  ),
-                if (onShareView != null)
-                  IconButton(
-                    icon: const Icon(Icons.ios_share),
-                    tooltip: 'Share this view',
-                    onPressed: onShareView,
-                  ),
+                // These two come and go with the view and the workspace's
+                // AI, so they grow in and out rather than shoving the row.
+                AnimatedPresence(
+                  axis: Axis.horizontal,
+                  layout: (children) =>
+                      Row(mainAxisSize: MainAxisSize.min, children: children),
+                  children: [
+                    if (_chatAvailable(context))
+                      IconButton(
+                        key: const ValueKey('chat'),
+                        icon: const Icon(Icons.forum_outlined),
+                        tooltip: 'Chat with your notes',
+                        onPressed: () => ChatScreen.open(context),
+                      ),
+                    if (onShareView != null)
+                      IconButton(
+                        key: const ValueKey('share-view'),
+                        icon: const Icon(Icons.ios_share),
+                        tooltip: 'Share this view',
+                        onPressed: onShareView,
+                      ),
+                  ],
+                ),
                 const _SortButton(),
                 IconButton(
                   // The sun/moon rotates in as the theme flips, a nod to the
@@ -398,7 +442,12 @@ class HomeTopBar extends StatelessWidget {
         : '$selectedCount selected';
     final controls = <Widget>[
       IconButton(
-        icon: Icon(allSelected ? Icons.deselect_outlined : Icons.select_all),
+        icon: _fadeScale(
+          child: Icon(
+            allSelected ? Icons.deselect_outlined : Icons.select_all,
+            key: ValueKey(allSelected),
+          ),
+        ),
         tooltip: allSelected ? 'Deselect all' : 'Select all',
         onPressed: onToggleSelectAll,
       ),
@@ -506,8 +555,13 @@ class HomeTopBar extends StatelessWidget {
       ],
       if (canArchive)
         IconButton(
-          icon: Icon(
-            archiveSelected ? Icons.archive_outlined : Icons.unarchive_outlined,
+          icon: _fadeScale(
+            child: Icon(
+              archiveSelected
+                  ? Icons.archive_outlined
+                  : Icons.unarchive_outlined,
+              key: ValueKey(archiveSelected),
+            ),
           ),
           tooltip: archiveSelected
               ? 'Archive selected notes'
@@ -535,12 +589,27 @@ class HomeTopBar extends StatelessWidget {
   }
 }
 
-/// The bar in selection mode. Entering selection swaps the whole bar at once,
-/// which read as a flicker: the actions now drop in from above, staggered left
-/// to right, so the row announces itself as arriving. The entrance runs once
-/// per stint in selection mode, picking further notes only re-enables the
-/// icons already on screen, and replaying it on every tap would be noise.
-class _SelectionBar extends StatefulWidget {
+/// Hands the selection bar its switcher animation, so the same controller
+/// plays its entrance forward and its exit in reverse.
+class _BarTransition extends InheritedWidget {
+  final Animation<double> animation;
+
+  const _BarTransition({required this.animation, required super.child});
+
+  static Animation<double> of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_BarTransition>()?.animation ??
+      kAlwaysCompleteAnimation;
+
+  @override
+  bool updateShouldNotify(_BarTransition old) => old.animation != animation;
+}
+
+/// The bar in selection mode. Swapping the whole bar at once read as a
+/// flicker, so the actions drop in from above, staggered left to right, and
+/// leave the same way in reverse, right to left, when the selection ends. The
+/// entrance runs once per stint in selection mode: picking further notes only
+/// re-enables the icons already on screen.
+class _SelectionBar extends StatelessWidget {
   final String label;
   final VoidCallback onCancel;
   final List<Widget> actions;
@@ -552,40 +621,17 @@ class _SelectionBar extends StatefulWidget {
   });
 
   @override
-  State<_SelectionBar> createState() => _SelectionBarState();
-}
-
-class _SelectionBarState extends State<_SelectionBar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _enter = AnimationController(
-    vsync: this,
-    duration: Motion.base,
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _enter.forward();
-  }
-
-  @override
-  void dispose() {
-    _enter.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    if (Motion.reduced(context)) _enter.value = 1;
+    final enter = _BarTransition.of(context);
 
     // The cancel button leads, then each action a beat later; the last one
     // still lands within Motion.base.
-    final count = widget.actions.length + 1;
+    final count = actions.length + 1;
     Widget dropIn(int index, Widget child) {
       final step = count <= 1 ? 0.0 : 0.5 / (count - 1);
       final start = step * index;
-      final animation = _enter.drive(
+      final animation = enter.drive(
         CurveTween(
           curve: Interval(start, start + 0.5, curve: Motion.emphasized),
         ),
@@ -609,24 +655,23 @@ class _SelectionBarState extends State<_SelectionBar>
             IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Cancel selection',
-              onPressed: widget.onCancel,
+              onPressed: onCancel,
             ),
           ),
           Expanded(
             // The count changes as you pick notes, so it fades rather than
             // dropping, it's the one thing here that isn't a new control.
             child: FadeTransition(
-              opacity: _enter.drive(CurveTween(curve: Motion.standard)),
+              opacity: enter.drive(CurveTween(curve: Motion.standard)),
               child: Text(
-                widget.label,
+                label,
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
           ),
-          for (final (i, action) in widget.actions.indexed)
-            dropIn(i + 1, action),
+          for (final (i, action) in actions.indexed) dropIn(i + 1, action),
         ],
       ),
     );

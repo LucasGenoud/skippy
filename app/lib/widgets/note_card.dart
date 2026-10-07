@@ -427,33 +427,48 @@ class _NoteTileState extends State<NoteTile> {
           if (collection != null) _CollectionMarker(encoded: collection),
           _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
           if (isRewriting) const _NoteRewriteProgress(),
-          if (desktopActions && actionsVisible)
-            _NoteActions(
-              note: note,
-              rewriting: isRewriting,
-              canDelete: context.read<NotesStore>().canTrash(note.id),
-              onReminder: _editReminder,
-              onShare: _share,
-              onColor: _pickColor,
-              onLabel: _addLabel,
-              onImage: _addImage,
-              onArchive: _archive,
-              onDuplicate: _duplicate,
-              onMoveToWorkspace: _moveToWorkspace,
-              onMoveToStage: _moveToStage,
-              showMoveToStage: widget.openedFromBoard,
-              canMove:
-                  widget.note.isOwnedBy(
-                    context.read<NotesStore>().currentUserId,
-                  ) &&
-                  context.read<NotesStore>().workspaces.length > 1,
-              onCopyToClipboard: _copyToClipboard,
-              onDelete: _delete,
-              onRewrite: _rewrite,
-              onMenuOpened: () => setState(() => _menuOpen = true),
-              onMenuClosed: () => setState(() => _menuOpen = false),
-              bottomInset: actionsBottomInset,
+          // Positioned stays put so the row can fade out rather than vanish
+          // with the pointer; at rest it holds nothing.
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 4 + actionsBottomInset,
+            height: 40,
+            child: AnimatedSwitcher(
+              duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+              switchInCurve: Motion.standard,
+              switchOutCurve: Motion.standard,
+              child: desktopActions && actionsVisible
+                  ? _NoteActions(
+                      note: note,
+                      rewriting: isRewriting,
+                      canDelete: context.read<NotesStore>().canTrash(note.id),
+                      onReminder: _editReminder,
+                      onShare: _share,
+                      onColor: _pickColor,
+                      onLabel: _addLabel,
+                      onImage: _addImage,
+                      onArchive: _archive,
+                      onDuplicate: _duplicate,
+                      onMoveToWorkspace: _moveToWorkspace,
+                      onMoveToStage: _moveToStage,
+                      showMoveToStage: widget.openedFromBoard,
+                      canMove:
+                          widget.note.isOwnedBy(
+                            context.read<NotesStore>().currentUserId,
+                          ) &&
+                          context.read<NotesStore>().workspaces.length > 1,
+                      onCopyToClipboard: _copyToClipboard,
+                      onDelete: _delete,
+                      onRewrite: _rewrite,
+                      onMenuOpened: () => setState(() => _menuOpen = true),
+                      onMenuClosed: () => setState(() => _menuOpen = false),
+                    )
+                  // Keyed: the default transition keys on its child, and two
+                  // unkeyed children would cut the exit short.
+                  : const SizedBox.shrink(key: ValueKey('no-actions')),
             ),
+          ),
           // In selection mode the action icons are gone, so the reserved
           // slot shows the labels for good instead of only at rest.
           if (actionsSlot && note.labelIds.isNotEmpty)
@@ -1150,11 +1165,6 @@ class _NoteActions extends StatelessWidget {
   final VoidCallback onMenuOpened;
   final VoidCallback onMenuClosed;
 
-  /// Extra lift above the card's bottom edge, so the reserved slot clears
-  /// any attached link-preview cards instead of floating over them — those
-  /// stay the card's true bottom-most content.
-  final double bottomInset;
-
   const _NoteActions({
     required this.note,
     required this.rewriting,
@@ -1175,7 +1185,6 @@ class _NoteActions extends StatelessWidget {
     required this.onRewrite,
     required this.onMenuOpened,
     required this.onMenuClosed,
-    this.bottomInset = 0,
   });
 
   Widget _button({
@@ -1208,155 +1217,143 @@ class _NoteActions extends StatelessWidget {
           note.reminderAt != null ||
           settings.locationReminderForNote(note.id) != null,
     );
-    return Positioned(
-      left: 8,
-      right: 8,
-      bottom: 4 + bottomInset,
-      height: 40,
-      child: DecoratedBox(
-        key: ValueKey('note-actions-${note.id}'),
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: scheme.outlineVariant.withValues(alpha: 0.55),
-            ),
-          ),
+    return DecoratedBox(
+      key: ValueKey('note-actions-${note.id}'),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.55)),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _button(
-              icon: Icons.palette_outlined,
-              tooltip: 'Note color',
-              onPressed: onColor,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _button(
+            icon: Icons.palette_outlined,
+            tooltip: 'Note color',
+            onPressed: onColor,
+          ),
+          _button(
+            icon: Icons.label_outline,
+            tooltip: 'Add label',
+            onPressed: onLabel,
+          ),
+          _button(
+            icon: !hasReminder
+                ? Icons.notification_add_outlined
+                : Icons.notifications_active_outlined,
+            tooltip: !hasReminder ? 'Add reminder' : 'Edit reminder',
+            onPressed: onReminder,
+          ),
+          _button(
+            icon: Icons.image_outlined,
+            tooltip: 'Add image',
+            onPressed: onImage,
+          ),
+          _button(
+            icon: note.archived
+                ? Icons.unarchive_outlined
+                : Icons.archive_outlined,
+            tooltip: note.archived ? 'Unarchive note' : 'Archive note',
+            onPressed: onArchive,
+          ),
+          MenuAnchor(
+            onOpen: onMenuOpened,
+            onClose: onMenuClosed,
+            builder: (context, controller, child) => _button(
+              icon: Icons.more_vert,
+              tooltip: 'More note options',
+              color: scheme.onSurfaceVariant,
+              onPressed: controller.isOpen ? controller.close : controller.open,
             ),
-            _button(
-              icon: Icons.label_outline,
-              tooltip: 'Add label',
-              onPressed: onLabel,
-            ),
-            _button(
-              icon: !hasReminder
-                  ? Icons.notification_add_outlined
-                  : Icons.notifications_active_outlined,
-              tooltip: !hasReminder ? 'Add reminder' : 'Edit reminder',
-              onPressed: onReminder,
-            ),
-            _button(
-              icon: Icons.image_outlined,
-              tooltip: 'Add image',
-              onPressed: onImage,
-            ),
-            _button(
-              icon: note.archived
-                  ? Icons.unarchive_outlined
-                  : Icons.archive_outlined,
-              tooltip: note.archived ? 'Unarchive note' : 'Archive note',
-              onPressed: onArchive,
-            ),
-            MenuAnchor(
-              onOpen: onMenuOpened,
-              onClose: onMenuClosed,
-              builder: (context, controller, child) => _button(
-                icon: Icons.more_vert,
-                tooltip: 'More note options',
-                color: scheme.onSurfaceVariant,
-                onPressed: controller.isOpen
-                    ? controller.close
-                    : controller.open,
+            menuChildren: [
+              if (aiEditingEnabled &&
+                  rewriteTasks.isNotEmpty &&
+                  note.kind != NoteKind.audio)
+                SubmenuButton(
+                  leadingIcon: const Icon(Icons.auto_fix_high_outlined),
+                  menuChildren: [
+                    for (final task in rewriteTasks)
+                      MenuItemButton(
+                        onPressed: rewriting ? null : () => onRewrite(task),
+                        child: Text(task.name),
+                      ),
+                  ],
+                  child: const Text('AI edit'),
+                ),
+              if (aiEditingEnabled &&
+                  rewriteTasks.isNotEmpty &&
+                  note.kind != NoteKind.audio)
+                const Divider(height: 1),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.person_add_alt_outlined),
+                onPressed: () async {
+                  await Motion.waitForMenuDismissal(context);
+                  if (context.mounted) onShare();
+                },
+                child: const Text('Share'),
               ),
-              menuChildren: [
-                if (aiEditingEnabled &&
-                    rewriteTasks.isNotEmpty &&
-                    note.kind != NoteKind.audio)
-                  SubmenuButton(
-                    leadingIcon: const Icon(Icons.auto_fix_high_outlined),
-                    menuChildren: [
-                      for (final task in rewriteTasks)
-                        MenuItemButton(
-                          onPressed: rewriting ? null : () => onRewrite(task),
-                          child: Text(task.name),
-                        ),
-                    ],
-                    child: const Text('AI edit'),
-                  ),
-                if (aiEditingEnabled &&
-                    rewriteTasks.isNotEmpty &&
-                    note.kind != NoteKind.audio)
-                  const Divider(height: 1),
+              // Both live in the menu rather than the action row: six
+              // controls already share a card's width.
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.content_copy_outlined),
+                onPressed: onCopyToClipboard,
+                child: const Text('Copy to clipboard'),
+              ),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.copy_all_outlined),
+                onPressed: onDuplicate,
+                child: const Text('Duplicate'),
+              ),
+              if (showMoveToStage)
                 MenuItemButton(
-                  leadingIcon: const Icon(Icons.person_add_alt_outlined),
+                  leadingIcon: const Icon(Icons.view_kanban_outlined),
                   onPressed: () async {
                     await Motion.waitForMenuDismissal(context);
-                    if (context.mounted) onShare();
+                    if (context.mounted) onMoveToStage();
                   },
-                  child: const Text('Share'),
+                  child: const Text('Move to column'),
                 ),
-                // Both live in the menu rather than the action row: six
-                // controls already share a card's width.
+              if (context.read<NotesStore>().workspaceById(note.workspaceId) !=
+                  null)
                 MenuItemButton(
-                  leadingIcon: const Icon(Icons.content_copy_outlined),
-                  onPressed: onCopyToClipboard,
-                  child: const Text('Copy to clipboard'),
-                ),
-                MenuItemButton(
-                  leadingIcon: const Icon(Icons.copy_all_outlined),
-                  onPressed: onDuplicate,
-                  child: const Text('Duplicate'),
-                ),
-                if (showMoveToStage)
-                  MenuItemButton(
-                    leadingIcon: const Icon(Icons.view_kanban_outlined),
-                    onPressed: () async {
-                      await Motion.waitForMenuDismissal(context);
-                      if (context.mounted) onMoveToStage();
-                    },
-                    child: const Text('Move to column'),
-                  ),
-                if (context.read<NotesStore>().workspaceById(
+                  leadingIcon: const Icon(Icons.folder_outlined),
+                  onPressed: () async {
+                    await Motion.waitForMenuDismissal(context);
+                    if (!context.mounted) return;
+                    final store = context.read<NotesStore>();
+                    final target = await CollectionPicker.show(
+                      context,
                       note.workspaceId,
-                    ) !=
-                    null)
-                  MenuItemButton(
-                    leadingIcon: const Icon(Icons.folder_outlined),
-                    onPressed: () async {
-                      await Motion.waitForMenuDismissal(context);
-                      if (!context.mounted) return;
-                      final store = context.read<NotesStore>();
-                      final target = await CollectionPicker.show(
-                        context,
-                        note.workspaceId,
-                      );
-                      if (target != null) {
-                        store.moveToCollection(note.id, target);
-                      }
-                    },
-                    child: const Text('Move to collection'),
-                  ),
-                if (canMove)
-                  MenuItemButton(
-                    leadingIcon: const Icon(Icons.drive_file_move_outlined),
-                    onPressed: () async {
-                      await Motion.waitForMenuDismissal(context);
-                      if (context.mounted) onMoveToWorkspace();
-                    },
-                    child: const Text('Move to workspace'),
-                  ),
-                MenuItemButton(
-                  leadingIcon: Icon(
-                    Icons.delete_outline,
-                    color: canDelete ? scheme.error : null,
-                  ),
-                  onPressed: canDelete ? onDelete : null,
-                  child: Text(
-                    canDelete ? 'Move to Trash' : 'Only the owner can delete',
-                    style: canDelete ? TextStyle(color: scheme.error) : null,
-                  ),
+                    );
+                    if (target != null) {
+                      store.moveToCollection(note.id, target);
+                    }
+                  },
+                  child: const Text('Move to collection'),
                 ),
-              ],
-            ),
-          ],
-        ),
+              if (canMove)
+                MenuItemButton(
+                  leadingIcon: const Icon(Icons.drive_file_move_outlined),
+                  onPressed: () async {
+                    await Motion.waitForMenuDismissal(context);
+                    if (context.mounted) onMoveToWorkspace();
+                  },
+                  child: const Text('Move to workspace'),
+                ),
+              MenuItemButton(
+                leadingIcon: Icon(
+                  Icons.delete_outline,
+                  color: canDelete ? scheme.error : null,
+                ),
+                onPressed: canDelete ? onDelete : null,
+                child: Text(
+                  canDelete ? 'Move to Trash' : 'Only the owner can delete',
+                  style: canDelete ? TextStyle(color: scheme.error) : null,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

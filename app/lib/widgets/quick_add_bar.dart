@@ -19,6 +19,8 @@ import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'checklist/animated_checklist.dart';
+import 'animated_presence.dart';
+import 'animated_reveal.dart';
 import 'app_logo.dart';
 import 'color_picker.dart';
 import 'editor/highlighted_text_field.dart';
@@ -30,6 +32,7 @@ import 'pick_image.dart';
 import 'pin_icon.dart';
 import 'reminder_picker.dart';
 import 'share_dialog.dart';
+import 'state_cross_fade.dart';
 
 /// Inline quick add, shown above the grid on wide screens: pick a kind and
 /// compose the whole note inline, plain text, a checklist, or markdown,
@@ -600,22 +603,27 @@ class _QuickAddBarState extends State<QuickAddBar> {
                 'New markdown note',
                 NoteKind.markdown,
               ),
-              if (_uploading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 11),
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.image_outlined, size: 22),
-                  color: scheme.onSurfaceVariant,
-                  tooltip: 'New note with image',
-                  onPressed: _quickImageNote,
-                ),
+              // The spinner takes the image button's slot while the picture
+              // uploads, fading across rather than swapping.
+              StateCrossFade(
+                state: _uploading,
+                alignment: Alignment.center,
+                child: _uploading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 15),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.image_outlined, size: 22),
+                        color: scheme.onSurfaceVariant,
+                        tooltip: 'New note with image',
+                        onPressed: _quickImageNote,
+                      ),
+              ),
             ],
           ),
         ),
@@ -670,20 +678,28 @@ class _QuickAddBarState extends State<QuickAddBar> {
                   ),
                 ],
               ),
-              _composerBody(context),
-              _pendingFiles(context),
-              _metaChips(context),
+              // Converting between text and a checklist cross-fades the
+              // body; files, chips and the toolbar grow in and out.
+              StateCrossFade(
+                state: _kind == NoteKind.checklist,
+                child: _composerBody(context),
+              ),
+              AnimatedReveal(child: _pendingFiles(context)),
+              AnimatedReveal(child: _metaChips(context)),
             ],
           ),
         ),
-        if (_kind == NoteKind.markdown)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: MarkdownToolbar(
-              controller: _contentController,
-              focusNode: _contentFocus,
-            ),
-          ),
+        AnimatedReveal(
+          child: _kind == NoteKind.markdown
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: MarkdownToolbar(
+                    controller: _contentController,
+                    focusNode: _contentFocus,
+                  ),
+                )
+              : null,
+        ),
         _actionBar(context),
       ],
     );
@@ -734,58 +750,64 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   /// Images and files picked while composing, shown before they exist on the
   /// server. Each can be dropped again until the note is saved.
-  Widget _pendingFiles(BuildContext context) {
-    if (_files.isEmpty) return const SizedBox.shrink();
+  Widget? _pendingFiles(BuildContext context) {
+    if (_files.isEmpty) return null;
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(top: 10),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: AnimatedPresence(
+        axis: Axis.horizontal,
+        layout: (children) => Wrap(runSpacing: 8, children: children),
         children: [
           for (final file in _files)
-            if (file.mime.startsWith('image/'))
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(kRadius),
-                    child: Image.memory(
-                      file.bytes,
-                      width: 72,
-                      height: 72,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stack) => Container(
-                        width: 72,
-                        height: 72,
-                        color: scheme.surfaceContainerHighest,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: _RemoveFileButton(
-                      tooltip: 'Remove ${file.name}',
-                      onPressed: () => setState(() => _files.remove(file)),
-                    ),
-                  ),
-                ],
-              )
-            else
-              InputChip(
-                avatar: const Icon(Icons.insert_drive_file_outlined, size: 16),
-                label: Text(file.name),
-                visualDensity: VisualDensity.compact,
-                onDeleted: () => setState(() => _files.remove(file)),
-              ),
+            Padding(
+              key: ObjectKey(file),
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: _pendingFile(file, scheme),
+            ),
         ],
       ),
     );
   }
 
+  Widget _pendingFile(DroppedFile file, ColorScheme scheme) =>
+      file.mime.startsWith('image/')
+      ? Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(kRadius),
+              child: Image.memory(
+                file.bytes,
+                width: 72,
+                height: 72,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stack) => Container(
+                  width: 72,
+                  height: 72,
+                  color: scheme.surfaceContainerHighest,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _RemoveFileButton(
+                tooltip: 'Remove ${file.name}',
+                onPressed: () => setState(() => _files.remove(file)),
+              ),
+            ),
+          ],
+        )
+      : InputChip(
+          avatar: const Icon(Icons.insert_drive_file_outlined, size: 16),
+          label: Text(file.name),
+          visualDensity: VisualDensity.compact,
+          onDeleted: () => setState(() => _files.remove(file)),
+        );
+
   /// The reminder and labels the note will be born with, as chips that can be
   /// edited or cleared, the same affordance the editor gives a saved note.
-  Widget _metaChips(BuildContext context) {
+  Widget? _metaChips(BuildContext context) {
     final store = context.watch<NotesStore>();
     final settings = context.watch<SettingsStore>();
     final scheme = Theme.of(context).colorScheme;
@@ -798,55 +820,64 @@ class _QuickAddBarState extends State<QuickAddBar> {
       _ => null,
     };
     if (_reminderAt == null && location == null && labels.isEmpty) {
-      return const SizedBox.shrink();
+      return null;
     }
+    final chips = <Widget>[
+      if (_reminderAt case final at?)
+        InputChip(
+          key: const ValueKey('reminder'),
+          avatar: const Icon(Icons.alarm, size: 16),
+          label: Text(
+            '${settings.reminderLabel(at)}'
+            '${_reminderRepeat == null ? '' : ' · ${_reminderRepeat!.label}'}',
+          ),
+          visualDensity: VisualDensity.compact,
+          onPressed: _editReminder,
+          onDeleted: () => setState(() {
+            _reminderAt = null;
+            _reminderRepeat = null;
+          }),
+        ),
+      if (location != null)
+        InputChip(
+          key: const ValueKey('location'),
+          avatar: const Icon(Icons.location_on_outlined, size: 16),
+          label: Text('${_draftLocationReminder!.label} · ${location.name}'),
+          visualDensity: VisualDensity.compact,
+          onPressed: _editReminder,
+          onDeleted: () => setState(_clearLocationReminder),
+        ),
+      for (final label in labels)
+        InputChip(
+          key: ValueKey('label-${label.id}'),
+          avatar: Icon(
+            labelIcon(label),
+            size: 16,
+            color: labelColor(label, scheme.onSurfaceVariant),
+          ),
+          label: Text(label.name),
+          visualDensity: VisualDensity.compact,
+          backgroundColor: label.color == null
+              ? null
+              : labelColor(
+                  label,
+                  scheme.onSurfaceVariant,
+                ).withValues(alpha: 0.12),
+          onPressed: _editLabels,
+          onDeleted: () => setState(() => _labelIds.remove(label.id)),
+        ),
+    ];
     return Padding(
       padding: const EdgeInsets.only(top: 10),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: AnimatedPresence(
+        axis: Axis.horizontal,
+        layout: (children) => Wrap(runSpacing: 8, children: children),
         children: [
-          if (_reminderAt case final at?)
-            InputChip(
-              avatar: const Icon(Icons.alarm, size: 16),
-              label: Text(
-                '${settings.reminderLabel(at)}'
-                '${_reminderRepeat == null ? '' : ' · ${_reminderRepeat!.label}'}',
-              ),
-              visualDensity: VisualDensity.compact,
-              onPressed: _editReminder,
-              onDeleted: () => setState(() {
-                _reminderAt = null;
-                _reminderRepeat = null;
-              }),
-            ),
-          if (location != null)
-            InputChip(
-              avatar: const Icon(Icons.location_on_outlined, size: 16),
-              label: Text(
-                '${_draftLocationReminder!.label} · ${location.name}',
-              ),
-              visualDensity: VisualDensity.compact,
-              onPressed: _editReminder,
-              onDeleted: () => setState(_clearLocationReminder),
-            ),
-          for (final label in labels)
-            InputChip(
-              avatar: Icon(
-                labelIcon(label),
-                size: 16,
-                color: labelColor(label, scheme.onSurfaceVariant),
-              ),
-              label: Text(label.name),
-              visualDensity: VisualDensity.compact,
-              backgroundColor: label.color == null
-                  ? null
-                  : labelColor(
-                      label,
-                      scheme.onSurfaceVariant,
-                    ).withValues(alpha: 0.12),
-              onPressed: _editLabels,
-              onDeleted: () => setState(() => _labelIds.remove(label.id)),
+          for (final chip in chips)
+            Padding(
+              key: chip.key,
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: chip,
             ),
         ],
       ),

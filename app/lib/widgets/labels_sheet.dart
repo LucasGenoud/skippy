@@ -7,6 +7,7 @@ import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
 import '../theme.dart';
+import 'animated_presence.dart';
 import 'drag_reorder_list.dart';
 import 'form_dialog.dart';
 import 'glyph_picker.dart';
@@ -200,11 +201,15 @@ class _LabelsSheetState extends State<LabelsSheet> {
               ),
             ),
             Flexible(
-              child: ListView(
-                shrinkWrap: true,
+              // Typing filters the rows and offers "Create"; each grows in or
+              // out instead of the list jumping between keystrokes.
+              child: AnimatedPresence(
+                layout: (children) =>
+                    ListView(shrinkWrap: true, children: children),
                 children: [
                   if (q.isNotEmpty && !exactExists)
                     ListTile(
+                      key: const ValueKey('create'),
                       leading: const Icon(Icons.add),
                       title: Text('Create "${_query.trim()}"'),
                       onTap: () {
@@ -223,6 +228,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                   for (final label in visible)
                     if (isMultiple)
                       ListTile(
+                        key: ValueKey(label.id),
                         leading: LabelGlyph(label: label),
                         title: Text(label.name),
                         // Assigning across several notes turns "+" into a
@@ -242,6 +248,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       )
                     else
                       CheckboxListTile(
+                        key: ValueKey(label.id),
                         value: isAssigned(label),
                         controlAffinity: ListTileControlAffinity.leading,
                         dense: true,
@@ -251,6 +258,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                       ),
                   if (visible.isEmpty && q.isEmpty)
                     const Padding(
+                      key: ValueKey('empty'),
                       padding: EdgeInsets.all(20),
                       child: Text('No labels yet, type a name to create one.'),
                     ),

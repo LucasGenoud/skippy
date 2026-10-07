@@ -25,6 +25,7 @@ import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/all_done_burst.dart';
 import 'package:skippy/widgets/checklist/animated_checklist.dart';
+import 'package:skippy/widgets/labels_sheet.dart';
 import 'package:skippy/widgets/editor/highlighted_text_field.dart';
 import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
@@ -701,6 +702,49 @@ void main() {
       },
     );
     testWidgets(
+      'desktop hover actions fade in and out rather than popping',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', title: 'Fading', content: 'Body');
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+        final actions = find.byKey(const ValueKey('note-actions-n1'));
+        double opacity() => tester
+            .widget<FadeTransition>(
+              find
+                  .ancestor(of: actions, matching: find.byType(FadeTransition))
+                  .first,
+            )
+            .opacity
+            .value;
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(opacity(), inExclusiveRange(0, 1));
+        await tester.pumpAndSettle();
+        expect(opacity(), 1);
+
+        final card = tester.getRect(find.byType(NoteTile));
+        await mouse.moveTo(card.bottomRight + const Offset(20, 20));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(actions, findsOneWidget);
+        expect(opacity(), inExclusiveRange(0, 1));
+        await tester.pumpAndSettle();
+        expect(actions, findsNothing);
+      },
+    );
+    testWidgets(
       'the card menu duplicates a note and copies it to the clipboard',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {
@@ -1367,6 +1411,55 @@ void main() {
       expect(find.text('Close'), findsNothing);
       await flushTimers(tester);
       expect(api.notes[note.id]!.title, 'Quick');
+    });
+
+    testWidgets('a cleared composer chip shrinks away instead of popping', (
+      tester,
+    ) async {
+      api.labels['l1'] = const Label(id: 'l1', name: 'Work');
+      await store.load();
+      await tester.pumpWidget(
+        harness(store, const QuickAddBar(labelIds: {'l1'})),
+      );
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      final chip = find.widgetWithText(InputChip, 'Work');
+      expect(chip, findsOneWidget);
+
+      await tester.tap(
+        find.descendant(of: chip, matching: find.byTooltip('Delete')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(chip, findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(chip, findsNothing);
+    });
+
+    testWidgets('filtering labels grows rows in and out', (tester) async {
+      api.labels['l1'] = const Label(id: 'l1', name: 'Work');
+      api.labels['l2'] = const Label(id: 'l2', name: 'Home');
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          Material(
+            child: LabelsSheet(selection: const {}, onToggle: (_) {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // "Wo" filters Home out and offers to create the label; mid-change the
+      // leaving row is still there and the new one is already arriving.
+      await tester.enterText(find.byType(TextField), 'Wo');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Create "Wo"'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('Home'), findsNothing);
+      expect(find.text('Work'), findsOneWidget);
     });
 
     testWidgets('closing an empty composer creates nothing', (tester) async {
@@ -2179,6 +2272,68 @@ void main() {
       expect(find.text('Collaborators'), findsOneWidget);
       // Not offered twice.
       expect(find.text('Copy to clipboard'), findsNothing);
+    });
+
+    testWidgets('turning a note into a checklist cross-fades the body', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Shopping', content: 'milk');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Note actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Checklist'));
+      // The conversion waits for the menu to close first.
+      for (var i = 0; i < 30; i++) {
+        if (find.byType(AnimatedChecklist).evaluate().isNotEmpty) {
+          break;
+        }
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+      // The text field is still fading out under the new row.
+      expect(find.widgetWithText(TextField, 'milk'), findsNWidgets(2));
+      expect(find.byType(AnimatedChecklist), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byType(AnimatedChecklist), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AnimatedChecklist),
+          matching: find.widgetWithText(TextField, 'milk'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(TextField, 'milk'), findsOneWidget);
+    });
+
+    testWidgets('find-in-note cross-fades the bar instead of swapping it', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', title: 'Findable', content: 'body');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pump();
+
+      // Mid-swap both sets of controls are on screen, one fading for the
+      // other; once it settles only the new set is left.
+      await tester.tap(find.byTooltip('Find in note'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byTooltip('Close search'), findsOneWidget);
+      expect(find.byTooltip('Find in note'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Find in note'), findsNothing);
+
+      await tester.tap(find.byTooltip('Close search'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byTooltip('Close search'), findsOneWidget);
+      expect(find.byTooltip('Find in note'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Close search'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Find in note'), findsNothing);
     });
 
     /// Find-in-note has to take the caret and give it back. Both halves were
@@ -3620,6 +3775,8 @@ void main() {
       await tester.pump();
       expect(store.noteById('n1')!.archived, isTrue);
       expect(store.noteById('n2')!.archived, isTrue);
+      // Let the selection bar's exit play out.
+      await tester.pumpAndSettle();
       expect(find.byTooltip('Cancel selection'), findsNothing);
       await flushTimers(tester);
     });
@@ -3758,10 +3915,42 @@ void main() {
       await tester.tap(find.text('Second note'));
       await tester.pump();
       expect(find.text('1 selected'), findsOneWidget);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('First note'));
       await tester.pump();
+
+      // The bar retracts rather than vanishing: mid-exit its controls are
+      // still on screen, and the browsing bar takes over once they leave.
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.byTooltip('Cancel selection'), findsOneWidget);
+      await tester.pumpAndSettle();
       expect(find.byTooltip('Cancel selection'), findsNothing);
       expect(find.textContaining('selected'), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('select all morphs its icon rather than swapping it', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'First note');
+      api.notes['n2'] = serverNote('n2', title: 'Second note');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.text('First note'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Select all'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byIcon(Icons.select_all), findsOneWidget);
+      expect(find.byIcon(Icons.deselect_outlined), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.select_all), findsNothing);
+      expect(find.byTooltip('Deselect all'), findsOneWidget);
       await flushTimers(tester);
     });
 

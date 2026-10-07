@@ -1009,158 +1009,187 @@ class _EditorScreenState extends State<EditorScreen> {
       leading: widget.modal
           ? CloseButton(onPressed: () => Navigator.of(context).maybePop())
           : BackButton(onPressed: () => Navigator.of(context).maybePop()),
-      title: _finding
-          ? TextField(
-              controller: _findController,
-              focusNode: _findFocus,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Find in note',
-                border: InputBorder.none,
-                suffixText: _findController.text.trim().isEmpty
-                    ? null
-                    : '$_matchCount found',
-              ),
-            )
-          : null,
+      // Opening and closing find cross-fade the title and the action row
+      // together, so the bar changes mode rather than swapping in a frame.
+      title: _barCrossFade(
+        _finding
+            ? TextField(
+                key: const ValueKey('find-field'),
+                controller: _findController,
+                focusNode: _findFocus,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Find in note',
+                  border: InputBorder.none,
+                  suffixText: _findController.text.trim().isEmpty
+                      ? null
+                      : '$_matchCount found',
+                ),
+              )
+            : const SizedBox.shrink(key: ValueKey('no-find-field')),
+        alignment: AlignmentDirectional.centerStart,
+      ),
       actions: [
-        if (_finding)
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Close search',
-            onPressed: _closeFind,
-          )
-        else ...[
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: 'Find in note',
-            onPressed: _openFind,
-          ),
-          if (!trashed) ...[
-            IconButton(
-              icon: PinIcon(pinned: pinned),
-              tooltip: pinned ? 'Unpin' : 'Pin',
-              onPressed: _togglePin,
-            ),
-          ] else ...[
-            IconButton(
-              icon: const Icon(Icons.restore_from_trash_outlined),
-              tooltip: 'Restore',
-              onPressed: () async {
-                await CollectionPicker.restore(context, note!.id);
-                if (mounted) {
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_forever_outlined),
-              tooltip: 'Delete forever',
-              onPressed: () {
-                _store.deleteForever(note!.id);
-                Navigator.of(context).pop();
-                showAppSnack(
-                  'Note deleted forever',
-                  icon: Icons.delete_forever_outlined,
-                  kind: SnackKind.danger,
-                );
-              },
-            ),
-          ],
-          // Promoted out of the menu below: the two note actions used often
-          // enough to earn a permanent target, kept adjacent to it so the
-          // whole group still reads as "things you do to this note".
-          IconButton(
-            icon: const Icon(Icons.content_copy_outlined),
-            tooltip: 'Copy to clipboard',
-            onPressed: note == null || note.isEmpty
-                ? null
-                : _copyNoteToClipboard,
-          ),
-          if (!trashed)
-            IconButton(
-              icon: Icon(
-                (note?.archived ?? false)
-                    ? Icons.unarchive_outlined
-                    : Icons.archive_outlined,
-              ),
-              tooltip: (note?.archived ?? false) ? 'Unarchive' : 'Archive',
-              onPressed: autoDiscardable ? null : _archiveAndClose,
-            ),
-          // Everything else you do *to* the note. The bottom bar keeps what
-          // goes *into* it, so neither menu has to nest.
-          NoteActionsButton(
-            isOwner: isOwner,
-            kind: _kind,
-            onShare: trashed ? null : _openShare,
-            onDelete: trashed || autoDiscardable || !isOwner
-                ? null
-                : _deleteAndClose,
-            onDuplicate: trashed || note == null || note.isEmpty
-                ? null
-                : _duplicateNote,
-            onMoveToCollection:
-                note == null ||
-                    trashed ||
-                    _store.workspaceById(note.workspaceId) == null
-                ? null
-                : () async {
-                    final target = await CollectionPicker.show(
-                      context,
-                      note.workspaceId,
-                    );
-                    if (target != null) {
-                      _store.moveToCollection(note.id, target);
-                    }
-                  },
-            onMoveToWorkspace:
-                trashed ||
-                    note == null ||
-                    note.isEmpty ||
-                    !isOwner ||
-                    _store.workspaces.length < 2
-                ? null
-                : () => MoveToWorkspaceSheet.show(context, note.id),
-            // Unlike workspaces, a column needs no second one to move to,
-            // "Unassigned" is always a destination, so this only asks that
-            // there be a board at all.
-            onMoveToStage:
-                !widget.openedFromBoard ||
-                    trashed ||
-                    note == null ||
-                    note.isEmpty ||
-                    _store.stagesForNote(note).isEmpty
-                ? null
-                : () => MoveToStageSheet.show(context, note.id),
-            onHistory: note == null || note.isEmpty
-                ? null
-                : () => NoteHistoryScreen.open(context, note.id),
-            // A trashed note must not be pinnable: the widget would outlive
-            // the note itself.
-            onAddToHomeScreen: HomeWidgets.supported && !trashed
-                ? _addToHomeScreen
-                : null,
-            onConvert: trashed ? null : _convertKind,
-            onRewrite:
-                trashed ||
-                    note == null ||
-                    note.isEmpty ||
-                    note.isAudio ||
-                    !_aiWritingAvailable(note)
-                ? null
-                : _rewriteWithAi,
-            rewriteTasks: _store.aiIn(note?.workspaceId).rewriteTasks,
-            rewriting: note != null && _store.isRewritingNote(note.id),
-            gridSpan: note?.gridSpan ?? 1,
-            onGridSpan: trashed || note == null
-                ? null
-                : (span) => _store.setGridSpan(note.id, span),
-          ),
-        ],
+        _barCrossFade(
+          _finding
+              ? IconButton(
+                  key: const ValueKey('find-close'),
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Close search',
+                  onPressed: _closeFind,
+                )
+              : Row(
+                  key: const ValueKey('note-actions'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      tooltip: 'Find in note',
+                      onPressed: _openFind,
+                    ),
+                    if (!trashed) ...[
+                      IconButton(
+                        icon: PinIcon(pinned: pinned),
+                        tooltip: pinned ? 'Unpin' : 'Pin',
+                        onPressed: _togglePin,
+                      ),
+                    ] else ...[
+                      IconButton(
+                        icon: const Icon(Icons.restore_from_trash_outlined),
+                        tooltip: 'Restore',
+                        onPressed: () async {
+                          await CollectionPicker.restore(context, note!.id);
+                          if (mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_forever_outlined),
+                        tooltip: 'Delete forever',
+                        onPressed: () {
+                          _store.deleteForever(note!.id);
+                          Navigator.of(context).pop();
+                          showAppSnack(
+                            'Note deleted forever',
+                            icon: Icons.delete_forever_outlined,
+                            kind: SnackKind.danger,
+                          );
+                        },
+                      ),
+                    ],
+                    // Promoted out of the menu below: the two note actions used often
+                    // enough to earn a permanent target, kept adjacent to it so the
+                    // whole group still reads as "things you do to this note".
+                    IconButton(
+                      icon: const Icon(Icons.content_copy_outlined),
+                      tooltip: 'Copy to clipboard',
+                      onPressed: note == null || note.isEmpty
+                          ? null
+                          : _copyNoteToClipboard,
+                    ),
+                    if (!trashed)
+                      IconButton(
+                        icon: Icon(
+                          (note?.archived ?? false)
+                              ? Icons.unarchive_outlined
+                              : Icons.archive_outlined,
+                        ),
+                        tooltip: (note?.archived ?? false)
+                            ? 'Unarchive'
+                            : 'Archive',
+                        onPressed: autoDiscardable ? null : _archiveAndClose,
+                      ),
+                    // Everything else you do *to* the note. The bottom bar keeps what
+                    // goes *into* it, so neither menu has to nest.
+                    NoteActionsButton(
+                      isOwner: isOwner,
+                      kind: _kind,
+                      onShare: trashed ? null : _openShare,
+                      onDelete: trashed || autoDiscardable || !isOwner
+                          ? null
+                          : _deleteAndClose,
+                      onDuplicate: trashed || note == null || note.isEmpty
+                          ? null
+                          : _duplicateNote,
+                      onMoveToCollection:
+                          note == null ||
+                              trashed ||
+                              _store.workspaceById(note.workspaceId) == null
+                          ? null
+                          : () async {
+                              final target = await CollectionPicker.show(
+                                context,
+                                note.workspaceId,
+                              );
+                              if (target != null) {
+                                _store.moveToCollection(note.id, target);
+                              }
+                            },
+                      onMoveToWorkspace:
+                          trashed ||
+                              note == null ||
+                              note.isEmpty ||
+                              !isOwner ||
+                              _store.workspaces.length < 2
+                          ? null
+                          : () => MoveToWorkspaceSheet.show(context, note.id),
+                      // Unlike workspaces, a column needs no second one to move to,
+                      // "Unassigned" is always a destination, so this only asks that
+                      // there be a board at all.
+                      onMoveToStage:
+                          !widget.openedFromBoard ||
+                              trashed ||
+                              note == null ||
+                              note.isEmpty ||
+                              _store.stagesForNote(note).isEmpty
+                          ? null
+                          : () => MoveToStageSheet.show(context, note.id),
+                      onHistory: note == null || note.isEmpty
+                          ? null
+                          : () => NoteHistoryScreen.open(context, note.id),
+                      // A trashed note must not be pinnable: the widget would outlive
+                      // the note itself.
+                      onAddToHomeScreen: HomeWidgets.supported && !trashed
+                          ? _addToHomeScreen
+                          : null,
+                      onConvert: trashed ? null : _convertKind,
+                      onRewrite:
+                          trashed ||
+                              note == null ||
+                              note.isEmpty ||
+                              note.isAudio ||
+                              !_aiWritingAvailable(note)
+                          ? null
+                          : _rewriteWithAi,
+                      rewriteTasks: _store.aiIn(note?.workspaceId).rewriteTasks,
+                      rewriting:
+                          note != null && _store.isRewritingNote(note.id),
+                      gridSpan: note?.gridSpan ?? 1,
+                      onGridSpan: trashed || note == null
+                          ? null
+                          : (span) => _store.setGridSpan(note.id, span),
+                    ),
+                  ],
+                ),
+          alignment: AlignmentDirectional.centerEnd,
+        ),
         const SizedBox(width: 4),
       ],
     );
   }
+
+  /// Fades one state of the app bar's slot into the next in place, pinned to
+  /// [alignment] so neither side drifts while the two overlap.
+  Widget _barCrossFade(Widget child, {required AlignmentGeometry alignment}) =>
+      AnimatedSwitcher(
+        duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+        switchInCurve: Motion.standard,
+        switchOutCurve: Motion.standard,
+        layoutBuilder: (current, previous) =>
+            Stack(alignment: alignment, children: [...previous, ?current]),
+        child: child,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1289,11 +1318,22 @@ class _EditorScreenState extends State<EditorScreen> {
                                       border: InputBorder.none,
                                     ),
                                   ),
-                                  if (_kind == NoteKind.markdown)
-                                    _markdownModeSwitch(),
-                                  _contentEditor(
-                                    trashed: trashed,
-                                    query: query,
+                                  AnimatedReveal(
+                                    child: _kind == NoteKind.markdown
+                                        ? _markdownModeSwitch()
+                                        : null,
+                                  ),
+                                  // Turning a note into a checklist (or back)
+                                  // cross-fades the body. Text and markdown
+                                  // share one field, so they are one state.
+                                  StateCrossFade(
+                                    state: _kind == NoteKind.markdown
+                                        ? NoteKind.text
+                                        : _kind,
+                                    child: _contentEditor(
+                                      trashed: trashed,
+                                      query: query,
+                                    ),
                                   ),
                                   AnimatedReveal(
                                     child: (note?.summarizingLinks ?? false)
