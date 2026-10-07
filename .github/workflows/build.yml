@@ -9,13 +9,17 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/lucasgenoud/skippy
+  DOCS_IMAGE: ghcr.io/lucasgenoud/skippy-docs
+
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Reject tracked runtime databases
         run: |
@@ -29,6 +33,35 @@ jobs:
       - name: Reject tracked secrets
         run: sh scripts/check-secrets.sh
 
+      - name: Pick the image tag
+        id: tag
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main) echo "tag=latest" >> "$GITHUB_OUTPUT" ;;
+            dev) echo "tag=dev" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "Unsupported release branch: $GITHUB_REF_NAME"
+              exit 1
+              ;;
+          esac
+
+  # Each architecture builds natively on its own runner; emulating the Rust
+  # build under QEMU takes the better part of an hour.
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Log in to the GitHub Container Registry
         env:
           REGISTRY: ghcr.io
@@ -39,24 +72,15 @@ jobs:
             docker login "$REGISTRY" --username "$REGISTRY_USER" --password-stdin
 
       - name: Build and push images
+        env:
+          TAG: ${{ needs.check.outputs.tag }}-${{ matrix.arch }}
         run: |
-          IMAGE=ghcr.io/lucasgenoud/skippy
-          DOCS_IMAGE=ghcr.io/lucasgenoud/skippy-docs
           CLIENT_VERSION=$(awk '$1 == "version:" { split($2, parts, "+"); print parts[1]; exit }' app/pubspec.yaml)
           SERVER_VERSION=$(awk '$1 == "version" { gsub(/"/, "", $3); print $3; exit }' backend/Cargo.toml)
+          BUILD="$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
           case "$GITHUB_REF_NAME" in
-            main)
-              TAG=latest
-              VERSION_SUFFIX="+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
-              ;;
-            dev)
-              TAG=dev
-              VERSION_SUFFIX="-dev+$(git rev-list --count HEAD).$(git rev-parse --short=12 HEAD)"
-              ;;
-            *)
-              echo "Unsupported release branch: $GITHUB_REF_NAME"
-              exit 1
-              ;;
+            main) VERSION_SUFFIX="+$BUILD" ;;
+            dev) VERSION_SUFFIX="-dev+$BUILD" ;;
           esac
           docker build --no-cache --pull \
             --build-arg CLIENT_VERSION="$CLIENT_VERSION" \
@@ -69,3 +93,27 @@ jobs:
 
       - name: Drop dangling layers left by this build
         run: docker image prune -f
+
+  # Joins the per-architecture images under the tag deployments pull, so
+  # each host gets its own architecture from the same name.
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to the GitHub Container Registry
+        env:
+          REGISTRY: ghcr.io
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" |
+            docker login "$REGISTRY" --username "$REGISTRY_USER" --password-stdin
+
+      - name: Publish multi-architecture tags
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          for NAME in "$IMAGE" "$DOCS_IMAGE"; do
+            docker buildx imagetools create -t "$NAME:$TAG" \
+              "$NAME:$TAG-amd64" "$NAME:$TAG-arm64"
+          done
