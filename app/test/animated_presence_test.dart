@@ -59,6 +59,39 @@ void main() {
     expect(heightOf(tester, 'b'), 20);
   });
 
+  // A row taller than its items (the desktop top bar) must not stretch a
+  // horizontal item to its height, which pinned the icon to the top edge.
+  testWidgets('a horizontal item keeps its own height in a taller row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            height: 60,
+            child: Row(
+              children: [
+                AnimatedPresence(
+                  axis: Axis.horizontal,
+                  layout: (children) =>
+                      Row(mainAxisSize: MainAxisSize.min, children: children),
+                  children: const [
+                    SizedBox(key: ValueKey('in'), width: 40, height: 40),
+                  ],
+                ),
+                const SizedBox(key: ValueKey('beside'), width: 40, height: 40),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final item = tester.getRect(find.byKey(const ValueKey('in')).last);
+    final beside = tester.getRect(find.byKey(const ValueKey('beside')));
+    expect(tester.getSize(find.byType(SizeTransition)).height, 40);
+    expect(item.center.dy, beside.center.dy);
+  });
+
   testWidgets('a revealed child grows in and collapses out', (tester) async {
     Widget reveal(String? text) => MaterialApp(
       home: Scaffold(

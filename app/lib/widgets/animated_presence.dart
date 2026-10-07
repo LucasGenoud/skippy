@@ -194,6 +194,10 @@ class _PresenceItemState extends State<_PresenceItem>
     sizeFactor: _size,
     axis: widget.axis,
     alignment: AlignmentDirectional.topStart,
+    // A horizontal item shrink-wraps its height: left free, it stretches to
+    // a taller row and pins the child to the top. A vertical one keeps
+    // filling its width, as column layouts expect.
+    fixedCrossAxisSizeFactor: widget.axis == Axis.horizontal ? 1 : null,
     child: FadeTransition(opacity: _opacity, child: widget.child),
   );
 }
