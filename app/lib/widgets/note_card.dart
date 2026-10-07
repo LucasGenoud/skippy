@@ -793,9 +793,14 @@ class _NoteCardContent extends StatelessWidget {
                         ),
                       ),
                     if (note.summarizingLinks)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 10),
-                        child: LinkSummaryIndicator(compact: true),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: LinkSummaryIndicator(
+                          compact: true,
+                          onCancel: () => context
+                              .read<NotesStore>()
+                              .cancelLinkSummaries(note.id),
+                        ),
                       ),
                   ],
                 ),

@@ -55,6 +55,9 @@ class BoardColumnView extends StatefulWidget {
   final Set<String> selectedIds;
   final void Function(String noteId, bool selected)? onSelectionChanged;
 
+  /// Selects this column's cards, or deselects them when all already are.
+  final void Function(List<Note> notes)? onToggleColumnSelection;
+
   /// A collapsed column keeps its title and count in a narrow rail.
   final bool collapsed;
   final VoidCallback? onToggleCollapsed;
@@ -69,6 +72,7 @@ class BoardColumnView extends StatefulWidget {
     this.selectionMode = false,
     this.selectedIds = const {},
     this.onSelectionChanged,
+    this.onToggleColumnSelection,
     this.collapsed = false,
     this.onToggleCollapsed,
   });
@@ -107,6 +111,24 @@ class _BoardColumnViewState extends State<BoardColumnView> {
   }
 
   String? get _stageId => widget.column.stage?.id;
+
+  /// Null when the column has nothing to select or no one listens.
+  VoidCallback? get _toggleSelection {
+    final toggle = widget.onToggleColumnSelection;
+    if (toggle == null || widget.column.notes.isEmpty) {
+      return null;
+    }
+    return () => toggle(widget.column.notes);
+  }
+
+  _ColumnSelection get _columnSelection {
+    final notes = widget.column.notes;
+    final count = notes.where((n) => widget.selectedIds.contains(n.id)).length;
+    if (count == 0) {
+      return _ColumnSelection.none;
+    }
+    return count == notes.length ? _ColumnSelection.all : _ColumnSelection.some;
+  }
 
   Iterable<String> _draggedIds(String noteId) =>
       widget.selectedIds.contains(noteId) ? widget.selectedIds : [noteId];
@@ -241,6 +263,28 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                       _BoardColumnHeader(
                         column: widget.column,
                         onToggleCollapsed: widget.onToggleCollapsed,
+                        selectionMode: widget.selectionMode,
+                        selection: _columnSelection,
+                        onToggleSelection: _toggleSelection,
+                      )
+                    else
+                      // The phone has no header to hold the toggle, so it
+                      // gets a row of its own while selecting.
+                      _AppearWhen(
+                        visible:
+                            widget.selectionMode && _toggleSelection != null,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            child: _SelectColumnButton(
+                              title: widget.column.title,
+                              selection: _columnSelection,
+                              onPressed: _toggleSelection,
+                              showLabel: true,
+                            ),
+                          ),
+                        ),
                       ),
                     Expanded(child: _body()),
                     Padding(
@@ -378,11 +422,99 @@ class _DropHighlight extends StatelessWidget {
   }
 }
 
+/// How much of a column the selection covers.
+enum _ColumnSelection { none, some, all }
+
+/// Grows in and fades in rather than popping, and takes no room while hidden.
+class _AppearWhen extends StatelessWidget {
+  final bool visible;
+  final Widget child;
+
+  const _AppearWhen({required this.visible, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = Motion.reduced(context) ? Duration.zero : Motion.base;
+    return AnimatedSize(
+      duration: duration,
+      curve: Motion.emphasized,
+      alignment: Alignment.centerRight,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: Motion.standard,
+        switchOutCurve: Motion.standard,
+        child: visible ? child : const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
+/// Checkbox-style toggle over every card in a column.
+class _SelectColumnButton extends StatelessWidget {
+  final String title;
+  final _ColumnSelection selection;
+  final VoidCallback? onPressed;
+  final bool showLabel;
+
+  const _SelectColumnButton({
+    required this.title,
+    required this.selection,
+    required this.onPressed,
+    this.showLabel = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final all = selection == _ColumnSelection.all;
+    final icon = Icon(switch (selection) {
+      _ColumnSelection.none => Icons.check_box_outline_blank,
+      _ColumnSelection.some => Icons.indeterminate_check_box_outlined,
+      _ColumnSelection.all => Icons.check_box,
+    }, size: 20);
+    final tooltip = all ? 'Deselect all in $title' : 'Select all in $title';
+
+    if (showLabel) {
+      return Tooltip(
+        message: tooltip,
+        child: TextButton.icon(
+          onPressed: onPressed,
+          icon: icon,
+          label: Text(all ? 'Deselect all' : 'Select all'),
+        ),
+      );
+    }
+    return IconButton(
+      icon: icon,
+      tooltip: tooltip,
+      color: all ? Theme.of(context).colorScheme.primary : null,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+      onPressed: onPressed,
+    );
+  }
+}
+
+/// What the column menu was asked to do.
+enum _ColumnAction { selectAll, rename, delete }
+
 class _BoardColumnHeader extends StatelessWidget {
   final BoardColumn column;
   final VoidCallback? onToggleCollapsed;
+  final bool selectionMode;
+  final _ColumnSelection selection;
 
-  const _BoardColumnHeader({required this.column, this.onToggleCollapsed});
+  /// Null when the column holds nothing to select.
+  final VoidCallback? onToggleSelection;
+
+  const _BoardColumnHeader({
+    required this.column,
+    this.onToggleCollapsed,
+    this.selectionMode = false,
+    this.selection = _ColumnSelection.none,
+    this.onToggleSelection,
+  });
+
+  bool get _hasMenu => column.stage != null || onToggleSelection != null;
 
   @override
   Widget build(BuildContext context) {
@@ -415,20 +547,28 @@ class _BoardColumnHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              _AppearWhen(
+                visible: selectionMode && onToggleSelection != null,
+                child: _SelectColumnButton(
+                  title: column.title,
+                  selection: selection,
+                  onPressed: onToggleSelection,
+                ),
+              ),
               Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.only(left: 4, right: 8),
                 child: _CountChip(count: column.totalCount),
               ),
-              if (column.stage case final Stage stage)
+              if (_hasMenu)
                 IconButton(
                   icon: const Icon(Icons.more_vert, size: 18),
-                  tooltip: 'Column options',
+                  tooltip: '${column.title} options',
                   visualDensity: VisualDensity.compact,
                   constraints: const BoxConstraints.tightFor(
                     width: 36,
                     height: 36,
                   ),
-                  onPressed: () => _showColumnMenu(context, stage),
+                  onPressed: () => _showColumnMenu(context),
                 )
               else
                 const SizedBox(width: 8),
@@ -442,34 +582,49 @@ class _BoardColumnHeader extends StatelessWidget {
     );
   }
 
-  Future<void> _showColumnMenu(BuildContext context, Stage stage) async {
+  Future<void> _showColumnMenu(BuildContext context) async {
     final store = context.read<NotesStore>();
-    final action = await showAdaptiveSelectionSurface<String>(
+    final stage = column.stage;
+    final action = await showAdaptiveSelectionSurface<_ColumnAction>(
       context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Rename column'),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Delete column'),
-              subtitle: const Text('Its notes go back to Unassigned'),
-              onTap: () => Navigator.pop(context, 'delete'),
-            ),
+            if (onToggleSelection != null && selection != _ColumnSelection.all)
+              ListTile(
+                leading: const Icon(Icons.select_all),
+                title: const Text('Select all cards'),
+                onTap: () => Navigator.pop(context, _ColumnAction.selectAll),
+              ),
+            if (stage != null) ...[
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Rename column'),
+                onTap: () => Navigator.pop(context, _ColumnAction.rename),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Delete column'),
+                subtitle: const Text('Its notes go back to Unassigned'),
+                onTap: () => Navigator.pop(context, _ColumnAction.delete),
+              ),
+            ],
           ],
         ),
       ),
     );
-    if (!context.mounted || action == null) return;
-    if (action == 'edit') {
-      await StageEditorDialog.show(context, stage.id);
-    } else {
-      store.deleteStage(stage.id);
+    if (!context.mounted || action == null) {
+      return;
+    }
+
+    switch (action) {
+      case _ColumnAction.selectAll:
+        onToggleSelection?.call();
+      case _ColumnAction.rename:
+        await StageEditorDialog.show(context, stage!.id);
+      case _ColumnAction.delete:
+        store.deleteStage(stage!.id);
     }
   }
 }

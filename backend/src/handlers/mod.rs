@@ -49,7 +49,7 @@ pub use share_links::{create_share_link, delete_share_link, list_share_links, pu
 pub use sharing::{add_collaborator, checklist_history, remove_collaborator};
 pub use stages::{create_stage, delete_stage, list_stages, update_stage};
 pub use tokens::{create_api_token, delete_api_token, list_api_tokens};
-pub use unfurl::{summarize_url, unfurl};
+pub use unfurl::{cancel_link_summaries, summarize_url, unfurl};
 pub use versions::{list_note_versions, restore_note_version};
 pub use workspaces::{
     add_workspace_member, create_default_workspace, create_workspace, delete_workspace,

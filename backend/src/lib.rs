@@ -55,6 +55,13 @@ pub struct ReindexProgress {
     pub total: usize,
 }
 
+/// Automatic link summaries running for one note, and the switch that stops
+/// them all at once.
+pub struct LinkSummaryJobs {
+    pub running: usize,
+    pub cancel: tokio::sync::watch::Sender<bool>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Arc<SqliteRepository>,
@@ -85,7 +92,7 @@ pub struct AppState {
     pub label_generations: Arc<Mutex<HashMap<String, u64>>>,
     /// note_id -> running automatic link summaries. Ephemeral by design: a
     /// restart aborts those jobs, so no stale progress can survive it.
-    pub link_summary_jobs: Arc<Mutex<HashMap<String, usize>>>,
+    pub link_summary_jobs: Arc<Mutex<HashMap<String, LinkSummaryJobs>>>,
     /// user_id -> progress of a running "re-run embeddings" job, so the
     /// settings UI can show a progress bar. `done == total` means finished;
     /// the entry lingers (at most one per user) until the next reindex.
@@ -285,6 +292,10 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         .route("/notes/{id}/attachments", post(handlers::upload_attachment))
         .route("/notes/{id}/transcribe", post(handlers::transcribe_note))
         .route("/notes/{id}/rewrite", post(handlers::rewrite_note))
+        .route(
+            "/notes/{id}/link-summaries",
+            axum::routing::delete(handlers::cancel_link_summaries),
+        )
         .route(
             "/attachments/{id}",
             axum::routing::delete(handlers::delete_attachment),

@@ -267,24 +267,20 @@ void main() {
     expect(find.text('Important'), findsOneWidget);
     await tester.tap(find.text('Manage collections'));
     await tester.pumpAndSettle();
+    // Wide: the list and the open collection share one dialog.
+    final dialog = find.byType(Dialog);
     expect(
-      find.descendant(
-        of: find.byType(FormDialog),
-        matching: find.text('Manage collections'),
-      ),
+      find.descendant(of: dialog, matching: find.text('Collections')),
       findsOneWidget,
     );
     await tester.tap(
-      find.descendant(
-        of: find.byType(FormDialog),
-        matching: find.text('General'),
-      ),
+      find.descendant(of: dialog, matching: find.text('General')).first,
     );
     await tester.pumpAndSettle();
     expect(
       find.descendant(
-        of: find.byType(FormDialog),
-        matching: find.text('Collection settings'),
+        of: dialog,
+        matching: find.widgetWithText(TextField, 'General'),
       ),
       findsOneWidget,
     );
@@ -426,17 +422,19 @@ void main() {
         await tester.tap(find.text('Manage collections'));
         await tester.pumpAndSettle();
         await _capture(tester, key, 'manage-collections-$suffix');
+        final manager = find.byType(size.width < 600 ? FormDialog : Dialog);
         await tester.tap(
-          find.descendant(
-            of: find.byType(FormDialog),
-            matching: find.text('Reading'),
-          ),
+          find.descendant(of: manager, matching: find.text('Reading')).first,
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         await _capture(tester, key, 'collection-settings-$suffix');
-        await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-        await tester.pumpAndSettle();
+        // A phone opened the collection as a page of its own; a wide window
+        // opened it beside the list, where edits save as they are made.
+        if (size.width < 600) {
+          await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+          await tester.pumpAndSettle();
+        }
         await tester.tap(find.widgetWithText(TextButton, 'Done'));
         await tester.pumpAndSettle();
         unawaited(
@@ -464,6 +462,81 @@ void main() {
       },
     );
   }
+
+  testWidgets('a wide window edits collections beside their list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = FakeApi();
+    api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+      collections: [reading, projects],
+    );
+    final store = NotesStore(api: api, currentUserId: 'u-me');
+    await store.load();
+    store.selectCollection(reading.id);
+    await tester.pumpWidget(homeApp(store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Manage collections'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(Dialog);
+    // Opens on the collection in view, and nothing stacks on top of it.
+    expect(find.widgetWithText(TextField, 'Reading'), findsOneWidget);
+    expect(find.byType(Dialog), findsOneWidget);
+
+    // Edits save without a Save button.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SegmentedButton<String>),
+        matching: find.text('Board'),
+      ),
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Reading'), 'Books');
+    await tester.pump(const Duration(milliseconds: 600));
+    final saved = store.collections.firstWhere((c) => c.id == reading.id);
+    expect(saved.name, 'Books');
+    expect(saved.layout, 'board');
+
+    // Switching collections opens the other one in the same pane.
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.text('Projects')).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Projects'), findsOneWidget);
+
+    // A new collection waits for Create, then opens like any other.
+    await tester.tap(find.text('New collection'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(of: dialog, matching: find.byType(TextField)).first,
+      'Recipes',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create'));
+    await tester.pumpAndSettle();
+    final created = store.collections.firstWhere((c) => c.name == 'Recipes');
+    expect(store.activeCollection?.id, created.id);
+    expect(find.widgetWithText(TextField, 'Recipes'), findsOneWidget);
+
+    // Deleting hands the pane to a neighbour.
+    await tester.ensureVisible(find.text('Delete collection'));
+    await tester.tap(find.text('Delete collection'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete collection'));
+    await tester.pumpAndSettle();
+    expect(store.collections.any((c) => c.id == created.id), isFalse);
+    expect(
+      find.widgetWithText(TextField, store.collections.first.name),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+    store.dispose();
+    await tester.pump(const Duration(milliseconds: 700));
+  });
 
   testWidgets('phone drawer closes before creating a collection', (
     tester,

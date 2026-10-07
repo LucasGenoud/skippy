@@ -36,6 +36,9 @@ class BoardView extends StatefulWidget {
   final Set<String> selectedIds;
   final void Function(String noteId, bool selected)? onSelectionChanged;
 
+  /// Selects a column's cards, or deselects them when all already are.
+  final void Function(List<Note> notes)? onToggleColumnSelection;
+
   const BoardView({
     super.key,
     this.query = '',
@@ -43,6 +46,7 @@ class BoardView extends StatefulWidget {
     this.selectionMode = false,
     this.selectedIds = const {},
     this.onSelectionChanged,
+    this.onToggleColumnSelection,
   });
 
   /// Below this the board pages instead of laying columns side by side. Matches
@@ -252,6 +256,7 @@ class _BoardViewState extends State<BoardView> {
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
                   onSelectionChanged: widget.onSelectionChanged,
+                  onToggleColumnSelection: widget.onToggleColumnSelection,
                   collapsed: collapsed,
                   onToggleCollapsed: () => _toggleCollapsed(column.stage?.id),
                 ),
@@ -339,6 +344,7 @@ class _BoardViewState extends State<BoardView> {
                   selectionMode: widget.selectionMode,
                   selectedIds: widget.selectedIds,
                   onSelectionChanged: widget.onSelectionChanged,
+                  onToggleColumnSelection: widget.onToggleColumnSelection,
                   // The strip above already names the column and counts it.
                   showHeader: false,
                 ),

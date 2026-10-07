@@ -36,10 +36,15 @@ class AppSidebar extends StatelessWidget {
   final ViewSelection selection;
   final ValueChanged<ViewSelection> onSelect;
   final Set<String> selectedNoteIds;
+
+  /// Called once a drop has filed the selection somewhere out of the view
+  /// (archive, trash, another collection), so the screen can leave selection.
+  final VoidCallback? onSelectionFiled;
   const AppSidebar({
     super.key,
     this.inDrawer = false,
     this.selectedNoteIds = const {},
+    this.onSelectionFiled,
     required this.isOpen,
     required this.selection,
     required this.onSelect,
@@ -74,6 +79,14 @@ class AppSidebar extends StatelessWidget {
         selectedNoteIds.contains(id) ? selectedNoteIds : [id];
     bool acceptsAny(String id, bool Function(String) accepts) =>
         draggedIds(id).any(accepts);
+
+    // The selected cards just left the view, so the bar acting on them has
+    // nothing left to act on.
+    void filed(String id) {
+      if (selectedNoteIds.contains(id)) {
+        onSelectionFiled?.call();
+      }
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -136,6 +149,7 @@ class AppSidebar extends StatelessWidget {
                         store.moveToCollection(noteId, c.id);
                       }
                     }
+                    filed(id);
                   },
                 ),
               _SidebarItem(
@@ -270,6 +284,7 @@ class AppSidebar extends StatelessWidget {
                               store.moveToTrash(noteId);
                             }
                           }
+                          filed(id);
                         },
                 ),
             ],

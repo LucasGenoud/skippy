@@ -336,11 +336,17 @@ abstract class Api {
 
   /// Fetch a webpage and ask the writing model of [noteId]'s workspace for a
   /// very short plain-text summary.
+  ///
+  /// Completing [abort] drops the request; it then throws.
   Future<String> summarizeUrl(
     String url, {
     required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
+    Future<void>? abort,
   });
+
+  /// Stop the automatic link summaries the server is running for [noteId].
+  Future<void> cancelLinkSummaries(String noteId);
 
   /// Server-push change events; emits whenever this user's notes change.
   Stream<void> changeEvents();
@@ -1009,13 +1015,19 @@ class ApiClient extends _ApiTransport implements Api {
     String url, {
     required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
+    Future<void>? abort,
   }) async {
-    final data = await _post('/unfurl/summary', {
+    final data = await _postAbortable('/unfurl/summary', {
       'url': url,
       'note_id': noteId,
       'length': length.name,
-    });
+    }, abort);
     return (data as Map<String, dynamic>)['summary'] as String;
+  }
+
+  @override
+  Future<void> cancelLinkSummaries(String noteId) async {
+    await _delete('/notes/$noteId/link-summaries');
   }
 
   // -- capabilities & transcription --------------------------------------------

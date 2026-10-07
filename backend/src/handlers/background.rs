@@ -2,8 +2,10 @@
 //! attachment URLs, and the background indexing / transcription / labeling
 //! tasks that must never sit in a request's latency path.
 
-use crate::AppState;
+use tokio::sync::watch;
+
 use crate::models::*;
+use crate::{AppState, LinkSummaryJobs};
 
 use super::CHANGED_MSG;
 use super::workspace_ai::{AiFeature, WorkspaceAi, workspace_ai};
@@ -318,14 +320,12 @@ impl AppState {
             if !llm_settings.auto_summarize_links {
                 return;
             }
-            *state
-                .link_summary_jobs
-                .lock()
-                .unwrap()
-                .entry(note_id.clone())
-                .or_default() += 1;
+            let mut cancelled = state.start_link_summary(&note_id);
             state.notify_note(&note_id).await;
             for url in urls {
+                if *cancelled.borrow() {
+                    break;
+                }
                 let record = match state.repo.note_record(&note_id).await {
                     Ok(Some(record)) => record,
                     Ok(None) => break,
@@ -341,15 +341,19 @@ impl AppState {
                 {
                     continue;
                 }
-                let summary = match super::unfurl::summarize_with_settings(
-                    &state,
-                    cfg,
-                    llm_settings,
-                    &url,
-                    Some(llm_settings.link_summary_length),
-                )
-                .await
-                {
+                // A cancel drops the fetch or model call in flight rather than
+                // letting it run to a result nobody wants.
+                let summary = tokio::select! {
+                    result = super::unfurl::summarize_with_settings(
+                        &state,
+                        cfg,
+                        llm_settings,
+                        &url,
+                        Some(llm_settings.link_summary_length),
+                    ) => result,
+                    _ = cancelled.wait_for(|stop| *stop) => break,
+                };
+                let summary = match summary {
                     Ok(summary) => summary,
                     Err(error) => {
                         state.report_background_failure(
@@ -369,6 +373,9 @@ impl AppState {
                         break;
                     }
                 };
+                if *cancelled.borrow() {
+                    break;
+                }
                 if record.trashed
                     || !matches!(record.kind.as_str(), KIND_TEXT | KIND_MARKDOWN)
                     || !crate::unfurl::urls_in(&format!("{}\n{}", record.title, record.content))
@@ -396,17 +403,47 @@ impl AppState {
                     state.report_background_failure("auto_summary_persist", &format!("{error:?}"));
                 }
             }
-            {
-                let mut jobs = state.link_summary_jobs.lock().unwrap();
-                if let Some(count) = jobs.get_mut(&note_id) {
-                    *count -= 1;
-                    if *count == 0 {
-                        jobs.remove(&note_id);
-                    }
-                }
+            // A cancel already cleared the entry and told everyone.
+            if *cancelled.borrow() {
+                return;
             }
+            state.finish_link_summary(&note_id);
             state.notify_note(&note_id).await;
         });
+    }
+
+    /// Register a running summary for `note_id`. The receiver turns true once
+    /// someone cancels the note's summaries.
+    pub fn start_link_summary(&self, note_id: &str) -> watch::Receiver<bool> {
+        let mut jobs = self.link_summary_jobs.lock().unwrap();
+        let job = jobs
+            .entry(note_id.to_string())
+            .or_insert_with(|| LinkSummaryJobs {
+                running: 0,
+                cancel: watch::channel(false).0,
+            });
+        job.running += 1;
+        job.cancel.subscribe()
+    }
+
+    fn finish_link_summary(&self, note_id: &str) {
+        let mut jobs = self.link_summary_jobs.lock().unwrap();
+        let Some(job) = jobs.get_mut(note_id) else {
+            return;
+        };
+        job.running -= 1;
+        if job.running == 0 {
+            jobs.remove(note_id);
+        }
+    }
+
+    /// Stop every summary running for `note_id`. False when none was.
+    pub(super) fn cancel_link_summaries(&self, note_id: &str) -> bool {
+        let Some(job) = self.link_summary_jobs.lock().unwrap().remove(note_id) else {
+            return false;
+        };
+        job.cancel.send_replace(true);
+        true
     }
 
     /// The AI of the workspace holding `note_id`, None once the note is gone.

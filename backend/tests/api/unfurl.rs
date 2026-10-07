@@ -213,14 +213,97 @@ async fn automatically_summarizes_a_link_added_through_notes_api() {
     panic!("automatic summary was not added");
 }
 
+/// A page that answers only once the test lets it, so a summary can be
+/// caught mid-fetch.
+async fn spawn_gated_server() -> (String, Arc<tokio::sync::Notify>) {
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let gate_for_route = gate.clone();
+    let app = Router::new().route(
+        "/slow",
+        get(move || {
+            let gate = gate_for_route.clone();
+            async move {
+                gate.notified().await;
+                Html(OG_PAGE)
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    (format!("http://{addr}"), gate)
+}
+
+#[tokio::test]
+async fn cancelling_stops_a_running_link_summary() {
+    allow_private_fetch();
+    let (base, gate) = spawn_gated_server().await;
+    let (state, calls) = state_with_llm("Automatic summary.").await;
+    let app = build_app(state);
+    let (token, _) = register(&app, "unfurl_cancel_summary").await;
+    let (other, _) = register(&app, "unfurl_cancel_stranger").await;
+    let (status, _) = send(
+        &app,
+        "PUT",
+        "/api/settings",
+        Some(&token),
+        Some(json!({
+            "llm_base_url": "http://fake/v1",
+            "llm_model": "test-model",
+            "llm_writing": true,
+            "auto_summarize_links": true
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let url = format!("{base}/slow");
+    let (status, note) = send(
+        &app,
+        "POST",
+        "/api/notes",
+        Some(&token),
+        Some(json!({"content": url})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create: {note}");
+    let id = note["id"].as_str().unwrap();
+    let path = format!("/api/notes/{id}");
+    let mut running = false;
+    for _ in 0..50 {
+        let (_, note) = send(&app, "GET", &path, Some(&token), None).await;
+        if note["summarizing_links"] == true {
+            running = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(running, "summary never started");
+
+    // Someone who cannot see the note cannot stop it either.
+    let cancel = format!("{path}/link-summaries");
+    let (status, _) = send(&app, "DELETE", &cancel, Some(&other), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = send(&app, "DELETE", &cancel, Some(&token), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, note) = send(&app, "GET", &path, Some(&token), None).await;
+    assert_eq!(note["summarizing_links"], false);
+
+    // Even if the page answers now, nothing is written and no model is asked.
+    gate.notify_waiters();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let (_, note) = send(&app, "GET", &path, Some(&token), None).await;
+    assert_eq!(note["content"], url);
+    assert!(calls.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn note_view_reports_a_running_link_summary() {
     let state = state().await;
-    state
-        .link_summary_jobs
-        .lock()
-        .unwrap()
-        .insert("summary-pending".to_string(), 1);
+    let _job = state.start_link_summary("summary-pending");
     let app = build_app(state);
     let (token, _) = register(&app, "unfurl_pending_summary").await;
 

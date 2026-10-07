@@ -867,6 +867,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 isOpen: _isSidebarOpen,
                                 selection: _selection,
                                 selectedNoteIds: _selectedNoteIds,
+                                onSelectionFiled: _cancelSelection,
                                 onSelect: _selectView,
                               ),
                             Expanded(
@@ -892,6 +893,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                               selectedIds: _selectedNoteIds,
                                               onSelectionChanged:
                                                   _toggleNoteSelection,
+                                              onToggleColumnSelection:
+                                                  _toggleSelectAll,
                                             ),
                                           )
                                         // Reminders fall on days rather than

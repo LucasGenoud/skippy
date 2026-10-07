@@ -2288,6 +2288,23 @@ class NotesStore extends ChangeNotifier {
     _enqueue(PendingOp(PendingOpKind.transcribe, id: id));
   }
 
+  /// Stop the server's automatic link summaries for [id]. Not queued: the job
+  /// lives only in the server's memory, so there is nothing to replay later.
+  Future<void> cancelLinkSummaries(String id) async {
+    final note = noteById(id);
+    if (note == null || !note.summarizingLinks) {
+      return;
+    }
+
+    _replace(note.copyWith(summarizingLinks: false));
+    try {
+      await api.cancelLinkSummaries(id);
+    } catch (_) {
+      // The server's view of the job is the truth; fetch it back.
+      unawaited(refresh());
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Semantic search
 

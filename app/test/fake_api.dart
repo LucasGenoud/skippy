@@ -187,6 +187,10 @@ class FakeApi implements Api {
   Completer<void>? fetchHistoryGate;
   Completer<void>? patchGate;
   Completer<void>? rewriteGate;
+  Completer<void>? summarizeGate;
+
+  /// URLs whose summary request the client dropped.
+  final List<String> abortedSummaries = [];
   Map<String, dynamic> settings = {};
 
   /// Server feature flags returned by [fetchCapabilities]; tests flip these to
@@ -991,10 +995,24 @@ class FakeApi implements Api {
     String url, {
     required String noteId,
     UrlSummaryLength length = UrlSummaryLength.short,
-  }) => _run(
-    'summarizeUrl:$url',
-    () => urlSummaries[url] ?? (throw ApiException(400, 'summary unavailable')),
-  );
+    Future<void>? abort,
+  }) async {
+    var aborted = false;
+    unawaited(abort?.then((_) => aborted = true));
+    final gate = summarizeGate;
+    if (gate != null) {
+      await Future.any([gate.future, ?abort]);
+    }
+    if (aborted) {
+      abortedSummaries.add(url);
+      throw Exception('aborted');
+    }
+    return _run(
+      'summarizeUrl:$url',
+      () =>
+          urlSummaries[url] ?? (throw ApiException(400, 'summary unavailable')),
+    );
+  }
 
   @override
   Future<
@@ -1051,6 +1069,14 @@ class FakeApi implements Api {
   @override
   Future<Map<String, ManagedSetting>> fetchManagedSettings() =>
       _run('fetchManagedSettings', () => managedSettings);
+
+  @override
+  Future<void> cancelLinkSummaries(String noteId) =>
+      _run('cancelLinkSummaries:$noteId', () {
+        if (notes[noteId] case final Note note) {
+          notes[noteId] = note.copyWith(summarizingLinks: false);
+        }
+      });
 
   @override
   Future<void> transcribeNote(String noteId) => _run('transcribe:$noteId', () {

@@ -1353,6 +1353,22 @@ void main() {
     });
   });
 
+  group('link summaries', () {
+    test('cancelling hides the indicator and stops the server job', () async {
+      api.notes['s1'] = serverNote(
+        's1',
+        content: 'https://example.com',
+      ).copyWith(summarizingLinks: true);
+      await store.load();
+      expect(store.noteById('s1')!.summarizingLinks, isTrue);
+
+      final done = store.cancelLinkSummaries('s1');
+      expect(store.noteById('s1')!.summarizingLinks, isFalse);
+      await done;
+      expect(api.log, contains('cancelLinkSummaries:s1'));
+    });
+  });
+
   group('sharing', () {
     test(
       'addCollaborator updates the roster; leaving removes the note',

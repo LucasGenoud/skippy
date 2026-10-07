@@ -214,6 +214,11 @@ void main() {
 
       expect(find.text('Summarizing link…'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Stop summarizing'));
+      await tester.pump();
+      expect(store.noteById('n1')!.summarizingLinks, isFalse);
+      expect(api.log, contains('cancelLinkSummaries:n1'));
     });
 
     testWidgets(
@@ -1703,6 +1708,37 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(store.noteById('n1')!.content, '$url\n\nA very short summary.');
+      await flushTimers(tester);
+    });
+
+    testWidgets('stops a URL summary that is still running', (tester) async {
+      const url = 'https://example.com/article';
+      api.notes['n1'] = serverNote(
+        'n1',
+        content: url,
+        workspaceId: 'w-default',
+      );
+      api.urlSummaries[url] = 'A very short summary.';
+      api.summarizeGate = Completer<void>();
+      api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+        ai: const WorkspaceAi(providerReady: true),
+      );
+      await store.load();
+      final settings = SettingsStore(api: api);
+      await tester.pumpWidget(
+        harness(store, const EditorScreen(noteId: 'n1'), settings: settings),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Summarize page'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Stop summarizing'));
+      await tester.pumpAndSettle();
+
+      expect(api.abortedSummaries, [url]);
+      expect(find.byTooltip('Summarize page'), findsOneWidget);
+      expect(find.text("Couldn't summarize page"), findsNothing);
+      expect(store.noteById('n1')!.content, url);
       await flushTimers(tester);
     });
 
@@ -3644,6 +3680,57 @@ void main() {
 
         expect(store.noteById('n1')!.labelIds, contains('l1'));
         expect(store.noteById('n2')!.labelIds, contains('l1'));
+        await flushTimers(tester);
+      },
+    );
+
+    testWidgets(
+      'dragging the selection onto Archive leaves selection mode',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote('n1', title: 'First note');
+        api.notes['n2'] = serverNote('n2', title: 'Second note');
+        await store.load();
+        await tester.pumpWidget(homeApp(store));
+        await tester.pumpAndSettle();
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.text('First note')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text('First note'),
+              matching: find.byType(NoteTile),
+            ),
+            matching: find.byTooltip('Select note'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Second note'));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('First note')),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await gesture.moveBy(const Offset(-24, 0));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(find.text('Archive')));
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.archived, isTrue);
+        expect(store.noteById('n2')!.archived, isTrue);
+        expect(find.byTooltip('Cancel selection'), findsNothing);
         await flushTimers(tester);
       },
     );

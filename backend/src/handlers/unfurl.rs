@@ -6,7 +6,8 @@
 use std::time::{Duration, Instant};
 
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use serde::Deserialize;
 
 use crate::AppState;
@@ -90,6 +91,20 @@ pub async fn summarize_url(
     let summary =
         summarize_with_settings(&state, cfg, ai.settings(), body.url.trim(), body.length).await?;
     Ok(Json(serde_json::json!({"summary": summary})))
+}
+
+/// Stop the automatic summaries running for a note. Any participant may: the
+/// summary would land in content they can edit anyway.
+pub async fn cancel_link_summaries(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(note_id): Path<String>,
+) -> ApiResult<StatusCode> {
+    super::require_participant(&state, &note_id, &user_id).await?;
+    if state.cancel_link_summaries(&note_id) {
+        state.notify_note(&note_id).await;
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Shared by the explicit endpoint and automatic note summaries. Keeping the

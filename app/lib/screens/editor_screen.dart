@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../widgets/collection_settings.dart';
 import 'package:animations/animations.dart';
 import 'package:flutter/gestures.dart';
@@ -231,7 +233,8 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _closing = false;
   bool _finding = false;
   bool _uploading = false;
-  final Set<String> _summarizingUrls = {};
+  // Page summaries in flight, each with the switch that drops its request.
+  final Map<String, Completer<void>> _summaryAborts = {};
   // Files currently mid-upload, shown as dimmed placeholder tiles right where
   // their real attachment tile will appear once the network call resolves.
   final List<DroppedFile> _pendingUploads = [];
@@ -315,6 +318,10 @@ class _EditorScreenState extends State<EditorScreen> {
     _titleFocus.dispose();
     _contentFocus.dispose();
     _findFocus.dispose();
+    // A summary landing after close is thrown away, so stop paying for it.
+    for (final abort in _summaryAborts.values) {
+      abort.complete();
+    }
     super.dispose();
   }
 
@@ -718,14 +725,22 @@ class _EditorScreenState extends State<EditorScreen> {
       _store.aiIn(note.workspaceId).allows(AiFeature.writing);
 
   Future<void> _summarizeUrl(String url) async {
-    if (!_summarizingUrls.add(url)) return;
-    setState(() {});
+    if (_summaryAborts.containsKey(url)) {
+      return;
+    }
+    final abort = Completer<void>();
+    setState(() => _summaryAborts[url] = abort);
     try {
       final summary = (await _store.api.summarizeUrl(
         url,
         noteId: _noteId!,
         length: _settings.linkSummaryLength,
+        abort: abort.future,
       )).trim();
+      // Stopped while the answer was already on its way.
+      if (abort.isCompleted) {
+        return;
+      }
       if (!mounted || summary.isEmpty) return;
       final current = _contentController.text.trimRight();
       final content = current.isEmpty ? summary : '$current\n\n$summary';
@@ -739,7 +754,7 @@ class _EditorScreenState extends State<EditorScreen> {
       _afterChange(discrete: true);
       showAppSnack('Page summary added', icon: Icons.auto_awesome_outlined);
     } catch (_) {
-      if (mounted) {
+      if (mounted && !abort.isCompleted) {
         showAppSnack(
           "Couldn't summarize page",
           icon: Icons.error_outline,
@@ -747,9 +762,21 @@ class _EditorScreenState extends State<EditorScreen> {
         );
       }
     } finally {
-      _summarizingUrls.remove(url);
+      if (_summaryAborts[url] == abort) {
+        _summaryAborts.remove(url);
+      }
       if (mounted) setState(() {});
     }
+  }
+
+  /// Drops the request and discards whatever it would have added.
+  void _stopSummarizing(String url) {
+    final abort = _summaryAborts.remove(url);
+    if (abort == null) {
+      return;
+    }
+    abort.complete();
+    setState(() {});
   }
 
   void _convertKind(NoteKind target) {
@@ -1270,9 +1297,16 @@ class _EditorScreenState extends State<EditorScreen> {
                                   ),
                                   AnimatedReveal(
                                     child: (note?.summarizingLinks ?? false)
-                                        ? const Padding(
-                                            padding: EdgeInsets.only(top: 12),
-                                            child: LinkSummaryIndicator(),
+                                        ? Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 12,
+                                            ),
+                                            child: LinkSummaryIndicator(
+                                              onCancel: () =>
+                                                  _store.cancelLinkSummaries(
+                                                    note!.id,
+                                                  ),
+                                            ),
                                           )
                                         : null,
                                   ),
@@ -1320,7 +1354,10 @@ class _EditorScreenState extends State<EditorScreen> {
                                                       _aiWritingAvailable(note)
                                                   ? _summarizeUrl
                                                   : null,
-                                              summarizingUrls: _summarizingUrls,
+                                              summarizingUrls: _summaryAborts
+                                                  .keys
+                                                  .toSet(),
+                                              onStopSummarize: _stopSummarizing,
                                             ),
                                           ),
                                   ),

@@ -829,6 +829,84 @@ void main() {
       await flushTimers(tester);
     });
 
+    Widget selectableBoard(Set<String> selected) => MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: store),
+        ChangeNotifierProvider(create: (_) => SettingsStore(api: api)),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => BoardView(
+              selectionMode: selected.isNotEmpty,
+              selectedIds: selected,
+              onSelectionChanged: (id, on) =>
+                  setState(() => on ? selected.add(id) : selected.remove(id)),
+              onToggleColumnSelection: (notes) => setState(() {
+                final ids = {for (final note in notes) note.id};
+                if (ids.every(selected.contains)) {
+                  selected.removeAll(ids);
+                } else {
+                  selected.addAll(ids);
+                }
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('a column menu selects every card in that column', (
+      tester,
+    ) async {
+      await setViewport(tester, const Size(1200, 900));
+      api.notes['a'] = serverNote(
+        'a',
+        title: 'card a',
+      ).copyWith(stageId: 'todo');
+      api.notes['b'] = serverNote(
+        'b',
+        title: 'card b',
+      ).copyWith(stageId: 'todo');
+      api.notes['c'] = serverNote('c', title: 'card c');
+      await store.load();
+      final selected = <String>{};
+      await tester.pumpWidget(selectableBoard(selected));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Todo options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select all cards'));
+      await tester.pumpAndSettle();
+      expect(selected, {'a', 'b'});
+
+      // In selection mode the header toggles the column in place.
+      await tester.tap(find.byTooltip('Select all in Unassigned'));
+      await tester.pumpAndSettle();
+      expect(selected, {'a', 'b', 'c'});
+      await tester.tap(find.byTooltip('Deselect all in Todo'));
+      await tester.pumpAndSettle();
+      expect(selected, {'c'});
+      await flushTimers(tester);
+    });
+
+    testWidgets('a phone column page offers select all while selecting', (
+      tester,
+    ) async {
+      await setViewport(tester, const Size(400, 800));
+      api.notes['a'] = serverNote('a', title: 'card a');
+      api.notes['b'] = serverNote('b', title: 'card b');
+      await store.load();
+      final selected = <String>{'a'};
+      await tester.pumpWidget(selectableBoard(selected));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Select all in Unassigned'));
+      await tester.pumpAndSettle();
+      expect(selected, {'a', 'b'});
+      await flushTimers(tester);
+    });
+
     /// The point of selecting on a board: file them all at once.
     testWidgets('the sheet moves every selected note into one column', (
       tester,

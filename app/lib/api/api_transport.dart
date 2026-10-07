@@ -105,6 +105,24 @@ abstract class _ApiTransport {
     await _client.delete(_uri(path), headers: _headers(), body: _json(body)),
   );
 
+  /// A POST the caller can drop by completing [abort]; it then throws
+  /// [http.RequestAbortedException].
+  Future<dynamic> _postAbortable(
+    String path,
+    Object? body,
+    Future<void>? abort,
+  ) async {
+    final request = http.AbortableRequest(
+      'POST',
+      _uri(path),
+      abortTrigger: abort,
+    )..headers.addAll(_headers());
+    if (_json(body) case final String json) {
+      request.body = json;
+    }
+    return _decode(await http.Response.fromStream(await _client.send(request)));
+  }
+
   static String? _json(Object? body) => body == null ? null : jsonEncode(body);
 
   dynamic _decode(

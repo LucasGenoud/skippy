@@ -21,6 +21,7 @@ class LinkPreviewCard extends StatelessWidget {
   final String url;
   final void Function(String url)? onOpen;
   final Future<void> Function(String url)? onSummarize;
+  final void Function(String url)? onStopSummarize;
   final bool summarizing;
   final BorderRadius borderRadius;
   final bool topDivider;
@@ -31,6 +32,7 @@ class LinkPreviewCard extends StatelessWidget {
     required this.url,
     this.onOpen,
     this.onSummarize,
+    this.onStopSummarize,
     this.summarizing = false,
     this.borderRadius = const BorderRadius.all(kRadiusCorner),
     this.topDivider = false,
@@ -49,6 +51,9 @@ class LinkPreviewCard extends StatelessWidget {
           preview: snapshot.data,
           onTap: open,
           onSummarize: onSummarize == null ? null : () => onSummarize!(url),
+          onStopSummarize: onStopSummarize == null
+              ? null
+              : () => onStopSummarize!(url),
           summarizing: summarizing,
           borderRadius: borderRadius,
           topDivider: topDivider,
@@ -81,6 +86,7 @@ class _Strip extends StatelessWidget {
   final LinkPreview? preview;
   final VoidCallback onTap;
   final Future<void> Function()? onSummarize;
+  final VoidCallback? onStopSummarize;
   final bool summarizing;
   final BorderRadius borderRadius;
   final bool topDivider;
@@ -91,6 +97,7 @@ class _Strip extends StatelessWidget {
     required this.preview,
     required this.onTap,
     required this.onSummarize,
+    required this.onStopSummarize,
     required this.summarizing,
     required this.borderRadius,
     required this.topDivider,
@@ -155,12 +162,22 @@ class _Strip extends StatelessWidget {
           ),
           if (onSummarize != null)
             IconButton(
-              tooltip: 'Summarize page',
-              onPressed: summarizing ? null : onSummarize,
+              tooltip: summarizing ? 'Stop summarizing' : 'Summarize page',
+              onPressed: summarizing ? onStopSummarize : onSummarize,
+              // While it runs, the spinner rings a stop square: the same
+              // button that started the summary is the one that ends it.
               icon: summarizing
                   ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      dimension: 20,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox.expand(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          Icon(Icons.stop_rounded, size: 12),
+                        ],
+                      ),
                     )
                   : const Icon(Icons.auto_awesome_outlined, size: 18),
             )
@@ -309,6 +326,7 @@ class LinkPreviewList extends StatelessWidget {
   final String text;
   final void Function(String url)? onOpen;
   final Future<void> Function(String url)? onSummarize;
+  final void Function(String url)? onStopSummarize;
   final Set<String> summarizingUrls;
 
   const LinkPreviewList({
@@ -316,6 +334,7 @@ class LinkPreviewList extends StatelessWidget {
     required this.text,
     this.onOpen,
     this.onSummarize,
+    this.onStopSummarize,
     this.summarizingUrls = const {},
   });
 
@@ -340,6 +359,7 @@ class LinkPreviewList extends StatelessWidget {
                 url: urls[i],
                 onOpen: onOpen,
                 onSummarize: onSummarize,
+                onStopSummarize: onStopSummarize,
                 summarizing: summarizingUrls.contains(urls[i]),
                 topDivider: i > 0,
                 outlined: false,
