@@ -208,4 +208,170 @@ void main() {
     );
     await flushTimers(tester);
   });
+
+  group('switching collections', () {
+    const ideas = 'ideas';
+
+    /// Cards of uneven height, so a grid that guesses heights before measuring
+    /// visibly puts them somewhere else first.
+    Future<NotesStore> twoCollections() async {
+      final api = FakeApi();
+      for (var i = 0; i < 6; i++) {
+        final body = List.filled(1 + i % 4, 'A line of text.').join('\n');
+        api.notes['g$i'] = serverNote(
+          'g$i',
+          title: 'General $i',
+          content: body,
+          position: i.toDouble(),
+          workspaceId: 'w-default',
+        );
+        api.notes['i$i'] = serverNote(
+          'i$i',
+          title: 'Idea $i',
+          content: body,
+          position: i.toDouble(),
+          workspaceId: 'w-default',
+        ).copyWith(collectionId: ideas);
+      }
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      await store.load();
+      store.saveCollection(
+        const NoteCollection(
+          id: ideas,
+          workspaceId: 'w-default',
+          name: 'Ideas',
+        ),
+      );
+      return store;
+    }
+
+    /// Wide enough for several columns, where the packing depends on every
+    /// card above.
+    void desktopWindow(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    Map<String, Rect> cardRects(WidgetTester tester, String prefix) => {
+      for (var i = 0; i < 6; i++)
+        '$prefix $i': tester.getRect(find.text('$prefix $i')),
+    };
+
+    testWidgets('a collection shown before reopens where its cards settled', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final store = await twoCollections();
+      addTearDown(store.dispose);
+      final general = store.activeCollection!.id;
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      final settled = cardRects(tester, 'General');
+
+      store.selectCollection(ideas);
+      await tester.pumpAndSettle();
+      store.selectCollection(general);
+      await tester.pump();
+
+      expect(cardRects(tester, 'General'), settled);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+
+    testWidgets('a collection shown for the first time does not glide', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final store = await twoCollections();
+      addTearDown(store.dispose);
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      store.selectCollection(ideas);
+      // One frame lays the cards out on estimates; the next has measured
+      // them and must put them straight where they belong.
+      await tester.pump();
+      await tester.pump();
+      final early = cardRects(tester, 'Idea');
+      await tester.pumpAndSettle();
+
+      expect(early, cardRects(tester, 'Idea'));
+      await flushTimers(tester);
+    });
+
+    testWidgets('a new grid mounts one screen of cards on its first frame', (
+      tester,
+    ) async {
+      final api = FakeApi();
+      for (var i = 0; i < 40; i++) {
+        api.notes['i$i'] = serverNote(
+          'i$i',
+          title: 'Idea $i',
+          position: i.toDouble(),
+          workspaceId: 'w-default',
+        ).copyWith(collectionId: ideas);
+      }
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      addTearDown(store.dispose);
+      await store.load();
+      store.saveCollection(
+        const NoteCollection(
+          id: ideas,
+          workspaceId: 'w-default',
+          name: 'Ideas',
+        ),
+      );
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      int mounted() => find.textContaining('Idea ').evaluate().length;
+
+      store.selectCollection(ideas);
+      await tester.pump();
+      // The rest of the margin below the screen can wait a frame.
+      final firstFrame = mounted();
+      final screen =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final tops = [
+        for (final card in find.textContaining('Idea ').evaluate())
+          (card.renderObject! as RenderBox).localToGlobal(Offset.zero).dy,
+      ];
+      // Measured from the grid's own top: before it has a place on screen,
+      // a new grid can only count a screen down from where it starts.
+      final gridTop = tops.reduce((a, b) => a < b ? a : b);
+      expect(tops, everyElement(lessThan(gridTop + screen)));
+      await tester.pumpAndSettle();
+      expect(mounted(), greaterThan(firstFrame));
+      await flushTimers(tester);
+    });
+
+    testWidgets('the outgoing grid fades out while the new one fades in', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final store = await twoCollections();
+      addTearDown(store.dispose);
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      store.selectCollection(ideas);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      double opacityOf(String text) => tester
+          .widgetList<FadeTransition>(
+            find.ancestor(
+              of: find.text(text),
+              matching: find.byType(FadeTransition),
+            ),
+          )
+          .fold(1.0, (value, fade) => value * fade.opacity.value);
+      expect(opacityOf('General 0'), inExclusiveRange(0, 1));
+      expect(opacityOf('Idea 0'), inExclusiveRange(0, 1));
+
+      await tester.pumpAndSettle();
+      expect(find.text('General 0'), findsNothing);
+      expect(opacityOf('Idea 0'), 1);
+      await flushTimers(tester);
+    });
+  });
 }

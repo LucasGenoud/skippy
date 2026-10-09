@@ -372,6 +372,37 @@ void main() {
       store.dispose();
     });
 
+    testWidgets('a workspace opens straight into the view it was left in', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      api.notes['a'] = noteIn('w-default', 'a', title: 'home note');
+      api.notes['b'] = noteIn(work, 'b', title: 'work live');
+      api.notes['c'] = noteIn(
+        work,
+        'c',
+        title: 'work archived',
+      ).copyWith(archived: true);
+      await store.load();
+      store.setActiveWorkspace(work);
+      store.rememberWorkspaceView(ViewSelection.archive);
+      store.setActiveWorkspace('w-default');
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      store.setActiveWorkspace(work);
+      await tester.pump();
+
+      // Not a frame of the grid first: that builds a grid only to drop it.
+      expect(find.text('work archived'), findsOneWidget);
+      expect(find.text('work live'), findsNothing);
+      await tester.pumpAndSettle();
+      store.dispose();
+    });
+
     testWidgets('the tick moves to the new workspace as the menu dismisses', (
       tester,
     ) async {
@@ -948,4 +979,81 @@ void main() {
     expect(second.lastWorkspaceView(work), ViewSelection.board);
     second.dispose();
   });
+
+  test(
+    'switching workspace or collection leaves the note snapshot alone',
+    () async {
+      api.workspaces[work] = api.workspaces[work]!.copyWith(
+        collections: [
+          ...api.workspaces[work]!.collections,
+          const NoteCollection(
+            id: 'w-work-ideas',
+            workspaceId: work,
+            name: 'Ideas',
+          ),
+        ],
+      );
+      final cache = _KeyLoggingCache();
+      final first = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await first.load();
+      // Past the store's one-second write throttle, so a switch that still
+      // rewrote the snapshot would show up below.
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      cache.written.clear();
+
+      first.setActiveWorkspace(work);
+      first.selectCollection('w-work-ideas');
+      first.rememberWorkspaceView(ViewSelection.board);
+      await settle();
+
+      expect(cache.written, isNot(contains('u-me')));
+      first.dispose();
+
+      api.failWith = Exception('offline');
+      final second = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+      await second.load();
+      expect(second.activeWorkspaceId, work);
+      expect(second.activeCollection?.id, 'w-work-ideas');
+      expect(second.lastWorkspaceView(work), ViewSelection.board);
+      second.dispose();
+    },
+  );
+
+  test('navigation saved inside an older snapshot still restores', () async {
+    final cache = MemoryLocalCache();
+    final seeded = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+    await seeded.load();
+    await settle();
+    seeded.dispose();
+    final doc = (await cache.read('u-me'))!;
+    await cache.clear(navigationCacheKey('u-me'));
+    await cache.write('u-me', {
+      ...doc,
+      'active_workspace': work,
+      'collection_choices': {work: 'w-work-general'},
+      'workspace_views': {
+        work: {'view': 'board'},
+      },
+    });
+
+    api.failWith = Exception('offline');
+    final restored = NotesStore(api: api, cache: cache, currentUserId: 'u-me');
+    await restored.load();
+    expect(restored.activeWorkspaceId, work);
+    expect(restored.activeCollection?.id, 'w-work-general');
+    expect(restored.lastWorkspaceView(work), ViewSelection.board);
+    restored.dispose();
+  });
+}
+
+/// Records which cache keys were written, to tell a small navigation write
+/// from a rewrite of the whole note snapshot.
+class _KeyLoggingCache extends MemoryLocalCache {
+  final List<String> written = [];
+
+  @override
+  Future<void> write(String key, Map<String, dynamic> doc) {
+    written.add(key);
+    return super.write(key, doc);
+  }
 }

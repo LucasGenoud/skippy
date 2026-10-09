@@ -1009,17 +1009,20 @@ class _PinButton extends StatelessWidget {
         curve: Motion.standard,
         child: IgnorePointer(
           ignoring: !show,
-          child: IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(
-              width: _size,
-              height: _size,
+          child: _BuiltOnceShown(
+            shown: show,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(
+                width: _size,
+                height: _size,
+              ),
+              iconSize: 18,
+              icon: PinIcon(pinned: note.pinned, size: 18),
+              color: scheme.onSurfaceVariant,
+              tooltip: note.pinned ? 'Unpin note' : 'Pin note',
+              onPressed: () => context.read<NotesStore>().togglePin(note.id),
             ),
-            iconSize: 18,
-            icon: PinIcon(pinned: note.pinned, size: 18),
-            color: scheme.onSurfaceVariant,
-            tooltip: note.pinned ? 'Unpin note' : 'Pin note',
-            onPressed: () => context.read<NotesStore>().togglePin(note.id),
           ),
         ),
       ),
@@ -1068,35 +1071,38 @@ class _SelectionButton extends StatelessWidget {
         opacity: visible ? 1 : 0,
         child: IgnorePointer(
           ignoring: !visible,
-          child: Tooltip(
-            message: selected ? 'Deselect note' : 'Select note',
-            child: Material(
-              // Opaque: the badge overlaps the canvas as well as the card, so
-              // it has to read as one solid dot over both.
-              color: selected ? scheme.primary : scheme.surface,
-              shape: CircleBorder(
-                side: BorderSide(
-                  color: scheme.primary,
-                  width: selected ? 1.5 : 1,
+          child: _BuiltOnceShown(
+            shown: visible,
+            child: Tooltip(
+              message: selected ? 'Deselect note' : 'Select note',
+              child: Material(
+                // Opaque: the badge overlaps the canvas as well as the card, so
+                // it has to read as one solid dot over both.
+                color: selected ? scheme.primary : scheme.surface,
+                shape: CircleBorder(
+                  side: BorderSide(
+                    color: scheme.primary,
+                    width: selected ? 1.5 : 1,
+                  ),
                 ),
-              ),
-              elevation: 1,
-              animationDuration: Motion.fast,
-              child: InkWell(
-                onTap: onPressed,
-                customBorder: const CircleBorder(),
-                child: AnimatedSwitcher(
-                  duration: Motion.fast,
-                  switchInCurve: Curves.easeOutBack,
-                  switchOutCurve: Curves.easeIn,
-                  child: selected
-                      ? Icon(
-                          Icons.check,
-                          key: const ValueKey('selected'),
-                          color: scheme.onPrimary,
-                          size: 13,
-                        )
-                      : const SizedBox(key: ValueKey('unselected')),
+                elevation: 1,
+                animationDuration: Motion.fast,
+                child: InkWell(
+                  onTap: onPressed,
+                  customBorder: const CircleBorder(),
+                  child: AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Curves.easeOutBack,
+                    switchOutCurve: Curves.easeIn,
+                    child: selected
+                        ? Icon(
+                            Icons.check,
+                            key: const ValueKey('selected'),
+                            color: scheme.onPrimary,
+                            size: 13,
+                          )
+                        : const SizedBox(key: ValueKey('unselected')),
+                  ),
                 ),
               ),
             ),
@@ -1104,6 +1110,33 @@ class _SelectionButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Builds [child] the first time it is [shown], and keeps it from then on so
+/// it can fade out again.
+///
+/// For the controls a card only shows under the pointer. A grid mounts dozens
+/// of cards at once and most are never hovered, while each of these is a
+/// whole button (tooltip, ink, material) that cost about as much to build as
+/// the card's own content.
+class _BuiltOnceShown extends StatefulWidget {
+  final bool shown;
+  final Widget child;
+
+  const _BuiltOnceShown({required this.shown, required this.child});
+
+  @override
+  State<_BuiltOnceShown> createState() => _BuiltOnceShownState();
+}
+
+class _BuiltOnceShownState extends State<_BuiltOnceShown> {
+  bool _built = false;
+
+  @override
+  Widget build(BuildContext context) {
+    _built |= widget.shown;
+    return _built ? widget.child : const SizedBox.expand();
   }
 }
 

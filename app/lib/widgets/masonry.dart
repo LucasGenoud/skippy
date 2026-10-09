@@ -35,6 +35,27 @@ class MasonryReorder {
   }) : orderedIds = List<String>.unmodifiable(orderedIds);
 }
 
+/// Card heights measured by earlier grids, shared by the grids one screen
+/// builds over time.
+///
+/// A grid starts by guessing every card's height and moves the cards once
+/// they are measured. A grid built again for notes already measured (another
+/// collection and back, another view) reads them here instead, so it lays
+/// out right on its first frame. A height recorded at another width, or for
+/// a note that has changed since, is only a better guess: the card is
+/// measured anyway and corrects it.
+class MasonryHeights {
+  final Map<String, ({double width, double height})> _byId = {};
+
+  double? _heightOf(String id, double width) {
+    final known = _byId[id];
+    return known != null && known.width == width ? known.height : null;
+  }
+
+  void _record(String id, Size size) =>
+      _byId[id] = (width: size.width, height: size.height);
+}
+
 /// What the masonry should do with its temporary order after the callback.
 enum MasonryReorderDecision { keep, restore }
 
@@ -124,6 +145,9 @@ class AnimatedMasonry extends StatefulWidget {
   /// tile is already in [notes] and reflows on its own.
   final int? incomingIndex;
 
+  /// Heights to start from and to record into; see [MasonryHeights].
+  final MasonryHeights? heights;
+
   const AnimatedMasonry({
     super.key,
     required this.notes,
@@ -139,6 +163,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.onStationaryLongPress,
     this.scrollController,
     this.incomingIndex,
+    this.heights,
   });
 
   @override
@@ -185,6 +210,16 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   static const double _incomingSlotHeight = 72;
 
   final Map<String, double> _heights = {};
+
+  /// Cards placed by a height from [AnimatedMasonry.heights] that they have
+  /// not yet confirmed by measuring themselves here.
+  final Set<String> _seeded = {};
+
+  /// Until the cards this grid opened with have measured themselves. Their
+  /// first frame stood on guesses nobody watched settle, so correcting those
+  /// is not a move; a card joining a grid already shown is, and its
+  /// neighbours glide out of its way.
+  bool _opening = true;
   List<String> _orderIds = [];
   int _unscrolledCount = 0;
   bool _batchScheduled = false;
@@ -261,6 +296,12 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     super.initState();
     _orderIds = [for (final n in widget.notes) n.id];
     _unscrolledCount = math.min(_buildBatchSize, _orderIds.length);
+    // The first frame lays the cards out on guesses and they measure
+    // themselves after it; the frame after that places them. Registered
+    // from the first post-frame pass, so it runs after that second frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _opening = false);
+    });
     widget.scrollController?.addListener(_onScroll);
     _autoScrollTicker = createTicker(_onAutoScrollTick);
   }
@@ -302,6 +343,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       ids.length,
     );
     _heights.removeWhere((id, _) => !live.contains(id));
+    _seeded.removeWhere((id) => !live.contains(id));
     // The usual way a raised tile ends is the note leaving the view, which is
     // exactly what it was swiped off the grid for.
     if (_raisedId != null && !ids.contains(_raisedId)) {
@@ -344,7 +386,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       return _orderIds.take(_unscrolledCount).toSet();
     }
     final viewport = _viewportBounds;
-    if (viewport == null) return _orderIds.take(_buildBatchSize).toSet();
+    if (viewport == null) return _firstScreen(layout);
     final margin = viewport.height / 2;
     final top = viewport.top - margin;
     final bottom = viewport.bottom + margin;
@@ -354,6 +396,26 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
           if (slot.y <= bottom &&
               slot.y + (_heights[id] ?? _estimatedHeight) >= top)
             id,
+    };
+  }
+
+  /// Before the grid has a place on screen: the first cards, but none that
+  /// starts more than a screen below the grid's top. The margin around the
+  /// viewport follows a frame later, which keeps a new grid's first frame,
+  /// the one a switch waits on, as short as what it has to show.
+  Set<String> _firstScreen(_Layout layout) {
+    final first = _orderIds.take(_buildBatchSize);
+    final controller = widget.scrollController!;
+    if (!controller.hasClients || !controller.position.hasViewportDimension) {
+      return first.toSet();
+    }
+
+    final position = controller.position;
+    final bottom = position.pixels + position.viewportDimension;
+    return {
+      for (final id in first)
+        if (layout.slots[id] case final _Slot slot)
+          if (slot.y < bottom) id,
     };
   }
 
@@ -424,6 +486,12 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       }
       final width = columnWidth * span + spacing * (span - 1);
       slots[id] = _Slot(col * (columnWidth + spacing), y, width);
+      if (!_heights.containsKey(id)) {
+        if (widget.heights?._heightOf(id, width) case final double known) {
+          _heights[id] = known;
+          _seeded.add(id);
+        }
+      }
       final bottom = y + (_heights[id] ?? _estimatedHeight) + spacing;
       for (var c = col; c < col + span; c++) {
         columnHeights[c] = bottom;
@@ -503,21 +571,32 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     setState(() {
       _departing.remove(id);
       _heights.remove(id);
+      _seeded.remove(id);
       _tiles.remove(id);
       _tileNotes.remove(id);
       _tileKeys.remove(id);
     });
   }
 
-  void _onHeightMeasured(String id, double height) {
+  void _onHeightMeasured(String id, Size size) {
     if (!mounted) return;
     if (_departing.containsKey(id)) {
       return;
     }
+    widget.heights?._record(id, size);
+    final height = size.height;
+    // A first measurement corrects a guess rather than moving a card, so the
+    // card goes straight to its place instead of gliding there from a slot
+    // it never really had. A drag keeps its glides.
+    final guessed = !_heights.containsKey(id) | _seeded.remove(id);
     if ((_heights[id] ?? -1) == height) return;
+    final snap = guessed && _opening && _draggingId == null;
     setState(() {
       _heights[id] = height;
       _invalidateLayout();
+      if (snap) {
+        _snapFrame = true;
+      }
     });
   }
 
@@ -791,7 +870,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
       presence: presence,
       onDeparted: () => _onDeparted(note.id),
       child: MeasureSize(
-        onChange: (size) => _onHeightMeasured(note.id, size.height),
+        onChange: (size) => _onHeightMeasured(note.id, size),
         child: RepaintBoundary(child: _buildTile(note, layout)),
       ),
     ),

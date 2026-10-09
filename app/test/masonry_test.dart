@@ -158,6 +158,65 @@ void main() {
       expect(opacityOf(tester, 'New'), 1);
     });
 
+    testWidgets('cards below a new one glide all the way to make room', (
+      tester,
+    ) async {
+      notes = [serverNote('n0', title: 'Old')];
+      await tester.pumpWidget(grid());
+      await tester.pumpAndSettle();
+      final start = tester.getTopLeft(find.text('Old')).dy;
+
+      notes = [serverNote('n1', title: 'New'), ...notes];
+      await tester.pumpWidget(grid());
+      // The new card is placed on a guess, then measured. Correcting that
+      // guess must not cut the neighbour's glide short.
+      await tester.pump();
+      await tester.pump(Motion.base ~/ 3);
+      final midway = tester.getTopLeft(find.text('Old')).dy;
+      await tester.pumpAndSettle();
+      final end = tester.getTopLeft(find.text('Old')).dy;
+
+      expect(end, greaterThan(start));
+      expect(midway, greaterThan(start));
+      expect(midway, lessThan(end));
+    });
+
+    testWidgets(
+      'a grid reopened from known heights still glides to make room',
+      (tester) async {
+        final heights = MasonryHeights();
+        Widget reopened(String key) => MaterialApp(
+          home: Scaffold(
+            body: AnimatedMasonry(
+              key: ValueKey(key),
+              notes: notes,
+              columns: 1,
+              heights: heights,
+              itemBuilder: (_, note) =>
+                  SizedBox(height: 40, child: Text(note.title)),
+            ),
+          ),
+        );
+        notes = [serverNote('n0', title: 'Old')];
+        await tester.pumpWidget(reopened('first'));
+        await tester.pumpAndSettle();
+        // Every height is known, so this grid never corrects a guess.
+        await tester.pumpWidget(reopened('second'));
+        await tester.pumpAndSettle();
+        final start = tester.getTopLeft(find.text('Old')).dy;
+
+        notes = [serverNote('n1', title: 'New'), ...notes];
+        await tester.pumpWidget(reopened('second'));
+        await tester.pump();
+        await tester.pump(Motion.base ~/ 3);
+        final midway = tester.getTopLeft(find.text('Old')).dy;
+        await tester.pumpAndSettle();
+
+        expect(midway, greaterThan(start));
+        expect(midway, lessThan(tester.getTopLeft(find.text('Old')).dy));
+      },
+    );
+
     testWidgets('a card returning mid-exit comes back instead of leaving', (
       tester,
     ) async {

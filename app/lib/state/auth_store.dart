@@ -321,7 +321,9 @@ class AuthStore extends ChangeNotifier {
     // queued persistence microtask cannot recreate deleted local data.
     await Future<void>.delayed(Duration.zero);
     try {
-      await PrefsLocalCache().clear(cacheKey);
+      final cache = PrefsLocalCache();
+      await cache.clear(cacheKey);
+      await cache.clear(navigationCacheKey(cacheKey));
     } catch (_) {
       // The server deletion already succeeded. A best-effort local cleanup
       // failure must not leave the UI pretending the account still exists.

@@ -13,9 +13,6 @@ class NotesCacheDoc {
     this.labels = const [],
     this.stages = const [],
     this.workspaces = const [],
-    this.activeWorkspaceId,
-    this.collectionChoices = const {},
-    this.workspaceViews = const {},
     this.checklistHistory = const {},
     this.queue = const [],
     this.syncIssues = const [],
@@ -26,16 +23,6 @@ class NotesCacheDoc {
   final List<Label> labels;
   final List<Stage> stages;
   final List<Workspace> workspaces;
-
-  /// Which workspace to reopen in. Local rather than a synced setting: it is
-  /// where this device was, not a preference.
-  final String? activeWorkspaceId;
-
-  /// Workspace id to the collection last open in it.
-  final Map<String, String> collectionChoices;
-
-  /// Workspace id to the drawer destination last used in it.
-  final Map<String, ViewSelection> workspaceViews;
   final Map<String, List<String>> checklistHistory;
   final List<PendingOp> queue;
   final List<SyncIssue> syncIssues;
@@ -48,14 +35,6 @@ class NotesCacheDoc {
     labels: _list(doc['labels'], Label.fromJson),
     stages: _list(doc['stages'], Stage.fromJson),
     workspaces: _list(doc['workspaces'], Workspace.fromJson),
-    activeWorkspaceId: doc['active_workspace'] as String?,
-    collectionChoices: (doc['collection_choices'] as Map? ?? const {})
-        .cast<String, String>(),
-    workspaceViews: {
-      for (final entry in (doc['workspace_views'] as Map? ?? const {}).entries)
-        if (entry.key is String)
-          entry.key as String: ?_viewFromJson(entry.value),
-    },
     checklistHistory: {
       for (final e in (doc['history'] as Map? ?? const {}).entries)
         e.key as String: (e.value as List).cast<String>(),
@@ -74,15 +53,6 @@ class NotesCacheDoc {
     'labels': [for (final l in labels) l.toJson()],
     'stages': [for (final s in stages) s.toJson()],
     'workspaces': [for (final w in workspaces) w.toJson()],
-    'active_workspace': activeWorkspaceId,
-    'collection_choices': collectionChoices,
-    'workspace_views': {
-      for (final entry in workspaceViews.entries)
-        entry.key: {
-          'view': entry.value.view.name,
-          if (entry.value.labelId != null) 'label_id': entry.value.labelId,
-        },
-    },
     'history': checklistHistory,
     'queue': [for (final op in queue) op.toJson()],
     'sync_issues': [for (final issue in syncIssues) issue.toJson()],
@@ -96,6 +66,55 @@ class NotesCacheDoc {
     for (final j in (json as List? ?? const []))
       fromJson((j as Map).cast<String, dynamic>()),
   ];
+}
+
+/// Where this device was: the open workspace, and the collection and view
+/// last used in each. Kept apart from [NotesCacheDoc] because it changes on
+/// every switch, and writing it must not re-encode every note.
+///
+/// Its keys match those older snapshots carried inline, so such a snapshot
+/// reads as one of these.
+class NavigationCacheDoc {
+  const NavigationCacheDoc({
+    this.activeWorkspaceId,
+    this.collectionChoices = const {},
+    this.workspaceViews = const {},
+  });
+
+  /// Which workspace to reopen in. Local rather than a synced setting: it is
+  /// where this device was, not a preference.
+  final String? activeWorkspaceId;
+
+  /// Workspace id to the collection last open in it.
+  final Map<String, String> collectionChoices;
+
+  /// Workspace id to the drawer destination last used in it.
+  final Map<String, ViewSelection> workspaceViews;
+
+  factory NavigationCacheDoc.fromJson(Map<String, dynamic> doc) =>
+      NavigationCacheDoc(
+        activeWorkspaceId: doc['active_workspace'] as String?,
+        collectionChoices: (doc['collection_choices'] as Map? ?? const {})
+            .cast<String, String>(),
+        workspaceViews: {
+          for (final entry
+              in (doc['workspace_views'] as Map? ?? const {}).entries)
+            if (entry.key is String)
+              entry.key as String: ?_viewFromJson(entry.value),
+        },
+      );
+
+  Map<String, dynamic> toJson() => {
+    'active_workspace': activeWorkspaceId,
+    'collection_choices': collectionChoices,
+    'workspace_views': {
+      for (final entry in workspaceViews.entries)
+        entry.key: {
+          'view': entry.value.view.name,
+          if (entry.value.labelId != null) 'label_id': entry.value.labelId,
+        },
+    },
+  };
 
   static ViewSelection? _viewFromJson(Object? value) {
     if (value is! Map) {

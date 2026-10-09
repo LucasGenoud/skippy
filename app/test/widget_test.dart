@@ -613,6 +613,49 @@ void main() {
     );
 
     testWidgets(
+      'a card at rest builds no hover controls until first hovered',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.notes['n1'] = serverNote('n1', title: 'Resting', content: 'Body');
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
+          ),
+        );
+
+        // A grid mounts dozens of cards at once, and most are never hovered.
+        expect(find.byTooltip('Pin note'), findsNothing);
+        expect(find.byTooltip('Select note'), findsNothing);
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(() => mouse.removePointer());
+        await mouse.addPointer(
+          location: tester.getCenter(find.byType(NoteTile)),
+        );
+        await tester.pump();
+        expect(find.byTooltip('Pin note'), findsOneWidget);
+        expect(find.byTooltip('Select note'), findsOneWidget);
+
+        // Leaving fades them out rather than cutting them.
+        await mouse.moveTo(const Offset(-100, -100));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        final fading = tester
+            .widgetList<AnimatedOpacity>(
+              find.ancestor(
+                of: find.byTooltip('Pin note'),
+                matching: find.byType(AnimatedOpacity),
+              ),
+            )
+            .first;
+        expect(fading.opacity, 0);
+        expect(find.byTooltip('Pin note'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'the pin sits in the card top-right corner',
       variant: TargetPlatformVariant.only(TargetPlatform.macOS),
       (tester) async {

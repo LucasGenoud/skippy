@@ -14,9 +14,6 @@ void main() {
       notes: [Note(id: 'n', title: 'Hello', createdAt: now, updatedAt: now)],
       labels: const [Label(id: 'l', name: 'Work')],
       stages: const [Stage(id: 's', name: 'Todo', collectionId: 'c')],
-      activeWorkspaceId: 'w',
-      collectionChoices: const {'w': 'c'},
-      workspaceViews: const {'w': ViewSelection(NoteView.label, 'l')},
       checklistHistory: const {
         'n': ['milk'],
       },
@@ -35,26 +32,43 @@ void main() {
     expect(read.notes.single.title, 'Hello');
     expect(read.labels.single.name, 'Work');
     expect(read.stages.single.collectionId, 'c');
-    expect(read.activeWorkspaceId, 'w');
-    expect(read.collectionChoices, {'w': 'c'});
-    expect(read.workspaceViews['w']!.view, NoteView.label);
-    expect(read.workspaceViews['w']!.labelId, 'l');
     expect(read.checklistHistory['n'], ['milk']);
     expect(read.queue.single.data, {'title': 'Hello'});
     expect(read.syncIssues.single.statusCode, 404);
     expect(read.serverUpdatedAt, {'n': '2026-10-02T00:00:00.000Z'});
   });
 
-  test('an empty or partial document reads as empty', () {
-    final read = NotesCacheDoc.fromJson({
+  test('an empty document reads as empty', () {
+    final read = NotesCacheDoc.fromJson(const {});
+
+    expect(read.notes, isEmpty);
+    expect(read.queue, isEmpty);
+  });
+
+  test('navigation survives a JSON round trip', () {
+    const doc = NavigationCacheDoc(
+      activeWorkspaceId: 'w',
+      collectionChoices: {'w': 'c'},
+      workspaceViews: {'w': ViewSelection(NoteView.label, 'l')},
+    );
+
+    final json = jsonDecode(jsonEncode(doc.toJson())) as Map<String, dynamic>;
+    final read = NavigationCacheDoc.fromJson(json);
+
+    expect(read.activeWorkspaceId, 'w');
+    expect(read.collectionChoices, {'w': 'c'});
+    expect(read.workspaceViews['w']!.view, NoteView.label);
+    expect(read.workspaceViews['w']!.labelId, 'l');
+  });
+
+  test('an unusable remembered view is dropped', () {
+    final read = NavigationCacheDoc.fromJson({
       'workspace_views': {
         'w': {'view': 'label'},
         'v': {'view': 'no-such-view'},
       },
     });
 
-    expect(read.notes, isEmpty);
-    expect(read.queue, isEmpty);
     // A label view without a label, or an unknown view, is dropped.
     expect(read.workspaceViews, isEmpty);
   });

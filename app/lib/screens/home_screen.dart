@@ -96,6 +96,10 @@ class _HomeScreenState extends State<HomeScreen> {
   /// can't reach it, open the drawer through a key instead.
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// Card heights every grid this screen builds starts from, so going back
+  /// to a collection or view lays its cards out where they settled before.
+  final _cardHeights = MasonryHeights();
+
   void _toggleSidebar() {
     if (!ScreenWidth.isAtLeast(context, 600)) {
       _scaffoldKey.currentState?.openDrawer();
@@ -629,17 +633,20 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       return;
     }
-    // Called from build; defer so the reset lands in its own frame.
+    // Runs before build reads the selection, so the first frame already
+    // shows the workspace's own view rather than building a grid to drop.
+    _selection = target;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || store.activeWorkspaceId != workspace.id) return;
-      store.rememberWorkspaceView(target);
-      setState(() => _selection = target);
+      if (mounted && store.activeWorkspaceId == workspace.id) {
+        store.rememberWorkspaceView(target);
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final store = context.read<NotesStore>();
+    _reconcileWorkspaceView(store);
     final viewState = context.select(
       (NotesStore s) => (
         sections: s.notesFor(_selection, _queryFor(s), display: true),
@@ -655,7 +662,6 @@ class _HomeScreenState extends State<HomeScreen> {
         gridWidth: s.gridWidth,
       ),
     );
-    _reconcileWorkspaceView(store);
     _listMode = store.activeCollection?.layout == 'list';
     final collectionView = ![
       NoteView.archive,
@@ -1349,6 +1355,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _selection.view == NoteView.archive);
     if (_listMode && !customOrder) {
       return SliverPadding(
+        key: ValueKey('grid-$section'),
         padding: EdgeInsets.symmetric(horizontal: pad),
         sliver: SliverList.builder(
           key: ValueKey((section, _selection)),
@@ -1373,47 +1380,67 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
+    final reduced = Motion.reduced(context);
     return SliverPadding(
+      // Keyed so the grid keeps its place, and its cross-fade, when the
+      // pinned section above it comes or goes.
+      key: ValueKey('grid-$section'),
       padding: EdgeInsets.symmetric(horizontal: pad),
       sliver: SliverToBoxAdapter(
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxWidth),
-            child: AnimatedMasonry(
-              // Reset layout when switching views so unrelated cards do not
-              // glide from the previous view's positions.
-              key: ValueKey(
-                '$section-${_selection.view}-${_selection.labelId}',
+            // Another view, collection or workspace is another grid. The old
+            // one is already laid out, so fading it out as one layer costs a
+            // repaint; retiring its cards one by one inside the new grid
+            // relaid out both on every frame of the switch.
+            child: AnimatedSwitcher(
+              duration: reduced ? Duration.zero : Motion.base,
+              reverseDuration: reduced ? Duration.zero : Motion.fast,
+              switchInCurve: Motion.standard,
+              switchOutCurve: Motion.standard,
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.topCenter,
+                children: [...previous, ?current],
               ),
-              notes: notes,
-              columns: columns,
-              spacing: 8,
-              dragEnabled: dragEnabled,
-              draggableIds: _selectionMode ? _selectedNoteIds : null,
-              reorderGroupIds: customOrder ? _selectedNoteIds : const {},
-              dragFeedbackLabel: _selectionMode && _selectedNoteIds.length > 1
-                  ? 'Move ${_selectedNoteIds.length} cards'
-                  : null,
-              scrollController: _scrollController,
-              // A sidebar drop owns the gesture; crossing grid tiles on the
-              // way there must not also persist an incidental reorder.
-              onReorder: (reorder) {
-                if (reorder.acceptedByTarget || !customOrder) {
-                  return MasonryReorderDecision.restore;
-                }
-                store.reorder(reorder.orderedIds);
-                return MasonryReorderDecision.keep;
-              },
-              onStationaryLongPress: (id) =>
-                  _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
-              // Desktop card chrome observes the mode; its body only changes
-              // when that card's own selection changes.
-              itemBuildKey: (note) => Object.hash(
-                query,
-                isTouchPrimaryPlatform ? _selectionMode : null,
-                _selectedNoteIds.contains(note.id),
+              child: AnimatedMasonry(
+                // Reset layout when switching views so unrelated cards do not
+                // glide from the previous view's positions.
+                key: ValueKey(
+                  '$section-${_selection.view}-${_selection.labelId}-'
+                  '${store.activeWorkspaceId}-${store.activeCollection?.id}',
+                ),
+                heights: _cardHeights,
+                notes: notes,
+                columns: columns,
+                spacing: 8,
+                dragEnabled: dragEnabled,
+                draggableIds: _selectionMode ? _selectedNoteIds : null,
+                reorderGroupIds: customOrder ? _selectedNoteIds : const {},
+                dragFeedbackLabel: _selectionMode && _selectedNoteIds.length > 1
+                    ? 'Move ${_selectedNoteIds.length} cards'
+                    : null,
+                scrollController: _scrollController,
+                // A sidebar drop owns the gesture; crossing grid tiles on the
+                // way there must not also persist an incidental reorder.
+                onReorder: (reorder) {
+                  if (reorder.acceptedByTarget || !customOrder) {
+                    return MasonryReorderDecision.restore;
+                  }
+                  store.reorder(reorder.orderedIds);
+                  return MasonryReorderDecision.keep;
+                },
+                onStationaryLongPress: (id) =>
+                    _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
+                // Desktop card chrome observes the mode; its body only changes
+                // when that card's own selection changes.
+                itemBuildKey: (note) => Object.hash(
+                  query,
+                  isTouchPrimaryPlatform ? _selectionMode : null,
+                  _selectedNoteIds.contains(note.id),
+                ),
+                itemBuilder: (context, note) => tile(note),
               ),
-              itemBuilder: (context, note) => tile(note),
             ),
           ),
         ),

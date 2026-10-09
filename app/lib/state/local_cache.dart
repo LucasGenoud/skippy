@@ -10,6 +10,10 @@ String notesCacheKey(String namespace, String? userId) {
   return '${Uri.encodeComponent(trimmed)}::$account';
 }
 
+/// Where the open workspace, collection and view live, beside the notes
+/// cache at [notesKey]. Separate so switching never rewrites every note.
+String navigationCacheKey(String notesKey) => '$notesKey::navigation';
+
 /// A tiny persistence seam for the offline notes cache. Swappable, the app
 /// uses [PrefsLocalCache] (shared_preferences, which is localStorage on web),
 /// tests inject an in-memory fake, mirroring how the store abstracts [Api].
@@ -29,9 +33,9 @@ abstract class LocalCache {
 class PrefsLocalCache implements LocalCache {
   String _storageKey(String key) => 'notes_cache_$key';
 
-  // Keep only the last successful write. Sync-status notifications can
+  // The last successful write per key. Sync-status notifications can
   // otherwise write the same full document to browser localStorage again.
-  ({String key, String json})? _lastWrite;
+  final Map<String, String> _lastWrites = {};
 
   @override
   Future<Map<String, dynamic>?> read(String key) async {
@@ -48,23 +52,21 @@ class PrefsLocalCache implements LocalCache {
 
   @override
   Future<void> write(String key, Map<String, dynamic> doc) async {
-    final next = (key: key, json: jsonEncode(doc));
-    if (next == _lastWrite) {
+    final json = jsonEncode(doc);
+    if (_lastWrites[key] == json) {
       return;
     }
-    _lastWrite = null;
+    _lastWrites.remove(key);
     final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.setString(_storageKey(key), next.json)) {
+    if (!await prefs.setString(_storageKey(key), json)) {
       throw StateError('offline storage could not save changes');
     }
-    _lastWrite = next;
+    _lastWrites[key] = json;
   }
 
   @override
   Future<void> clear(String key) async {
-    if (_lastWrite?.key == key) {
-      _lastWrite = null;
-    }
+    _lastWrites.remove(key);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey(key));
   }

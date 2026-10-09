@@ -107,8 +107,7 @@ class NotesStore extends ChangeNotifier {
       return;
     }
     _collectionChoices[_activeWorkspaceId!] = id;
-    notifyListeners();
-    _persistSoon();
+    _navigationChanged();
   }
 
   WorkspaceScope get collectionScope => WorkspaceScope(
@@ -508,8 +507,7 @@ class NotesStore extends ChangeNotifier {
   void setActiveWorkspace(String id) {
     if (_activeWorkspaceId == id || workspaceById(id) == null) return;
     _activeWorkspaceId = id;
-    notifyListeners();
-    _persistNow();
+    _navigationChanged();
   }
 
   ViewSelection? lastWorkspaceView(String? workspaceId) =>
@@ -521,7 +519,7 @@ class NotesStore extends ChangeNotifier {
       return;
     }
     _lastWorkspaceViews[workspaceId] = selection;
-    _persistNow();
+    _persistNavigation();
   }
 
   /// Point at a workspace that still exists: the cached choice when it is
@@ -918,6 +916,8 @@ class NotesStore extends ChangeNotifier {
 
   String get _cacheKey => notesCacheKey(cacheNamespace, currentUserId);
 
+  String get _navigationKey => navigationCacheKey(_cacheKey);
+
   /// Load the on-disk snapshot so notes render instantly, before, and even
   /// without, a network round-trip. Runs once; the network fetch in [load]
   /// then reconciles (local unsynced edits win). Persisted pending writes are
@@ -943,18 +943,23 @@ class NotesStore extends ChangeNotifier {
       }
       if (doc != null) {
         final cached = NotesCacheDoc.fromJson(doc);
+        // A snapshot from before navigation had its own record carries it
+        // inline, under the same keys.
+        final navigation = NavigationCacheDoc.fromJson(
+          await cache.read(_navigationKey) ?? doc,
+        );
         _notes = [...cached.notes]
           ..sort((a, b) => a.position.compareTo(b.position));
         _labels = [...cached.labels]..sort(_byLabelPosition);
         _stages = [...cached.stages]
           ..sort((a, b) => a.position.compareTo(b.position));
         _workspaces = [...cached.workspaces];
-        _activeWorkspaceId = cached.activeWorkspaceId;
-        _collectionChoices.addAll(cached.collectionChoices);
+        _activeWorkspaceId = navigation.activeWorkspaceId;
+        _collectionChoices.addAll(navigation.collectionChoices);
         _reconcileActiveWorkspace();
         _lastWorkspaceViews
           ..clear()
-          ..addAll(cached.workspaceViews);
+          ..addAll(navigation.workspaceViews);
         _checklistHistory = {...cached.checklistHistory};
         _queue
           ..clear()
@@ -988,9 +993,6 @@ class NotesStore extends ChangeNotifier {
     labels: _labels,
     stages: _stages,
     workspaces: _workspaces,
-    activeWorkspaceId: _activeWorkspaceId,
-    collectionChoices: _collectionChoices,
-    workspaceViews: _lastWorkspaceViews,
     checklistHistory: _checklistHistory,
     queue: [
       ..._queue,
@@ -1027,6 +1029,8 @@ class NotesStore extends ChangeNotifier {
   void _persistNow() {
     if (_disposed || !_hydrated) return;
     _lastPersist = DateTime.now();
+    // Creating, deleting or leaving a workspace moves the open one too.
+    _persistNavigation();
     _persistDirty = true;
     if (_persisting) return;
     _persisting = true;
@@ -1051,6 +1055,45 @@ class NotesStore extends ChangeNotifier {
   }
 
   void retryCacheWrite() => _persistNow();
+
+  bool _navigationDirty = false;
+  bool _persistingNavigation = false;
+
+  /// Switching shows other notes but changes none, so it tells listeners and
+  /// saves where this device is without re-encoding the note snapshot.
+  void _navigationChanged() {
+    if (_disposed) return;
+    super.notifyListeners();
+    _persistNavigation();
+  }
+
+  /// Coalesced like [_persistNow], for the small navigation record.
+  void _persistNavigation() {
+    if (_disposed || !_hydrated) return;
+    _navigationDirty = true;
+    if (_persistingNavigation) return;
+    _persistingNavigation = true;
+    scheduleMicrotask(_persistNavigationLoop);
+  }
+
+  Future<void> _persistNavigationLoop() async {
+    while (_navigationDirty) {
+      _navigationDirty = false;
+      final doc = NavigationCacheDoc(
+        activeWorkspaceId: _activeWorkspaceId,
+        collectionChoices: _collectionChoices,
+        workspaceViews: _lastWorkspaceViews,
+      );
+      try {
+        await cache.write(_navigationKey, doc.toJson());
+      } catch (_) {
+        // Losing it reopens the default workspace, nothing worse. Storage
+        // that cannot take a few bytes fails the snapshot too, and that
+        // write is the one that reports it.
+      }
+    }
+    _persistingNavigation = false;
+  }
 
   @override
   void notifyListeners() {
