@@ -256,9 +256,6 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                   key: const ValueKey('expanded'),
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Outside the header on purpose: the phone hides the header but
-                    // still wants its column capped in the stage's colour.
-                    _StageRule(column: widget.column),
                     if (widget.showHeader)
                       _BoardColumnHeader(
                         column: widget.column,
@@ -286,6 +283,14 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                           ),
                         ),
                       ),
+                    Expanded(
+                      child: _Trough(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                    // Caps the trough rather than the header, so the phone,
+                    // which hides the header, still gets the stage's colour.
+                    _StageRule(column: widget.column),
                     Padding(
                       // The card list below brings its own top inset.
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
@@ -311,6 +316,10 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                       ),
                     ),
                     Expanded(child: _body()),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
         ),
@@ -520,12 +529,11 @@ class _BoardColumnHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+          padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
           child: Row(
             children: [
               if (onToggleCollapsed != null)
@@ -576,9 +584,6 @@ class _BoardColumnHeader extends StatelessWidget {
             ],
           ),
         ),
-        // Separates the title bar from the cards without boxing it: the stage
-        // rule above and this one below are what turn the header into a header.
-        Divider(height: 1, thickness: 1, color: boardColumnBorderColor(scheme)),
       ],
     );
   }
@@ -646,7 +651,8 @@ class _CollapsedColumn extends StatelessWidget {
         mouseCursor: SystemMouseCursors.click,
         hoverColor: Colors.transparent,
         splashColor: Colors.transparent,
-        child: Column(
+        child: _Trough(
+          child: Column(
           children: [
             _StageRule(column: column),
             Expanded(
@@ -683,7 +689,32 @@ class _CollapsedColumn extends StatelessWidget {
             ),
           ],
         ),
+        ),
       ),
+    );
+  }
+}
+
+/// The recessed region a column's cards sit in: the trough of the depth model
+/// in `theme.dart`. The header stays outside it, on the canvas, so the trough
+/// holds only what can be dropped into it.
+class _Trough extends StatelessWidget {
+  final Widget child;
+
+  const _Trough({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: boardColumnColor(scheme),
+        borderRadius: kBorderRadius,
+        border: Border.all(color: boardColumnBorderColor(scheme)),
+      ),
+      // The stage rule runs to the trough's edge, so the corners cut it.
+      clipBehavior: Clip.antiAlias,
+      child: child,
     );
   }
 }

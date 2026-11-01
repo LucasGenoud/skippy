@@ -489,7 +489,7 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
             autofocus: true,
             decoration: const InputDecoration(
               isDense: true,
-              border: OutlineInputBorder(),
+              border: kFieldBorder,
             ),
             onChanged: (v) => setState(() => _typed = v),
             onSubmitted: (_) => _submit(),

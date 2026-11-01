@@ -7,6 +7,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
+import '../widgets/checklist/check_mark.dart';
 import '../widgets/form_dialog.dart';
 import '../widgets/state_cross_fade.dart';
 
@@ -336,13 +337,7 @@ class _VersionCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  item.done
-                      ? Icons.check_box_outlined
-                      : Icons.check_box_outline_blank,
-                  size: 18,
-                  color: scheme.onSurfaceVariant,
-                ),
+                CheckMark(checked: item.done),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(

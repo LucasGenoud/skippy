@@ -448,7 +448,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
             decoration: InputDecoration(
               labelText: 'Name',
               isDense: true,
-              border: const OutlineInputBorder(),
+              border: kFieldBorder,
               // Non-null errorText turns the border + label red and shows
               // the message underneath (Material's standard error state).
               errorText: _nameError,
@@ -494,7 +494,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
               controller: _hex,
               decoration: const InputDecoration(
                 isDense: true,
-                border: OutlineInputBorder(),
+                border: kFieldBorder,
                 labelText: 'Custom hex',
                 hintText: '#RRGGBB',
               ),

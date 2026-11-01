@@ -14,7 +14,9 @@ import '../util/motion.dart';
 /// touch from that edge, the same inset as a section label, and [trailing]
 /// sits flush with it.
 class PageHeader extends StatelessWidget {
-  final String title;
+  /// Null where the top bar already names the destination: the block then
+  /// keeps only its subtitle and [trailing].
+  final String? title;
 
   /// One quiet line under the title. Cross-fades when it changes.
   final String? subtitle;
@@ -30,6 +32,7 @@ class PageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final title = this.title;
     final subtitle = this.subtitle;
     return Padding(
       padding: const EdgeInsets.fromLTRB(kSpaceSm, kSpaceLg, 0, kSpaceXs),
@@ -39,9 +42,10 @@ class PageHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: theme.textTheme.headlineSmall),
+                if (title != null)
+                  Text(title, style: theme.textTheme.headlineSmall),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 2),
+                  if (title != null) const SizedBox(height: 2),
                   AnimatedSwitcher(
                     duration: Motion.fast,
                     switchInCurve: Motion.standard,

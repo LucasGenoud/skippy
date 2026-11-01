@@ -805,7 +805,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       if (_reminderAt case final at?)
         InputChip(
           key: const ValueKey('reminder'),
-          avatar: const Icon(Icons.alarm, size: 16),
+          avatar: const Icon(Icons.calendar_today_outlined, size: 16),
           label: Text(
             '${settings.reminderLabel(at)}'
             '${_reminderRepeat == null ? '' : ' · ${_reminderRepeat!.label}'}',

@@ -23,6 +23,7 @@ import 'notify_section.dart';
 import 'palette_section.dart';
 import 'public_links_section.dart';
 import 'saved_locations_section.dart';
+import '../../theme.dart';
 
 /// The account's settings, grouped by what someone comes looking for rather
 /// than by what backs them. Workspace settings (members, collections, which
@@ -178,7 +179,7 @@ class SettingsPageBody extends StatelessWidget {
             labelText: 'Date format',
             helperText: 'Today: ${settings.formatDate(now)}',
             prefixIcon: const Icon(Icons.calendar_today_outlined),
-            border: const OutlineInputBorder(),
+            border: kFieldBorder,
           ),
           onChanged: (format) {
             if (format != null) {
@@ -386,7 +387,7 @@ class _FontField extends StatelessWidget {
         decoration: const InputDecoration(
           labelText: 'Font',
           prefixIcon: Icon(Icons.text_fields),
-          border: OutlineInputBorder(),
+          border: kFieldBorder,
         ),
         onTap: () {
           for (final font in AppFont.values) {

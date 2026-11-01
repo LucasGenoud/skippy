@@ -45,6 +45,7 @@ import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
+import '../widgets/sync_pill.dart';
 
 /// What one build of the home screen shows, worked out once in `build` and
 /// handed to the pieces that draw it.
@@ -774,6 +775,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Positioned.fill(
                                     child: _viewBody(store, view),
                                   ),
+                                  // Beside the new-note button, centred on
+                                  // it; phones keep the offline banner.
+                                  if (ScreenWidth.isAtLeast(
+                                    context,
+                                    kWideBreakpoint,
+                                  ))
+                                    const Positioned(
+                                      right: 16 + 56 + kSpaceMd,
+                                      bottom: 16 + 14,
+                                      child: SyncPill(),
+                                    ),
                                   if (store.activeCollection != null)
                                     Positioned(
                                       right: 16,
@@ -870,6 +882,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : () => _shareCurrentView(store),
             onToggleSidebar: _toggleSidebar,
             selection: _selectionMode ? _selectionActions(store, view) : null,
+            title: _viewTitle(store),
           ),
         ),
       ),
@@ -964,7 +977,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   (_selection.view == NoteView.notes ||
                       _selection.view == NoteView.label))
                 _quickAddSliver(store),
-              if (!view.collectionView && _viewTitle(store).isNotEmpty)
+              // Wide, the top bar names the view, so only Trash keeps a
+              // header here, for its notice and "Empty trash".
+              if (!view.collectionView &&
+                  _viewTitle(store).isNotEmpty &&
+                  (!HomeTopBar.showsTitle(context) ||
+                      _selection.view == NoteView.trash))
                 _alignedToGrid(
                   _ViewHeader(
                     title: _viewTitle(store),
@@ -1330,7 +1348,7 @@ class _ViewHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PageHeader(
-      title: title,
+      title: HomeTopBar.showsTitle(context) ? null : title,
       subtitle: isTrash ? 'Notes in Trash are deleted after 7 days' : null,
       trailing: isTrash && hasTrashedNotes
           ? TextButton.icon(

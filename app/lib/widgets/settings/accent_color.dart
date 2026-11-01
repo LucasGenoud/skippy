@@ -269,7 +269,7 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
               controller: _hex,
               decoration: const InputDecoration(
                 isDense: true,
-                border: OutlineInputBorder(),
+                border: kFieldBorder,
                 labelText: 'Hex',
               ),
               onChanged: (value) {

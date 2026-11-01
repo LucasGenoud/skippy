@@ -264,7 +264,10 @@ void main() {
     expect(manageCollections.style?.fontWeight, FontWeight.w400);
     await tester.tap(find.text('Important'));
     await tester.pumpAndSettle();
-    expect(find.text('Important'), findsOneWidget);
+    expect(
+      find.descendant(of: sidebar, matching: find.text('Important')),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Manage collections'));
     await tester.pumpAndSettle();
     // Wide: the list and the open collection share one dialog.

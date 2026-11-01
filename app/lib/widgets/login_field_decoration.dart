@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 
 /// The shared dress of the login form's inputs.
 ///
@@ -17,11 +18,12 @@ InputDecoration loginFieldDecoration(
   // A rejected submit flags the field with a red outline and no extra text,
   // the banner above the button already carries the message.
   final rejectedBorder = OutlineInputBorder(
+    borderRadius: kBorderRadius,
     borderSide: BorderSide(color: scheme.error, width: 2),
   );
   return InputDecoration(
     labelText: label,
-    border: const OutlineInputBorder(),
+    border: kFieldBorder,
     prefixIcon: Icon(icon),
     errorText: errorText,
     enabledBorder: rejected ? rejectedBorder : null,

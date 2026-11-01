@@ -34,6 +34,7 @@ import 'package:skippy/widgets/link_preview.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_actions.dart';
+import 'package:skippy/widgets/checklist/check_mark.dart';
 import 'package:skippy/widgets/note_card.dart';
 import 'package:skippy/widgets/quick_add_bar.dart';
 import 'package:skippy/widgets/screen_width.dart';
@@ -365,7 +366,7 @@ void main() {
 
       expect(find.text('Groceries'), findsOneWidget);
       expect(find.text('Milk'), findsOneWidget);
-      expect(find.text('2 checked items'), findsOneWidget);
+      expect(find.text('2/3'), findsOneWidget);
       // Done items are summarized, not listed.
       expect(find.text('Eggs'), findsNothing);
     });
@@ -419,7 +420,7 @@ void main() {
         painter.dispose();
         final checkbox = find.descendant(
           of: row,
-          matching: find.byIcon(Icons.check_box_outline_blank),
+          matching: find.byType(CheckMark),
         );
         expect(
           tester.getCenter(checkbox).dy,
@@ -524,7 +525,7 @@ void main() {
           SizedBox(width: 240, child: NoteTile(note: store.noteById('n1')!)),
         ),
       );
-      expect(find.byIcon(Icons.alarm), findsOneWidget);
+      expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
       expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
       expect(find.textContaining('2030'), findsOneWidget);
     });
@@ -4229,7 +4230,7 @@ void main() {
       expect(find.byType(Drawer), findsOneWidget);
     });
 
-    testWidgets('the search field is centred on the bar, not on the gap', (
+    testWidgets('the wide bar names the open view and keeps search compact', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1400, 900);
@@ -4240,7 +4241,12 @@ void main() {
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      final bar = tester.getRect(find.byType(HomeTopBar));
+      final title = find.descendant(
+        of: find.byType(HomeTopBar),
+        matching: find.text(store.activeCollection!.name),
+      );
+      expect(title, findsOneWidget);
+
       // The pill is the nearest animated box around the search glyph.
       final pill = tester.getRect(
         find
@@ -4250,12 +4256,8 @@ void main() {
             )
             .first,
       );
-      // Centred on the window. A plain Row can only centre it in what the two
-      // clusters leave behind, and the action icons outweigh the branding, so
-      // this used to sit tens of pixels right of centre.
-      expect((pill.center.dx - bar.center.dx).abs(), lessThan(1));
-      // …without running into either cluster.
-      expect(pill.left, greaterThan(tester.getRect(find.text('Skippy')).right));
+      expect(pill.width, lessThanOrEqualTo(320));
+      expect(pill.left, greaterThan(tester.getRect(title).right));
       expect(
         pill.right,
         lessThan(tester.getRect(find.byIcon(Icons.settings_outlined)).left),

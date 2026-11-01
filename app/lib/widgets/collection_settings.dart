@@ -497,7 +497,7 @@ mixin _CollectionEditing<T extends StatefulWidget> on State<T> {
             errorText: nameError,
             isDense: true,
             counterText: '',
-            border: const OutlineInputBorder(),
+            border: kFieldBorder,
           ),
           onChanged: (_) => _set(() => nameError = null),
           onSubmitted: (_) => onSubmit?.call(),
@@ -532,7 +532,7 @@ mixin _CollectionEditing<T extends StatefulWidget> on State<T> {
           decoration: const InputDecoration(
             labelText: 'Default sorting',
             isDense: true,
-            border: OutlineInputBorder(),
+            border: kFieldBorder,
           ),
           items: const [
             DropdownMenuItem(value: 'custom', child: Text('Custom order')),
@@ -557,7 +557,7 @@ mixin _CollectionEditing<T extends StatefulWidget> on State<T> {
                   style: theme.textTheme.bodyMedium,
                   decoration: const InputDecoration(
                     isDense: true,
-                    border: OutlineInputBorder(),
+                    border: kFieldBorder,
                     hintText: 'RRGGBB',
                     prefixIcon: Icon(Icons.tag, size: 16),
                     prefixIconConstraints: BoxConstraints(minWidth: 32),

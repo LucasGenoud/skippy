@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../theme.dart';
+
 /// OpenStreetMap's standard tiles: no key, no account, and no Google service,
 /// which is the rule the rest of the app follows. Their usage policy asks for
 /// an identifying User-Agent, which [TileLayer] builds from the package name
@@ -118,7 +120,7 @@ class _LocationMapPickerState extends State<LocationMapPicker> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: kBorderRadius,
       child: SizedBox(
         height: widget.height,
         child: Stack(

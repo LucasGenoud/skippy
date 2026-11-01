@@ -1156,7 +1156,7 @@ void main() {
 
         final fill = tester
             .widgetList<Container>(
-              find.ancestor(
+              find.descendant(
                 of: find.byType(BoardColumnView).first,
                 matching: find.byType(Container),
               ),

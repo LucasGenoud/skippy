@@ -280,7 +280,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
           decoration: const InputDecoration(
             labelText: 'Link lasts',
             isDense: true,
-            border: OutlineInputBorder(),
+            border: kFieldBorder,
           ),
           items: [
             for (final option in _LinkLifetime.values)

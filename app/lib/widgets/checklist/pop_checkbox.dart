@@ -131,7 +131,15 @@ class _PopCheckboxState extends State<PopCheckbox>
             value: widget.value,
             onChanged: widget.onChanged == null ? null : _handleChanged,
             visualDensity: PopCheckbox._density,
-            side: BorderSide(color: widget.sideColor, width: 1.5),
+            // The outline gives way to the accent fill once checked.
+            side: WidgetStateBorderSide.resolveWith(
+              (states) => BorderSide(
+                color: states.contains(WidgetState.selected)
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : widget.sideColor,
+                width: 1.5,
+              ),
+            ),
           ),
         ),
       ],

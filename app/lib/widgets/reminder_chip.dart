@@ -41,7 +41,11 @@ class ReminderChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.alarm, size: 13, color: scheme.onSurfaceVariant),
+          Icon(
+            Icons.calendar_today_outlined,
+            size: 13,
+            color: scheme.onSurfaceVariant,
+          ),
           const SizedBox(width: kSpaceXs),
           Flexible(
             child: Text(

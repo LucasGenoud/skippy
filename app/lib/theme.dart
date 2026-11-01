@@ -24,15 +24,19 @@ import 'package:flutter/material.dart';
 /// seed, so one color reseeds the whole Material scheme for both brightnesses.
 const Color kDefaultAccent = Color(0xFFFBBC04);
 
-/// App-wide corner radius. The design favors near-square corners rather than
-/// the pill/circular shapes Material defaults to, every piece of chrome
-/// (cards, inputs, buttons, menus, dialogs, chips) rounds to this so the look
-/// stays consistent. Change it here to retune the whole app.
-const double kRadius = 4;
+/// App-wide corner radius: soft, but nowhere near the pills and circles
+/// Material defaults to. Every piece of chrome (cards, inputs, buttons, icon
+/// buttons, menus, dialogs, chips, tags) rounds to this so the look stays
+/// consistent. Change it here to retune the whole app.
+const double kRadius = 6;
 
 /// Menus are given a touch more rounding than controls and cards, helping the
-/// floating surface read separately from the near-square note layout.
-const double kMenuRadius = 6;
+/// floating surface read separately from the note layout.
+const double kMenuRadius = 8;
+
+/// A checkbox's corner. Smaller than [kRadius] because the box is: at 18px a
+/// 6px corner would read as a circle.
+const BorderRadius kCheckBorderRadius = BorderRadius.all(Radius.circular(4));
 
 /// Shared layout rhythm for the compact controls built outside Material
 /// components. Keeping these values together prevents individual features
@@ -97,6 +101,12 @@ const BorderRadius kBorderRadius = BorderRadius.all(kRadiusCorner);
 /// around the text, not a square band with the text against its edge.
 const EdgeInsets kModalRowPadding = EdgeInsets.symmetric(horizontal: kSpaceSm);
 
+/// The outline of a boxed text field, at [kRadius] like every other control.
+/// Named rather than set theme-wide: see the note on `inputDecorationTheme`.
+const OutlineInputBorder kFieldBorder = OutlineInputBorder(
+  borderRadius: kBorderRadius,
+);
+
 /// A [RoundedRectangleBorder] at [kRadius], for widgets whose `shape` we set.
 const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
   borderRadius: kBorderRadius,
@@ -146,6 +156,54 @@ Color excludedFilterColor(ColorScheme scheme) => Color.alphaBlend(
   ),
   scheme.surface,
 );
+
+/// How far a card rises off whatever it sits on.
+enum CardLift { resting, raised }
+
+/// A card's shadow: a tight contact shadow under a soft, pulled-in drop, so
+/// the edge reads crisp and the lift reads soft. The negative spread keeps the
+/// blur from haloing past the corners. Dark needs far more opacity for the
+/// same lift, since there is little light left to take away.
+List<BoxShadow> cardShadow(ColorScheme scheme, CardLift lift) {
+  final dark = scheme.brightness == Brightness.dark;
+  Color ink(double light, double inDark) =>
+      _shadowInk.withValues(alpha: dark ? inDark : light);
+
+  return switch (lift) {
+    CardLift.resting => [
+      BoxShadow(
+        color: ink(0.08, 0.34),
+        offset: const Offset(0, 1),
+        blurRadius: 2,
+        spreadRadius: -1,
+      ),
+      BoxShadow(
+        color: ink(0.09, 0.32),
+        offset: const Offset(0, 3),
+        blurRadius: 8,
+        spreadRadius: -3,
+      ),
+    ],
+    CardLift.raised => [
+      BoxShadow(
+        color: ink(0.14, 0.48),
+        offset: const Offset(0, 6),
+        blurRadius: 16,
+        spreadRadius: -4,
+      ),
+      BoxShadow(
+        color: ink(0.08, 0.32),
+        offset: const Offset(0, 1),
+        blurRadius: 4,
+        spreadRadius: -2,
+      ),
+    ],
+  };
+}
+
+/// Shadows are cast in a deep ink rather than pure black, which reads muddy
+/// on a tinted canvas.
+const Color _shadowInk = Color(0xFF0D101A);
 
 /// The fill behind a board column: the trough of the depth model at the top of
 /// this file. Derived from the canvas rather than fixed, so it keeps the
@@ -287,7 +345,12 @@ ThemeData buildTheme(
     // Null keeps the platform's own UI font.
     fontFamily: fontFamily,
     scaffoldBackgroundColor: canvas,
-    splashFactory: InkSparkle.splashFactory,
+    // No ink ripple: a press darkens the control's own shape, the way a
+    // desktop app answers a click, instead of Material's spreading splash.
+    splashFactory: NoSplash.splashFactory,
+    hoverColor: scheme.onSurface.withValues(alpha: 0.06),
+    highlightColor: scheme.onSurface.withValues(alpha: 0.10),
+    focusColor: scheme.onSurface.withValues(alpha: 0.10),
   );
   return base.copyWith(
     // Chrome is a surface, not the canvas: the home screen's hand-rolled top
@@ -348,7 +411,7 @@ ThemeData buildTheme(
       color: scheme.surface,
       elevation: 6,
       surfaceTintColor: Colors.transparent,
-      shadowColor: Colors.black.withValues(alpha: 0.14),
+      shadowColor: _shadowInk.withValues(alpha: light ? 0.16 : 0.5),
       menuPadding: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(kMenuRadius),
@@ -365,9 +428,9 @@ ThemeData buildTheme(
         borderRadius: BorderRadius.vertical(top: kRadiusCorner),
       ),
     ),
-    // NOTE: no inputDecorationTheme border override on purpose. Flutter's
-    // OutlineInputBorder already defaults to a 4px radius, so the fields that
-    // opt into an outline (login, chat, settings) are boxy by default. Forcing
+    // NOTE: no inputDecorationTheme border override on purpose. The fields
+    // that opt into an outline (login, chat, settings) use [kFieldBorder].
+    // Forcing
     // per-state borders here would also override the many `InputBorder.none`
     // fields (editor title/body, search, quick-add) and draw boxes they never
     // wanted.
@@ -407,6 +470,47 @@ ThemeData buildTheme(
       style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
     ),
     chipTheme: base.chipTheme.copyWith(shape: kRoundedShape),
+    // Icon buttons hover as a rounded square like every other control, not
+    // Material's circle.
+    iconButtonTheme: const IconButtonThemeData(
+      style: ButtonStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
+    ),
+    // A checked box is the accent at full strength, the same fill a filled
+    // button wears, so ticking a task reads as the brand colour, not M3's
+    // darker text tone of it.
+    checkboxTheme: base.checkboxTheme.copyWith(
+      shape: const RoundedRectangleBorder(borderRadius: kCheckBorderRadius),
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? scheme.primaryContainer
+            : Colors.transparent,
+      ),
+      checkColor: WidgetStatePropertyAll(scheme.onPrimaryContainer),
+    ),
+    listTileTheme: base.listTileTheme.copyWith(shape: kRoundedShape),
+    // Flat track and thumb in the app's own colours rather than M3's outlined
+    // track with a growing thumb.
+    switchTheme: SwitchThemeData(
+      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? scheme.primaryContainer
+            : scheme.onSurface.withValues(alpha: 0.14),
+      ),
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? scheme.onPrimaryContainer
+            : (light ? Colors.white : scheme.onSurfaceVariant),
+      ),
+      thumbIcon: const WidgetStatePropertyAll(null),
+    ),
+    scrollbarTheme: ScrollbarThemeData(
+      thickness: const WidgetStatePropertyAll(6),
+      radius: const Radius.circular(kRadius),
+      thumbColor: WidgetStatePropertyAll(
+        scheme.onSurface.withValues(alpha: 0.18),
+      ),
+    ),
     // SegmentedButton defaults to a stadium (pill) shape, square it off.
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
@@ -442,8 +546,18 @@ ThemeData buildTheme(
         side: BorderSide(color: scheme.outlineVariant),
       ),
     ),
+    // A small raised label in the app's surface colours instead of M3's dark
+    // grey slab.
     tooltipTheme: base.tooltipTheme.copyWith(
       waitDuration: const Duration(milliseconds: 600),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      textStyle: base.textTheme.labelSmall?.copyWith(color: scheme.onSurface),
+      decoration: BoxDecoration(
+        color: light ? scheme.surface : scheme.surfaceBright,
+        borderRadius: kBorderRadius,
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: cardShadow(scheme, CardLift.raised),
+      ),
     ),
   );
 }

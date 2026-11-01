@@ -71,7 +71,9 @@ class _NoteCardContent extends StatelessWidget {
         (!note.isChecklist && note.content.isNotEmpty) ||
         (note.isChecklist && visibleItems.isNotEmpty) ||
         note.isEmpty; // truly empty draft shows the placeholder
+    final hasProgress = note.isChecklist && visibleItems.isNotEmpty;
     final hasFooter =
+        hasProgress ||
         note.reminderAt != null ||
         locationReminderLabel != null ||
         (showLabelsInBody && labels.isNotEmpty) ||
@@ -189,18 +191,6 @@ class _NoteCardContent extends StatelessWidget {
                             ),
                           ),
                         ),
-                      if (checked.isNotEmpty)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            top: unchecked.isEmpty ? 0 : 6,
-                          ),
-                          child: Text(
-                            '${checked.length} checked ${checked.length == 1 ? 'item' : 'items'}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
                     ],
                     if (note.isEmpty)
                       Text(
@@ -252,6 +242,11 @@ class _NoteCardContent extends StatelessWidget {
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                if (hasProgress)
+                  _TaskProgress(
+                    done: checked.length,
+                    total: visibleItems.length,
+                  ),
                 if (note.reminderAt != null)
                   ReminderChip(
                     at: note.reminderAt!,
@@ -513,13 +508,9 @@ class _ChecklistRow extends StatelessWidget {
                     switchOutCurve: Curves.easeIn,
                     transitionBuilder: (child, animation) =>
                         ScaleTransition(scale: animation, child: child),
-                    child: Icon(
-                      item.done
-                          ? Icons.check_box_outlined
-                          : Icons.check_box_outline_blank,
+                    child: CheckMark(
                       key: ValueKey(item.done),
-                      size: 18,
-                      color: scheme.onSurfaceVariant,
+                      checked: item.done,
                     ),
                   ),
                 ),
@@ -675,4 +666,96 @@ class _AudioPill extends StatelessWidget {
       ),
     );
   }
+}
+
+/// How far through its tasks a checklist is: a ring that fills as items are
+/// checked, and the count beside it. It stands in for listing the done items,
+/// which the card leaves out.
+class _TaskProgress extends StatelessWidget {
+  final int done;
+  final int total;
+
+  const _TaskProgress({required this.done, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final complete = done == total;
+    final color = complete ? scheme.primary : scheme.onSurfaceVariant;
+    return Semantics(
+      label: '$done of $total tasks done',
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: 13,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(end: done / total),
+              duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+              curve: Motion.standard,
+              builder: (context, fraction, _) => CustomPaint(
+                painter: _ProgressRingPainter(
+                  fraction: fraction,
+                  track: scheme.onSurfaceVariant.withValues(alpha: 0.35),
+                  fill: color,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: kSpaceXs),
+          Text(
+            '$done/$total',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressRingPainter extends CustomPainter {
+  final double fraction;
+  final Color track;
+  final Color fill;
+
+  const _ProgressRingPainter({
+    required this.fraction,
+    required this.track,
+    required this.fill,
+  });
+
+  static const double _stroke = 1.6;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(_stroke / 2);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawOval(rect, paint..color = track);
+    if (fraction <= 0) {
+      return;
+    }
+
+    // Starts at twelve o'clock and runs clockwise.
+    const quarterTurn = -1.5707963267948966;
+    const fullTurn = 6.283185307179586;
+    canvas.drawArc(
+      rect,
+      quarterTurn,
+      fullTurn * fraction,
+      false,
+      paint..color = fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ProgressRingPainter old) =>
+      old.fraction != fraction || old.track != track || old.fill != fill;
 }

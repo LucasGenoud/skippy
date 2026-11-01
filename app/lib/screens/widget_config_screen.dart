@@ -7,6 +7,7 @@ import '../util/home_widgets.dart';
 import '../util/motion.dart';
 import '../util/widget_payload.dart';
 import '../widgets/state_cross_fade.dart';
+import '../theme.dart';
 
 /// Picks the note a newly added Android widget will show.
 ///
@@ -85,7 +86,7 @@ class _WidgetConfigScreenState extends State<WidgetConfigScreen> {
                 prefixIcon: Icon(Icons.search),
                 hintText: 'Search your notes',
                 isDense: true,
-                border: OutlineInputBorder(),
+                border: kFieldBorder,
               ),
               onChanged: (value) => setState(() => _query = value),
             ),

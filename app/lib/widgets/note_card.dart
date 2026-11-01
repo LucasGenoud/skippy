@@ -22,6 +22,7 @@ import '../util/note_routes.dart';
 import '../util/platform.dart';
 import '../util/snack.dart';
 import 'board/move_to_stage_sheet.dart';
+import 'checklist/check_mark.dart';
 import 'collection_settings.dart';
 import 'color_picker.dart';
 import 'labels_sheet.dart';
@@ -393,13 +394,10 @@ class _NoteTileState extends State<NoteTile> {
       curve: Motion.standard,
       decoration: BoxDecoration(
         borderRadius: kBorderRadius,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _hovered ? 0.16 : 0.09),
-            blurRadius: _hovered ? 14 : 8,
-            offset: Offset(0, _hovered ? 5 : 2),
-          ),
-        ],
+        boxShadow: cardShadow(
+          scheme,
+          _hovered ? CardLift.raised : CardLift.resting,
+        ),
       ),
       child: surface,
     );

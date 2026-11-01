@@ -147,7 +147,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             onSubmitted: (_) => _delete(),
             decoration: InputDecoration(
               labelText: 'Current password',
-              border: const OutlineInputBorder(),
+              border: kFieldBorder,
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
                 tooltip: _obscure ? 'Show password' : 'Hide password',
@@ -316,7 +316,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
                 labelText: 'Current password',
-                border: OutlineInputBorder(),
+                border: kFieldBorder,
                 prefixIcon: Icon(Icons.lock_outline),
               ),
             ),
@@ -349,7 +349,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
                 _AccountField.email => 'New email',
                 _AccountField.password => 'New password',
               },
-              border: const OutlineInputBorder(),
+              border: kFieldBorder,
               prefixIcon: Icon(switch (widget.field) {
                 _AccountField.name => Icons.badge_outlined,
                 _AccountField.email => Icons.email_outlined,
@@ -367,7 +367,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
               onSubmitted: (_) => _save(),
               decoration: InputDecoration(
                 labelText: 'Confirm new password',
-                border: const OutlineInputBorder(),
+                border: kFieldBorder,
                 prefixIcon: const Icon(Icons.password_outlined),
                 suffixIcon: IconButton(
                   tooltip: _obscure ? 'Show passwords' : 'Hide passwords',

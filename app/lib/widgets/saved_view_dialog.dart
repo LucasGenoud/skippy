@@ -188,7 +188,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
             decoration: InputDecoration(
               labelText: 'Name',
               isDense: true,
-              border: const OutlineInputBorder(),
+              border: kFieldBorder,
               errorText: _nameError,
             ),
             onChanged: (_) {
@@ -201,7 +201,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
             decoration: InputDecoration(
               labelText: 'Search',
               isDense: true,
-              border: const OutlineInputBorder(),
+              border: kFieldBorder,
               hintText: 'label:work is:pinned hasnot:reminder',
               helperText: 'Same filters as the search box',
               errorText: _queryError,

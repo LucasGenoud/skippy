@@ -1789,7 +1789,7 @@ class _EditorScreenState extends State<EditorScreen> {
       if (note.reminderAt != null)
         InputChip(
           key: const ValueKey('reminder'),
-          avatar: const Icon(Icons.alarm, size: 16),
+          avatar: const Icon(Icons.calendar_today_outlined, size: 16),
           label: Text(_reminderLabel(note, settings)),
           visualDensity: VisualDensity.compact,
           onPressed: trashed ? null : _editReminder,

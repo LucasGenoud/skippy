@@ -187,7 +187,6 @@ class _BoardViewState extends State<BoardView> {
     required bool dragEnabled,
     required Set<String> exits,
   }) {
-    final scheme = Theme.of(context).colorScheme;
     final actions = [
       if (exits.contains('archive')) false,
       if (exits.contains('trash')) true,
@@ -237,17 +236,6 @@ class _BoardViewState extends State<BoardView> {
                 duration: Motion.reduced(context) ? Duration.zero : Motion.base,
                 curve: Motion.standard,
                 margin: const EdgeInsets.only(right: 12),
-                // A trough, not a step of the surface ladder: see
-                // [boardColumnColor] for why the theme's containers are too
-                // close to the canvas to hold a column.
-                decoration: BoxDecoration(
-                  color: boardColumnColor(scheme),
-                  borderRadius: kBorderRadius,
-                  border: Border.all(color: boardColumnBorderColor(scheme)),
-                ),
-                // The header's stage rule runs to the column's edge, so the
-                // corners have to cut it.
-                clipBehavior: Clip.antiAlias,
                 child: BoardColumnView(
                   column: column,
                   query: _highlight,
@@ -296,7 +284,6 @@ class _BoardViewState extends State<BoardView> {
     // A stage deleted while the board is open can leave the controller past
     // the end; clamp rather than page into nothing.
     final page = _page.clamp(0, board.columns.length - 1);
-    final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         _StageStrip(
@@ -323,19 +310,10 @@ class _BoardViewState extends State<BoardView> {
             onPageChanged: (index) => setState(() => _page = index),
             itemBuilder: (context, index) {
               final column = board.columns[index];
-              // The page gets the same trough the wide layout draws, for the
-              // same reason: without it the cards sit straight on the canvas
-              // and the page reads as the whole board rather than as one
-              // column of it, which is exactly what the peeking neighbours
-              // are there to deny.
+              // The column draws its own trough, so the page reads as one
+              // column of the board rather than as the whole of it.
               return Container(
                 margin: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-                decoration: BoxDecoration(
-                  color: boardColumnColor(scheme),
-                  borderRadius: kBorderRadius,
-                  border: Border.all(color: boardColumnBorderColor(scheme)),
-                ),
-                clipBehavior: Clip.antiAlias,
                 child: BoardColumnView(
                   column: column,
                   query: _highlight,

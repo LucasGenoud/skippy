@@ -158,7 +158,7 @@ class _PaletteEditDialogState extends State<PaletteEditDialog> {
             controller: _name,
             decoration: const InputDecoration(
               labelText: 'Name',
-              border: OutlineInputBorder(),
+              border: kFieldBorder,
               isDense: true,
             ),
           ),
@@ -248,7 +248,7 @@ class _ShadeEditorState extends State<_ShadeEditor> {
                 controller: _hex,
                 decoration: const InputDecoration(
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: kFieldBorder,
                   labelText: 'Hex',
                 ),
                 onChanged: (value) {

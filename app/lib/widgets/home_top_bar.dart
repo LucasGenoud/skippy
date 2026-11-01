@@ -1,10 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
 import 'animated_presence.dart';
-import 'app_logo.dart';
+import 'menu_label.dart';
 import 'pin_icon.dart';
 import 'package:provider/provider.dart';
 
@@ -106,6 +104,10 @@ class HomeTopBar extends StatelessWidget {
   /// browsing.
   final SelectionActions? selection;
 
+  /// What is open: the collection, label, or library view. The wide bar leads
+  /// with it, the way a document window names its document.
+  final String title;
+
   const HomeTopBar({
     super.key,
     required this.controller,
@@ -119,11 +121,16 @@ class HomeTopBar extends StatelessWidget {
     required this.onShareView,
     required this.onToggleSidebar,
     required this.selection,
+    required this.title,
   });
 
   /// The bar's own height, and the search pill inside it.
   static const double barHeight = 60;
-  static const double _pillHeight = 40;
+  static const double _pillHeight = 36;
+
+  /// The wide bar's search field: enough for a query and its filter terms,
+  /// not a centrepiece.
+  static const double _searchWidth = 320;
 
   /// Notes chat needs the server's retrieval, and the open workspace to allow
   /// chat with a provider from its owner.
@@ -165,6 +172,14 @@ class HomeTopBar extends StatelessWidget {
     );
   }
 
+  /// Whether the bar names the open view. A destination's own header leaves
+  /// its title out where this holds, so the name is never shown twice.
+  static bool showsTitle(BuildContext context) =>
+      ScreenWidth.isAtLeast(context, _wideBarMinWidth);
+
+  /// Below this the bar collapses into a single search pill.
+  static const double _wideBarMinWidth = 650;
+
   static const _selectingKey = ValueKey('selecting');
   static const _browsingKey = ValueKey('browsing');
 
@@ -172,152 +187,157 @@ class HomeTopBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final settings = context.watch<SettingsStore>();
     final themeAction = _currentThemeAction(settings.themeMode);
-    final isNarrow = !ScreenWidth.isAtLeast(context, 650);
+    final isNarrow = !showsTitle(context);
     if (isNarrow) return _narrowBar(context, scheme);
 
     return Container(
       height: barHeight,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       color: scheme.surface,
-      child: CustomMultiChildLayout(
-        delegate: _CentredBarLayout(gap: 16, maxCentre: 640),
+      child: Row(
         children: [
-          // ── Left: Menu + Logo + App Name ──
-          LayoutId(
-            id: _BarSlot.left,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.menu),
-                  tooltip: 'Main menu',
-                  onPressed: onToggleSidebar,
-                ),
-                const SizedBox(width: kSpaceXs),
-                const AppLogo(size: 30),
-                const SizedBox(width: 10),
-                Text(
-                  'Skippy',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ],
-            ),
+          IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Main menu',
+            onPressed: onToggleSidebar,
           ),
-
-          // ── Centre: Search Bar ──
-          LayoutId(
-            id: _BarSlot.centre,
-            child: _SearchPill(
-              focusNode: focusNode,
-              height: _pillHeight,
-              child: Row(
-                children: [
-                  const SizedBox(width: 14),
-                  Icon(Icons.search, color: scheme.onSurfaceVariant, size: 20),
-                  const SizedBox(width: kSpaceMd),
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      onChanged: onQuery,
-                      textInputAction: TextInputAction.search,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                      decoration: InputDecoration(
-                        hintText: 'Search your notes',
-                        hintStyle: TextStyle(color: scheme.onSurfaceVariant),
-                        border: InputBorder.none,
-                        isCollapsed: true,
-                      ),
-                    ),
-                  ),
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: controller,
-                    builder: (context, value, _) => _fadeScale(
-                      child: value.text.isEmpty
-                          ? const SizedBox.shrink()
-                          : IconButton(
-                              icon: const Icon(Icons.close, size: 20),
-                              tooltip: 'Clear search',
-                              onPressed: () {
-                                controller.clear();
-                                onQuery('');
-                              },
-                            ),
-                    ),
-                  ),
-                  _filtersControl(),
-                  if (semanticAvailable) _semanticControl(scheme),
-                ],
+          const SizedBox(width: kSpaceSm),
+          // The view's name, cross-faded as you move between views.
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+              switchInCurve: Motion.standard,
+              switchOutCurve: Motion.standard,
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.centerLeft,
+                children: [...previous, ?current],
+              ),
+              child: Text(
+                title,
+                key: ValueKey(title),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
           ),
-
-          // ── Right: Quick Settings & User Avatar Circle ──
-          LayoutId(
-            id: _BarSlot.right,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // These two come and go with the view and the workspace's
-                // AI, so they grow in and out rather than shoving the row.
-                AnimatedPresence(
-                  axis: Axis.horizontal,
-                  layout: (children) =>
-                      Row(mainAxisSize: MainAxisSize.min, children: children),
+          const SizedBox(width: kSpaceLg),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: _searchWidth),
+              child: _SearchPill(
+                focusNode: focusNode,
+                height: _pillHeight,
+                child: Row(
                   children: [
-                    if (_chatAvailable(context))
-                      IconButton(
-                        key: const ValueKey('chat'),
-                        icon: const Icon(Icons.forum_outlined),
-                        tooltip: 'Chat with your notes',
-                        onPressed: () => ChatScreen.open(context),
+                    const SizedBox(width: kSpaceMd),
+                    Icon(
+                      Icons.search,
+                      color: scheme.onSurfaceVariant,
+                      size: 18,
+                    ),
+                    const SizedBox(width: kSpaceSm),
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        onChanged: onQuery,
+                        textInputAction: TextInputAction.search,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        decoration: InputDecoration(
+                          hintText: 'Search',
+                          hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+                          border: InputBorder.none,
+                          isCollapsed: true,
+                        ),
                       ),
-                    if (onShareView != null)
-                      IconButton(
-                        key: const ValueKey('share-view'),
-                        icon: const Icon(Icons.ios_share),
-                        tooltip: 'Share this view',
-                        onPressed: onShareView,
+                    ),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: controller,
+                      builder: (context, value, _) => _fadeScale(
+                        child: value.text.isEmpty
+                            ? const SizedBox.shrink()
+                            : IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  controller.clear();
+                                  onQuery('');
+                                },
+                              ),
                       ),
+                    ),
+                    _filtersControl(),
+                    if (semanticAvailable) _semanticControl(scheme),
                   ],
                 ),
-                const _SortButton(),
-                IconButton(
-                  // The sun/moon rotates in as the theme flips, a nod to the
-                  // day/night metaphor without slowing the switch down.
-                  icon: AnimatedSwitcher(
-                    duration: Motion.base,
-                    switchInCurve: Motion.standard,
-                    switchOutCurve: Motion.standard,
-                    transitionBuilder: (child, animation) => RotationTransition(
-                      turns: Tween<double>(
-                        begin: 0.85,
-                        end: 1,
-                      ).animate(animation),
-                      child: FadeTransition(opacity: animation, child: child),
-                    ),
-                    child: Icon(
-                      themeAction.icon,
-                      key: ValueKey(settings.themeMode),
-                    ),
-                  ),
-                  tooltip: 'Theme: ${themeAction.label}, tap to change',
-                  onPressed: settings.cycleThemeMode,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: 'Settings',
-                  onPressed: () =>
-                      Navigator.of(context).push(SettingsScreen.route()),
-                ),
-                const SizedBox(width: 6),
-                _UserAvatarMenu(onShareView: onShareView),
-                const SizedBox(width: kSpaceXs),
-              ],
+              ),
             ),
+          ),
+          const SizedBox(width: kSpaceSm),
+          // Quick settings and the avatar menu.
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // These two come and go with the view and the workspace's
+              // AI, so they grow in and out rather than shoving the row.
+              AnimatedPresence(
+                axis: Axis.horizontal,
+                layout: (children) =>
+                    Row(mainAxisSize: MainAxisSize.min, children: children),
+                children: [
+                  if (_chatAvailable(context))
+                    IconButton(
+                      key: const ValueKey('chat'),
+                      icon: const Icon(Icons.forum_outlined),
+                      tooltip: 'Chat with your notes',
+                      onPressed: () => ChatScreen.open(context),
+                    ),
+                  if (onShareView != null)
+                    IconButton(
+                      key: const ValueKey('share-view'),
+                      icon: const Icon(Icons.ios_share),
+                      tooltip: 'Share this view',
+                      onPressed: onShareView,
+                    ),
+                ],
+              ),
+              const _SortButton(),
+              IconButton(
+                // The sun/moon rotates in as the theme flips, a nod to the
+                // day/night metaphor without slowing the switch down.
+                icon: AnimatedSwitcher(
+                  duration: Motion.base,
+                  switchInCurve: Motion.standard,
+                  switchOutCurve: Motion.standard,
+                  transitionBuilder: (child, animation) => RotationTransition(
+                    turns: Tween<double>(
+                      begin: 0.85,
+                      end: 1,
+                    ).animate(animation),
+                    child: FadeTransition(opacity: animation, child: child),
+                  ),
+                  child: Icon(
+                    themeAction.icon,
+                    key: ValueKey(settings.themeMode),
+                  ),
+                ),
+                tooltip: 'Theme: ${themeAction.label}, tap to change',
+                onPressed: settings.cycleThemeMode,
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                onPressed: () =>
+                    Navigator.of(context).push(SettingsScreen.route()),
+              ),
+              const SizedBox(width: 6),
+              _UserAvatarMenu(onShareView: onShareView),
+              const SizedBox(width: kSpaceXs),
+            ],
           ),
         ],
       ),
@@ -457,7 +477,7 @@ class HomeTopBar extends StatelessWidget {
     ColorScheme scheme,
     SelectionActions selection,
   ) {
-    final narrow = !ScreenWidth.isAtLeast(context, 650);
+    final narrow = !showsTitle(context);
     final selectionLabel = selection.count == 0
         ? 'Select notes'
         : '${selection.count} selected';
@@ -705,63 +725,6 @@ class _SelectionBar extends StatelessWidget {
   }
 }
 
-enum _BarSlot { left, centre, right }
-
-/// Lays the desktop bar out as branding | search | actions, with the search
-/// pill centred on the *bar* rather than on the space left over between the
-/// two clusters. A plain Row can only do the latter, and since the action
-/// icons outweigh the branding the pill sat visibly right of centre.
-///
-/// The clusters keep their natural widths; the pill takes whatever is left
-/// once both are cleared. When that drops below [_minCentre], a narrow
-/// window, or a long enough action row, centring is abandoned rather than
-/// squeezing the field to nothing, and the pill simply fills the gap.
-class _CentredBarLayout extends MultiChildLayoutDelegate {
-  /// Breathing room between the pill and each cluster.
-  final double gap;
-
-  /// The pill never grows past this, however wide the window gets.
-  final double maxCentre;
-
-  static const double _minCentre = 260;
-
-  _CentredBarLayout({required this.gap, required this.maxCentre});
-
-  @override
-  void performLayout(Size size) {
-    final loose = BoxConstraints.loose(size);
-    final left = layoutChild(_BarSlot.left, loose);
-    final right = layoutChild(_BarSlot.right, loose);
-
-    final side = math.max(left.width, right.width);
-    var width = math.min(maxCentre, size.width - 2 * (side + gap));
-    double x;
-    if (width >= _minCentre) {
-      x = (size.width - width) / 2;
-    } else {
-      width = math.max(0, size.width - left.width - right.width - 2 * gap);
-      x = left.width + gap;
-    }
-    final centre = layoutChild(
-      _BarSlot.centre,
-      BoxConstraints(minWidth: width, maxWidth: width, maxHeight: size.height),
-    );
-
-    double centred(Size child) =>
-        ((size.height - child.height) / 2).clamp(0.0, size.height);
-    positionChild(_BarSlot.left, Offset(0, centred(left)));
-    positionChild(_BarSlot.centre, Offset(x, centred(centre)));
-    positionChild(
-      _BarSlot.right,
-      Offset(size.width - right.width, centred(right)),
-    );
-  }
-
-  @override
-  bool shouldRelayout(_CentredBarLayout old) =>
-      old.gap != gap || old.maxCentre != maxCentre;
-}
-
 /// Fade + scale between two states of a small control; the standard
 /// transition for icons that appear, disappear, or swap inside the bar.
 Widget _fadeScale({required Widget child}) {
@@ -943,11 +906,13 @@ class _UserAvatarMenu extends StatelessWidget {
             children: [
               Icon(Icons.settings_outlined, size: 20, color: scheme.onSurface),
               const SizedBox(width: kSpaceMd),
-              const Text('Settings'),
+              const Expanded(
+                child: MenuLabel('Settings', hint: 'Account, theme, AI'),
+              ),
             ],
           ),
         ),
-        if (!ScreenWidth.isAtLeast(context, 650)) ...[
+        if (!HomeTopBar.showsTitle(context)) ...[
           if (onShareView != null)
             PopupMenuItem<String>(
               value: 'share-view',
@@ -955,7 +920,12 @@ class _UserAvatarMenu extends StatelessWidget {
                 children: [
                   Icon(Icons.ios_share, size: 20, color: scheme.onSurface),
                   const SizedBox(width: kSpaceMd),
-                  const Text('Share this view'),
+                  const Expanded(
+                    child: MenuLabel(
+                      'Share this view',
+                      hint: 'As a public link',
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -965,7 +935,9 @@ class _UserAvatarMenu extends StatelessWidget {
               children: [
                 Icon(Icons.swap_vert, size: 20, color: scheme.onSurface),
                 const SizedBox(width: kSpaceMd),
-                const Text('Sort by'),
+                const Expanded(
+                  child: MenuLabel('Sort by', hint: 'Order of the notes'),
+                ),
               ],
             ),
           ),

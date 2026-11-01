@@ -10,6 +10,7 @@ import '../util/attachment_image.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/checklist/check_mark.dart';
 import '../widgets/linked_text.dart';
 import '../widgets/masonry.dart';
 import '../widgets/state_cross_fade.dart';
@@ -585,13 +586,7 @@ class _Checklist extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  item.done
-                      ? Icons.check_box_outlined
-                      : Icons.check_box_outline_blank,
-                  size: 18,
-                  color: scheme.onSurfaceVariant,
-                ),
+                CheckMark(checked: item.done),
                 const SizedBox(width: kSpaceSm),
                 Expanded(
                   child: Text(

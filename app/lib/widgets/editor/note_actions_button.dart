@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/note.dart';
 import '../form_dialog.dart';
 import '../../theme.dart';
+import '../menu_label.dart';
 
 /// Everything you do *to* a note, as opposed to what you put *into* it.
 ///
@@ -94,6 +95,7 @@ class NoteActionsButton extends StatelessWidget {
         value: 'share',
         icon: Icons.person_add_alt_outlined,
         label: 'Collaborators',
+        hint: 'Share with people',
       ),
     // Above "Move to workspace", in the same order the note card's menu lists
     // the two.
@@ -102,30 +104,35 @@ class NoteActionsButton extends StatelessWidget {
         value: 'stage',
         icon: Icons.view_kanban_outlined,
         label: 'Move to column',
+        hint: 'Another column on this board',
       ),
     if (onMoveToCollection != null)
       const _NoteAction(
         value: 'collection',
         icon: Icons.folder_outlined,
         label: 'Move to collection',
+        hint: 'Within this workspace',
       ),
     if (onMoveToWorkspace != null)
       const _NoteAction(
         value: 'move',
         icon: Icons.drive_file_move_outlined,
         label: 'Move to workspace',
+        hint: 'To another workspace',
       ),
     if (onHistory != null)
       const _NoteAction(
         value: 'history',
         icon: Icons.history,
         label: 'Version history',
+        hint: 'Restore an earlier copy',
       ),
     if (onDuplicate != null)
       const _NoteAction(
         value: 'duplicate',
         icon: Icons.copy_all_outlined,
         label: 'Duplicate',
+        hint: 'Make a copy',
       ),
     // Only where the device has a home screen to put it on.
     if (onAddToHomeScreen != null)
@@ -133,12 +140,14 @@ class NoteActionsButton extends StatelessWidget {
         value: 'homescreen',
         icon: Icons.widgets_outlined,
         label: 'Add to Home Screen',
+        hint: 'As a widget',
       ),
     if (isOwner && onDelete != null)
       _NoteAction(
         value: 'delete',
         icon: Icons.delete_outline,
         label: 'Delete',
+        hint: 'Move to trash',
         color: scheme.error,
       ),
   ];
@@ -305,12 +314,7 @@ class _NoteActionsSheet extends StatelessWidget {
                 ListTile(
                   key: ValueKey('note-action-${row.value}'),
                   leading: Icon(row.icon, color: row.color),
-                  title: Text(
-                    row.label,
-                    style: row.color == null
-                        ? null
-                        : TextStyle(color: row.color),
-                  ),
+                  title: MenuLabel(row.label, hint: row.hint, color: row.color),
                   onTap: () => Navigator.pop(context, row.value),
                 ),
             ],
@@ -356,6 +360,9 @@ class _NoteAction {
   final IconData icon;
   final String label;
 
+  /// What the action does, in a few grey words beside the label.
+  final String hint;
+
   /// Tints icon and label, used to flag the destructive Delete.
   final Color? color;
 
@@ -363,6 +370,7 @@ class _NoteAction {
     required this.value,
     required this.icon,
     required this.label,
+    required this.hint,
     this.color,
   });
 }

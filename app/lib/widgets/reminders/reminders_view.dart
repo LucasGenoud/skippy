@@ -17,6 +17,7 @@ import '../animated_presence.dart';
 import '../animated_reveal.dart';
 import '../empty_state.dart';
 import '../page_header.dart';
+import '../home_top_bar.dart';
 import 'reminder_calendar.dart';
 import 'reminder_editing.dart';
 import 'reminder_tiles.dart';
@@ -424,7 +425,7 @@ class _Header extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: kSpaceLg),
       child: PageHeader(
-        title: 'Reminders',
+        title: HomeTopBar.showsTitle(context) ? null : 'Reminders',
         subtitle: summary,
         trailing: mode == null
             ? null

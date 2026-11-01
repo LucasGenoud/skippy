@@ -84,7 +84,7 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
               labelText: 'Name',
               errorText: _nameError,
               isDense: true,
-              border: const OutlineInputBorder(),
+              border: kFieldBorder,
             ),
             onChanged: (_) {
               if (_nameError != null) {

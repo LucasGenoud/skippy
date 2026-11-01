@@ -586,7 +586,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           onSubmitted: (_) => _send(),
           decoration: const InputDecoration(
             labelText: 'Email',
-            border: OutlineInputBorder(),
+            border: kFieldBorder,
             prefixIcon: Icon(Icons.email_outlined),
           ),
         ),
@@ -663,7 +663,7 @@ class _ServerUrlDialogState extends State<_ServerUrlDialog> {
         decoration: const InputDecoration(
           labelText: 'Server URL',
           hintText: 'http://example.com:8787',
-          border: OutlineInputBorder(),
+          border: kFieldBorder,
           prefixIcon: Icon(Icons.dns_outlined),
         ),
         onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
