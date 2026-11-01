@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../form_dialog.dart';
+import '../../theme.dart';
 
 /// How to add a widget where the app cannot do it itself.
 ///
@@ -39,7 +40,7 @@ class AddToHomeScreenHelp extends StatelessWidget {
                 'Touch and hold the new widget, tap Edit Widget, '
                 'then choose "$noteTitle".',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           Text(
             'Checklist items can be ticked straight from the widget.',
             style: theme.textTheme.bodySmall?.copyWith(

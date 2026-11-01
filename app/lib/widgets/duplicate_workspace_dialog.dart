@@ -97,7 +97,7 @@ class _DuplicateWorkspaceDialogState extends State<DuplicateWorkspaceDialog> {
               }
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           const FormSectionLabel('Include'),
           const SizedBox(height: kSpaceSm),
           RadioGroup<WorkspaceCopyContent>(

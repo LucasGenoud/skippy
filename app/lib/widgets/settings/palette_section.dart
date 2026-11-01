@@ -162,14 +162,14 @@ class _PaletteEditDialogState extends State<PaletteEditDialog> {
               isDense: true,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           _ShadeEditor(
             label: 'Light theme shade',
             color: _light,
             swatches: _lightSwatches,
             onChanged: (c) => setState(() => _light = c),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           _ShadeEditor(
             label: 'Dark theme shade',
             color: _dark,
@@ -229,7 +229,7 @@ class _ShadeEditorState extends State<_ShadeEditor> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(widget.label, style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpaceSm),
         Row(
           children: [
             Container(
@@ -237,11 +237,11 @@ class _ShadeEditorState extends State<_ShadeEditor> {
               height: 36,
               decoration: BoxDecoration(
                 color: widget.color,
-                borderRadius: BorderRadius.circular(kRadius),
+                borderRadius: kBorderRadius,
                 border: Border.all(color: scheme.outlineVariant),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: kSpaceMd),
             SizedBox(
               width: 110,
               child: TextField(

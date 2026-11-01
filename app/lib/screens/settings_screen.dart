@@ -187,7 +187,7 @@ class _IndexRow extends StatelessWidget {
         curve: Motion.standard,
         builder: (context, t, child) => Material(
           color: Color.lerp(Colors.transparent, scheme.secondaryContainer, t),
-          borderRadius: BorderRadius.circular(kRadius),
+          borderRadius: kBorderRadius,
           clipBehavior: Clip.antiAlias,
           child: child,
         ),

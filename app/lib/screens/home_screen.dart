@@ -1,9 +1,7 @@
-import '../widgets/collection_settings.dart';
-import '../widgets/form_dialog.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import '../theme.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +13,7 @@ import '../models/share_link.dart';
 import '../state/note_collection.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
-import '../util/mime.dart';
+import '../theme.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
 import '../util/search_query.dart';
@@ -23,13 +21,16 @@ import '../util/snack.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/board/board_view.dart';
 import '../widgets/board/move_to_stage_sheet.dart';
+import '../widgets/collection_settings.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/file_drop.dart';
+import '../widgets/form_dialog.dart';
 import '../widgets/home_fabs.dart';
 import '../widgets/home_top_bar.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/masonry.dart';
+import '../widgets/note_actions.dart';
 import '../widgets/note_card.dart';
 import '../widgets/note_zoom.dart';
 import '../widgets/page_header.dart';
@@ -44,6 +45,24 @@ import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
+
+/// What one build of the home screen shows, worked out once in `build` and
+/// handed to the pieces that draw it.
+typedef _HomeView = ({
+  NoteSections sections,
+  bool searching,
+  bool collectionView,
+  bool semanticAvailable,
+  bool semanticActive,
+  bool semanticLoading,
+  bool dragEnabled,
+  GridDensity density,
+  GridWidth gridWidth,
+});
+
+/// How the grid fills the width it is given: the gutter either side, the
+/// widest the cards may spread, and how many columns fit in between.
+typedef _GridMetrics = ({double pad, double maxWidth, int columns});
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -101,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _cardHeights = MasonryHeights();
 
   void _toggleSidebar() {
-    if (!ScreenWidth.isAtLeast(context, 600)) {
+    if (!ScreenWidth.isAtLeast(context, kWideBreakpoint)) {
       _scaffoldKey.currentState?.openDrawer();
     } else {
       setState(() => _isSidebarOpen = !_isSidebarOpen);
@@ -349,8 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Keyboard shortcut callbacks. The bindings live in build();
-  // widgets/shortcut_help.dart and the README document the full set.
   /// Labels a note composed right now should start with: the label being
   /// filtered on, so it stays in view instead of dropping out of the list the
   /// moment it's written. Empty in every other view.
@@ -359,6 +376,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ? {_selection.labelId!}
       : const {};
 
+  // Keyboard shortcut callbacks. The bindings are [_homeShortcuts];
+  // widgets/shortcut_help.dart and the README document the full set.
   void _newNote(NoteKind kind) {
     if (context.read<NotesStore>().activeCollection == null) {
       CollectionSettings.show(context);
@@ -528,17 +547,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Files dropped anywhere on the grid become one new note (web only).
   Future<void> _createNoteFromDrop(List<DroppedFile> files) async {
     final store = context.read<NotesStore>();
-    final accepted = [
-      for (final f in files)
-        if (f.bytes.length <= maxUploadBytes) f,
-    ];
-    if (accepted.length != files.length) {
-      showAppSnack(
-        'Files are limited to 25 MB',
-        icon: Icons.error_outline,
-        kind: SnackKind.warning,
-      );
-    }
+    final accepted = withinUploadLimit(files);
     if (accepted.isEmpty) return;
     final labelIds = _composeLabelIds;
     final id = await store.createNoteWithFiles(accepted, labelIds: labelIds);
@@ -668,9 +677,6 @@ class _HomeScreenState extends State<HomeScreen> {
       NoteView.trash,
       NoteView.reminders,
     ].contains(_selection.view);
-    final boardLayout =
-        collectionView && store.activeCollection?.layout == 'board';
-    final wideLayout = ScreenWidth.isAtLeast(context, 600);
     // Only offer semantic search when the server supports it and the user
     // hasn't turned it off.
     final semanticAvailable =
@@ -687,86 +693,39 @@ class _HomeScreenState extends State<HomeScreen> {
         _semanticText.isNotEmpty &&
         (_selection.view == NoteView.notes ||
             _selection.view == NoteView.board);
-    final sections = semanticActive && _semanticIds != null
-        ? NoteSections(
-            const [],
-            filterNotes(
-              notes: [
-                for (final id in _semanticIds!)
-                  if (store.displayNoteById(id) case final Note note) note,
-              ],
-              labels: store.labels,
-              selection: _selection,
-              // Filters only: the ranking already answered the words.
-              query: parseSearchQuery(_effectiveQuery).filtersOnly,
-              currentUserId: store.currentUserId,
-              scope: collectionView
-                  ? store.collectionScope
-                  : store.workspaceScope,
-            ),
-          )
-        : viewState.sections;
-    final visibleNotes = [...sections.pinned, ...sections.others];
-    // Loading indicator in the results area while the first semantic search
-    // is in flight (no ranked results to show yet). On a refine the previous
-    // results stay put and only the in-bar spinner signals the fetch, so the
-    // grid doesn't flash a skeleton on every keystroke.
-    final semanticLoading =
-        semanticActive && _semanticBusy && _semanticIds == null;
+    final rankedIds = _semanticIds;
     final canReorder =
         !searching &&
         store.sortMode == SortMode.custom &&
         (_selection.view == NoteView.notes ||
             _selection.view == NoteView.archive);
-    final dragEnabled =
-        canReorder || (_selectionMode && _selection.view != NoteView.trash);
+    final view = (
+      sections: semanticActive && rankedIds != null
+          ? _rankedSections(
+              store,
+              rankedIds,
+              collectionView ? store.collectionScope : store.workspaceScope,
+            )
+          : viewState.sections,
+      searching: searching,
+      collectionView: collectionView,
+      semanticAvailable: semanticAvailable,
+      semanticActive: semanticActive,
+      // Loading indicator in the results area while the first semantic search
+      // is in flight (no ranked results to show yet). On a refine the previous
+      // results stay put and only the in-bar spinner signals the fetch, so the
+      // grid doesn't flash a skeleton on every keystroke.
+      semanticLoading: semanticActive && _semanticBusy && rankedIds == null,
+      dragEnabled:
+          canReorder || (_selectionMode && _selection.view != NoteView.trash),
+      density: settings.gridDensity,
+      gridWidth: settings.gridWidth,
+    );
 
-    // Keyboard shortcuts (web/desktop). Printable keys use
-    // CharacterActivator so they match what the keystroke actually produced
-    // on any layout ("/" is Shift+7 on Swiss keyboards), and _HomeAction
-    // suppresses them while a text field has focus, the event then falls
-    // through unhandled and the letter is typed instead of firing a shortcut.
-    // Chords and Escape (whileTyping: true) stay live during typing; the
-    // quick-add bar consumes its own Escape before it ever bubbles up here.
     return Shortcuts(
-      shortcuts: const <ShortcutActivator, Intent>{
-        CharacterActivator('c'): _NewNoteIntent(NoteKind.text),
-        CharacterActivator('n'): _NewNoteIntent(NoteKind.text),
-        CharacterActivator('l'): _NewNoteIntent(NoteKind.checklist),
-        CharacterActivator('m'): _NewNoteIntent(NoteKind.markdown),
-        CharacterActivator('/'): _FocusSearchIntent(),
-        CharacterActivator('?'): _ShortcutHelpIntent(),
-        SingleActivator(LogicalKeyboardKey.keyK, control: true):
-            _FocusSearchIntent(whileTyping: true),
-        SingleActivator(LogicalKeyboardKey.keyK, meta: true):
-            _FocusSearchIntent(whileTyping: true),
-        SingleActivator(LogicalKeyboardKey.keyG, control: true):
-            _ToggleLayoutIntent(whileTyping: true),
-        SingleActivator(LogicalKeyboardKey.keyG, meta: true):
-            _ToggleLayoutIntent(whileTyping: true),
-        SingleActivator(LogicalKeyboardKey.escape): _EscapeIntent(
-          whileTyping: true,
-        ),
-      },
+      shortcuts: _homeShortcuts,
       child: Actions(
-        actions: <Type, Action<Intent>>{
-          _NewNoteIntent: _HomeAction<_NewNoteIntent>(
-            onInvoke: (intent) => _newNote(intent.kind),
-          ),
-          _FocusSearchIntent: _HomeAction<_FocusSearchIntent>(
-            onInvoke: (_) => _focusSearch(),
-          ),
-          _EscapeIntent: _HomeAction<_EscapeIntent>(onInvoke: (_) => _escape()),
-          _ToggleLayoutIntent: _HomeAction<_ToggleLayoutIntent>(
-            onInvoke: (_) => CollectionSettings.show(
-              context,
-              collection: store.activeCollection,
-            ),
-          ),
-          _ShortcutHelpIntent: _HomeAction<_ShortcutHelpIntent>(
-            onInvoke: (_) => showShortcutHelp(context),
-          ),
-        },
+        actions: _shortcutActions(store),
         child: Focus(
           focusNode: _pageFocus,
           autofocus: true,
@@ -779,83 +738,14 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Scaffold(
                 key: _scaffoldKey,
                 drawer: AppDrawer(selection: _selection, onSelect: _selectView),
-                // The note-creation FABs live inside the body (not the Scaffold's
-                // floatingActionButton slot) so a floating SnackBar sits at the
-                // bottom instead of floating above this tall FAB column. Still in
-                // the body, so the drawer scrim covers them like a normal FAB.
+                // The note-creation FABs live inside the body (not the
+                // Scaffold's floatingActionButton slot) so a floating SnackBar
+                // sits at the bottom instead of floating above this tall FAB
+                // column. Still in the body, so the drawer scrim covers them
+                // like a normal FAB.
                 body: Column(
                   children: [
-                    // Paint the status-bar/notch area in the bar's own surface
-                    // color and keep its content below the top inset (a bare
-                    // SafeArea would leave a scaffold-colored strip up there).
-                    ColoredBox(
-                      color: Theme.of(context).colorScheme.surface,
-                      child: SafeArea(
-                        bottom: false,
-                        child: Padding(
-                          // Desktop has no status bar to hold the bar off the
-                          // window's top edge, so it gets breathing room here
-                          // instead, matched on the bottom so the bar sits
-                          // centered in the space above the divider rather
-                          // than pinned to it.
-                          padding: EdgeInsets.symmetric(
-                            vertical: wideLayout ? 6 : 0,
-                          ),
-                          child: HomeTopBar(
-                            controller: _searchController,
-                            focusNode: _searchFocus,
-                            semantic: _semantic,
-                            semanticAvailable: semanticAvailable,
-                            semanticBusy: _semanticBusy,
-                            onQuery: _onQueryChanged,
-                            onToggleSemantic: _toggleSemantic,
-                            onOpenFilters: _openSearchFilters,
-                            onShareView: _shareViewTarget(store) == null
-                                ? null
-                                : () => _shareCurrentView(store),
-                            onToggleSidebar: _toggleSidebar,
-                            selectionMode: _selectionMode,
-                            selectedCount: _selectedNoteIds.length,
-                            allSelected:
-                                visibleNotes.isNotEmpty &&
-                                visibleNotes.every(
-                                  (note) => _selectedNoteIds.contains(note.id),
-                                ),
-                            canArchive: _selection.view != NoteView.trash,
-                            archiveSelected:
-                                _selection.view != NoteView.archive,
-                            pinSelected:
-                                _selectedNotes(store).isNotEmpty &&
-                                !_selectedNotes(
-                                  store,
-                                ).every((note) => note.pinned),
-                            canRestore: _selection.view == NoteView.trash,
-                            canTrash: _selection.view != NoteView.trash,
-                            onCancelSelection: _cancelSelection,
-                            onToggleSelectAll: () =>
-                                _toggleSelectAll(visibleNotes),
-                            onArchiveSelected: () => _setArchivedForSelected(
-                              store,
-                              _selection.view != NoteView.archive,
-                            ),
-                            onRestoreSelected: () => _restoreSelected(store),
-                            onTrashSelected: () => _trashSelected(store),
-                            onAddLabelSelected: () =>
-                                _addLabelToSelected(store),
-                            onMoveToStageSelected: () =>
-                                _moveSelectedToStage(store),
-                            canMoveToStage: _selection.view == NoteView.board,
-                            onSetColorSelected: () =>
-                                _setColorForSelected(store),
-                            onPinSelected: () => _setPinnedForSelected(
-                              store,
-                              _selectedNotes(store).any((note) => !note.pinned),
-                            ),
-                            onShareSelected: () => _shareSelected(store),
-                          ),
-                        ),
-                      ),
-                    ),
+                    _topBar(store, view),
                     Divider(
                       height: 1,
                       thickness: 1,
@@ -868,7 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         top: false,
                         child: Row(
                           children: [
-                            if (ScreenWidth.isAtLeast(context, 600))
+                            if (ScreenWidth.isAtLeast(context, kWideBreakpoint))
                               AppSidebar(
                                 isOpen: _isSidebarOpen,
                                 selection: _selection,
@@ -877,343 +767,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onSelect: _selectView,
                               ),
                             Expanded(
-                              child: Column(
+                              child: Stack(
                                 children: [
-                                  Expanded(
-                                    child: Stack(
-                                      children: [
-                                        // The board is a horizontal container of
-                                        // independently scrolling columns, so it
-                                        // replaces the sliver stack rather than
-                                        // nesting an opposing scroll inside it.
-                                        if (boardLayout)
-                                          Positioned.fill(
-                                            child: BoardView(
-                                              query: _effectiveQuery,
-                                              rankedIds:
-                                                  semanticActive &&
-                                                      _semanticIds != null
-                                                  ? _semanticIds!.toSet()
-                                                  : null,
-                                              selectionMode: _selectionMode,
-                                              selectedIds: _selectedNoteIds,
-                                              onSelectionChanged:
-                                                  _toggleNoteSelection,
-                                              onToggleColumnSelection:
-                                                  _toggleSelectAll,
-                                            ),
-                                          )
-                                        // Reminders fall on days rather than
-                                        // in a grid, so they get an agenda and
-                                        // a calendar of their own.
-                                        else if (_selection.view ==
-                                            NoteView.reminders)
-                                          Positioned.fill(
-                                            child: RemindersView(
-                                              query: _effectiveQuery,
-                                            ),
-                                          )
-                                        else
-                                          Positioned.fill(
-                                            child: LayoutBuilder(
-                                              builder: (context, constraints) {
-                                                final width =
-                                                    constraints.maxWidth;
-                                                final horizontalPad =
-                                                    width >= 900 ? 32.0 : 16.0;
-                                                final contentWidth =
-                                                    width - horizontalPad * 2;
-                                                final density =
-                                                    settings.gridDensity;
-                                                final gridMaxWidth = _listMode
-                                                    ? 600.0
-                                                    : settings
-                                                          .gridWidth
-                                                          .maxWidth;
-                                                final effectiveWidth =
-                                                    contentWidth > gridMaxWidth
-                                                    ? gridMaxWidth
-                                                    : contentWidth;
-                                                final columns = _listMode
-                                                    ? 1
-                                                    : (effectiveWidth /
-                                                              density
-                                                                  .targetWidth)
-                                                          .floor()
-                                                          .clamp(
-                                                            2,
-                                                            density.maxColumns,
-                                                          );
-
-                                                final refreshScheme = Theme.of(
-                                                  context,
-                                                ).colorScheme;
-                                                return RefreshIndicator(
-                                                  // refresh, not load: the indicator
-                                                  // draws its own spinner, so flipping
-                                                  // `loading` would swap the grid for
-                                                  // skeletons under the user's finger.
-                                                  onRefresh: store.refresh,
-                                                  edgeOffset: 16,
-                                                  color: refreshScheme.primary,
-                                                  backgroundColor: refreshScheme
-                                                      .surfaceContainerHigh,
-                                                  elevation: 2,
-                                                  child: CustomScrollView(
-                                                    controller:
-                                                        _scrollController,
-                                                    // Phones keep pull-to-refresh
-                                                    // available even when the list is
-                                                    // short. On desktop, forcing that
-                                                    // physics makes a fully visible
-                                                    // grid move despite having
-                                                    // nowhere to scroll.
-                                                    physics: width < 600
-                                                        ? const AlwaysScrollableScrollPhysics()
-                                                        : null,
-                                                    slivers: [
-                                                      const SliverToBoxAdapter(
-                                                        child: SizedBox(
-                                                          height: 16,
-                                                        ),
-                                                      ),
-                                                      // Always present so going on/off
-                                                      // line grows/shrinks the banner
-                                                      // smoothly instead of jolting
-                                                      // the grid below it.
-                                                      SliverToBoxAdapter(
-                                                        child: AnimatedSize(
-                                                          duration: Motion.base,
-                                                          curve:
-                                                              Motion.emphasized,
-                                                          alignment: Alignment
-                                                              .topCenter,
-                                                          child: AnimatedSwitcher(
-                                                            duration:
-                                                                Motion.base,
-                                                            switchInCurve:
-                                                                Motion.standard,
-                                                            switchOutCurve:
-                                                                Motion.standard,
-                                                            child: store.offline
-                                                                ? _OfflineBanner(
-                                                                    onRetry: store
-                                                                        .retryNow,
-                                                                  )
-                                                                : const SizedBox(
-                                                                    width: double
-                                                                        .infinity,
-                                                                  ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      // Inline quick add: wide screens,
-                                                      // in the views you compose into
-                                                      // (all notes, or a label, where
-                                                      // it files the note for you).
-                                                      if ((_selection.view ==
-                                                                  NoteView
-                                                                      .notes ||
-                                                              _selection.view ==
-                                                                  NoteView
-                                                                      .label) &&
-                                                          !searching &&
-                                                          width >= 600)
-                                                        SliverToBoxAdapter(
-                                                          child: Center(
-                                                            child: ConstrainedBox(
-                                                              constraints:
-                                                                  const BoxConstraints(
-                                                                    maxWidth:
-                                                                        600,
-                                                                  ),
-                                                              child: Padding(
-                                                                padding:
-                                                                    const EdgeInsets.fromLTRB(
-                                                                      16,
-                                                                      16,
-                                                                      16,
-                                                                      24,
-                                                                    ),
-                                                                child:
-                                                                    store.activeCollection ==
-                                                                        null
-                                                                    ? FilledButton.icon(
-                                                                        onPressed: () =>
-                                                                            CollectionSettings.show(
-                                                                              context,
-                                                                            ),
-                                                                        icon: const Icon(
-                                                                          Icons
-                                                                              .add,
-                                                                        ),
-                                                                        label: const Text(
-                                                                          'Create a collection',
-                                                                        ),
-                                                                      )
-                                                                    : QuickAddBar(
-                                                                        labelIds:
-                                                                            _composeLabelIds,
-                                                                      ),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      if (!collectionView &&
-                                                          _viewTitle(
-                                                            store,
-                                                          ).isNotEmpty)
-                                                        _alignedToGrid(
-                                                          _ViewHeader(
-                                                            title: _viewTitle(
-                                                              store,
-                                                            ),
-                                                            isTrash:
-                                                                _selection
-                                                                    .view ==
-                                                                NoteView.trash,
-                                                            hasTrashedNotes:
-                                                                sections
-                                                                    .others
-                                                                    .isNotEmpty,
-                                                            onEmptyTrash: () =>
-                                                                _confirmEmptyTrash(
-                                                                  store,
-                                                                ),
-                                                          ),
-                                                          horizontalPad,
-                                                          gridMaxWidth,
-                                                        ),
-                                                      if (store.loading ||
-                                                          semanticLoading)
-                                                        SliverToBoxAdapter(
-                                                          child: Center(
-                                                            child: ConstrainedBox(
-                                                              constraints:
-                                                                  BoxConstraints(
-                                                                    maxWidth:
-                                                                        gridMaxWidth,
-                                                                  ),
-                                                              child: Padding(
-                                                                padding: EdgeInsets.fromLTRB(
-                                                                  horizontalPad,
-                                                                  8,
-                                                                  horizontalPad,
-                                                                  0,
-                                                                ),
-                                                                child:
-                                                                    NotesSkeleton(
-                                                                      columns:
-                                                                          columns,
-                                                                    ),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        )
-                                                      else if (sections.isEmpty)
-                                                        SliverFillRemaining(
-                                                          hasScrollBody: false,
-                                                          child: EmptyState(
-                                                            icon: searching
-                                                                ? Icons
-                                                                      .search_off
-                                                                : _emptyIcon,
-                                                            message: searching
-                                                                ? 'No matching notes'
-                                                                : _emptyMessage,
-                                                            actionLabel:
-                                                                searching
-                                                                ? null
-                                                                : _emptyActionLabel,
-                                                            onAction: searching
-                                                                ? null
-                                                                : _emptyAction,
-                                                            actionIcon:
-                                                                searching
-                                                                ? Icons.add
-                                                                : _emptyActionIcon,
-                                                            showBrandMark:
-                                                                !searching &&
-                                                                _selection
-                                                                        .view ==
-                                                                    NoteView
-                                                                        .notes,
-                                                          ),
-                                                        )
-                                                      else ...[
-                                                        if (sections
-                                                            .pinned
-                                                            .isNotEmpty) ...[
-                                                          _sectionLabel(
-                                                            context,
-                                                            'Pinned',
-                                                            horizontalPad,
-                                                            gridMaxWidth,
-                                                          ),
-                                                          _grid(
-                                                            store,
-                                                            sections.pinned,
-                                                            columns,
-                                                            horizontalPad,
-                                                            gridMaxWidth,
-                                                            dragEnabled,
-                                                            section: 'pinned',
-                                                          ),
-                                                          if (sections
-                                                              .others
-                                                              .isNotEmpty)
-                                                            _sectionLabel(
-                                                              context,
-                                                              'Others',
-                                                              horizontalPad,
-                                                              gridMaxWidth,
-                                                            ),
-                                                        ],
-                                                        _grid(
-                                                          store,
-                                                          sections.others,
-                                                          columns,
-                                                          horizontalPad,
-                                                          gridMaxWidth,
-                                                          dragEnabled,
-                                                          section: 'others',
-                                                        ),
-                                                        // Phones need clearance for
-                                                        // their overlaid FAB stack.
-                                                        // Desktop keeps only the
-                                                        // ordinary bottom gutter; the
-                                                        // inline composer is primary
-                                                        // there, and a permanent
-                                                        // 200px tail made short grids
-                                                        // scroll for no visible
-                                                        // reason. Fill unused space
-                                                        // without extending it.
-                                                        SliverFillRemaining(
-                                                          hasScrollBody: false,
-                                                          child: SizedBox(
-                                                            height: width < 600
-                                                                ? 200
-                                                                : 16,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        if (store.activeCollection != null)
-                                          Positioned(
-                                            right: 16,
-                                            bottom: 16,
-                                            child: NewNoteFabs(
-                                              labelIds: _composeLabelIds,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
+                                  Positioned.fill(
+                                    child: _viewBody(store, view),
                                   ),
+                                  if (store.activeCollection != null)
+                                    Positioned(
+                                      right: 16,
+                                      bottom: 16,
+                                      child: NewNoteFabs(
+                                        labelIds: _composeLabelIds,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -1231,67 +797,372 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  IconData get _emptyIcon => switch (_selection.view) {
-    NoteView.notes => Icons.sticky_note_2_outlined,
-    NoteView.board => Icons.view_kanban_outlined,
-    NoteView.reminders => Icons.notifications_outlined,
-    NoteView.archive => Icons.archive_outlined,
-    NoteView.trash => Icons.delete_outline,
-    NoteView.label => Icons.label_outline,
-    NoteView.smart => Icons.filter_alt_outlined,
-  };
+  /// The semantic results for the open view: the server's ranking, put
+  /// through the same filters as a typed query.
+  NoteSections _rankedSections(
+    NotesStore store,
+    List<String> rankedIds,
+    WorkspaceScope scope,
+  ) => NoteSections(
+    const [],
+    filterNotes(
+      notes: [
+        for (final id in rankedIds)
+          if (store.displayNoteById(id) case final Note note) note,
+      ],
+      labels: store.labels,
+      selection: _selection,
+      // Filters only: the ranking already answered the words.
+      query: parseSearchQuery(_effectiveQuery).filtersOnly,
+      currentUserId: store.currentUserId,
+      scope: scope,
+    ),
+  );
 
-  String get _emptyMessage => switch (_selection.view) {
-    NoteView.notes => 'Notes you add appear here',
-    NoteView.board => 'Notes you add appear here',
-    NoteView.reminders => 'Notes with reminders appear here',
-    NoteView.archive => 'Your archived notes appear here',
-    NoteView.trash => 'No notes in Trash',
-    NoteView.label => 'No notes with this label yet',
-    NoteView.smart => 'No notes match this smart view',
-  };
-
-  String get _emptyActionLabel => switch (_selection.view) {
-    NoteView.notes ||
-    NoteView.board ||
-    NoteView.reminders ||
-    NoteView.label => 'Create note',
-    // A smart view is a query, so the way out of an empty one is to go and
-    // look at the notes, not to write a note that probably won't match it.
-    NoteView.smart || NoteView.archive || NoteView.trash => 'Browse notes',
-  };
-
-  VoidCallback get _emptyAction => switch (_selection.view) {
-    NoteView.notes ||
-    NoteView.board ||
-    NoteView.reminders ||
-    NoteView.label => () => _newNote(NoteKind.text),
-    NoteView.smart || NoteView.archive || NoteView.trash => () => _selectView(
-      _primaryView(context.read<NotesStore>()),
+  Map<Type, Action<Intent>> _shortcutActions(NotesStore store) => {
+    _NewNoteIntent: _HomeAction<_NewNoteIntent>(
+      onInvoke: (intent) => _newNote(intent.kind),
+    ),
+    _FocusSearchIntent: _HomeAction<_FocusSearchIntent>(
+      onInvoke: (_) => _focusSearch(),
+    ),
+    _EscapeIntent: _HomeAction<_EscapeIntent>(onInvoke: (_) => _escape()),
+    _ToggleLayoutIntent: _HomeAction<_ToggleLayoutIntent>(
+      onInvoke: (_) =>
+          CollectionSettings.show(context, collection: store.activeCollection),
+    ),
+    _ShortcutHelpIntent: _HomeAction<_ShortcutHelpIntent>(
+      onInvoke: (_) => showShortcutHelp(context),
     ),
   };
 
-  IconData get _emptyActionIcon => switch (_selection.view) {
-    NoteView.notes ||
-    NoteView.board ||
-    NoteView.reminders ||
-    NoteView.label => Icons.add,
-    NoteView.smart ||
-    NoteView.archive ||
-    NoteView.trash => Icons.sticky_note_2_outlined,
-  };
+  /// The band across the top: search while browsing, bulk actions while notes
+  /// are selected.
+  Widget _topBar(NotesStore store, _HomeView view) {
+    // Paint the status-bar/notch area in the bar's own surface color and keep
+    // its content below the top inset (a bare SafeArea would leave a
+    // scaffold-colored strip up there).
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          // Desktop has no status bar to hold the bar off the window's top
+          // edge, so it gets breathing room here instead, matched on the
+          // bottom so the bar sits centered in the space above the divider
+          // rather than pinned to it.
+          padding: EdgeInsets.symmetric(
+            vertical: ScreenWidth.isAtLeast(context, kWideBreakpoint) ? 6 : 0,
+          ),
+          child: HomeTopBar(
+            controller: _searchController,
+            focusNode: _searchFocus,
+            semantic: _semantic,
+            semanticAvailable: view.semanticAvailable,
+            semanticBusy: _semanticBusy,
+            onQuery: _onQueryChanged,
+            onToggleSemantic: _toggleSemantic,
+            onOpenFilters: _openSearchFilters,
+            onShareView: _shareViewTarget(store) == null
+                ? null
+                : () => _shareCurrentView(store),
+            onToggleSidebar: _toggleSidebar,
+            selection: _selectionMode ? _selectionActions(store, view) : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  SelectionActions _selectionActions(NotesStore store, _HomeView view) {
+    final selected = _selectedNotes(store);
+    final visibleNotes = [...view.sections.pinned, ...view.sections.others];
+    return SelectionActions(
+      count: _selectedNoteIds.length,
+      allSelected:
+          visibleNotes.isNotEmpty &&
+          visibleNotes.every((note) => _selectedNoteIds.contains(note.id)),
+      pinSelected:
+          selected.isNotEmpty && !selected.every((note) => note.pinned),
+      archiveSelected: _selection.view != NoteView.archive,
+      canArchive: _selection.view != NoteView.trash,
+      canRestore: _selection.view == NoteView.trash,
+      canTrash: _selection.view != NoteView.trash,
+      canMoveToStage: _selection.view == NoteView.board,
+      onCancel: _cancelSelection,
+      onToggleSelectAll: () => _toggleSelectAll(visibleNotes),
+      onArchive: () =>
+          _setArchivedForSelected(store, _selection.view != NoteView.archive),
+      onRestore: () => _restoreSelected(store),
+      onTrash: () => _trashSelected(store),
+      onAddLabel: () => _addLabelToSelected(store),
+      onMoveToStage: () => _moveSelectedToStage(store),
+      onSetColor: () => _setColorForSelected(store),
+      onPin: () => _setPinnedForSelected(
+        store,
+        _selectedNotes(store).any((note) => !note.pinned),
+      ),
+      onShare: () => _shareSelected(store),
+    );
+  }
+
+  /// What fills the area beside the sidebar. The board and the reminders lay
+  /// their notes out their own way; every other view is the grid.
+  Widget _viewBody(NotesStore store, _HomeView view) {
+    // The board is a horizontal container of independently scrolling columns,
+    // so it replaces the sliver stack rather than nesting an opposing scroll
+    // inside it.
+    if (view.collectionView && store.activeCollection?.layout == 'board') {
+      return BoardView(
+        query: _effectiveQuery,
+        rankedIds: view.semanticActive ? _semanticIds?.toSet() : null,
+        selectionMode: _selectionMode,
+        selectedIds: _selectedNoteIds,
+        onSelectionChanged: _toggleNoteSelection,
+        onToggleColumnSelection: _toggleSelectAll,
+      );
+    }
+    // Reminders fall on days rather than in a grid, so they get an agenda and
+    // a calendar of their own.
+    if (_selection.view == NoteView.reminders) {
+      return RemindersView(query: _effectiveQuery);
+    }
+    return _notesGrid(store, view);
+  }
+
+  Widget _notesGrid(NotesStore store, _HomeView view) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final compact = width < kWideBreakpoint;
+        final grid = _gridMetrics(width, view.density, view.gridWidth);
+        final scheme = Theme.of(context).colorScheme;
+        return RefreshIndicator(
+          // refresh, not load: the indicator draws its own spinner, so
+          // flipping `loading` would swap the grid for skeletons under the
+          // user's finger.
+          onRefresh: store.refresh,
+          edgeOffset: 16,
+          color: scheme.primary,
+          backgroundColor: scheme.surfaceContainerHigh,
+          elevation: 2,
+          child: CustomScrollView(
+            controller: _scrollController,
+            // Phones keep pull-to-refresh available even when the list is
+            // short. On desktop, forcing that physics makes a fully visible
+            // grid move despite having nowhere to scroll.
+            physics: compact ? const AlwaysScrollableScrollPhysics() : null,
+            slivers: [
+              const SliverToBoxAdapter(child: SizedBox(height: kSpaceLg)),
+              _offlineBannerSliver(store),
+              // Inline quick add: wide screens, in the views you compose into
+              // (all notes, or a label, where it files the note for you).
+              if (!compact &&
+                  !view.searching &&
+                  (_selection.view == NoteView.notes ||
+                      _selection.view == NoteView.label))
+                _quickAddSliver(store),
+              if (!view.collectionView && _viewTitle(store).isNotEmpty)
+                _alignedToGrid(
+                  _ViewHeader(
+                    title: _viewTitle(store),
+                    isTrash: _selection.view == NoteView.trash,
+                    hasTrashedNotes: view.sections.others.isNotEmpty,
+                    onEmptyTrash: () => _confirmEmptyTrash(store),
+                  ),
+                  grid,
+                ),
+              // Phones need clearance for their overlaid FAB stack. Desktop
+              // keeps only the ordinary bottom gutter; the inline composer is
+              // primary there, and a permanent 200px tail made short grids
+              // scroll for no visible reason.
+              ..._resultSlivers(
+                store,
+                view,
+                grid,
+                bottomGap: compact ? 200 : 16,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// How the grid fills [width]: a wider gutter on a roomy window, cards
+  /// capped at the chosen grid width (one readable column in list mode), and
+  /// as many columns as fit the density's card width.
+  _GridMetrics _gridMetrics(
+    double width,
+    GridDensity density,
+    GridWidth gridWidth,
+  ) {
+    final pad = width >= 900 ? 32.0 : 16.0;
+    final maxWidth = _listMode ? 600.0 : gridWidth.maxWidth;
+    final usable = math.min(width - pad * 2, maxWidth);
+    final columns = _listMode
+        ? 1
+        : (usable / density.targetWidth).floor().clamp(2, density.maxColumns);
+    return (pad: pad, maxWidth: maxWidth, columns: columns);
+  }
+
+  /// Always present so going on/offline grows/shrinks the banner smoothly
+  /// instead of jolting the grid below it.
+  Widget _offlineBannerSliver(NotesStore store) {
+    return SliverToBoxAdapter(
+      child: AnimatedSize(
+        duration: Motion.base,
+        curve: Motion.emphasized,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: Motion.base,
+          switchInCurve: Motion.standard,
+          switchOutCurve: Motion.standard,
+          child: store.offline
+              ? _OfflineBanner(onRetry: store.retryNow)
+              : const SizedBox(width: double.infinity),
+        ),
+      ),
+    );
+  }
+
+  Widget _quickAddSliver(NotesStore store) {
+    return SliverToBoxAdapter(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: store.activeCollection == null
+                ? FilledButton.icon(
+                    onPressed: () => CollectionSettings.show(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Create a collection'),
+                  )
+                : QuickAddBar(labelIds: _composeLabelIds),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The notes themselves, or what stands in for them: skeletons while they
+  /// load, an empty state when there are none. [bottomGap] is the clearance
+  /// left under the last card.
+  List<Widget> _resultSlivers(
+    NotesStore store,
+    _HomeView view,
+    _GridMetrics grid, {
+    required double bottomGap,
+  }) {
+    if (store.loading || view.semanticLoading) {
+      return [
+        SliverToBoxAdapter(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: grid.maxWidth),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(grid.pad, 8, grid.pad, 0),
+                child: NotesSkeleton(columns: grid.columns),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final sections = view.sections;
+    if (sections.isEmpty) {
+      return [
+        SliverFillRemaining(hasScrollBody: false, child: _emptyState(view)),
+      ];
+    }
+
+    return [
+      if (sections.pinned.isNotEmpty) ...[
+        _sectionLabel('Pinned', grid),
+        _grid(store, sections.pinned, grid, view, section: 'pinned'),
+        if (sections.others.isNotEmpty) _sectionLabel('Others', grid),
+      ],
+      _grid(store, sections.others, grid, view, section: 'others'),
+      // Fill unused space without extending it.
+      SliverFillRemaining(
+        hasScrollBody: false,
+        child: SizedBox(height: bottomGap),
+      ),
+    ];
+  }
+
+  /// What an empty view says, and the one step it offers out of it.
+  Widget _emptyState(_HomeView view) {
+    if (view.searching) {
+      return const EmptyState(
+        icon: Icons.search_off,
+        message: 'No matching notes',
+      );
+    }
+
+    final (icon, message) = switch (_selection.view) {
+      NoteView.notes => (
+        Icons.sticky_note_2_outlined,
+        'Notes you add appear here',
+      ),
+      NoteView.board => (
+        Icons.view_kanban_outlined,
+        'Notes you add appear here',
+      ),
+      NoteView.reminders => (
+        Icons.notifications_outlined,
+        'Notes with reminders appear here',
+      ),
+      NoteView.archive => (
+        Icons.archive_outlined,
+        'Your archived notes appear here',
+      ),
+      NoteView.trash => (Icons.delete_outline, 'No notes in Trash'),
+      NoteView.label => (Icons.label_outline, 'No notes with this label yet'),
+      NoteView.smart => (
+        Icons.filter_alt_outlined,
+        'No notes match this smart view',
+      ),
+    };
+
+    switch (_selection.view) {
+      // A smart view is a query, so the way out of an empty one is to go and
+      // look at the notes, not to write a note that probably won't match it.
+      case NoteView.smart || NoteView.archive || NoteView.trash:
+        return EmptyState(
+          icon: icon,
+          message: message,
+          actionLabel: 'Browse notes',
+          actionIcon: Icons.sticky_note_2_outlined,
+          onAction: () => _selectView(_primaryView(context.read<NotesStore>())),
+        );
+      case NoteView.notes ||
+          NoteView.board ||
+          NoteView.reminders ||
+          NoteView.label:
+        return EmptyState(
+          icon: icon,
+          message: message,
+          actionLabel: 'Create note',
+          onAction: () => _newNote(NoteKind.text),
+          showBrandMark: _selection.view == NoteView.notes,
+        );
+    }
+  }
 
   /// Wrap a header-like widget (section label, view header) so its edges line
-  /// up with the grid's cards: same outer [pad] and same [gridMaxWidth] cap,
+  /// up with the grid's cards: same outer pad and same max width cap,
   /// centered the same way, so it tracks the grid's left edge whether the grid
   /// fills the area or sits centered within a narrower band.
-  Widget _alignedToGrid(Widget child, double pad, double gridMaxWidth) {
+  Widget _alignedToGrid(Widget child, _GridMetrics grid) {
     return SliverPadding(
-      padding: EdgeInsets.symmetric(horizontal: pad),
+      padding: EdgeInsets.symmetric(horizontal: grid.pad),
       sliver: SliverToBoxAdapter(
         child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: gridMaxWidth),
+            constraints: BoxConstraints(maxWidth: grid.maxWidth),
             // Fill the capped width (unlike the grid's masonry, a bare Text
             // would shrink to its content and then get centered), so the child
             // left-aligns to the grid's left edge.
@@ -1302,12 +1173,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _sectionLabel(
-    BuildContext context,
-    String text,
-    double pad,
-    double gridMaxWidth,
-  ) {
+  Widget _sectionLabel(String text, _GridMetrics grid) {
     return _alignedToGrid(
       Padding(
         // 8px inset from the card's left edge, matching the view header.
@@ -1317,18 +1183,15 @@ class _HomeScreenState extends State<HomeScreen> {
           style: sectionLabelStyle(Theme.of(context)),
         ),
       ),
-      pad,
-      gridMaxWidth,
+      grid,
     );
   }
 
   Widget _grid(
     NotesStore store,
     List<Note> notes,
-    int columns,
-    double pad,
-    double maxWidth,
-    bool dragEnabled, {
+    _GridMetrics grid,
+    _HomeView view, {
     required String section,
   }) {
     final query = _highlightQuery;
@@ -1356,7 +1219,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_listMode && !customOrder) {
       return SliverPadding(
         key: ValueKey('grid-$section'),
-        padding: EdgeInsets.symmetric(horizontal: pad),
+        padding: EdgeInsets.symmetric(horizontal: grid.pad),
         sliver: SliverList.builder(
           key: ValueKey((section, _selection)),
           itemCount: notes.length,
@@ -1369,7 +1232,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: EdgeInsets.only(bottom: index == notes.length - 1 ? 0 : 8),
             child: Center(
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxWidth),
+                constraints: BoxConstraints(maxWidth: grid.maxWidth),
                 child: SizedBox(
                   width: double.infinity,
                   child: tile(notes[index]),
@@ -1385,11 +1248,11 @@ class _HomeScreenState extends State<HomeScreen> {
       // Keyed so the grid keeps its place, and its cross-fade, when the
       // pinned section above it comes or goes.
       key: ValueKey('grid-$section'),
-      padding: EdgeInsets.symmetric(horizontal: pad),
+      padding: EdgeInsets.symmetric(horizontal: grid.pad),
       sliver: SliverToBoxAdapter(
         child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
+            constraints: BoxConstraints(maxWidth: grid.maxWidth),
             // Another view, collection or workspace is another grid. The old
             // one is already laid out, so fading it out as one layer costs a
             // repaint; retiring its cards one by one inside the new grid
@@ -1412,9 +1275,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 heights: _cardHeights,
                 notes: notes,
-                columns: columns,
+                columns: grid.columns,
                 spacing: 8,
-                dragEnabled: dragEnabled,
+                dragEnabled: view.dragEnabled,
                 draggableIds: _selectionMode ? _selectedNoteIds : null,
                 reorderGroupIds: customOrder ? _selectedNoteIds : const {},
                 dragFeedbackLabel: _selectionMode && _selectedNoteIds.length > 1
@@ -1511,7 +1374,7 @@ class _OfflineBannerState extends State<_OfflineBanner> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
       ),
       child: Row(
         children: [
@@ -1520,7 +1383,7 @@ class _OfflineBannerState extends State<_OfflineBanner> {
             size: 20,
             color: scheme.onSurfaceVariant,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: kSpaceMd),
           Expanded(
             child: Text(
               "Can't reach the server, showing your saved notes. "
@@ -1561,6 +1424,34 @@ class _OfflineBannerState extends State<_OfflineBanner> {
 // while a text field has focus (modifier chords, Escape); printable keys
 // leave it false so their action stays disabled during typing and the
 // keystroke falls through to the field.
+
+// Printable keys use CharacterActivator so they match what the keystroke
+// actually produced on any layout ("/" is Shift+7 on Swiss keyboards), and
+// _HomeAction suppresses them while a text field has focus, the event then
+// falls through unhandled and the letter is typed instead of firing a
+// shortcut. Chords and Escape (whileTyping: true) stay live during typing; the
+// quick-add bar consumes its own Escape before it ever bubbles up here.
+const _homeShortcuts = <ShortcutActivator, Intent>{
+  CharacterActivator('c'): _NewNoteIntent(NoteKind.text),
+  CharacterActivator('n'): _NewNoteIntent(NoteKind.text),
+  CharacterActivator('l'): _NewNoteIntent(NoteKind.checklist),
+  CharacterActivator('m'): _NewNoteIntent(NoteKind.markdown),
+  CharacterActivator('/'): _FocusSearchIntent(),
+  CharacterActivator('?'): _ShortcutHelpIntent(),
+  SingleActivator(LogicalKeyboardKey.keyK, control: true): _FocusSearchIntent(
+    whileTyping: true,
+  ),
+  SingleActivator(LogicalKeyboardKey.keyK, meta: true): _FocusSearchIntent(
+    whileTyping: true,
+  ),
+  SingleActivator(LogicalKeyboardKey.keyG, control: true): _ToggleLayoutIntent(
+    whileTyping: true,
+  ),
+  SingleActivator(LogicalKeyboardKey.keyG, meta: true): _ToggleLayoutIntent(
+    whileTyping: true,
+  ),
+  SingleActivator(LogicalKeyboardKey.escape): _EscapeIntent(whileTyping: true),
+};
 
 abstract class _HomeIntent extends Intent {
   const _HomeIntent({this.whileTyping = false});

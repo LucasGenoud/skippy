@@ -24,12 +24,12 @@ class FormErrorBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
       ),
       child: Row(
         children: [
           Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpaceSm),
           Expanded(
             child: Text(
               message,

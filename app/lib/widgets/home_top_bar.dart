@@ -28,6 +28,58 @@ import 'screen_width.dart';
 
 enum _SelectionAction { stage, label, share, color, pin }
 
+/// What the selection bar shows and does: how many notes are picked, and what
+/// the open view lets you do to them. The home screen owns the selection and
+/// builds one of these while it lasts.
+class SelectionActions {
+  final int count;
+  final bool allSelected;
+
+  /// Whether the pin control pins (some are unpinned) or unpins (all are).
+  final bool pinSelected;
+
+  /// Whether the archive control archives or, inside the archive, unarchives.
+  final bool archiveSelected;
+  final bool canArchive;
+  final bool canRestore;
+  final bool canTrash;
+
+  /// Bulk-file the selection into a board column. Only offered on the board,
+  /// where columns are the thing on screen.
+  final bool canMoveToStage;
+  final VoidCallback onCancel;
+  final VoidCallback onToggleSelectAll;
+  final VoidCallback onArchive;
+  final VoidCallback onRestore;
+  final VoidCallback onTrash;
+  final VoidCallback onAddLabel;
+  final VoidCallback onMoveToStage;
+  final VoidCallback onSetColor;
+  final VoidCallback onPin;
+  final VoidCallback onShare;
+
+  const SelectionActions({
+    required this.count,
+    required this.allSelected,
+    required this.pinSelected,
+    required this.archiveSelected,
+    required this.canArchive,
+    required this.canRestore,
+    required this.canTrash,
+    required this.canMoveToStage,
+    required this.onCancel,
+    required this.onToggleSelectAll,
+    required this.onArchive,
+    required this.onRestore,
+    required this.onTrash,
+    required this.onAddLabel,
+    required this.onMoveToStage,
+    required this.onSetColor,
+    required this.onPin,
+    required this.onShare,
+  });
+}
+
 /// The home screen's top bar: menu + branding, the search pill (with clear
 /// and semantic-search controls), and the quick-settings icons + avatar menu.
 /// Below 650px it collapses into a single search pill.
@@ -49,28 +101,10 @@ class HomeTopBar extends StatelessWidget {
   /// smart view, or a workspace this user does not own).
   final VoidCallback? onShareView;
   final VoidCallback onToggleSidebar;
-  final bool selectionMode;
-  final int selectedCount;
-  final bool allSelected;
-  final bool canArchive;
-  final bool archiveSelected;
-  final bool pinSelected;
-  final bool canRestore;
-  final bool canTrash;
-  final VoidCallback onCancelSelection;
-  final VoidCallback onToggleSelectAll;
-  final VoidCallback onArchiveSelected;
-  final VoidCallback onRestoreSelected;
-  final VoidCallback onTrashSelected;
-  final VoidCallback onAddLabelSelected;
 
-  /// Bulk-file the selection into a board column. Only offered on the board,
-  /// where columns are the thing on screen.
-  final VoidCallback onMoveToStageSelected;
-  final bool canMoveToStage;
-  final VoidCallback onSetColorSelected;
-  final VoidCallback onPinSelected;
-  final VoidCallback onShareSelected;
+  /// The selection bar's contents while notes are selected; null while
+  /// browsing.
+  final SelectionActions? selection;
 
   const HomeTopBar({
     super.key,
@@ -84,25 +118,7 @@ class HomeTopBar extends StatelessWidget {
     required this.onOpenFilters,
     required this.onShareView,
     required this.onToggleSidebar,
-    required this.selectionMode,
-    required this.selectedCount,
-    required this.allSelected,
-    required this.canArchive,
-    required this.archiveSelected,
-    required this.pinSelected,
-    required this.canRestore,
-    required this.canTrash,
-    required this.onCancelSelection,
-    required this.onToggleSelectAll,
-    required this.onArchiveSelected,
-    required this.onRestoreSelected,
-    required this.onTrashSelected,
-    required this.onAddLabelSelected,
-    required this.onMoveToStageSelected,
-    required this.canMoveToStage,
-    required this.onSetColorSelected,
-    required this.onPinSelected,
-    required this.onShareSelected,
+    required this.selection,
   });
 
   /// The bar's own height, and the search pill inside it.
@@ -139,12 +155,13 @@ class HomeTopBar extends StatelessWidget {
           child: child,
         );
       },
-      child: selectionMode
-          ? KeyedSubtree(
-              key: _selectingKey,
-              child: _selectionBar(context, scheme),
-            )
-          : KeyedSubtree(key: _browsingKey, child: _browsingBar(context)),
+      child: switch (selection) {
+        final selection? => KeyedSubtree(
+          key: _selectingKey,
+          child: _selectionBar(context, scheme, selection),
+        ),
+        null => KeyedSubtree(key: _browsingKey, child: _browsingBar(context)),
+      },
     );
   }
 
@@ -176,7 +193,7 @@ class HomeTopBar extends StatelessWidget {
                   tooltip: 'Main menu',
                   onPressed: onToggleSidebar,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: kSpaceXs),
                 const AppLogo(size: 30),
                 const SizedBox(width: 10),
                 Text(
@@ -200,7 +217,7 @@ class HomeTopBar extends StatelessWidget {
                 children: [
                   const SizedBox(width: 14),
                   Icon(Icons.search, color: scheme.onSurfaceVariant, size: 20),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: kSpaceMd),
                   Expanded(
                     child: TextField(
                       controller: controller,
@@ -298,7 +315,7 @@ class HomeTopBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 _UserAvatarMenu(onShareView: onShareView),
-                const SizedBox(width: 4),
+                const SizedBox(width: kSpaceXs),
               ],
             ),
           ),
@@ -407,7 +424,7 @@ class HomeTopBar extends StatelessWidget {
                         ),
                       _filtersControl(),
                       if (semanticAvailable) _semanticControl(scheme),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: kSpaceXs),
                     ],
                   );
                 } else {
@@ -435,26 +452,30 @@ class HomeTopBar extends StatelessWidget {
     );
   }
 
-  Widget _selectionBar(BuildContext context, ColorScheme scheme) {
+  Widget _selectionBar(
+    BuildContext context,
+    ColorScheme scheme,
+    SelectionActions selection,
+  ) {
     final narrow = !ScreenWidth.isAtLeast(context, 650);
-    final selectionLabel = selectedCount == 0
+    final selectionLabel = selection.count == 0
         ? 'Select notes'
-        : '$selectedCount selected';
+        : '${selection.count} selected';
     final controls = <Widget>[
       IconButton(
         icon: _fadeScale(
           child: Icon(
-            allSelected ? Icons.deselect_outlined : Icons.select_all,
-            key: ValueKey(allSelected),
+            selection.allSelected ? Icons.deselect_outlined : Icons.select_all,
+            key: ValueKey(selection.allSelected),
           ),
         ),
-        tooltip: allSelected ? 'Deselect all' : 'Select all',
-        onPressed: onToggleSelectAll,
+        tooltip: selection.allSelected ? 'Deselect all' : 'Select all',
+        onPressed: selection.onToggleSelectAll,
       ),
       if (narrow)
         PopupMenuButton<_SelectionAction>(
           popUpAnimationStyle: Motion.menuFor(context),
-          enabled: selectedCount > 0,
+          enabled: selection.count > 0,
           tooltip: 'More selected-note actions',
           onSelected: (action) async {
             if (action != _SelectionAction.pin) {
@@ -463,19 +484,19 @@ class HomeTopBar extends StatelessWidget {
             }
             switch (action) {
               case _SelectionAction.label:
-                onAddLabelSelected();
+                selection.onAddLabel();
               case _SelectionAction.stage:
-                onMoveToStageSelected();
+                selection.onMoveToStage();
               case _SelectionAction.share:
-                onShareSelected();
+                selection.onShare();
               case _SelectionAction.color:
-                onSetColorSelected();
+                selection.onSetColor();
               case _SelectionAction.pin:
-                onPinSelected();
+                selection.onPin();
             }
           },
           itemBuilder: (context) => [
-            if (canMoveToStage)
+            if (selection.canMoveToStage)
               const PopupMenuItem(
                 value: _SelectionAction.stage,
                 child: ListTile(
@@ -512,9 +533,13 @@ class HomeTopBar extends StatelessWidget {
               value: _SelectionAction.pin,
               child: ListTile(
                 leading: Icon(
-                  pinSelected ? Icons.push_pin_outlined : Icons.push_pin,
+                  selection.pinSelected
+                      ? Icons.push_pin_outlined
+                      : Icons.push_pin,
                 ),
-                title: Text(pinSelected ? 'Pin notes' : 'Unpin notes'),
+                title: Text(
+                  selection.pinSelected ? 'Pin notes' : 'Unpin notes',
+                ),
                 contentPadding: EdgeInsets.zero,
               ),
             ),
@@ -526,64 +551,66 @@ class HomeTopBar extends StatelessWidget {
           ),
         )
       else ...[
-        if (canMoveToStage)
+        if (selection.canMoveToStage)
           IconButton(
             icon: const Icon(Icons.view_kanban_outlined),
             tooltip: 'Move selected notes to a column',
-            onPressed: selectedCount == 0 ? null : onMoveToStageSelected,
+            onPressed: selection.count == 0 ? null : selection.onMoveToStage,
           ),
         IconButton(
           icon: const Icon(Icons.label_outline),
           tooltip: 'Add label to selected notes',
-          onPressed: selectedCount == 0 ? null : onAddLabelSelected,
+          onPressed: selection.count == 0 ? null : selection.onAddLabel,
         ),
         IconButton(
           icon: const Icon(Icons.person_add_alt_outlined),
           tooltip: 'Share selected notes',
-          onPressed: selectedCount == 0 ? null : onShareSelected,
+          onPressed: selection.count == 0 ? null : selection.onShare,
         ),
         IconButton(
           icon: const Icon(Icons.palette_outlined),
           tooltip: 'Change selected note colors',
-          onPressed: selectedCount == 0 ? null : onSetColorSelected,
+          onPressed: selection.count == 0 ? null : selection.onSetColor,
         ),
         IconButton(
-          icon: PinIcon(pinned: !pinSelected),
-          tooltip: pinSelected ? 'Pin selected notes' : 'Unpin selected notes',
-          onPressed: selectedCount == 0 ? null : onPinSelected,
+          icon: PinIcon(pinned: !selection.pinSelected),
+          tooltip: selection.pinSelected
+              ? 'Pin selected notes'
+              : 'Unpin selected notes',
+          onPressed: selection.count == 0 ? null : selection.onPin,
         ),
       ],
-      if (canArchive)
+      if (selection.canArchive)
         IconButton(
           icon: _fadeScale(
             child: Icon(
-              archiveSelected
+              selection.archiveSelected
                   ? Icons.archive_outlined
                   : Icons.unarchive_outlined,
-              key: ValueKey(archiveSelected),
+              key: ValueKey(selection.archiveSelected),
             ),
           ),
-          tooltip: archiveSelected
+          tooltip: selection.archiveSelected
               ? 'Archive selected notes'
               : 'Unarchive selected notes',
-          onPressed: selectedCount == 0 ? null : onArchiveSelected,
+          onPressed: selection.count == 0 ? null : selection.onArchive,
         ),
-      if (canRestore)
+      if (selection.canRestore)
         IconButton(
           icon: const Icon(Icons.restore_outlined),
           tooltip: 'Restore selected notes',
-          onPressed: selectedCount == 0 ? null : onRestoreSelected,
+          onPressed: selection.count == 0 ? null : selection.onRestore,
         ),
-      if (canTrash)
+      if (selection.canTrash)
         IconButton(
           icon: Icon(Icons.delete_outline, color: scheme.error),
           tooltip: 'Move selected notes to Trash',
-          onPressed: selectedCount == 0 ? null : onTrashSelected,
+          onPressed: selection.count == 0 ? null : selection.onTrash,
         ),
     ];
     return _SelectionBar(
       label: selectionLabel,
-      onCancel: onCancelSelection,
+      onCancel: selection.onCancel,
       actions: controls,
     );
   }
@@ -781,7 +808,7 @@ class _SearchPill extends StatelessWidget {
             color: focused
                 ? (light ? scheme.surface : scheme.surfaceContainerHighest)
                 : scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(kRadius),
+            borderRadius: kBorderRadius,
             border: Border.all(
               color: focused ? scheme.outlineVariant : Colors.transparent,
             ),
@@ -855,7 +882,7 @@ class _UserAvatarMenu extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: kSpaceMd),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,7 +923,7 @@ class _UserAvatarMenu extends StatelessWidget {
                     ? scheme.error
                     : scheme.onSurface,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: kSpaceMd),
               Flexible(
                 child: Text(
                   cacheFailure != null
@@ -915,7 +942,7 @@ class _UserAvatarMenu extends StatelessWidget {
           child: Row(
             children: [
               Icon(Icons.settings_outlined, size: 20, color: scheme.onSurface),
-              const SizedBox(width: 12),
+              const SizedBox(width: kSpaceMd),
               const Text('Settings'),
             ],
           ),
@@ -927,7 +954,7 @@ class _UserAvatarMenu extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(Icons.ios_share, size: 20, color: scheme.onSurface),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: kSpaceMd),
                   const Text('Share this view'),
                 ],
               ),
@@ -937,7 +964,7 @@ class _UserAvatarMenu extends StatelessWidget {
             child: Row(
               children: [
                 Icon(Icons.swap_vert, size: 20, color: scheme.onSurface),
-                const SizedBox(width: 12),
+                const SizedBox(width: kSpaceMd),
                 const Text('Sort by'),
               ],
             ),
@@ -947,7 +974,7 @@ class _UserAvatarMenu extends StatelessWidget {
             child: Row(
               children: [
                 Icon(themeAction.icon, size: 20, color: scheme.onSurface),
-                const SizedBox(width: 12),
+                const SizedBox(width: kSpaceMd),
                 Text('Theme: ${themeAction.label}'),
               ],
             ),
@@ -959,7 +986,7 @@ class _UserAvatarMenu extends StatelessWidget {
           child: Row(
             children: [
               Icon(Icons.logout, size: 20, color: scheme.error),
-              const SizedBox(width: 12),
+              const SizedBox(width: kSpaceMd),
               Text('Sign out', style: TextStyle(color: scheme.error)),
             ],
           ),
@@ -1032,7 +1059,7 @@ void _showSyncSheet(BuildContext context) {
                 'Sync status',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpaceSm),
               if (store.cacheFailure != null) ...[
                 const Text(
                   'This device could not save its offline copy. Keep the app open until changes reach the server.',

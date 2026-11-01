@@ -5,6 +5,7 @@ import '../../models/notify_channels.dart';
 import '../../state/settings_store.dart';
 import '../form_dialog.dart';
 import 'probe_row.dart';
+import '../../theme.dart';
 
 /// Summary row for the user's notification channels; taps into the config
 /// dialog. Like the AI-provider tile there is no server capability,
@@ -211,7 +212,7 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
                       ),
                     ),
                     for (final field in channel.fields) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: kSpaceMd),
                       _field(field),
                     ],
                   ],
@@ -219,7 +220,7 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           ProbeRow(
             testing: _testing,
             result: _testResult,

@@ -410,102 +410,19 @@ async fn apply_note_update_inner(
     schedule_summaries: bool,
 ) -> ApiResult<NoteView> {
     let mut record = require_participant(state, id, user_id).await?;
-    let expected_updated_at = if let Some(expected) = body.if_unmodified_since.as_deref() {
-        let expected = chrono::DateTime::parse_from_rfc3339(expected)
-            .map_err(|_| ApiError::BadRequest("invalid if_unmodified_since".to_string()))?;
-        let current = chrono::DateTime::parse_from_rfc3339(&record.updated_at)
-            .map_err(|_| ApiError::BadRequest("invalid note timestamp".to_string()))?;
-        if expected.timestamp_micros() != current.timestamp_micros() {
-            return Err(ApiError::Conflict("note changed elsewhere".to_string()));
-        }
-        Some(record.updated_at.clone())
-    } else {
-        None
-    };
+    let expected_updated_at = unmodified_since(&body, &record)?;
     let urls_before = note_urls(&record);
     let old_items = record.items.clone();
-    let is_owner = is_note_workspace_owner(state, &record, user_id).await?;
-    if !is_owner
-        && body
-            .workspace_id
-            .as_ref()
-            .is_some_and(|id| *id != record.workspace_id)
-    {
-        return Err(ApiError::Forbidden(
-            "only the owner can move a note to another workspace",
-        ));
-    }
-    let restoring_member = body.trashed == Some(false)
-        && state
-            .repo
-            .is_workspace_member(&record.workspace_id, user_id)
-            .await?;
-    validate_update(&record, is_owner || restoring_member, &body)?;
-    // A move must land in a workspace the mover belongs to; anything else is
-    // treated as a stray id rather than a way to file notes out of reach.
-    let moving_to = match &body.workspace_id {
-        Some(target) if *target != record.workspace_id => {
-            let target = resolve_workspace(state, user_id, Some(target)).await?;
-            let target_is_owned = state
-                .repo
-                .workspace(&target)
-                .await?
-                .is_some_and(|workspace| workspace.owner_id == user_id);
-            if !target_is_owned {
-                return Err(ApiError::Forbidden(
-                    "a note can only be moved into a workspace you own",
-                ));
-            }
-            Some(target)
-        }
-        _ => None,
-    };
+    authorize_update(state, user_id, &record, &body).await?;
+    let moving_to = move_target(state, user_id, &record, &body).await?;
     // A move takes the note out of one roster and into another, so the people
     // losing sight of it have to be told before that happens.
     let audience_before_move = match moving_to {
         Some(_) => state.repo.participant_ids(id).await?,
         None => Vec::new(),
     };
-    if body.collection_id.is_some()
-        || moving_to.is_some()
-        || (record.trashed && body.trashed == Some(false))
-    {
-        let target_workspace = moving_to.as_deref().unwrap_or(&record.workspace_id);
-        let target = super::collections::resolve_collection(
-            state,
-            user_id,
-            target_workspace,
-            body.collection_id.as_deref().or_else(|| {
-                if moving_to.is_none() {
-                    record.collection_id.as_deref()
-                } else {
-                    None
-                }
-            }),
-        )
-        .await?;
-        if record.collection_id.as_deref() != Some(&target) {
-            body.stage_id = Some(None);
-        }
-        body.collection_id = Some(target);
-    }
-    if moving_to.is_none()
-        && let Some(Some(stage_id)) = body.stage_id.as_ref()
-    {
-        let valid = state
-            .repo
-            .stages_for_user(user_id)
-            .await?
-            .into_iter()
-            .any(|stage| {
-                stage.id == *stage_id
-                    && stage.workspace_id == record.workspace_id
-                    && stage.collection_id == record.collection_id
-            });
-        if !valid {
-            body.stage_id = Some(None);
-        }
-    }
+    resolve_filing(state, user_id, &record, moving_to.as_deref(), &mut body).await?;
+
     let content_changed = changes_content(&body, &record);
     // Read before `apply_to` consumes the body. Present-but-null is a real
     // change (back to unassigned), so this asks whether the key was sent.
@@ -574,6 +491,7 @@ async fn apply_note_update_inner(
     {
         state.repo.set_note_labels(id, &label_ids).await?;
     }
+
     state.index_note_later(id);
     // Only content edits re-run auto-labeling; organizational patches
     // (color/pin/position/labels themselves) never cost an LLM call.
@@ -596,6 +514,130 @@ async fn apply_note_update_inner(
         .ok_or(ApiError::NotFound)?;
     state.sign_view(&mut view);
     Ok(view)
+}
+
+/// The `if_unmodified_since` precondition: refuse a patch written against a
+/// version of the note that has since changed. Answers the timestamp the
+/// write must still find, when the patch carried one.
+fn unmodified_since(body: &UpdateNote, record: &NoteRecord) -> ApiResult<Option<String>> {
+    let Some(expected) = body.if_unmodified_since.as_deref() else {
+        return Ok(None);
+    };
+    let expected = chrono::DateTime::parse_from_rfc3339(expected)
+        .map_err(|_| ApiError::BadRequest("invalid if_unmodified_since".to_string()))?;
+    let current = chrono::DateTime::parse_from_rfc3339(&record.updated_at)
+        .map_err(|_| ApiError::BadRequest("invalid note timestamp".to_string()))?;
+    if expected.timestamp_micros() != current.timestamp_micros() {
+        return Err(ApiError::Conflict("note changed elsewhere".to_string()));
+    }
+    Ok(Some(record.updated_at.clone()))
+}
+
+/// Whether `user_id` may send this patch. Members and collaborators edit;
+/// moving a note out of its workspace and the lifecycle fields are the
+/// owner's, except that a workspace member may restore from trash.
+async fn authorize_update(
+    state: &AppState,
+    user_id: &str,
+    record: &NoteRecord,
+    body: &UpdateNote,
+) -> ApiResult<()> {
+    let is_owner = is_note_workspace_owner(state, record, user_id).await?;
+    if !is_owner
+        && body
+            .workspace_id
+            .as_ref()
+            .is_some_and(|id| *id != record.workspace_id)
+    {
+        return Err(ApiError::Forbidden(
+            "only the owner can move a note to another workspace",
+        ));
+    }
+    let restoring_member = body.trashed == Some(false)
+        && state
+            .repo
+            .is_workspace_member(&record.workspace_id, user_id)
+            .await?;
+    validate_update(record, is_owner || restoring_member, body)
+}
+
+/// The workspace this patch moves the note to, or `None` when it stays put.
+/// A move must land in a workspace the mover owns; anything else is treated
+/// as a stray id rather than a way to file notes out of reach.
+async fn move_target(
+    state: &AppState,
+    user_id: &str,
+    record: &NoteRecord,
+    body: &UpdateNote,
+) -> ApiResult<Option<String>> {
+    let Some(target) = body
+        .workspace_id
+        .as_ref()
+        .filter(|target| **target != record.workspace_id)
+    else {
+        return Ok(None);
+    };
+    let target = resolve_workspace(state, user_id, Some(target)).await?;
+    let target_is_owned = state
+        .repo
+        .workspace(&target)
+        .await?
+        .is_some_and(|workspace| workspace.owner_id == user_id);
+    if !target_is_owned {
+        return Err(ApiError::Forbidden(
+            "a note can only be moved into a workspace you own",
+        ));
+    }
+    Ok(Some(target))
+}
+
+/// Settles where the note will be filed: a collection that exists in its
+/// (possibly new) workspace, and a stage only if it belongs to that
+/// collection. A restore out of trash re-resolves the collection too, since
+/// the old one may have been deleted meanwhile.
+async fn resolve_filing(
+    state: &AppState,
+    user_id: &str,
+    record: &NoteRecord,
+    moving_to: Option<&str>,
+    body: &mut UpdateNote,
+) -> ApiResult<()> {
+    let restoring = record.trashed && body.trashed == Some(false);
+    if body.collection_id.is_some() || moving_to.is_some() || restoring {
+        let target_workspace = moving_to.unwrap_or(&record.workspace_id);
+        // Unless the patch names one, a move files the note in the new
+        // workspace's first collection and anything else keeps its own.
+        let requested = body.collection_id.as_deref().or(match moving_to {
+            Some(_) => None,
+            None => record.collection_id.as_deref(),
+        });
+        let target =
+            super::collections::resolve_collection(state, user_id, target_workspace, requested)
+                .await?;
+        if record.collection_id.as_deref() != Some(&target) {
+            body.stage_id = Some(None);
+        }
+        body.collection_id = Some(target);
+    }
+
+    if moving_to.is_none()
+        && let Some(Some(stage_id)) = body.stage_id.as_ref()
+    {
+        let valid = state
+            .repo
+            .stages_for_user(user_id)
+            .await?
+            .into_iter()
+            .any(|stage| {
+                stage.id == *stage_id
+                    && stage.workspace_id == record.workspace_id
+                    && stage.collection_id == record.collection_id
+            });
+        if !valid {
+            body.stage_id = Some(None);
+        }
+    }
+    Ok(())
 }
 
 fn note_urls(record: &NoteRecord) -> HashSet<String> {

@@ -126,7 +126,7 @@ class _SyncDisclaimer extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.info_outline, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 12),
+            const SizedBox(width: kSpaceMd),
             Expanded(
               child: Text(
                 'This device can only ring for reminders it already knows '

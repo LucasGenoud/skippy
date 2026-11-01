@@ -1,12 +1,13 @@
-import '../models/collection.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../api/api_client.dart';
+import '../models/collection.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import '../models/saved_view.dart';
 import '../models/workspace.dart';
 import '../util/backup.dart';
 import '../util/connectivity.dart';
@@ -14,11 +15,10 @@ import '../util/keep_import.dart';
 import 'bulk_import.dart';
 import 'checklist_tree.dart';
 import 'local_cache.dart';
-import '../models/saved_view.dart';
 import 'note_collection.dart';
-import 'notes_cache_doc.dart';
 import 'note_conversion.dart';
 import 'note_links.dart';
+import 'notes_cache_doc.dart';
 import 'pending_operation.dart';
 import 'pending_operation_executor.dart';
 import 'sparse_position.dart';
@@ -29,6 +29,11 @@ import 'workspace_reconciliation.dart';
 export 'note_collection.dart'
     show NoteSections, NoteView, SortMode, ViewSelection, WorkspaceScope;
 export 'sync_issue.dart';
+
+part 'notes_store_attachments.dart';
+part 'notes_store_labels.dart';
+part 'notes_store_stages.dart';
+part 'notes_store_workspaces.dart';
 
 /// Coarse connectivity/sync state surfaced on the top-bar avatar.
 ///
@@ -90,154 +95,6 @@ class NotesStore extends ChangeNotifier {
   String? _activeWorkspaceId;
 
   final Map<String, String> _collectionChoices = {};
-  List<NoteCollection> get collections =>
-      activeWorkspace?.collections ?? const [];
-  NoteCollection? get activeCollection {
-    final id = _collectionChoices[_activeWorkspaceId];
-    for (final c in collections) {
-      if (c.id == id) {
-        return c;
-      }
-    }
-    return collections.isEmpty ? null : collections.first;
-  }
-
-  void selectCollection(String id) {
-    if (!collections.any((c) => c.id == id)) {
-      return;
-    }
-    _collectionChoices[_activeWorkspaceId!] = id;
-    _navigationChanged();
-  }
-
-  WorkspaceScope get collectionScope => WorkspaceScope(
-    workspaceId: _activeWorkspaceId,
-    isDefault: workspaceScope.isDefault,
-    known: workspaceScope.known,
-    collectionId: activeCollection?.id,
-  );
-
-  Future<void> duplicateWorkspace(
-    String id,
-    String name,
-    WorkspaceCopyContent content, {
-    bool reminders = false,
-  }) async {
-    flushForBackground();
-    await _drainQueue();
-    if (_connectionDown || _queue.isNotEmpty) {
-      throw StateError(
-        'Connect and finish syncing before duplicating a workspace',
-      );
-    }
-    final copy = await api.duplicateWorkspace(
-      id,
-      name,
-      content,
-      reminders: reminders,
-    );
-    await refresh();
-    setActiveWorkspace(copy.id);
-  }
-
-  void saveCollection(NoteCollection collection) {
-    _collectionSorts.remove(collection.id);
-    _workspaces = [
-      for (final w in _workspaces)
-        if (w.id == collection.workspaceId)
-          w.copyWith(
-            collections: [
-              ...w.collections.where((c) => c.id != collection.id),
-              collection,
-            ]..sort((a, b) => a.position.compareTo(b.position)),
-          )
-        else
-          w,
-    ];
-    _enqueue(
-      PendingOp(
-        PendingOpKind.collectionPut,
-        id: collection.id,
-        data: collection.toJson(),
-      ),
-    );
-    notifyListeners();
-  }
-
-  void moveCollection(String id, int newIndex) {
-    final workspace = activeWorkspace;
-    if (workspace == null) return;
-    final collection = workspace.collections
-        .where((c) => c.id == id)
-        .firstOrNull;
-    if (collection == null) return;
-    final others = [
-      for (final c in workspace.collections)
-        if (c.id != id) c.position,
-    ];
-    saveCollection(
-      NoteCollection(
-        id: collection.id,
-        workspaceId: collection.workspaceId,
-        name: collection.name,
-        icon: collection.icon,
-        color: collection.color,
-        layout: collection.layout,
-        sort: collection.sort,
-        position: positionAt(others, newIndex, current: collection.position),
-      ),
-    );
-  }
-
-  void deleteCollection(String id) {
-    final workspaceId = _workspaces
-        .where((w) => w.collections.any((c) => c.id == id))
-        .firstOrNull
-        ?.id;
-    if (workspaceId == null) {
-      return;
-    }
-    _workspaces = [
-      for (final w in _workspaces)
-        if (w.id == workspaceId)
-          w.copyWith(
-            collections: w.collections.where((c) => c.id != id).toList(),
-          )
-        else
-          w,
-    ];
-    _notes = [
-      for (final n in _notes)
-        if (n.collectionId == id)
-          n.copyWith(trashed: true, stageId: null)
-        else
-          n,
-    ];
-    _stages.removeWhere((s) => s.collectionId == id);
-    _enqueue(
-      PendingOp(
-        PendingOpKind.collectionDelete,
-        id: id,
-        data: {'workspaceId': workspaceId},
-      ),
-    );
-    notifyListeners();
-  }
-
-  void moveToCollection(String noteId, String collectionId) {
-    final note = noteById(noteId);
-    if (note == null ||
-        !(workspaceById(
-              note.workspaceId,
-            )?.collections.any((c) => c.id == collectionId) ??
-            false)) {
-      return;
-    }
-    _patch(noteId, note.copyWith(collectionId: collectionId, stageId: null), {
-      'collection_id': collectionId,
-      'stage_id': null,
-    });
-  }
 
   /// The last drawer/sidebar destination used in each workspace. This is
   /// device-local navigation state, like [_activeWorkspaceId], rather than a
@@ -297,8 +154,8 @@ class NotesStore extends ChangeNotifier {
   /// The local cache is loaded exactly once, at the first [load]. Until then we
   /// must not persist (that would clobber the on-disk copy with empty state).
   bool _hydrated = false;
-  bool _persistDirty = false;
-  bool _persisting = false;
+  late final _snapshotWriter = _WriteBehind(_writeSnapshot);
+  late final _navigationWriter = _WriteBehind(_writeNavigation);
 
   /// Notes created locally that have not been sent to the server yet.
   final Set<String> _drafts = {};
@@ -351,6 +208,13 @@ class NotesStore extends ChangeNotifier {
       noteById: noteById,
       serverUpdatedAt: _serverUpdatedAt,
     );
+  }
+
+  static int _byLabelPosition(Label a, Label b) {
+    final byPosition = a.position.compareTo(b.position);
+    return byPosition != 0
+        ? byPosition
+        : a.name.toLowerCase().compareTo(b.name.toLowerCase());
   }
 
   /// Labels of the open workspace. Labels are a workspace's shared taxonomy,
@@ -1023,41 +887,29 @@ class NotesStore extends ChangeNotifier {
     _persistNow();
   }
 
-  /// Coalesced, one-writer-at-a-time persistence. Uses a microtask (not a
-  /// timer) so it runs promptly after each change without leaking test
-  /// timers.
+  /// Saves the note snapshot, coalesced with any save already running.
   void _persistNow() {
     if (_disposed || !_hydrated) return;
     _lastPersist = DateTime.now();
     // Creating, deleting or leaving a workspace moves the open one too.
     _persistNavigation();
-    _persistDirty = true;
-    if (_persisting) return;
-    _persisting = true;
-    scheduleMicrotask(_persistLoop);
+    _snapshotWriter.request();
   }
 
-  Future<void> _persistLoop() async {
-    while (_persistDirty) {
-      _persistDirty = false;
-      try {
-        await cache.write(_cacheKey, _toCacheDoc().toJson());
-        if (cacheFailure != null) {
-          cacheFailure = null;
-          if (!_disposed) super.notifyListeners();
-        }
-      } catch (error) {
-        cacheFailure = error.toString();
+  Future<void> _writeSnapshot() async {
+    try {
+      await cache.write(_cacheKey, _toCacheDoc().toJson());
+      if (cacheFailure != null) {
+        cacheFailure = null;
         if (!_disposed) super.notifyListeners();
       }
+    } catch (error) {
+      cacheFailure = error.toString();
+      if (!_disposed) super.notifyListeners();
     }
-    _persisting = false;
   }
 
   void retryCacheWrite() => _persistNow();
-
-  bool _navigationDirty = false;
-  bool _persistingNavigation = false;
 
   /// Switching shows other notes but changes none, so it tells listeners and
   /// saves where this device is without re-encoding the note snapshot.
@@ -1070,29 +922,22 @@ class NotesStore extends ChangeNotifier {
   /// Coalesced like [_persistNow], for the small navigation record.
   void _persistNavigation() {
     if (_disposed || !_hydrated) return;
-    _navigationDirty = true;
-    if (_persistingNavigation) return;
-    _persistingNavigation = true;
-    scheduleMicrotask(_persistNavigationLoop);
+    _navigationWriter.request();
   }
 
-  Future<void> _persistNavigationLoop() async {
-    while (_navigationDirty) {
-      _navigationDirty = false;
-      final doc = NavigationCacheDoc(
-        activeWorkspaceId: _activeWorkspaceId,
-        collectionChoices: _collectionChoices,
-        workspaceViews: _lastWorkspaceViews,
-      );
-      try {
-        await cache.write(_navigationKey, doc.toJson());
-      } catch (_) {
-        // Losing it reopens the default workspace, nothing worse. Storage
-        // that cannot take a few bytes fails the snapshot too, and that
-        // write is the one that reports it.
-      }
+  Future<void> _writeNavigation() async {
+    final doc = NavigationCacheDoc(
+      activeWorkspaceId: _activeWorkspaceId,
+      collectionChoices: _collectionChoices,
+      workspaceViews: _lastWorkspaceViews,
+    );
+    try {
+      await cache.write(_navigationKey, doc.toJson());
+    } catch (_) {
+      // Losing it reopens the default workspace, nothing worse. Storage that
+      // cannot take a few bytes fails the snapshot too, and that write is the
+      // one that reports it.
     }
-    _persistingNavigation = false;
   }
 
   @override
@@ -1703,7 +1548,9 @@ class NotesStore extends ChangeNotifier {
   void reorder(List<String> orderedIds) {
     for (var i = 0; i < orderedIds.length; i++) {
       final note = noteById(orderedIds[i]);
-      if (note != null) _replace(note.copyWith(position: (i + 1) * 1024.0));
+      if (note != null) {
+        _replace(note.copyWith(position: (i + 1) * kPositionGap));
+      }
     }
     _notes.sort((a, b) => a.position.compareTo(b.position));
     notifyListeners();
@@ -1799,321 +1646,6 @@ class NotesStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
-  // Workspaces
-
-  List<SavedView> get savedViews =>
-      List.unmodifiable(activeWorkspace?.savedViews ?? const <SavedView>[]);
-
-  SavedView? savedViewById(String id) {
-    for (final view in savedViews) {
-      if (view.id == id) {
-        return view;
-      }
-    }
-    return null;
-  }
-
-  SavedView addSavedView({
-    required String name,
-    required String query,
-    String? icon,
-    String? color,
-  }) {
-    final view = SavedView(
-      id: _uuid.v4(),
-      name: name.trim(),
-      query: query.trim(),
-      icon: icon,
-      color: color,
-      position: positionBetween(savedViews.lastOrNull?.position, null),
-    );
-    _putSavedView(view);
-    return view;
-  }
-
-  void updateSavedView(
-    String id, {
-    required String name,
-    required String query,
-    String? icon,
-    String? color,
-  }) {
-    final view = savedViewById(id);
-    if (view == null) {
-      return;
-    }
-    _putSavedView(
-      view.copyWith(
-        name: name.trim(),
-        query: query.trim(),
-        icon: icon,
-        color: color,
-      ),
-    );
-  }
-
-  void _putSavedView(SavedView view) {
-    final index = _workspaces.indexWhere((w) => w.id == _activeWorkspaceId);
-    if (index < 0) {
-      return;
-    }
-    final workspace = _workspaces[index];
-    _workspaces[index] = workspace.copyWith(
-      savedViews: [
-        for (final old in workspace.savedViews)
-          if (old.id != view.id) old,
-        view,
-      ]..sort((a, b) => a.position.compareTo(b.position)),
-    );
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.savedViewPut,
-        id: view.id,
-        data: {'workspaceId': workspace.id, 'view': view.toJson()},
-      ),
-    );
-  }
-
-  void removeSavedView(String id) {
-    final index = _workspaces.indexWhere((w) => w.id == _activeWorkspaceId);
-    if (index < 0 || savedViewById(id) == null) {
-      return;
-    }
-    final workspace = _workspaces[index];
-    _workspaces[index] = workspace.copyWith(
-      savedViews: workspace.savedViews.where((v) => v.id != id).toList(),
-    );
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.savedViewDelete,
-        id: id,
-        data: {'workspaceId': workspace.id},
-      ),
-    );
-  }
-
-  void reorderSavedViews(int oldIndex, int newIndex) {
-    final next = [...savedViews];
-    if (oldIndex < 0 || oldIndex >= next.length) {
-      return;
-    }
-    final view = next.removeAt(oldIndex);
-    final others = [for (final v in next) v.position];
-    _putSavedView(
-      view.copyWith(
-        position: positionAt(others, newIndex, current: view.position),
-        icon: view.icon,
-        color: view.color,
-      ),
-    );
-  }
-
-  /// Create a workspace and switch to it. Optimistic like note creation: the
-  /// switch happens now and the write drains through the queue.
-  Workspace createWorkspace(String name) {
-    final id = _uuid.v4();
-    final workspace = Workspace(
-      id: id,
-      collections: [NoteCollection.general(id)],
-      name: name.trim(),
-      owner: currentUserId == null
-          ? null
-          : UserRef(id: currentUserId!, name: ''),
-    );
-    _workspaces = [..._workspaces, workspace];
-    _activeWorkspaceId = workspace.id;
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.workspaceCreate,
-        id: workspace.id,
-        data: {'name': workspace.name},
-      ),
-    );
-    return workspace;
-  }
-
-  void renameWorkspace(String id, String name) {
-    final i = _workspaces.indexWhere((w) => w.id == id);
-    if (i == -1) return;
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return;
-    _workspaces[i] = _workspaces[i].copyWith(name: trimmed);
-    notifyListeners();
-    _enqueue(
-      PendingOp(PendingOpKind.workspaceRename, id: id, data: {'name': trimmed}),
-    );
-  }
-
-  /// Enable the workspace's two primary entry points. The owner controls this
-  /// shared setting; keeping one enabled prevents a workspace with no main
-  /// place to show or create notes.
-  void updateWorkspaceViews({
-    required String id,
-    required bool notesEnabled,
-    required bool boardEnabled,
-  }) {
-    if (!notesEnabled && !boardEnabled) return;
-    final i = _workspaces.indexWhere((w) => w.id == id);
-    if (i == -1 || !_workspaces[i].isOwnedBy(currentUserId)) return;
-    _workspaces[i] = _workspaces[i].copyWith(
-      notesEnabled: notesEnabled,
-      boardEnabled: boardEnabled,
-    );
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.workspaceViews,
-        id: id,
-        data: {'notesEnabled': notesEnabled, 'boardEnabled': boardEnabled},
-      ),
-    );
-  }
-
-  /// Set a workspace's AI switches. Like its views, only the owner changes
-  /// them, and every member gets the AI they allow.
-  void updateWorkspaceAi(String id, AiSwitches switches) {
-    final i = _workspaces.indexWhere((w) => w.id == id);
-    if (i == -1 || !_workspaces[i].isOwnedBy(currentUserId)) return;
-    final workspace = _workspaces[i];
-    _workspaces[i] = workspace.copyWith(
-      ai: workspace.ai.copyWith(switches: switches),
-    );
-    notifyListeners();
-    _enqueue(
-      PendingOp(PendingOpKind.workspaceAi, id: id, data: switches.toJson()),
-    );
-  }
-
-  /// The AI in workspace [id]. A note reached through a direct share, from a
-  /// workspace this user is not in, gets none: that owner's setup is not
-  /// visible from here.
-  WorkspaceAi aiIn(String? id) => workspaceById(id)?.ai ?? const WorkspaceAi();
-
-  /// Whether [id] can be deleted: you own it and it isn't your default one.
-  bool canDeleteWorkspace(String id) {
-    final workspace = workspaceById(id);
-    return workspace != null &&
-        !workspace.isDefault &&
-        workspace.isOwnedBy(currentUserId);
-  }
-
-  /// Permanently delete a workspace and every note it contains. Cancel local
-  /// debounced saves and drafts for those notes so no write can be enqueued
-  /// after the workspace-delete operation.
-  void deleteWorkspace(String id) {
-    if (!canDeleteWorkspace(id)) return;
-    for (final note in _notes.where((note) => note.workspaceId == id)) {
-      _saveDebounce.remove(note.id)?.cancel();
-      _drafts.remove(note.id);
-    }
-    _notes.removeWhere((note) => note.workspaceId == id);
-    _labels.removeWhere((label) => label.workspaceId == id);
-    _stages.removeWhere((stage) => stage.workspaceId == id);
-    _workspaces.removeWhere((workspace) => workspace.id == id);
-    _lastWorkspaceViews.remove(id);
-    _reconcileActiveWorkspace();
-    notifyListeners();
-    _enqueue(PendingOp(PendingOpKind.workspaceDelete, id: id));
-  }
-
-  /// Leave a workspace someone else owns. Workspace-owned notes disappear
-  /// from this user's shelf unless the note also carries an explicit direct
-  /// share for them; the server leaves every note in the workspace.
-  void leaveWorkspace(String id) {
-    final me = currentUserId;
-    final workspace = workspaceById(id);
-    if (me == null || workspace == null || workspace.isOwnedBy(me)) return;
-    final departure = reconcileWorkspaceDeparture(
-      notes: _notes,
-      labels: _labels,
-      workspaceId: id,
-      userId: me,
-    );
-    _notes = departure.notes;
-    _labels.removeWhere((label) => label.workspaceId == id);
-    _stages.removeWhere((stage) => stage.workspaceId == id);
-    _workspaces.removeWhere((w) => w.id == id);
-    _lastWorkspaceViews.remove(id);
-    _reconcileActiveWorkspace();
-    notifyListeners();
-    _enqueue(
-      PendingOp(PendingOpKind.leaveWorkspace, id: id, data: {'userId': me}),
-    );
-  }
-
-  /// Await-based (not queued): the dialog wants immediate success/failure.
-  /// Throws [ApiException] with a friendly `serverMessage` on rejection.
-  Future<void> addWorkspaceMember(String workspaceId, String email) async {
-    // The workspace has to exist on the server before anyone can be added.
-    await _drainQueue();
-    final updated = await api.addWorkspaceMember(workspaceId, email);
-    final i = _workspaces.indexWhere((w) => w.id == workspaceId);
-    if (i != -1) {
-      _workspaces[i] = _workspaces[i].copyWith(members: updated.members);
-      notifyListeners();
-    }
-  }
-
-  void removeWorkspaceMember(String workspaceId, String userId) {
-    if (userId == currentUserId) {
-      leaveWorkspace(workspaceId);
-      return;
-    }
-    final i = _workspaces.indexWhere((w) => w.id == workspaceId);
-    if (i == -1) return;
-    _workspaces[i] = _workspaces[i].copyWith(
-      members: _workspaces[i].members.where((m) => m.id != userId).toList(),
-    );
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.leaveWorkspace,
-        id: workspaceId,
-        data: {'userId': userId},
-      ),
-    );
-  }
-
-  /// File a note in another workspace. Owner-only, matching the server: a move
-  /// changes who can see the note. Labels from the old workspace are dropped,
-  /// since a label belongs to one workspace's taxonomy.
-  void moveNoteToWorkspace(String noteId, String workspaceId) {
-    final note = noteById(noteId);
-    if (note == null ||
-        note.workspaceId == workspaceId ||
-        !note.isOwnedBy(currentUserId) ||
-        workspaceById(workspaceId) == null) {
-      return;
-    }
-    final kept = {
-      for (final id in note.labelIds)
-        if (labelById(id)?.workspaceId == workspaceId) id,
-    };
-    final collections = workspaceById(workspaceId)!.collections;
-    if (collections.isEmpty) {
-      return;
-    }
-    final collectionId = collections.first.id;
-    _patch(
-      noteId,
-      note.copyWith(
-        workspaceId: workspaceId,
-        collectionId: collectionId,
-        labelIds: kept,
-        stageId: null,
-      ),
-      {
-        'workspace_id': workspaceId,
-        'collection_id': collectionId,
-        'stage_id': null,
-      },
-    );
-  }
-
-  // ---------------------------------------------------------------------
   // Sharing
 
   /// Await-based (not queued): the dialog wants immediate success/failure.
@@ -2196,159 +1728,6 @@ class NotesStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------
-  // Attachments
-
-  /// Await-based: the editor shows progress and needs the server-issued id.
-  /// Accepts any file type; the server decides how it may be served.
-  Future<void> uploadFile(
-    String noteId,
-    Uint8List bytes,
-    String mime,
-    String filename,
-  ) async {
-    await _materializeForAttachment(noteId);
-    await _drainQueue();
-    final attachment = await api.uploadAttachment(
-      noteId,
-      bytes,
-      mime,
-      filename,
-    );
-    final note = noteById(noteId);
-    if (note != null) {
-      _replace(note.copyWith(attachments: [...note.attachments, attachment]));
-    }
-  }
-
-  Future<void> _materializeForAttachment(String noteId) async {
-    if (_drafts.contains(noteId)) {
-      // Force-create even while textually empty; the file is the content.
-      _drafts.remove(noteId);
-      final note = noteById(noteId);
-      if (note != null) {
-        final created = await api.createNote(note);
-        _serverUpdatedAt[noteId] = created.updatedAt.toUtc().toIso8601String();
-      }
-    }
-  }
-
-  /// Drag-and-drop onto the grid: one new note holding all [files].
-  /// Returns the note id, or null when nothing uploaded (the empty draft is
-  /// discarded rather than left as a phantom note).
-  Future<String?> createNoteWithFiles(
-    List<DroppedFile> files, {
-    Set<String> labelIds = const {},
-  }) async {
-    final note = createDraft(labelIds: labelIds);
-    var uploaded = 0;
-    for (final file in files) {
-      try {
-        await uploadFile(note.id, file.bytes, file.mime, file.name);
-        uploaded++;
-      } catch (_) {
-        // Skip the failed file; the rest may still make it.
-      }
-    }
-    if (uploaded == 0) {
-      deleteForever(note.id);
-      return null;
-    }
-    return note.id;
-  }
-
-  /// Content shared into the app (a link, some text) → one text note.
-  /// Materializes immediately via [updateNoteContent] (which pushes the draft
-  /// to the server). Returns the note id, or null when there was nothing to
-  /// save (the empty draft is discarded rather than left as a phantom note).
-  Future<String?> createTextNote(String content, {String title = ''}) async {
-    final body = content.trim();
-    final heading = title.trim();
-    if (body.isEmpty && heading.isEmpty) return null;
-    final note = createDraft();
-    updateNoteContent(note.id, title: heading, content: body);
-    return note.id;
-  }
-
-  void removeAttachment(String noteId, String attachmentId) {
-    final note = noteById(noteId);
-    if (note == null) return;
-    _replace(
-      note.copyWith(
-        attachments: note.attachments
-            .where((attachment) => attachment.id != attachmentId)
-            .toList(),
-      ),
-    );
-    _enqueue(PendingOp(PendingOpKind.deleteAttachment, id: attachmentId));
-  }
-
-  /// Resolved, ready-to-load URL for an attachment (uses the server's signed,
-  /// time-limited URL so image/audio element loads stay authorized).
-  String fileUrl(Attachment attachment) => api.attachmentUrl(attachment);
-
-  // ---------------------------------------------------------------------
-  // Audio notes
-
-  /// Recording finished → create an audio note holding the clip. When Whisper
-  /// is available, the note is shown as transcribing immediately; otherwise it
-  /// remains a fully playable audio note with an empty editable transcript.
-  /// Returns the note id, or null when the upload failed (the empty draft is
-  /// discarded).
-  Future<String?> createAudioNote(
-    Uint8List bytes,
-    String mime, {
-    Set<String> labelIds = const {},
-    bool transcriptionAvailable = false,
-  }) async {
-    final note = createDraft(kind: NoteKind.audio, labelIds: labelIds);
-    if (transcriptionAvailable) {
-      // Surface the transcribing animation before the round-trip completes.
-      _replace(note.copyWith(transcriptStatus: 'pending'));
-    }
-    final ext = switch (mime.split(';').first.trim()) {
-      'audio/webm' => 'webm',
-      'audio/ogg' => 'ogg',
-      'audio/mp4' => 'm4a',
-      'audio/mpeg' => 'mp3',
-      'audio/wav' || 'audio/x-wav' => 'wav',
-      _ => 'audio',
-    };
-    try {
-      await uploadFile(note.id, bytes, mime, 'recording.$ext');
-    } catch (_) {
-      deleteForever(note.id);
-      return null;
-    }
-    return note.id;
-  }
-
-  /// Retry a failed (or stale) transcription. Optimistically flips the note
-  /// back to transcribing while the server re-runs Whisper.
-  void retranscribe(String id) {
-    final note = noteById(id);
-    if (note == null) return;
-    _replace(note.copyWith(transcriptStatus: 'pending'));
-    _enqueue(PendingOp(PendingOpKind.transcribe, id: id));
-  }
-
-  /// Stop the server's automatic link summaries for [id]. Not queued: the job
-  /// lives only in the server's memory, so there is nothing to replay later.
-  Future<void> cancelLinkSummaries(String id) async {
-    final note = noteById(id);
-    if (note == null || !note.summarizingLinks) {
-      return;
-    }
-
-    _replace(note.copyWith(summarizingLinks: false));
-    try {
-      await api.cancelLinkSummaries(id);
-    } catch (_) {
-      // The server's view of the job is the truth; fetch it back.
-      unawaited(refresh());
-    }
-  }
-
-  // ---------------------------------------------------------------------
   // Semantic search
 
   /// Ranked note ids for a meaning-based query, filtered to notes we
@@ -2364,265 +1743,6 @@ class NotesStore extends ChangeNotifier {
         if (noteById(id) case final Note note)
           if (!note.trashed) note,
     ];
-  }
-
-  // ---------------------------------------------------------------------
-  // Labels
-
-  Label createLabel(String name, {String? color, String? icon}) {
-    final workspaceId = _activeWorkspaceId ?? '';
-    final label = Label(
-      id: _uuid.v4(),
-      workspaceId: workspaceId,
-      name: name.trim(),
-      color: color,
-      icon: icon,
-      position: _nextLabelPosition(workspaceId),
-    );
-    _labels = [..._labels, label]..sort(_byLabelPosition);
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.labelCreate,
-        id: label.id,
-        data: {
-          'name': label.name,
-          'workspaceId': label.workspaceId,
-          'color': color,
-          'icon': icon,
-          'position': label.position,
-        },
-      ),
-    );
-    return label;
-  }
-
-  /// A new label goes to the end of the sidebar list, matching the server.
-  double _nextLabelPosition(String workspaceId) {
-    var max = 0.0;
-    for (final label in _labels) {
-      if (label.workspaceId == workspaceId && label.position > max) {
-        max = label.position;
-      }
-    }
-    return max + 1024.0;
-  }
-
-  static int _byLabelPosition(Label a, Label b) {
-    final byPosition = a.position.compareTo(b.position);
-    return byPosition != 0
-        ? byPosition
-        : a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  }
-
-  /// Rename and/or restyle a label. Passing null for [color]/[icon] clears it
-  /// (resets to the theme default), these are set to exactly what's given, not
-  /// merged, so the editor's "no colour"/"no icon" choice sticks. [position]
-  /// moves the label in the sidebar; omitting it leaves the order alone.
-  void updateLabel(
-    String id, {
-    String? name,
-    String? color,
-    String? icon,
-    double? position,
-  }) {
-    final i = _labels.indexWhere((l) => l.id == id);
-    if (i == -1) return;
-    final newName = (name ?? _labels[i].name).trim();
-    _labels[i] = Label(
-      id: id,
-      workspaceId: _labels[i].workspaceId,
-      name: newName,
-      color: color,
-      icon: icon,
-      position: position ?? _labels[i].position,
-    );
-    _labels.sort(_byLabelPosition);
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.labelUpdate,
-        id: id,
-        data: {
-          'name': newName,
-          'color': color,
-          'icon': icon,
-          'position': position,
-        },
-      ),
-    );
-  }
-
-  /// Drag-reorder a label. [newIndex] is the final resting index, same
-  /// convention as [moveStage].
-  void moveLabel(String id, int newIndex) {
-    final ordered = labels;
-    final label = ordered.where((l) => l.id == id).firstOrNull;
-    if (label == null) return;
-    final others = [
-      for (final l in ordered)
-        if (l.id != id) l.position,
-    ];
-    updateLabel(
-      id,
-      name: label.name,
-      color: label.color,
-      icon: label.icon,
-      position: positionAt(others, newIndex, current: label.position),
-    );
-  }
-
-  void deleteLabel(String id) {
-    _labels.removeWhere((l) => l.id == id);
-    for (var i = 0; i < _notes.length; i++) {
-      if (_notes[i].labelIds.contains(id)) {
-        _notes[i] = _notes[i].copyWith(
-          labelIds: {..._notes[i].labelIds}..remove(id),
-        );
-      }
-    }
-    notifyListeners();
-    _enqueue(PendingOp(PendingOpKind.labelDelete, id: id));
-  }
-
-  // ---------------------------------------------------------------------
-  // Stages (board columns)
-  //
-  // Deliberately parallel to labels rather than sharing code with them: the
-  // two are independent systems, and keeping them as two obvious blocks costs
-  // less than one abstraction both have to be read through.
-
-  Stage createStage(String name, {String? color}) {
-    final workspaceId = _activeWorkspaceId ?? '';
-    final stage = Stage(
-      id: _uuid.v4(),
-      workspaceId: workspaceId,
-      collectionId: activeCollection?.id,
-      name: name.trim(),
-      color: color,
-      position: _nextStagePosition(workspaceId),
-    );
-    _stages = [..._stages, stage]
-      ..sort((a, b) => a.position.compareTo(b.position));
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.stageCreate,
-        id: stage.id,
-        data: {
-          'name': stage.name,
-          'workspaceId': workspaceId,
-          'collectionId': activeCollection?.id,
-          'color': color,
-          'position': stage.position,
-        },
-      ),
-    );
-    return stage;
-  }
-
-  /// A new column goes to the right of the board, matching the server.
-  double _nextStagePosition(String workspaceId) {
-    var max = 0.0;
-    for (final stage in _stages) {
-      if (stage.workspaceId == workspaceId && stage.position > max) {
-        max = stage.position;
-      }
-    }
-    return max + 1024.0;
-  }
-
-  /// Rename and/or recolour a column. Passing null for [color] clears it, the
-  /// same "set, not merge" rule [updateLabel] uses. [position] moves the
-  /// column; omitting it leaves the board's order alone.
-  void updateStage(String id, {String? name, String? color, double? position}) {
-    final i = _stages.indexWhere((s) => s.id == id);
-    if (i == -1) return;
-    final newName = (name ?? _stages[i].name).trim();
-    _stages[i] = Stage(
-      id: id,
-      workspaceId: _stages[i].workspaceId,
-      collectionId: _stages[i].collectionId,
-      name: newName,
-      color: color,
-      position: position ?? _stages[i].position,
-    );
-    _stages.sort((a, b) => a.position.compareTo(b.position));
-    notifyListeners();
-    _enqueue(
-      PendingOp(
-        PendingOpKind.stageUpdate,
-        id: id,
-        data: {'name': newName, 'color': color, 'position': position},
-      ),
-    );
-  }
-
-  /// Drag-reorder a column. [newIndex] is the final resting index (the slot
-  /// the item lands in, counted *after* its own removal), the convention
-  /// `ReorderableListView.onReorderItem` reports, so that callback can call
-  /// this directly. Recomputes a sparse position between the new neighbours
-  /// rather than renumbering the board (see [positionAt]).
-  void moveStage(String id, int newIndex) {
-    final ordered = stages;
-    final stage = ordered.where((s) => s.id == id).firstOrNull;
-    if (stage == null) return;
-    final others = [
-      for (final s in ordered)
-        if (s.id != id) s.position,
-    ];
-    updateStage(
-      id,
-      name: stage.name,
-      color: stage.color,
-      position: positionAt(others, newIndex, current: stage.position),
-    );
-  }
-
-  /// Delete a column. Its notes are not destroyed, they go back to unassigned,
-  /// locally and on the server.
-  void deleteStage(String id) {
-    _stages.removeWhere((s) => s.id == id);
-    for (var i = 0; i < _notes.length; i++) {
-      if (_notes[i].stageId == id) {
-        _notes[i] = _notes[i].copyWith(stageId: null);
-      }
-    }
-    notifyListeners();
-    _enqueue(PendingOp(PendingOpKind.stageDelete, id: id));
-  }
-
-  /// Move a note to [stageId] (null for unassigned). Without a [position] the
-  /// card goes to the end of that column, which is what the column picker
-  /// wants; a drop passes the slot it landed in (see [positionBetween]).
-  ///
-  /// One patch carries both fields, so a move is a single queued write rather
-  /// than a stage change chased by a reorder. That also makes reordering
-  /// *within* a column the same operation as moving between two: it is a move
-  /// to the stage the card is already in. Labels are untouched, a card
-  /// changing column says nothing about its taxonomy.
-  void setNoteStage(String noteId, String? stageId, {double? position}) {
-    final note = noteById(noteId);
-    if (note == null) return;
-    // A no-op reposition still has to be filtered out, or every drop that
-    // lands where the card already was would queue a write.
-    if (note.stageId == stageId && position == null) return;
-    final target = position ?? _endOfStage(stageId, note.workspaceId);
-    if (note.stageId == stageId && note.stagePosition == target) return;
-    _patch(noteId, note.copyWith(stageId: stageId, stagePosition: target), {
-      'stage_id': stageId,
-      'stage_position': target,
-    });
-  }
-
-  /// One slot past the last card of [stageId] in [workspaceId].
-  double _endOfStage(String? stageId, String workspaceId) {
-    var max = 0.0;
-    for (final note in _notes) {
-      if (note.workspaceId != workspaceId || note.stageId != stageId) continue;
-      if (note.stagePosition > max) max = note.stagePosition;
-    }
-    return max + 1024.0;
   }
 
   // ---------------------------------------------------------------------
@@ -2772,5 +1892,37 @@ class NotesStore extends ChangeNotifier {
       t.cancel();
     }
     super.dispose();
+  }
+}
+
+/// One write at a time, and never a stale one: a [request] made while a write
+/// is running folds into a single follow-up write of the latest state. Runs on
+/// a microtask (not a timer) so it fires promptly after each change without
+/// leaking test timers.
+class _WriteBehind {
+  final Future<void> Function() _write;
+  bool _dirty = false;
+  bool _running = false;
+
+  _WriteBehind(this._write);
+
+  void request() {
+    _dirty = true;
+    if (_running) {
+      return;
+    }
+    _running = true;
+    scheduleMicrotask(_drain);
+  }
+
+  Future<void> _drain() async {
+    try {
+      while (_dirty) {
+        _dirty = false;
+        await _write();
+      }
+    } finally {
+      _running = false;
+    }
   }
 }

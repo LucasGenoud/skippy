@@ -225,7 +225,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: _turns.isEmpty ? null : _newConversation,
             icon: const Icon(Icons.add_comment_outlined),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: kSpaceXs),
         ],
       ),
       body: Center(
@@ -278,7 +278,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             hintText: 'Ask about your notes…',
                             filled: true,
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(kRadius),
+                              borderRadius: kBorderRadius,
                               borderSide: BorderSide.none,
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -288,7 +288,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: kSpaceSm),
                       Tooltip(
                         message: 'Send',
                         child: SizedBox(
@@ -334,7 +334,7 @@ class _EmptyHint extends StatelessWidget {
               size: 48,
               color: scheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpaceMd),
             Text(
               'Ask about your notes, answers cite the notes they came from. '
               'You can also ask to create, edit, or organize them.',
@@ -390,7 +390,7 @@ class _Bubble extends StatelessWidget {
             : failedEmpty
             ? scheme.errorContainer
             : scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -136,7 +136,7 @@ class _LlmRewriteTasksDialogState extends State<_LlmRewriteTasksDialog> {
         const Text(
           'These actions appear in each note menu. Language, note format, and response-safety instructions are added automatically.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: kSpaceMd),
         for (var i = 0; i < _tasks.length; i++)
           ListTile(
             contentPadding: kModalRowPadding,
@@ -235,7 +235,7 @@ class _LlmRewriteTaskDialogState extends State<_LlmRewriteTaskDialog> {
           maxLength: 64,
           decoration: const InputDecoration(labelText: 'Task name'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: kSpaceMd),
         TextField(
           controller: _prompt,
           minLines: 5,
@@ -331,7 +331,7 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
             helperMaxLines: 2,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpaceSm),
         CheckboxListTile(
           contentPadding: kModalRowPadding,
           shape: kRoundedShape,
@@ -360,7 +360,7 @@ class _LlmBehaviorDialogState extends State<_LlmBehaviorDialog> {
           ],
           onChanged: (value) => setState(() => _linkSummaryLength = value!),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpaceSm),
         CheckboxListTile(
           contentPadding: kModalRowPadding,
           shape: kRoundedShape,
@@ -503,7 +503,7 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
                   : null,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           TextField(
             controller: _key,
             enabled: !keyManaged,
@@ -521,7 +521,7 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
                   : null,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           TextField(
             controller: _model,
             enabled: !modelManaged,
@@ -534,7 +534,7 @@ class _LlmConfigDialogState extends State<_LlmConfigDialog> {
                   : null,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           ProbeRow(
             testing: _testing,
             result: _testResult,

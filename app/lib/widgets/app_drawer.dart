@@ -110,7 +110,7 @@ class AppSidebar extends StatelessWidget {
                         await Future<void>.delayed(Motion.slow);
                       },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: kSpaceLg),
               _SidebarSectionHeader(
                 icon: Icons.folder_outlined,
                 label: 'COLLECTIONS',
@@ -319,7 +319,7 @@ class _SidebarSectionHeader extends StatelessWidget {
           child: Row(
             children: [
               Icon(icon, size: 14, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpaceSm),
               Text(
                 label,
                 maxLines: 1,
@@ -416,7 +416,7 @@ class _SidebarItem extends StatelessWidget {
             type: MaterialType.transparency,
             child: InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(kRadius),
+              borderRadius: kBorderRadius,
               child: SizedBox(
                 height: 48,
                 child: OverflowBox(
@@ -439,7 +439,7 @@ class _SidebarItem extends StatelessWidget {
                               : (iconColor ?? foreground),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: kSpaceMd),
                       Expanded(
                         child: Text(
                           label,
@@ -494,7 +494,7 @@ class _RowHighlight extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final radius = BorderRadius.circular(kRadius);
+    final radius = kBorderRadius;
     return _fade(dropTarget, (drop) {
       return _fade(selected, (sel) {
         return DecoratedBox(

@@ -45,7 +45,7 @@ class ChecklistSuggestions extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 300, maxHeight: 288),
             child: Material(
               elevation: 6,
-              borderRadius: BorderRadius.circular(kRadius),
+              borderRadius: kBorderRadius,
               color: scheme.surfaceContainerHigh,
               clipBehavior: Clip.antiAlias,
               child: ListView(
@@ -70,7 +70,7 @@ class ChecklistSuggestions extends StatelessWidget {
                               size: 17,
                               color: scheme.onSurfaceVariant,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: kSpaceMd),
                             Expanded(
                               child: _BoldMatch(text: suggestion, query: query),
                             ),

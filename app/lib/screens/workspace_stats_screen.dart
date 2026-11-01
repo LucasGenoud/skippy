@@ -232,7 +232,7 @@ class _Checklists extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           TweenAnimationBuilder<double>(
             tween: Tween(begin: 0, end: progress),
             duration: Motion.base,
@@ -242,7 +242,7 @@ class _Checklists extends StatelessWidget {
               child: LinearProgressIndicator(value: value, minHeight: 8),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           Text(
             stats.completedLists == 0
                 ? 'No list is finished yet'
@@ -281,7 +281,7 @@ class _Activity extends StatelessWidget {
               context,
             ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           SizedBox(
             height: 96,
             child: Row(
@@ -298,7 +298,7 @@ class _Activity extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           if (created != null)
             _FactRow(
               icon: Icons.flag_outlined,
@@ -337,7 +337,7 @@ class _Labels extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           if (stats.topLabels.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpaceMd),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -507,7 +507,7 @@ class _StatCard extends StatelessWidget {
             size: 20,
             color: emphasized ? foreground : scheme.onSurfaceVariant,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           // Counts change as notes sync in; rolling to the new number keeps
           // the card from blinking a different figure.
           TweenAnimationBuilder<double>(
@@ -607,7 +607,7 @@ class _Breakdown extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           for (final slice in slices)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 3),
@@ -696,7 +696,7 @@ class _MonthBar extends StatelessWidget {
               context,
             ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: kSpaceXs),
           // The bar takes whatever the labels leave, and is sized as a
           // fraction of that: arithmetic on font metrics would overflow the
           // chart the moment a text scale factor moved.
@@ -727,7 +727,7 @@ class _MonthBar extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: kSpaceXs),
           Text(
             _initials[activity.month.month - 1],
             style: Theme.of(
@@ -760,7 +760,7 @@ class _FactRow extends StatelessWidget {
       child: Row(
         children: [
           Icon(icon, size: 18, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 12),
+          const SizedBox(width: kSpaceMd),
           Expanded(
             child: Text(
               label,

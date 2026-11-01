@@ -7,6 +7,7 @@ import '../util/network_error.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/form_error_banner.dart';
 import '../widgets/login_field.dart';
+import '../widgets/screen_width.dart';
 
 /// The page behind an emailed reset link: choose a new password, using the
 /// token in the URL as the only credential.
@@ -114,7 +115,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final scheme = theme.colorScheme;
     // Same breakpoint as the sign-in form: a card on wide layouts, edge to
     // edge on phones, so arriving from the email looks like arriving anywhere.
-    final isWide = MediaQuery.sizeOf(context).width >= 600;
+    final isWide = MediaQuery.sizeOf(context).width >= kWideBreakpoint;
     final changedFor = _changedFor;
     return Scaffold(
       body: SafeArea(
@@ -149,7 +150,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     decoration: isWide
                         ? BoxDecoration(
                             color: scheme.surface,
-                            borderRadius: BorderRadius.circular(kRadius),
+                            borderRadius: kBorderRadius,
                             border: Border.all(color: scheme.outlineVariant),
                           )
                         : null,
@@ -224,7 +225,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 },
                 onSubmitted: (_) => _confirmFocus.requestFocus(),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: kSpaceLg),
               LoginField(
                 controller: _confirm,
                 focusNode: _confirmFocus,
@@ -260,7 +261,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               : const Icon(Icons.lock_reset_outlined),
           label: const Text('Set new password'),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: kSpaceXs),
         TextButton(
           onPressed: _busy ? null : () => widget.onDone(null),
           child: const Text('Back to sign in'),
@@ -277,7 +278,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Icon(Icons.check_circle_outline, size: 40, color: scheme.primary),
-        const SizedBox(height: 16),
+        const SizedBox(height: kSpaceLg),
         Text(
           'Password updated',
           textAlign: TextAlign.center,
@@ -285,7 +286,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpaceSm),
         Text(
           // Naming the address makes it obvious which account this was, on a
           // page reached without ever signing in.

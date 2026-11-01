@@ -258,7 +258,7 @@ class _VersionCard extends StatelessWidget {
                     ),
                     decoration: BoxDecoration(
                       color: scheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(kRadius),
+                      borderRadius: kBorderRadius,
                     ),
                     child: Text(
                       'Current',
@@ -269,10 +269,10 @@ class _VersionCard extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpaceSm),
             _preview(context),
             if (onRestore != null || restoring) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: kSpaceXs),
               Align(
                 alignment: Alignment.centerRight,
                 child: AnimatedSwitcher(
@@ -419,9 +419,9 @@ class _Message extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 40, color: scheme.onSurfaceVariant),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           Text(text, style: Theme.of(context).textTheme.bodyLarge),
-          if (action != null) ...[const SizedBox(height: 16), action!],
+          if (action != null) ...[const SizedBox(height: kSpaceLg), action!],
         ],
       ),
     );

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+/// Where the app stops laying out for a phone: the sidebar docks beside the
+/// content, and wide-only controls such as the inline quick-add appear.
+const double kWideBreakpoint = 600;
+
 /// The screen *width* on its own, so branching on it doesn't tie a widget to
 /// the screen height as well.
 ///

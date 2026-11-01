@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme.dart';
 
 /// Small "managed by the server" hint shown under a locked setting.
 class ManagedNote extends StatelessWidget {
@@ -13,7 +14,7 @@ class ManagedNote extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.lock_outline, size: 13, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
+          const SizedBox(width: kSpaceXs),
           Text(
             'Managed by the server',
             style: Theme.of(

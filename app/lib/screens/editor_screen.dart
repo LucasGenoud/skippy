@@ -12,19 +12,17 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
 import '../models/note.dart';
-import '../models/workspace.dart' show AiFeature;
 import '../state/checklist_tree.dart';
 import '../state/editor_history.dart';
 import '../state/note_links.dart';
+import '../state/note_availability.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/home_widgets.dart';
 import '../util/keyboard.dart';
 import '../util/label_style.dart';
 import '../util/linkify.dart';
-import '../util/mime.dart';
 import '../util/motion.dart';
-import '../util/note_export.dart';
 import '../util/note_routes.dart';
 import '../util/snack.dart';
 import '../util/widget_payload.dart';
@@ -41,6 +39,7 @@ import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/editor_morph.dart';
 import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/editor/note_actions_button.dart';
+import '../widgets/note_actions.dart';
 import '../widgets/editor/note_links_panel.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
@@ -53,7 +52,6 @@ import '../widgets/pick_image.dart';
 import '../widgets/pin_icon.dart';
 import '../widgets/reminders/reminder_editing.dart';
 import '../widgets/screen_width.dart';
-import '../widgets/share_dialog.dart';
 import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
 import '../widgets/state_cross_fade.dart';
@@ -118,7 +116,7 @@ class EditorScreen extends StatefulWidget {
 /// keyboard's slide (the activity is `adjustResize`, so the view really does
 /// shrink). See [ScreenWidth].
 bool wantsModalEditor(BuildContext context) =>
-    ScreenWidth.isAtLeast(context, 600);
+    ScreenWidth.isAtLeast(context, kWideBreakpoint);
 
 /// Width the wide-layout modal grows to.
 const double _modalMaxWidth = 600;
@@ -188,7 +186,7 @@ Future<void> openNoteEditor(
         : child,
     pageBuilder: (context, animation, secondaryAnimation) {
       final Widget dialog = ClipRRect(
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         child: EditorScreen(
           noteId: noteId,
           kind: kind,
@@ -528,14 +526,7 @@ class _EditorScreenState extends State<EditorScreen> {
       // materialize here the way the note-level reminder has to.
       final noteId = _noteId;
       if (noteId == null) return;
-      final changed = await editItemReminder(
-        context,
-        noteId: noteId,
-        itemId: itemId,
-      );
-      if (mounted && changed) {
-        setState(() {});
-      }
+      await editItemReminder(context, noteId: noteId, itemId: itemId);
     } finally {
       _reminderPickerOpen = false;
     }
@@ -563,52 +554,40 @@ class _EditorScreenState extends State<EditorScreen> {
   void _togglePin() {
     _ensureNote();
     _store.togglePin(_noteId!);
-    setState(() {});
   }
 
   void _setColor(String color) {
     _ensureNote();
     _store.setColor(_noteId!, color);
-    setState(() {});
   }
 
   Future<void> _editLabels() async {
     _ensureNote();
     await LabelsSheet.show(context, _noteId!);
-    if (mounted) setState(() {});
   }
 
   void _archiveAndClose() {
     final note = _note;
-    if (note == null || _store.canAutoDiscard(note.id)) return;
-    final id = note.id;
-    final wasArchived = note.archived;
-    _store.setArchived(id, !wasArchived);
+    if (note == null || !NoteAvailability(_store, note).canArchive) return;
     Navigator.of(context).pop();
-    showAppSnack(
-      wasArchived ? 'Note unarchived' : 'Note archived',
-      icon: wasArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
-      actionLabel: 'Undo',
-      onAction: () => _store.setArchived(id, wasArchived),
-    );
+    toggleArchive(_store, note);
   }
 
   void _deleteAndClose() {
     final note = _note;
-    if (note == null) {
-      Navigator.of(context).pop();
-      return;
-    }
-    final id = note.id;
-    _store.moveToTrash(id);
     Navigator.of(context).pop();
-    showAppSnack(
-      'Note moved to Trash',
-      icon: Icons.delete_outline,
-      kind: SnackKind.danger,
-      actionLabel: 'Undo',
-      onAction: () => _store.restoreFromTrash(id),
-    );
+    if (note != null) {
+      trashNote(_store, note.id);
+    }
+  }
+
+  Future<void> _moveToCollection() async {
+    final note = _note;
+    if (note == null) return;
+    final target = await CollectionPicker.show(context, note.workspaceId);
+    if (target != null) {
+      _store.moveToCollection(note.id, target);
+    }
   }
 
   /// Duplicate the open note and keep editing the copy, so the next thing
@@ -642,9 +621,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _copyNoteToClipboard() async {
     final note = _note;
     if (note == null || note.isEmpty) return;
-    await Clipboard.setData(
-      ClipboardData(text: noteToPlainText(note).trimRight()),
-    );
+    await copyNoteText(note);
   }
 
   /// Put this note on the device home screen.
@@ -683,8 +660,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _rewriteWithAi(NoteRewriteTask task) async {
     final note = _note;
     if (note == null ||
-        note.isEmpty ||
-        note.isAudio ||
+        !NoteAvailability(_store, note).canRewrite ||
         _store.isRewritingNote(note.id)) {
       return;
     }
@@ -697,32 +673,17 @@ class _EditorScreenState extends State<EditorScreen> {
       content: note.isChecklist ? null : _contentController.text,
       items: note.isChecklist ? _items : null,
     );
-    try {
-      await _store.rewriteNote(note.id, task);
-      if (!mounted) return;
-      final updated = _note;
-      if (updated != null) {
-        _restoring = true;
-        _titleController.text = updated.title;
-        if (!updated.isChecklist) _contentController.text = updated.content;
-        _restoring = false;
-      }
-      _afterChange(discrete: true);
-      setState(() {});
-      showAppSnack('${task.name} complete', icon: Icons.auto_fix_high_outlined);
-    } catch (_) {
-      if (!mounted) return;
-      showAppSnack(
-        "Couldn't update the note with AI",
-        icon: Icons.error_outline,
-        kind: SnackKind.danger,
-      );
+    if (!await rewriteWithAi(_store, note.id, task) || !mounted) return;
+    final updated = _note;
+    if (updated != null) {
+      _restoring = true;
+      _titleController.text = updated.title;
+      if (!updated.isChecklist) _contentController.text = updated.content;
+      _restoring = false;
     }
+    _afterChange(discrete: true);
+    setState(() {});
   }
-
-  /// AI editing follows the note's workspace, whose owner runs it.
-  bool _aiWritingAvailable(Note note) =>
-      _store.aiIn(note.workspaceId).allows(AiFeature.writing);
 
   Future<void> _summarizeUrl(String url) async {
     if (_summaryAborts.containsKey(url)) {
@@ -762,6 +723,8 @@ class _EditorScreenState extends State<EditorScreen> {
         );
       }
     } finally {
+      // Only this request's own entry: a stop and a fresh request for the
+      // same page may already have replaced it.
       if (_summaryAborts[url] == abort) {
         _summaryAborts.remove(url);
       }
@@ -771,12 +734,12 @@ class _EditorScreenState extends State<EditorScreen> {
 
   /// Drops the request and discards whatever it would have added.
   void _stopSummarizing(String url) {
-    final abort = _summaryAborts.remove(url);
+    final abort = _summaryAborts[url];
     if (abort == null) {
       return;
     }
+    setState(() => _summaryAborts.remove(url));
     abort.complete();
-    setState(() {});
   }
 
   void _convertKind(NoteKind target) {
@@ -794,9 +757,8 @@ class _EditorScreenState extends State<EditorScreen> {
       _contentController.text = note.content;
       _restoring = false;
     }
-    _previewMarkdown = false;
     _afterChange(discrete: true);
-    setState(() {});
+    setState(() => _previewMarkdown = false);
   }
 
   /// Shared upload path for the image picker, the paperclip, and drag-drop:
@@ -806,17 +768,7 @@ class _EditorScreenState extends State<EditorScreen> {
     List<DroppedFile> files, {
     required String failureMessage,
   }) async {
-    final accepted = [
-      for (final f in files)
-        if (f.bytes.length <= maxUploadBytes) f,
-    ];
-    if (accepted.length != files.length) {
-      showAppSnack(
-        'Files are limited to 25 MB',
-        icon: Icons.error_outline,
-        kind: SnackKind.warning,
-      );
-    }
+    final accepted = withinUploadLimit(files);
     if (accepted.isEmpty) return;
     _ensureNote();
     final id = _noteId!;
@@ -901,7 +853,7 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
     try {
-      final changed = await editNoteReminder(
+      await editNoteReminder(
         context,
         noteId: _noteId,
         ensureNote: () {
@@ -909,21 +861,13 @@ class _EditorScreenState extends State<EditorScreen> {
           return _noteId!;
         },
       );
-      if (mounted && changed) {
-        setState(() {});
-      }
     } finally {
       _reminderPickerOpen = false;
     }
   }
 
   Future<void> _openShare() async {
-    final note = _note;
-    if (note == null || note.isEmpty) {
-      showAppSnack('Add some content before sharing');
-      return;
-    }
-    final left = await ShareDialog.show(context, note.id);
+    final left = await shareNote(context, _note);
     if (left && mounted) Navigator.of(context).pop();
   }
 
@@ -989,8 +933,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final trashed = note?.trashed ?? false;
     final pinned = note?.pinned ?? false;
     final scheme = Theme.of(context).colorScheme;
-    final isOwner = note?.isOwnedBy(_store.currentUserId) ?? true;
-    final autoDiscardable = note == null || _store.canAutoDiscard(note.id);
+    final can = NoteAvailability(_store, note);
     return AppBar(
       backgroundColor: Colors.transparent,
       // Full-screen editors are the phone presentation. A quiet rule keeps
@@ -1084,9 +1027,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     IconButton(
                       icon: const Icon(Icons.content_copy_outlined),
                       tooltip: 'Copy to clipboard',
-                      onPressed: note == null || note.isEmpty
-                          ? null
-                          : _copyNoteToClipboard,
+                      onPressed: can.canCopy ? _copyNoteToClipboard : null,
                     ),
                     if (!trashed)
                       IconButton(
@@ -1098,83 +1039,49 @@ class _EditorScreenState extends State<EditorScreen> {
                         tooltip: (note?.archived ?? false)
                             ? 'Unarchive'
                             : 'Archive',
-                        onPressed: autoDiscardable ? null : _archiveAndClose,
+                        onPressed: can.canArchive ? _archiveAndClose : null,
                       ),
                     // Everything else you do *to* the note. The bottom bar keeps what
                     // goes *into* it, so neither menu has to nest.
                     NoteActionsButton(
-                      isOwner: isOwner,
+                      isOwner: can.isOwner,
                       kind: _kind,
-                      onShare: trashed ? null : _openShare,
-                      onDelete: trashed || autoDiscardable || !isOwner
-                          ? null
-                          : _deleteAndClose,
-                      onDuplicate: trashed || note == null || note.isEmpty
-                          ? null
-                          : _duplicateNote,
-                      onMoveToCollection:
-                          note == null ||
-                              trashed ||
-                              _store.workspaceById(note.workspaceId) == null
-                          ? null
-                          : () async {
-                              final target = await CollectionPicker.show(
-                                context,
-                                note.workspaceId,
-                              );
-                              if (target != null) {
-                                _store.moveToCollection(note.id, target);
-                              }
-                            },
-                      onMoveToWorkspace:
-                          trashed ||
-                              note == null ||
-                              note.isEmpty ||
-                              !isOwner ||
-                              _store.workspaces.length < 2
-                          ? null
-                          : () => MoveToWorkspaceSheet.show(context, note.id),
-                      // Unlike workspaces, a column needs no second one to move to,
-                      // "Unassigned" is always a destination, so this only asks that
-                      // there be a board at all.
+                      onShare: can.canEdit ? _openShare : null,
+                      onDelete: can.canTrash ? _deleteAndClose : null,
+                      onDuplicate: can.canDuplicate ? _duplicateNote : null,
+                      onMoveToCollection: can.canMoveToCollection
+                          ? _moveToCollection
+                          : null,
+                      onMoveToWorkspace: can.canMoveToWorkspace
+                          ? () => MoveToWorkspaceSheet.show(context, _noteId!)
+                          : null,
                       onMoveToStage:
-                          !widget.openedFromBoard ||
-                              trashed ||
-                              note == null ||
-                              note.isEmpty ||
-                              _store.stagesForNote(note).isEmpty
-                          ? null
-                          : () => MoveToStageSheet.show(context, note.id),
-                      onHistory: note == null || note.isEmpty
-                          ? null
-                          : () => NoteHistoryScreen.open(context, note.id),
-                      // A trashed note must not be pinnable: the widget would outlive
-                      // the note itself.
-                      onAddToHomeScreen: HomeWidgets.supported && !trashed
+                          widget.openedFromBoard && can.canMoveToStage
+                          ? () => MoveToStageSheet.show(context, _noteId!)
+                          : null,
+                      onHistory: can.canShowHistory
+                          ? () => NoteHistoryScreen.open(context, _noteId!)
+                          : null,
+                      // A trashed note must not be pinnable: the widget would
+                      // outlive the note itself.
+                      onAddToHomeScreen: HomeWidgets.supported && can.canEdit
                           ? _addToHomeScreen
                           : null,
-                      onConvert: trashed ? null : _convertKind,
-                      onRewrite:
-                          trashed ||
-                              note == null ||
-                              note.isEmpty ||
-                              note.isAudio ||
-                              !_aiWritingAvailable(note)
-                          ? null
-                          : _rewriteWithAi,
-                      rewriteTasks: _store.aiIn(note?.workspaceId).rewriteTasks,
+                      onConvert: can.canEdit ? _convertKind : null,
+                      onRewrite: can.canRewrite ? _rewriteWithAi : null,
+                      rewriteTasks: can.rewriteTasks,
                       rewriting:
                           note != null && _store.isRewritingNote(note.id),
                       gridSpan: note?.gridSpan ?? 1,
-                      onGridSpan: trashed || note == null
-                          ? null
-                          : (span) => _store.setGridSpan(note.id, span),
+                      onGridSpan: can.canSetGridSpan
+                          ? (span) => _store.setGridSpan(_noteId!, span)
+                          : null,
                     ),
                   ],
                 ),
           alignment: AlignmentDirectional.centerEnd,
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: kSpaceXs),
       ],
     );
   }
@@ -1240,24 +1147,7 @@ class _EditorScreenState extends State<EditorScreen> {
             curve: Motion.standard,
             color: bg,
             child: CallbackShortcuts(
-              bindings: {
-                const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-                    _undo,
-                const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
-                    _undo,
-                const SingleActivator(
-                  LogicalKeyboardKey.keyZ,
-                  control: true,
-                  shift: true,
-                ): _redo,
-                const SingleActivator(
-                  LogicalKeyboardKey.keyZ,
-                  meta: true,
-                  shift: true,
-                ): _redo,
-                const SingleActivator(LogicalKeyboardKey.keyY, control: true):
-                    _redo,
-              },
+              bindings: _historyShortcuts,
               child: _editorShell(
                 note: note,
                 body: SafeArea(
@@ -1271,215 +1161,22 @@ class _EditorScreenState extends State<EditorScreen> {
                       constraints: const BoxConstraints(maxWidth: 680),
                       child: Column(
                         // Modal: shrink to the note's content (the dialog grows
-                        // with the note) instead of
-                        // filling the screen.
+                        // with the note) instead of filling the screen.
                         mainAxisSize: widget.modal
                             ? MainAxisSize.min
                             : MainAxisSize.max,
                         children: [
                           Flexible(
                             fit: widget.modal ? FlexFit.loose : FlexFit.tight,
-                            child: GestureDetector(
-                              onTap: trashed
-                                  ? () => showAppSnack(
-                                      "Can't edit in Trash, restore the note first",
-                                    )
-                                  : null,
-                              child: ListView(
-                                shrinkWrap: widget.modal,
-                                padding: const EdgeInsets.fromLTRB(
-                                  24,
-                                  8,
-                                  24,
-                                  24,
-                                ),
-                                children: [
-                                  TextField(
-                                    controller: _titleController,
-                                    focusNode: _titleFocus,
-                                    readOnly: trashed,
-                                    enabled: !trashed,
-                                    maxLines: null,
-                                    // Flutter defaults to `none`, which tells
-                                    // the keyboard to stop capitalizing. A
-                                    // title is a line someone writes, so ask
-                                    // for what the platform would do anyway.
-                                    textCapitalization:
-                                        TextCapitalization.sentences,
-                                    textInputAction: TextInputAction.next,
-                                    contentInsertionConfiguration:
-                                        PasteFileArea.insertionOf(context),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Title',
-                                      border: InputBorder.none,
-                                    ),
-                                  ),
-                                  AnimatedReveal(
-                                    child: _kind == NoteKind.markdown
-                                        ? _markdownModeSwitch()
-                                        : null,
-                                  ),
-                                  // Turning a note into a checklist (or back)
-                                  // cross-fades the body. Text and markdown
-                                  // share one field, so they are one state.
-                                  StateCrossFade(
-                                    state: _kind == NoteKind.markdown
-                                        ? NoteKind.text
-                                        : _kind,
-                                    child: _contentEditor(
-                                      trashed: trashed,
-                                      query: query,
-                                    ),
-                                  ),
-                                  AnimatedReveal(
-                                    child: (note?.summarizingLinks ?? false)
-                                        ? Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 12,
-                                            ),
-                                            child: LinkSummaryIndicator(
-                                              onCancel: () =>
-                                                  _store.cancelLinkSummaries(
-                                                    note!.id,
-                                                  ),
-                                            ),
-                                          )
-                                        : null,
-                                  ),
-                                  // Images sit directly under the text; other
-                                  // files follow as download tiles.
-                                  AnimatedPresence(
-                                    layout: (children) => Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: children,
-                                    ),
-                                    children: _buildAttachments(note),
-                                  ),
-                                  AnimatedReveal(
-                                    child:
-                                        note != null &&
-                                            (note.reminderAt != null ||
-                                                settings.locationReminderForNote(
-                                                      note.id,
-                                                    ) !=
-                                                    null ||
-                                                labels.isNotEmpty)
-                                        ? _metaChips(note, settings, labels)
-                                        : null,
-                                  ),
-                                  AnimatedReveal(child: _linksSection(note)),
-                                  // Rich preview cards for any links in the
-                                  // note, kept as the very last thing so they
-                                  // always sit below everything else.
-                                  AnimatedReveal(
-                                    child:
-                                        note == null ||
-                                            findUrls(noteLinkText(note)).isEmpty
-                                        ? null
-                                        : Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 12,
-                                            ),
-                                            child: LinkPreviewList(
-                                              text: noteLinkText(note),
-                                              onSummarize:
-                                                  !trashed &&
-                                                      !note.isChecklist &&
-                                                      !note.isAudio &&
-                                                      _aiWritingAvailable(note)
-                                                  ? _summarizeUrl
-                                                  : null,
-                                              summarizingUrls: _summaryAborts
-                                                  .keys
-                                                  .toSet(),
-                                              onStopSummarize: _stopSummarizing,
-                                            ),
-                                          ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          AnimatedReveal(
-                            child: _linkQuery == null || trashed
-                                ? null
-                                : NoteLinkPicker(
-                                    notes: _store.linkTargets(
-                                      _linkQuery!,
-                                      excludeId: _noteId,
-                                    ),
-                                    query: _linkQuery!,
-                                    onPick: _insertNoteLink,
-                                  ),
-                          ),
-                          // Formatting accessory bar while editing markdown.
-                          AnimatedReveal(
-                            child:
-                                _kind == NoteKind.markdown &&
-                                    !_previewMarkdown &&
-                                    !_finding &&
-                                    !trashed
-                                ? MarkdownToolbar(
-                                    controller: _contentController,
-                                    focusNode: _contentFocus,
-                                  )
-                                : null,
-                          ),
-                          AnimatedReveal(
-                            child: _uploading
-                                ? const LinearProgressIndicator(minHeight: 2)
-                                : null,
-                          ),
-                          DecoratedBox(
-                            key: widget.modal
-                                ? null
-                                : const Key('editor-bottom-separator'),
-                            decoration: BoxDecoration(
-                              border: widget.modal
-                                  ? null
-                                  : Border(
-                                      top: BorderSide(
-                                        color: hairlineColor(scheme),
-                                      ),
-                                    ),
-                            ),
-                            child: EditorBottomBar(
+                            child: _noteFields(
+                              note,
+                              settings,
+                              labels,
                               trashed: trashed,
-                              editedStamp: note == null
-                                  ? ''
-                                  : 'Edited ${settings.editedLabel(note.updatedAt)}',
-                              onPalette: trashed
-                                  ? null
-                                  : () => ColorPickerSheet.show(
-                                      context,
-                                      selected: () => _note?.color ?? 'default',
-                                      onSelect: _setColor,
-                                    ),
-                              // Labelling is available from the first moment,
-                              // like colour and pin: filing a note is often the
-                              // first thing you do, and the draft materializes
-                              // on demand.
-                              onLabels: trashed ? null : _editLabels,
-                              onReminder: trashed ? null : _editReminder,
-                              onImage: trashed || _uploading
-                                  ? null
-                                  : _pickImage,
-                              onAttach: trashed || _uploading
-                                  ? null
-                                  : _pickFile,
-                              onUndo: trashed || !_history.canUndo
-                                  ? null
-                                  : _undo,
-                              onRedo: trashed || !_history.canRedo
-                                  ? null
-                                  : _redo,
+                              query: query,
                             ),
                           ),
+                          ..._composeBars(note, settings, trashed: trashed),
                         ],
                       ),
                     ),
@@ -1491,6 +1188,187 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       ),
     );
+  }
+
+  /// Undo and redo, under both platforms' chords.
+  Map<ShortcutActivator, VoidCallback> get _historyShortcuts => {
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
+    const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
+        _redo,
+    const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+        _redo,
+    const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
+  };
+
+  /// The scrolling note itself: title, body, and everything attached to it.
+  Widget _noteFields(
+    Note? note,
+    SettingsStore settings,
+    List<Label> labels, {
+    required bool trashed,
+    required String query,
+  }) {
+    return GestureDetector(
+      onTap: trashed
+          ? () => showAppSnack("Can't edit in Trash, restore the note first")
+          : null,
+      child: ListView(
+        shrinkWrap: widget.modal,
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        children: [
+          _titleField(trashed: trashed),
+          AnimatedReveal(
+            child: _kind == NoteKind.markdown ? _markdownModeSwitch() : null,
+          ),
+          // Turning a note into a checklist (or back) cross-fades the body.
+          // Text and markdown share one field, so they are one state.
+          StateCrossFade(
+            state: _kind == NoteKind.markdown ? NoteKind.text : _kind,
+            child: _contentEditor(trashed: trashed, query: query),
+          ),
+          AnimatedReveal(
+            child: (note?.summarizingLinks ?? false)
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: LinkSummaryIndicator(
+                      onCancel: () => _store.cancelLinkSummaries(note!.id),
+                    ),
+                  )
+                : null,
+          ),
+          // Images sit directly under the text; other files follow as
+          // download tiles.
+          AnimatedPresence(
+            layout: (children) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+            children: _buildAttachments(note),
+          ),
+          AnimatedReveal(
+            child:
+                note != null &&
+                    (note.reminderAt != null ||
+                        settings.locationReminderForNote(note.id) != null ||
+                        labels.isNotEmpty)
+                ? _metaChips(note, settings, labels)
+                : null,
+          ),
+          AnimatedReveal(child: _linksSection(note)),
+          // Rich preview cards for any links in the note, kept as the very
+          // last thing so they always sit below everything else.
+          AnimatedReveal(child: _linkPreviews(note)),
+        ],
+      ),
+    );
+  }
+
+  Widget _titleField({required bool trashed}) {
+    return TextField(
+      controller: _titleController,
+      focusNode: _titleFocus,
+      readOnly: trashed,
+      enabled: !trashed,
+      maxLines: null,
+      // Flutter defaults to `none`, which tells the keyboard to stop
+      // capitalizing. A title is a line someone writes, so ask for what the
+      // platform would do anyway.
+      textCapitalization: TextCapitalization.sentences,
+      textInputAction: TextInputAction.next,
+      contentInsertionConfiguration: PasteFileArea.insertionOf(context),
+      style: Theme.of(
+        context,
+      ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+      decoration: const InputDecoration(
+        hintText: 'Title',
+        border: InputBorder.none,
+      ),
+    );
+  }
+
+  Widget? _linkPreviews(Note? note) {
+    if (note == null || findUrls(noteLinkText(note)).isEmpty) {
+      return null;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: LinkPreviewList(
+        text: noteLinkText(note),
+        onSummarize: NoteAvailability(_store, note).canSummarizeLinks
+            ? _summarizeUrl
+            : null,
+        summarizingUrls: _summaryAborts.keys.toSet(),
+        onStopSummarize: _stopSummarizing,
+      ),
+    );
+  }
+
+  /// What sits under the note while composing: the link picker, the markdown
+  /// toolbar, upload progress, and the bottom bar.
+  List<Widget> _composeBars(
+    Note? note,
+    SettingsStore settings, {
+    required bool trashed,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return [
+      AnimatedReveal(
+        child: _linkQuery == null || trashed
+            ? null
+            : NoteLinkPicker(
+                notes: _store.linkTargets(_linkQuery!, excludeId: _noteId),
+                query: _linkQuery!,
+                onPick: _insertNoteLink,
+              ),
+      ),
+      // Formatting accessory bar while editing markdown.
+      AnimatedReveal(
+        child:
+            _kind == NoteKind.markdown &&
+                !_previewMarkdown &&
+                !_finding &&
+                !trashed
+            ? MarkdownToolbar(
+                controller: _contentController,
+                focusNode: _contentFocus,
+              )
+            : null,
+      ),
+      AnimatedReveal(
+        child: _uploading ? const LinearProgressIndicator(minHeight: 2) : null,
+      ),
+      DecoratedBox(
+        key: widget.modal ? null : const Key('editor-bottom-separator'),
+        decoration: BoxDecoration(
+          border: widget.modal
+              ? null
+              : Border(top: BorderSide(color: hairlineColor(scheme))),
+        ),
+        child: EditorBottomBar(
+          trashed: trashed,
+          editedStamp: note == null
+              ? ''
+              : 'Edited ${settings.editedLabel(note.updatedAt)}',
+          onPalette: trashed
+              ? null
+              : () => ColorPickerSheet.show(
+                  context,
+                  selected: () => _note?.color ?? 'default',
+                  onSelect: _setColor,
+                ),
+          // Labelling is available from the first moment, like colour and
+          // pin: filing a note is often the first thing you do, and the draft
+          // materializes on demand.
+          onLabels: trashed ? null : _editLabels,
+          onReminder: trashed ? null : _editReminder,
+          onImage: trashed || _uploading ? null : _pickImage,
+          onAttach: trashed || _uploading ? null : _pickFile,
+          onUndo: trashed || !_history.canUndo ? null : _undo,
+          onRedo: trashed || !_history.canRedo ? null : _redo,
+        ),
+      ),
+    ];
   }
 
   /// Fullscreen: a regular Scaffold. Modal: no Scaffold, it would expand to
@@ -1715,7 +1593,7 @@ class _EditorScreenState extends State<EditorScreen> {
             onSelectionChanged: (selection) =>
                 _setMarkdownPreview(selection.single),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: kSpaceMd),
           // Held in place and faded, so the switch beside it never shifts.
           Expanded(
             child: AnimatedOpacity(
@@ -1915,7 +1793,6 @@ class _EditorScreenState extends State<EditorScreen> {
               ? null
               : () {
                   _store.setReminder(note.id, null);
-                  setState(() {});
                 },
         ),
       if (settings.locationReminderForNote(note.id)
@@ -1932,7 +1809,6 @@ class _EditorScreenState extends State<EditorScreen> {
                 ? null
                 : () {
                     settings.removeLocationReminder(note.id);
-                    setState(() {});
                   },
           ),
       for (final label in labels) _labelChip(context, label, trashed, note.id),
@@ -1999,7 +1875,6 @@ class _EditorScreenState extends State<EditorScreen> {
           ? null
           : (attachment) {
               _store.removeAttachment(note!.id, attachment.id);
-              setState(() {});
             },
     );
   }

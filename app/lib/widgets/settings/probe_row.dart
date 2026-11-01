@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api/api_client.dart';
 import '../state_cross_fade.dart';
+import '../../theme.dart';
 
 /// Run a settings probe (LLM test, notification test), folding transport
 /// errors into the same `(ok, error)` shape the server reports.
@@ -57,7 +58,7 @@ class ProbeRow extends StatelessWidget {
               : Icon(icon, size: 18),
           label: Text(label),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: kSpaceMd),
         // Fades in beside the button, and cross-fades when a retest flips it.
         Expanded(
           child: StateCrossFade(

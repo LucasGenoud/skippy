@@ -571,7 +571,7 @@ class _BoardColumnHeader extends StatelessWidget {
                   onPressed: () => _showColumnMenu(context),
                 )
               else
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpaceSm),
             ],
           ),
         ),
@@ -657,7 +657,7 @@ class _CollapsedColumn extends StatelessWidget {
                     size: 20,
                     color: scheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: kSpaceSm),
                   RotatedBox(
                     quarterTurns: 3,
                     child: Text(
@@ -667,7 +667,7 @@ class _CollapsedColumn extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: kSpaceSm),
                   RotatedBox(
                     quarterTurns: 3,
                     child: Text(

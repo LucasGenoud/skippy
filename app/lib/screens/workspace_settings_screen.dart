@@ -276,7 +276,7 @@ class _PeopleSectionState extends State<_PeopleSection> {
                 : null,
           ),
         if (widget.isOwner) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -293,7 +293,7 @@ class _PeopleSectionState extends State<_PeopleSection> {
                     onSubmitted: (_) => _invite(),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpaceSm),
                 _busy
                     ? const SizedBox(
                         width: 20,
@@ -352,7 +352,7 @@ class _DangerZone extends StatelessWidget {
                 context,
               ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpaceMd),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: scheme.error,
@@ -466,7 +466,7 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(deletionMessage),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           Wrap(
             spacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
@@ -483,7 +483,7 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
               Text('to confirm.', style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           TextField(
             controller: _controller,
             autofocus: true,

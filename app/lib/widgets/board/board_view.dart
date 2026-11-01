@@ -51,7 +51,7 @@ class BoardView extends StatefulWidget {
 
   /// Below this the board pages instead of laying columns side by side. Matches
   /// the breakpoint the rest of the app uses for its phone layout.
-  static const double pagedBreakpoint = 600;
+  static const double pagedBreakpoint = kWideBreakpoint;
 
   static const double _columnWidth = 300;
   static const double _collapsedColumnWidth = 52;
@@ -212,7 +212,7 @@ class _BoardViewState extends State<BoardView> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (final (i, trash) in actions.indexed) ...[
-                        if (i > 0) const SizedBox(height: 12),
+                        if (i > 0) const SizedBox(height: kSpaceMd),
                         Expanded(
                           child: _BoardActionTarget(
                             trash: trash,
@@ -387,7 +387,7 @@ class _AddColumnTile extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.add, size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpaceSm),
               Text(
                 'Add column',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -459,9 +459,9 @@ class _BoardActionTarget extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(icon, size: 32, color: scheme.onSurfaceVariant),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: kSpaceMd),
                     Text(title, style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: kSpaceXs),
                     Text(
                       'Drop notes here',
                       textAlign: TextAlign.center,
@@ -745,7 +745,7 @@ class _StageChip extends StatelessWidget {
               height: 8,
               decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: kSpaceSm),
             AnimatedDefaultTextStyle(
               duration: Motion.fast,
               curve: Motion.standard,

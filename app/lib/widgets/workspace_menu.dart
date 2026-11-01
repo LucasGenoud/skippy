@@ -336,7 +336,7 @@ class MoveToWorkspaceSheet {
                     ? Text('${workspace.members.length + 1} people')
                     : null,
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpaceSm),
           ],
         ),
       ),

@@ -137,7 +137,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             'by other people. Your other notes, attachments, settings, and '
             'sessions are also deleted. This cannot be undone.',
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           TextField(
             controller: _password,
             autofocus: true,
@@ -320,7 +320,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
                 prefixIcon: Icon(Icons.lock_outline),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: kSpaceLg),
           ],
           TextField(
             controller: _value,
@@ -358,7 +358,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
             ),
           ),
           if (changingPassword) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: kSpaceLg),
             TextField(
               controller: _confirmPassword,
               obscureText: _obscure,

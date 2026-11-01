@@ -250,7 +250,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
                 size: 16,
                 color: scheme.onSurfaceVariant,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpaceSm),
               Expanded(
                 child: Text(
                   link.expiresAt == null
@@ -274,7 +274,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
           'Sharing ${widget.target.title}',
           style: theme.textTheme.bodyMedium,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: kSpaceMd),
         DropdownButtonFormField<_LinkLifetime>(
           initialValue: _lifetime,
           decoration: const InputDecoration(
@@ -312,7 +312,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
               color: scheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           StateCrossFade(state: (_loading, link == null), child: _body(link)),
           AnimatedFormError(
             message: _error,

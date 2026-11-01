@@ -195,7 +195,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
               if (_nameError != null) setState(() => _nameError = null);
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           TextField(
             controller: _query,
             decoration: InputDecoration(
@@ -311,7 +311,7 @@ class EditSmartViewsDialog extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     handle,
-                    const SizedBox(width: 4),
+                    const SizedBox(width: kSpaceXs),
                     Icon(
                       labelIconFor(view.icon),
                       color:

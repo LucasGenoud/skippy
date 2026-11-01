@@ -35,14 +35,14 @@ class ReminderChip extends StatelessWidget {
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         color: scheme.onSurface.withValues(alpha: 0.08),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.alarm, size: 13, color: scheme.onSurfaceVariant),
-          const SizedBox(width: 4),
+          const SizedBox(width: kSpaceXs),
           Flexible(
             child: Text(
               label,
@@ -58,10 +58,6 @@ class ReminderChip extends StatelessWidget {
       ),
     );
     if (onTap == null) return chip;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(kRadius),
-      child: chip,
-    );
+    return InkWell(onTap: onTap, borderRadius: kBorderRadius, child: chip);
   }
 }

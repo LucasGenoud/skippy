@@ -97,7 +97,7 @@ class ManageCollectionsDialog extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         handle,
-                        const SizedBox(width: 4),
+                        const SizedBox(width: kSpaceXs),
                         Icon(
                           _collectionIcon(collection),
                           color: PaletteEntry.hexToColor(collection.color),
@@ -325,7 +325,7 @@ class _SelectableRow extends StatelessWidget {
       curve: Motion.standard,
       builder: (context, t, child) => Material(
         color: Color.lerp(Colors.transparent, scheme.secondaryContainer, t),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         clipBehavior: Clip.antiAlias,
         child: InkWell(onTap: onTap, child: child),
       ),

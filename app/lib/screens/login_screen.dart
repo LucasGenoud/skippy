@@ -11,6 +11,7 @@ import '../api/api_client.dart';
 import '../state/auth_store.dart';
 import '../util/motion.dart';
 import '../util/network_error.dart';
+import '../widgets/screen_width.dart';
 
 class LoginScreen extends StatefulWidget {
   /// Prefills the email field. Set when someone has just come back from the
@@ -187,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final passwordRejected = auth.errorStatus == 401;
     // On phones, drop the enclosing card and let the form span the full width
     // so the inputs get all the available space.
-    final isWide = MediaQuery.sizeOf(context).width >= 600;
+    final isWide = MediaQuery.sizeOf(context).width >= kWideBreakpoint;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -224,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: isWide
                         ? BoxDecoration(
                             color: scheme.surface,
-                            borderRadius: BorderRadius.circular(kRadius),
+                            borderRadius: kBorderRadius,
                             border: Border.all(color: scheme.outlineVariant),
                           )
                         : null,
@@ -320,7 +321,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             },
                             onSubmitted: (_) => _passwordFocus.requestFocus(),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: kSpaceLg),
                           LoginField(
                             controller: _password,
                             focusNode: _passwordFocus,
@@ -426,7 +427,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: kSpaceLg),
                   // ── Backend URL selector ──────────────────────────────
                   _BackendUrlSelector(
                     activeUrl: auth.activeUrl,
@@ -572,7 +573,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: kSpaceLg),
         TextField(
           controller: _email,
           autofocus: true,
@@ -601,7 +602,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(Icons.mark_email_read_outlined, size: 20, color: scheme.primary),
-        const SizedBox(width: 12),
+        const SizedBox(width: kSpaceMd),
         Expanded(
           child: Text(
             'If $email has an account here, a link to choose a new password '
@@ -725,7 +726,7 @@ class _BackendUrlSelector extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: kSpaceXs),
                 Icon(
                   Icons.arrow_drop_down,
                   size: 18,

@@ -5,6 +5,7 @@ import '../models/note.dart';
 import '../models/saved_location.dart';
 import '../util/motion.dart';
 import 'form_dialog.dart';
+import '../theme.dart';
 
 /// The result of editing a reminder. A null result means the picker was
 /// dismissed; [at] being null means the existing reminder should be removed.
@@ -370,7 +371,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
           icon: const Icon(Icons.schedule_outlined),
           label: Text('At ${_timeLabel(_customValue)}'),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: kSpaceXs),
         CalendarDatePicker(
           key: const ValueKey('custom-reminder-calendar'),
           initialDate: _customValue,
@@ -405,7 +406,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
           icon: const Icon(Icons.arrow_back),
           label: const Text('Quick reminder options'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpaceSm),
         _customPicker(theme, scheme),
       ],
     );
@@ -485,7 +486,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
         Text('Quick add', style: theme.textTheme.titleSmall),
         const SizedBox(height: 10),
         _presets(theme, scheme, presets),
-        const SizedBox(height: 12),
+        const SizedBox(height: kSpaceMd),
         OutlinedButton.icon(
           key: const ValueKey('custom-reminder-toggle'),
           onPressed: () => setState(() => _showCustom = true),
@@ -501,7 +502,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _repeatControl(),
-      const SizedBox(height: 16),
+      const SizedBox(height: kSpaceLg),
       AnimatedSwitcher(
         duration: Motion.base,
         switchInCurve: Motion.emphasized,
@@ -526,7 +527,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
         showSelectedIcon: false,
         onSelectionChanged: (value) => setState(() => _trigger = value.first),
       ),
-      const SizedBox(height: 8),
+      const SizedBox(height: kSpaceSm),
       SegmentedButton<bool>(
         key: const ValueKey('location-reminder-repeats'),
         segments: const [
@@ -546,7 +547,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
         onSelectionChanged: (value) =>
             setState(() => _locationRepeats = value.first),
       ),
-      const SizedBox(height: 4),
+      const SizedBox(height: kSpaceXs),
       Text(
         _locationRepeats
             ? 'Stays on the note and reminds you on every visit.'
@@ -555,7 +556,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
           color: scheme.onSurfaceVariant,
         ),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: kSpaceMd),
       RadioGroup<String>(
         groupValue: _locationId,
         onChanged: (value) {
@@ -576,12 +577,12 @@ class _ReminderSheetState extends State<_ReminderSheet> {
       // reminder saved on a laptop that said nothing about it would look
       // broken the moment the laptop stayed silent.
       if (!widget.locationMonitored) ...[
-        const SizedBox(height: 4),
+        const SizedBox(height: kSpaceXs),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(Icons.phone_iphone, size: 16, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 8),
+            const SizedBox(width: kSpaceSm),
             Expanded(
               child: Text(
                 'Watched for by Skippy on your phone, so the reminder '
@@ -626,7 +627,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
       children: [
         ?primary,
         if (_hasExisting) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           TextButton.icon(
             key: const ValueKey('remove-reminder'),
             style: TextButton.styleFrom(foregroundColor: scheme.error),

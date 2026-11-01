@@ -7,6 +7,7 @@ import '../../util/location_geofences.dart';
 import '../../util/snack.dart';
 import '../form_dialog.dart';
 import 'location_map_picker.dart';
+import '../../theme.dart';
 
 class SavedLocationsSection extends StatelessWidget {
   const SavedLocationsSection({super.key});
@@ -257,7 +258,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
             validator: (value) =>
                 value == null || value.trim().isEmpty ? 'Enter a name' : null,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           LocationMapPicker(
             latitude: _mapLatitude,
             longitude: _mapLongitude,
@@ -277,7 +278,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
                 ),
               ),
               if (LocationGeofences.supported) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpaceSm),
                 IconButton.filledTonal(
                   key: const ValueKey('use-current-location'),
                   tooltip: 'Use current location',
@@ -293,7 +294,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
               ],
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           Row(
             children: [
               Expanded(
@@ -307,7 +308,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
                   validator: (value) => _coordinateValidator(value, -90, 90),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: kSpaceMd),
               Expanded(
                 child: TextFormField(
                   controller: _longitude,
@@ -321,7 +322,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           TextFormField(
             controller: _radius,
             decoration: const InputDecoration(

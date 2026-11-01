@@ -265,7 +265,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpaceSm),
           ],
         ),
       ),
@@ -323,7 +323,7 @@ class EditLabelsDialog extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     handle,
-                    const SizedBox(width: 4),
+                    const SizedBox(width: kSpaceXs),
                     LabelGlyph(label: label, size: 28),
                   ],
                 ),
@@ -487,7 +487,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           SizedBox(
             width: 150,
             child: TextField(

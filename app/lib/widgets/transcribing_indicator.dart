@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../util/motion.dart';
+import '../theme.dart';
 
 /// Animated "Transcribing…" placeholder for an audio note whose Whisper
 /// transcript is still being produced: a bouncing equalizer next to shimmering
@@ -205,7 +206,7 @@ class TranscriptFailed extends StatelessWidget {
     return Row(
       children: [
         Icon(Icons.error_outline, size: compact ? 16 : 18, color: scheme.error),
-        const SizedBox(width: 8),
+        const SizedBox(width: kSpaceSm),
         Expanded(
           child: Text(
             "Couldn't transcribe this recording",

@@ -104,7 +104,7 @@ class _EmbeddingStatsTileState extends State<EmbeddingStatsTile> {
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
-            SizedBox(width: 12),
+            SizedBox(width: kSpaceMd),
             Text('Loading index stats…'),
           ],
         ),
@@ -126,7 +126,7 @@ class _EmbeddingStatsTileState extends State<EmbeddingStatsTile> {
             value: '${stats.indexedNotes} / ${stats.totalNotes}',
             hint: complete ? null : 'some notes are not indexed yet',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpaceMd),
           Align(
             alignment: Alignment.centerLeft,
             child: FilledButton.tonalIcon(
@@ -159,7 +159,7 @@ class _EmbeddingStatsTileState extends State<EmbeddingStatsTile> {
               context,
             ).textTheme.labelLarge?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           child,
         ],
       ),

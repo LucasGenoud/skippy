@@ -15,7 +15,6 @@ import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/location_geofences.dart';
 import '../util/location_reminder_grants.dart';
-import '../util/mime.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'checklist/animated_checklist.dart';
@@ -27,10 +26,12 @@ import 'editor/highlighted_text_field.dart';
 import 'file_drop.dart';
 import 'labels_sheet.dart';
 import 'markdown_toolbar.dart';
+import 'note_actions.dart';
 import 'paste_files.dart';
 import 'pick_image.dart';
 import 'pin_icon.dart';
 import 'reminder_picker.dart';
+import 'reminders/reminder_editing.dart';
 import 'share_dialog.dart';
 import 'state_cross_fade.dart';
 
@@ -178,11 +179,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
         _locationTrigger ?? LocationReminderTrigger.arrive,
         repeats: _locationRepeats,
       )) {
-        showAppSnack(
-          'You can have up to 20 active location reminders.',
-          icon: Icons.location_disabled_outlined,
-          kind: SnackKind.warning,
-        );
+        showLocationReminderCap();
       }
     }
     if (_pinned) store.togglePin(note.id);
@@ -372,16 +369,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   /// Files picked while composing wait here until the note is created, so a
   /// composer that is closed without saving uploads nothing.
   void _addFiles(List<DroppedFile> picked) {
-    final kept = <DroppedFile>[];
-    var oversized = false;
-    for (final file in picked) {
-      if (file.bytes.length > maxUploadBytes) {
-        oversized = true;
-      } else {
-        kept.add(file);
-      }
-    }
-    if (oversized) showAppSnack('Files are limited to 25 MB');
+    final kept = withinUploadLimit(picked);
     if (kept.isEmpty) return;
     setState(() => _files.addAll(kept));
   }
@@ -430,14 +418,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
     final store = context.read<NotesStore>();
     final id = _commit();
     _reset();
-    if (id == null) return;
-    store.setArchived(id, true);
-    showAppSnack(
-      'Note archived',
-      icon: Icons.archive_outlined,
-      actionLabel: 'Undo',
-      onAction: () => store.setArchived(id, false),
-    );
+    if (store.noteById(id ?? '') case final note?) {
+      toggleArchive(store, note);
+    }
   }
 
   void _discard() {
@@ -474,11 +457,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
     final store = context.read<NotesStore>();
     try {
       final picked = await pickNoteImage(context);
-      if (picked == null) return;
-      if (picked.bytes.length > maxUploadBytes) {
-        showAppSnack('Files are limited to 25 MB');
-        return;
-      }
+      if (picked == null || withinUploadLimit([picked]).isEmpty) return;
       // The picker can outlive this bar (the camera is a whole other screen),
       // so the spinner is only for a bar that is still on screen; the note
       // still gets created either way.
@@ -518,7 +497,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
             elevation: 2,
             shadowColor: Colors.black.withValues(alpha: 0.5),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(kRadius),
+              borderRadius: kBorderRadius,
               side: BorderSide(color: scheme.outlineVariant),
             ),
             child: AnimatedSize(
@@ -775,7 +754,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       ? Stack(
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(kRadius),
+              borderRadius: kBorderRadius,
               child: Image.memory(
                 file.bytes,
                 width: 72,
@@ -984,7 +963,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       child: Row(
         children: [
           Icon(icon, size: 20, color: color),
-          const SizedBox(width: 12),
+          const SizedBox(width: kSpaceMd),
           Expanded(
             child: Text(
               label,

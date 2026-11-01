@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/note.dart';
 import '../form_dialog.dart';
+import '../../theme.dart';
 
 /// Everything you do *to* a note, as opposed to what you put *into* it.
 ///
@@ -342,7 +343,7 @@ class _ChipRow extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           Wrap(spacing: 8, runSpacing: 8, children: chips),
         ],
       ),

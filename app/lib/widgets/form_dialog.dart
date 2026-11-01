@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../util/motion.dart';
+import 'screen_width.dart';
 
 /// Phone-sized viewport, matching the breakpoint the home screen uses.
 bool isNarrowScreen(BuildContext context) =>
-    MediaQuery.sizeOf(context).width < 600;
+    MediaQuery.sizeOf(context).width < kWideBreakpoint;
 
 /// Presents a short list of choices as a bottom sheet on phones and a compact
 /// centered surface on wide layouts. This keeps thumb-friendly actions near

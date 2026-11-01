@@ -134,7 +134,7 @@ class _ShareDialogState extends State<ShareDialog> {
                   : null,
             ),
           if (isOwner) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpaceSm),
             Row(
               children: [
                 Expanded(
@@ -148,7 +148,7 @@ class _ShareDialogState extends State<ShareDialog> {
                     onSubmitted: (_) => _add(),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpaceSm),
                 AnimatedSwitcher(
                   duration: Motion.fast,
                   switchInCurve: Motion.standard,
@@ -180,7 +180,7 @@ class _ShareDialogState extends State<ShareDialog> {
               message: _error,
               padding: const EdgeInsets.only(top: kSpaceSm),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpaceSm),
             const Divider(height: 24),
             // Sharing with an account and sharing with the world are different
             // enough to keep apart: one grants editing, the other grants
@@ -313,7 +313,7 @@ class _BulkShareDialogState extends State<BulkShareDialog> {
                 ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           TextField(
             controller: _controller,
             autofocus: true,

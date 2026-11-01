@@ -356,7 +356,7 @@ class _ExportSectionState extends State<ExportSection> {
                         _status!,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: kSpaceSm),
                       LinearProgressIndicator(value: _progress),
                     ],
                   ),
@@ -397,7 +397,7 @@ class _RestoreBackupDialogState extends State<RestoreBackupDialog> {
                 'the workspaces you own. Workspaces shared with you are not '
                 'changed. Only the selected backup workspaces are recreated.',
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: kSpaceMd),
               for (final workspace in widget.backup.workspaces)
                 CheckboxListTile(
                   contentPadding: kModalRowPadding,
@@ -422,7 +422,7 @@ class _RestoreBackupDialogState extends State<RestoreBackupDialog> {
                     });
                   },
                 ),
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpaceSm),
               Text(
                 'This cannot be undone. Create a fresh backup first if you '
                 'might need the current data.',
@@ -522,7 +522,7 @@ class _KeepImportDialogState extends State<KeepImportDialog> {
                 'shared.',
               ),
               if (widget.archive.missingFiles > 0) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: kSpaceSm),
                 Text(
                   '${widget.archive.missingFiles} attached '
                   '${widget.archive.missingFiles == 1 ? 'file is' : 'files are'} '
@@ -531,7 +531,7 @@ class _KeepImportDialogState extends State<KeepImportDialog> {
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: kSpaceLg),
               DropdownButtonFormField<String>(
                 key: const Key('keep-import-workspace'),
                 initialValue: _workspaceId,
@@ -548,7 +548,7 @@ class _KeepImportDialogState extends State<KeepImportDialog> {
                   _collectionId = _firstCollection(id);
                 }),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: kSpaceMd),
               DropdownButtonFormField<String>(
                 // Rebuilt per workspace, so its value always belongs to it.
                 key: ValueKey('keep-import-collection-$_workspaceId'),

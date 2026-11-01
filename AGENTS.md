@@ -141,7 +141,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/search.rs`: embeddings API client, sqlite-vec tables, indexing and search implementation.
 - `backend/src/transcribe.rs`: Whisper service interface and HTTP implementation.
 - `backend/src/ocr.rs`: image text recognition interface, HTTP implementation, reply parsing, and which image types are worth reading.
-- `backend/src/assist.rs`: effective LLM settings, prompts, assistant routing, and structured-output parsing.
+- `backend/src/assist/`: the pure LLM helpers, one file per feature: `settings.rs` (effective LLM settings, rewrite tasks), `labeling.rs`, `chat.rs` (routing, retrieval query, answer prompts) and `write_plan.rs` (chat write planning and its structured-output parsing). `mod.rs` re-exports them, so callers keep writing `assist::name`.
 - `backend/src/llm.rs`: OpenAI-compatible completion and streaming client.
 - `backend/src/notify.rs`: reminder scheduler (notes and checklist items) and
   the ntfy/Telegram/SMTP connectors.
@@ -168,7 +168,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/models/notify_channels.dart`: frontend notification connector registry.
 - `app/lib/models/search_stats.dart`: semantic index diagnostics.
 - `app/lib/state/auth_store.dart`: session restoration, login/register/logout, offline authentication fallback.
-- `app/lib/state/notes_store.dart`: optimistic note domain, sync queue, retry, WebSocket refresh, attachments.
+- `app/lib/state/notes_store.dart`: optimistic note domain, sync queue, retry, WebSocket refresh, local persistence. Its `part` files add the rest of its API as extensions: `notes_store_workspaces.dart` (workspaces and collections), `notes_store_labels.dart`, `notes_store_stages.dart`, and `notes_store_attachments.dart` (files and audio notes). Fields, overrides and anything calling `super` stay in the class.
 - `app/lib/state/sync_retry_policy.dart`, `workspace_reconciliation.dart`: focused retry and workspace-state rules extracted from `NotesStore`.
 - `app/lib/state/settings_store.dart`: defaults, JSON persistence, managed settings, capabilities, and setting mutations.
 - `app/lib/state/local_cache.dart`: per-user cached notes and persisted pending operations.
@@ -186,7 +186,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/masonry.dart`: custom animated masonry layout and drag reorder.
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
 - `app/lib/widgets/reminders/`: the Reminders view (agenda by day, month calendar, place reminders; calendar beside the agenda on wide screens, a tab on phones) and the shared reminder editing helpers the editor also uses. Its rules live in `state/reminder_agenda.dart`.
-- `app/lib/widgets/note_card.dart`: card rendering for all note types.
+- `app/lib/widgets/note_card.dart`: the card shell (open, hover, select, swipe); its `note_card/` parts draw the content, the labels, and the hover actions.
+- `app/lib/widgets/note_actions.dart`: archive, trash, copy, share, AI rewrite and the upload limit, shared by the card, the editor and the home screen. `state/note_availability.dart` decides which of them a note offers.
 - `app/lib/widgets/page_header.dart`: the title block a destination opens with (Reminders, Archive, Trash). Small-caps group labels use `sectionLabelStyle` in `theme.dart`.
 - `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card
   for a note's reminder and by the checklist editor for a row's.

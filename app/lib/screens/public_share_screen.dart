@@ -88,13 +88,13 @@ class _Unavailable extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.link_off, size: 48, color: scheme.onSurfaceVariant),
-              const SizedBox(height: 16),
+              const SizedBox(height: kSpaceLg),
               Text(
                 'This link is not available',
                 style: Theme.of(context).textTheme.titleMedium,
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpaceSm),
               Text(
                 'It may have been revoked or expired. Ask whoever shared it '
                 'for a new one.',
@@ -198,9 +198,9 @@ class _Header extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: kSpaceLg),
               Text(share.title, style: theme.textTheme.headlineSmall),
-              const SizedBox(height: 4),
+              const SizedBox(height: kSpaceXs),
               Text(
                 share.sharedBy.isEmpty
                     ? 'Shared with you'
@@ -209,7 +209,7 @@ class _Header extends StatelessWidget {
                   color: scheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: kSpaceMd),
               Divider(height: 1, color: hairlineColor(scheme)),
             ],
           ),
@@ -592,7 +592,7 @@ class _Checklist extends StatelessWidget {
                   size: 18,
                   color: scheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpaceSm),
                 Expanded(
                   child: Text(
                     item.text,
@@ -632,7 +632,7 @@ class _LabelChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: tint.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

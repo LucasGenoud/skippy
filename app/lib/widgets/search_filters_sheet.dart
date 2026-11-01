@@ -184,7 +184,7 @@ class SearchFiltersSheet extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: kSpaceSm),
                   FilledButton.tonalIcon(
                     onPressed: query.trim().isEmpty
                         ? null
@@ -234,7 +234,7 @@ class _Group extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title.toUpperCase(), style: sectionLabelStyle(theme)),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           Wrap(
             spacing: 8,
             runSpacing: 8,

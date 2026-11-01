@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme.dart';
 
 /// A quiet progress cue for the server-side automatic link summary job.
 class LinkSummaryIndicator extends StatelessWidget {
@@ -26,7 +27,7 @@ class LinkSummaryIndicator extends StatelessWidget {
               color: theme.colorScheme.primary,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpaceSm),
           Flexible(
             child: Text(
               'Summarizing link…',

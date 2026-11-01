@@ -44,7 +44,7 @@ class AudioPlayerView extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
       ),
       child: Row(
         children: [
@@ -73,7 +73,7 @@ class AudioPlayerView extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpaceSm),
           Expanded(
             child: AudioWaveform(
               position: value.toDouble(),

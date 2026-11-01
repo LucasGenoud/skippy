@@ -140,7 +140,7 @@ class _RecordingSheetState extends State<RecordingSheet>
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         decoration: BoxDecoration(
           color: scheme.surface,
-          borderRadius: BorderRadius.circular(kRadius),
+          borderRadius: kBorderRadius,
         ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -157,9 +157,9 @@ class _RecordingSheetState extends State<RecordingSheet>
 
   List<Widget> _errorContent(ColorScheme scheme) {
     return [
-      const SizedBox(height: 8),
+      const SizedBox(height: kSpaceSm),
       Icon(Icons.mic_off_outlined, size: 40, color: scheme.error),
-      const SizedBox(height: 16),
+      const SizedBox(height: kSpaceLg),
       Text(_error!, textAlign: TextAlign.center),
       const SizedBox(height: 20),
       FilledButton(
@@ -180,7 +180,7 @@ class _RecordingSheetState extends State<RecordingSheet>
           borderRadius: BorderRadius.circular(2),
         ),
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: kSpaceLg),
       Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -204,7 +204,7 @@ class _RecordingSheetState extends State<RecordingSheet>
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpaceSm),
           Text(
             _ready ? 'Recording' : 'Waiting for microphone…',
             style: theme.textTheme.titleMedium,
@@ -213,7 +213,7 @@ class _RecordingSheetState extends State<RecordingSheet>
       ),
       _MicPulse(pulse: _pulse, level: _level, ready: _ready),
       _Waveform(levels: _levels, color: scheme.primary),
-      const SizedBox(height: 12),
+      const SizedBox(height: kSpaceMd),
       Text(
         _clock(_elapsed),
         style: theme.textTheme.headlineSmall?.copyWith(
@@ -233,7 +233,7 @@ class _RecordingSheetState extends State<RecordingSheet>
               child: const Text('Cancel'),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: kSpaceMd),
           Expanded(
             child: FilledButton.icon(
               onPressed: (_ready && !_stopping) ? _stop : null,

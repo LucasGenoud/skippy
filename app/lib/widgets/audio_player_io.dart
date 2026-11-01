@@ -42,7 +42,7 @@ class _PlaybackUnavailable extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
       ),
       child: Row(
         children: [
@@ -51,7 +51,7 @@ class _PlaybackUnavailable extends StatelessWidget {
             size: 18,
             color: scheme.onSurfaceVariant,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpaceSm),
           Expanded(
             child: Text(
               'Playback is not supported on this platform yet. The recording '
@@ -174,12 +174,12 @@ class _AudioPlayerBarState extends State<_NativeAudioPlayerBar> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: scheme.errorContainer,
-          borderRadius: BorderRadius.circular(kRadius),
+          borderRadius: kBorderRadius,
         ),
         child: Row(
           children: [
             Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
-            const SizedBox(width: 8),
+            const SizedBox(width: kSpaceSm),
             Expanded(
               child: Text(
                 'Audio failed: $_error',

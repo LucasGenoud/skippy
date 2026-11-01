@@ -185,7 +185,7 @@ class _FileDropAreaState extends State<FileDropArea> {
                 alignment: Alignment.center,
                 child: Material(
                   color: scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(kRadius),
+                  borderRadius: kBorderRadius,
                   elevation: 6,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -196,7 +196,7 @@ class _FileDropAreaState extends State<FileDropArea> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.file_upload_outlined, color: scheme.primary),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: kSpaceMd),
                         Text(
                           widget.hint,
                           style: Theme.of(context).textTheme.titleMedium,

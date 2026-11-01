@@ -66,7 +66,7 @@ class NoteLinkPicker extends StatelessWidget {
                                 size: 17,
                                 color: scheme.onSurfaceVariant,
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: kSpaceMd),
                               Expanded(
                                 child: Text(
                                   noteLinkTitle(note),

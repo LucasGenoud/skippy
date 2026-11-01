@@ -62,7 +62,7 @@ class EditStagesDialog extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     handle,
-                    const SizedBox(width: 8),
+                    const SizedBox(width: kSpaceSm),
                     _StageDot(color: stage.color),
                   ],
                 ),
@@ -200,7 +200,7 @@ class _StageEditorDialogState extends State<StageEditorDialog> {
           ),
           const SizedBox(height: 20),
           Text('Colour', style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           Wrap(
             spacing: 10,
             runSpacing: 10,

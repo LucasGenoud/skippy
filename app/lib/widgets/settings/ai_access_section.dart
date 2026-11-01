@@ -10,6 +10,7 @@ import '../../util/snack.dart';
 import '../animated_reveal.dart';
 import '../form_dialog.dart';
 import '../state_cross_fade.dart';
+import '../../theme.dart';
 
 const _maxNameLength = 80;
 
@@ -273,7 +274,7 @@ class _NewTokenDialogState extends State<_NewTokenDialog> {
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) => _submit(),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           const FormSectionLabel('What it may do'),
           SegmentedButton<TokenScope>(
             showSelectedIcon: false,
@@ -285,7 +286,7 @@ class _NewTokenDialogState extends State<_NewTokenDialog> {
             onSelectionChanged: (selection) =>
                 setState(() => _scope = selection.single),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpaceSm),
           Text(
             _scope == TokenScope.read
                 ? 'Search, list and read notes in every workspace you belong '
@@ -337,14 +338,14 @@ class _TokenCreatedDialog extends StatelessWidget {
               'revoke it and create another.',
               style: TextStyle(color: theme.colorScheme.error),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: kSpaceLg),
             _CopyField(label: 'Token', value: created.secret),
             _CopyField(label: 'Server URL', value: mcpUrl(baseUrl)),
             _CopyField(
               label: 'Claude Code',
               value: claudeCodeCommand(baseUrl, created.secret),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: kSpaceXs),
             Text(
               'Other MCP clients: add a Streamable HTTP server at the URL '
               'above, with the header Authorization: Bearer followed by the '

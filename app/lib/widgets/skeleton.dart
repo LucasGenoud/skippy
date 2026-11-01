@@ -87,7 +87,7 @@ class _NotesSkeletonState extends State<NotesSkeleton>
                                                       1.0),
                                             ),
                             ),
-                            borderRadius: BorderRadius.circular(kRadius),
+                            borderRadius: kBorderRadius,
                           ),
                         ),
                       ),

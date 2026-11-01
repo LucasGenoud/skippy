@@ -1153,7 +1153,7 @@ class _IncomingSlot extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.primary.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         border: Border.all(color: scheme.primary, width: 2),
       ),
     );
@@ -1191,7 +1191,7 @@ class _DragFeedback extends StatelessWidget {
                     bottom: 8,
                     child: Material(
                       color: Theme.of(context).colorScheme.primary,
-                      borderRadius: BorderRadius.circular(kRadius),
+                      borderRadius: kBorderRadius,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
@@ -1218,7 +1218,7 @@ class _DragFeedback extends StatelessWidget {
           child: Container(
             width: width,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(kRadius),
+              borderRadius: kBorderRadius,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.28 * t),

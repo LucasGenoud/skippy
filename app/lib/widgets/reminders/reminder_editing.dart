@@ -59,11 +59,7 @@ Future<bool> editNoteReminder(
       repeats: selection.locationRepeats,
     );
     if (!added) {
-      showAppSnack(
-        'You can have up to $_maxLocationReminders active location reminders.',
-        icon: Icons.location_disabled_outlined,
-        kind: SnackKind.warning,
-      );
+      showLocationReminderCap();
       return false;
     }
     store.setReminder(id, null);
@@ -78,6 +74,16 @@ Future<bool> editNoteReminder(
   settings.removeLocationReminder(id);
   store.setReminder(id, selection.at, selection.repeat);
   return true;
+}
+
+/// Says why a place reminder was refused: the account already holds as many
+/// as the settings store allows.
+void showLocationReminderCap() {
+  showAppSnack(
+    'You can have up to $_maxLocationReminders active location reminders.',
+    icon: Icons.location_disabled_outlined,
+    kind: SnackKind.warning,
+  );
 }
 
 /// Opens the reminder picker for one checklist row and applies the choice.

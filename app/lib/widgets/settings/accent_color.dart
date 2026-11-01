@@ -225,7 +225,7 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
                       : Colors.white,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: kSpaceMd),
               Expanded(
                 child: Text(
                   'Preview of the accent this seed produces.',
@@ -236,7 +236,7 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -262,7 +262,7 @@ class _AccentCustomDialogState extends State<_AccentCustomDialog> {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpaceLg),
           SizedBox(
             width: 130,
             child: TextField(

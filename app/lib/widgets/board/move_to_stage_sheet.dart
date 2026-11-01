@@ -78,7 +78,7 @@ class MoveToStageSheet extends StatelessWidget {
                   selected: current == stage.id,
                   onTap: () => _move(context, store, stage.id),
                 ),
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpaceSm),
           ],
         ),
       ),

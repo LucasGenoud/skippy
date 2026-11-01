@@ -133,7 +133,7 @@ class ImageAttachmentTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         child: Stack(
           children: [
             Semantics(
@@ -289,7 +289,7 @@ class UploadingAttachmentTile extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(kRadius),
+          borderRadius: kBorderRadius,
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -324,7 +324,7 @@ class UploadingAttachmentTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
@@ -390,9 +390,9 @@ class FileAttachmentTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: scheme.onSurface.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(kRadius),
+        borderRadius: kBorderRadius,
         child: InkWell(
-          borderRadius: BorderRadius.circular(kRadius),
+          borderRadius: kBorderRadius,
           onTap: () =>
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
           child: Padding(

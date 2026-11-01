@@ -1459,7 +1459,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                   : hovered && !widget.readOnly
                   ? scheme.onSurface.withValues(alpha: 0.04)
                   : null,
-              borderRadius: BorderRadius.circular(kRadius),
+              borderRadius: kBorderRadius,
               boxShadow: [
                 if (dragging)
                   BoxShadow(
@@ -1608,12 +1608,12 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: _toggleChecked,
-      borderRadius: BorderRadius.circular(kRadius),
+      borderRadius: kBorderRadius,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            const SizedBox(width: 4),
+            const SizedBox(width: kSpaceXs),
             AnimatedRotation(
               turns: _showChecked ? 0.25 : 0,
               duration: _controlFade,
@@ -1624,7 +1624,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
                 color: scheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: kSpaceSm),
             Text(
               '$count checked ${count == 1 ? 'item' : 'items'}',
               style: Theme.of(
