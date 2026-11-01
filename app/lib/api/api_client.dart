@@ -386,6 +386,12 @@ class ApiClient extends _ApiTransport implements Api {
   /// Attachment uploads bypass it (see [_uploadClient]).
   static const requestTimeout = Duration(seconds: 15);
 
+  /// Ceiling on a request a model answers: a rewrite or a page summary. A
+  /// model on a home server can take most of a minute, and the server gives
+  /// up on a rewrite at 50 seconds, so the app waits longer than that rather
+  /// than calling a rewrite failed while the server goes on to apply it.
+  static const aiRequestTimeout = Duration(seconds: 90);
+
   /// Resolution order: --dart-define=API_BASE (compile-time), then the URL the
   /// server injected into the page (PUBLIC_URL env var), then
   /// same-origin when the app is served by the Rust binary itself, then the
@@ -406,6 +412,7 @@ class ApiClient extends _ApiTransport implements Api {
     : super(
         baseUrl: baseUrl ?? defaultBaseUrl(),
         requestTimeout: requestTimeout,
+        aiRequestTimeout: aiRequestTimeout,
         probeTimeout: connectionProbeTimeout,
       );
 
@@ -693,7 +700,7 @@ class ApiClient extends _ApiTransport implements Api {
 
   @override
   Future<Note> rewriteNote(String id, NoteRewriteTask task) async {
-    final data = await _post('/notes/$id/rewrite', {'task_id': task.id});
+    final data = await _postToAi('/notes/$id/rewrite', {'task_id': task.id});
     return Note.fromJson(data as Map<String, dynamic>);
   }
 
@@ -1017,11 +1024,11 @@ class ApiClient extends _ApiTransport implements Api {
     UrlSummaryLength length = UrlSummaryLength.short,
     Future<void>? abort,
   }) async {
-    final data = await _postAbortable('/unfurl/summary', {
+    final data = await _postToAi('/unfurl/summary', {
       'url': url,
       'note_id': noteId,
       'length': length.name,
-    }, abort);
+    }, abort: abort);
     return (data as Map<String, dynamic>)['summary'] as String;
   }
 

@@ -1,7 +1,7 @@
 //! Chat writes: the planner prompt that turns a request into one structured
 //! edit, and the strict reading of the plan the model returns.
 
-use super::{PromptNote, cap, custom_prompt, with_conversation};
+use super::{PromptNote, cap, custom_prompt, json_object, with_conversation};
 use crate::llm::ChatMessage;
 
 /// Max checklist entries a single write turn may add (guards against a
@@ -130,9 +130,7 @@ pub fn parse_write_action(
     valid_ids: &[String],
     permissions: WritePermissions,
 ) -> Option<WriteAction> {
-    let start = reply.find('{')?;
-    let end = reply.rfind('}').filter(|&e| e > start)?;
-    let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
+    let value = serde_json::Value::Object(json_object(reply)?);
     let content = value["content"]
         .as_str()
         .map(str::trim)

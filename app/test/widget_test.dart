@@ -33,6 +33,7 @@ import 'package:skippy/widgets/linked_text.dart';
 import 'package:skippy/widgets/link_preview.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
+import 'package:skippy/widgets/note_actions.dart';
 import 'package:skippy/widgets/note_card.dart';
 import 'package:skippy/widgets/quick_add_bar.dart';
 import 'package:skippy/widgets/screen_width.dart';
@@ -5051,5 +5052,68 @@ void main() {
       expect(store.noteById('n1')!.trashed, isFalse);
       await flushTimers(tester);
     });
+  });
+
+  group('AI rewrites', () {
+    bool readOnly(WidgetTester tester, String text) =>
+        tester.widget<TextField>(find.widgetWithText(TextField, text)).readOnly;
+
+    testWidgets('the editor holds the note still while the AI rewrites it', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        title: 'Groceries',
+        content: 'buy milk',
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+      expect(readOnly(tester, 'Groceries'), isFalse);
+      expect(readOnly(tester, 'buy milk'), isFalse);
+
+      // Typing now would be overwritten by the rewrite when it lands.
+      api.rewriteGate = Completer<void>();
+      final rewrite = store.rewriteNote('n1', kDefaultNoteRewriteTasks.first);
+      await tester.pump();
+      expect(readOnly(tester, 'Groceries'), isTrue);
+      expect(readOnly(tester, 'buy milk'), isTrue);
+
+      api.rewriteGate!.complete();
+      await rewrite;
+      await tester.pumpAndSettle();
+      expect(readOnly(tester, 'Groceries'), isFalse);
+      await flushTimers(tester);
+    });
+
+    for (final (failure, reason) in [
+      (
+        ApiException(502, '{"error":"the AI provider did not answer"}'),
+        'The AI provider did not answer.',
+      ),
+      (TimeoutException('slow'), 'The AI took too long to answer.'),
+    ]) {
+      testWidgets('a failed rewrite says why: ${failure.runtimeType}', (
+        tester,
+      ) async {
+        api.notes['n1'] = serverNote('n1', content: 'buy milk');
+        await store.load();
+        await tester.pumpWidget(
+          MaterialApp(
+            scaffoldMessengerKey: scaffoldMessengerKey,
+            home: const Scaffold(),
+          ),
+        );
+        api.failWith = failure;
+
+        await rewriteWithAi(store, 'n1', kDefaultNoteRewriteTasks.first);
+        await tester.pumpAndSettle();
+
+        expect(find.text("Couldn't rewrite the note. $reason"), findsOneWidget);
+        api.failWith = null;
+        scaffoldMessengerKey.currentState!.clearSnackBars();
+        await flushTimers(tester);
+      });
+    }
   });
 }

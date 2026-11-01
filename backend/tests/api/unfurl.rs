@@ -161,6 +161,30 @@ async fn summarize_fetches_page_content_and_uses_the_writing_model() {
     assert!(!calls[0][1].content.contains("Fallback Title"));
 }
 
+/// Reasoning models put their thinking in the reply; it is not the summary.
+#[tokio::test]
+async fn a_summary_leaves_out_the_models_reasoning() {
+    allow_private_fetch();
+    let (base, _) = spawn_og_server().await;
+    let (state, _) =
+        state_with_llm("<think>The page is about {hi}.</think>\n\nA tiny page summary.").await;
+    let app = build_app(state);
+    let (token, _) = register(&app, "unfurl_reasoning").await;
+    configure_llm(&app, &token).await;
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/unfurl/summary",
+        Some(&token),
+        Some(json!({"url": format!("{base}/page")})),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "summary: {body}");
+    assert_eq!(body["summary"], "A tiny page summary.");
+}
+
 #[tokio::test]
 async fn automatically_summarizes_a_link_added_through_notes_api() {
     allow_private_fetch();

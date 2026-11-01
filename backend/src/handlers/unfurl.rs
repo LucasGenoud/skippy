@@ -141,16 +141,23 @@ pub(crate) async fn summarize_with_settings(
             ],
         )
         .await
-        .map_err(ApiError::Internal)?;
-    let summary = reply
-        .trim()
+        .map_err(|error| {
+            crate::telemetry::event(
+                "error",
+                "ai_summary_provider_failed",
+                serde_json::json!({
+                    "request_id": crate::telemetry::current_request_id(),
+                    "error": format!("{error:#}"),
+                }),
+            );
+            ApiError::Upstream("the AI provider did not answer")
+        })?;
+    let summary = crate::assist::model_answer(&reply)
         .chars()
         .take(length.max_chars())
         .collect::<String>();
     if summary.is_empty() {
-        return Err(ApiError::Internal(anyhow::anyhow!(
-            "LLM returned an empty summary"
-        )));
+        return Err(ApiError::Upstream("the AI returned an empty summary"));
     }
     Ok(summary)
 }

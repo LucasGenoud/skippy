@@ -252,6 +252,10 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Note? get _note => _noteId == null ? null : _store.noteById(_noteId!);
 
+  /// Typing while the AI rewrites the note would be lost when the rewrite
+  /// lands, so the fields hold still until it does.
+  bool get _rewriting => _noteId != null && _store.isRewritingNote(_noteId!);
+
   @override
   void initState() {
     super.initState();
@@ -1268,7 +1272,7 @@ class _EditorScreenState extends State<EditorScreen> {
     return TextField(
       controller: _titleController,
       focusNode: _titleFocus,
-      readOnly: trashed,
+      readOnly: trashed || _rewriting,
       enabled: !trashed,
       maxLines: null,
       // Flutter defaults to `none`, which tells the keyboard to stop
@@ -1489,7 +1493,7 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_kind == NoteKind.checklist) {
       return AnimatedChecklist(
         items: _items,
-        readOnly: trashed,
+        readOnly: trashed || _rewriting,
         autofocusNew:
             (widget.noteId == null && widget.kind == NoteKind.checklist) ||
             (widget.addChecklistItem && !trashed),
@@ -1557,7 +1561,7 @@ class _EditorScreenState extends State<EditorScreen> {
     return HighlightedTextField(
       controller: _contentController,
       focusNode: _contentFocus,
-      readOnly: trashed,
+      readOnly: trashed || _rewriting,
       query: query,
       monospace: _kind == NoteKind.markdown,
       // Focus is requested after the open transition settles (see initState)

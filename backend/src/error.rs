@@ -16,6 +16,9 @@ pub enum ApiError {
     RateLimited(u64),
     /// Optional feature (e.g. semantic search) not enabled on this server.
     Unavailable(&'static str),
+    /// The AI provider failed, or answered with nothing usable. Worded for the
+    /// person who asked; the cause is logged where it happened.
+    Upstream(&'static str),
     Internal(anyhow::Error),
 }
 
@@ -48,6 +51,7 @@ impl IntoResponse for ApiError {
                 Some(seconds),
             ),
             ApiError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m.to_string(), None),
+            ApiError::Upstream(m) => (StatusCode::BAD_GATEWAY, m.to_string(), None),
             ApiError::Internal(e) => {
                 crate::telemetry::event(
                     "error",

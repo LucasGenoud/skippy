@@ -638,7 +638,7 @@ fn message(error: ApiError) -> String {
     match error {
         ApiError::NotFound => "not found".into(),
         ApiError::BadRequest(m) | ApiError::Conflict(m) => m,
-        ApiError::Forbidden(m) | ApiError::Unavailable(m) => m.into(),
+        ApiError::Forbidden(m) | ApiError::Unavailable(m) | ApiError::Upstream(m) => m.into(),
         ApiError::Internal(e) => {
             crate::telemetry::event(
                 "error",

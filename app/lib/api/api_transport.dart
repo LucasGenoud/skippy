@@ -36,12 +36,14 @@ abstract class _ApiTransport {
   _ApiTransport({
     required this.baseUrl,
     required Duration requestTimeout,
+    required Duration aiRequestTimeout,
     required this.probeTimeout,
     http.Client? httpClient,
     WebSocketChannelFactory? webSocketFactory,
   }) : _uploadClient = httpClient ?? http.Client(),
        _webSocketFactory = webSocketFactory ?? WebSocketChannel.connect {
     _client = _TimeoutClient(_uploadClient, requestTimeout);
+    _aiClient = _TimeoutClient(_uploadClient, aiRequestTimeout);
   }
 
   String baseUrl;
@@ -49,6 +51,9 @@ abstract class _ApiTransport {
   final http.Client _uploadClient;
   final WebSocketChannelFactory _webSocketFactory;
   late final http.Client _client;
+
+  /// For requests a model answers, which take far longer than the rest.
+  late final http.Client _aiClient;
 
   /// Session token; set by the auth store after sign-in.
   String? token;
@@ -105,13 +110,13 @@ abstract class _ApiTransport {
     await _client.delete(_uri(path), headers: _headers(), body: _json(body)),
   );
 
-  /// A POST the caller can drop by completing [abort]; it then throws
-  /// [http.RequestAbortedException].
-  Future<dynamic> _postAbortable(
+  /// A POST a model answers, on the AI timeout. Completing [abort] drops it,
+  /// and it then throws [http.RequestAbortedException].
+  Future<dynamic> _postToAi(
     String path,
-    Object? body,
+    Object? body, {
     Future<void>? abort,
-  ) async {
+  }) async {
     final request = http.AbortableRequest(
       'POST',
       _uri(path),
@@ -120,7 +125,9 @@ abstract class _ApiTransport {
     if (_json(body) case final String json) {
       request.body = json;
     }
-    return _decode(await http.Response.fromStream(await _client.send(request)));
+    return _decode(
+      await http.Response.fromStream(await _aiClient.send(request)),
+    );
   }
 
   static String? _json(Object? body) => body == null ? null : jsonEncode(body);

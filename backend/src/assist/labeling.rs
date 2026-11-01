@@ -1,7 +1,7 @@
 //! Auto-labeling: ask the model to pick from the workspace's own labels, and
 //! read its answer back.
 
-use super::{cap, custom_prompt};
+use super::{cap, custom_prompt, json_array};
 use crate::llm::ChatMessage;
 use crate::models::Label;
 
@@ -35,15 +35,9 @@ pub fn labeling_messages(
 /// code fences and surrounding prose by slicing the first `[` .. last `]`.
 /// Returns an empty list when nothing parseable remains.
 pub fn parse_label_reply(reply: &str) -> Vec<String> {
-    let start = match reply.find('[') {
-        Some(i) => i,
-        None => return Vec::new(),
-    };
-    let end = match reply.rfind(']') {
-        Some(i) if i > start => i,
-        _ => return Vec::new(),
-    };
-    serde_json::from_str::<Vec<String>>(&reply[start..=end]).unwrap_or_default()
+    json_array(reply)
+        .and_then(|names| serde_json::from_value(serde_json::Value::Array(names)).ok())
+        .unwrap_or_default()
 }
 
 /// Map model-suggested names onto the user's labels: case-insensitive,

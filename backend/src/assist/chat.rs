@@ -1,7 +1,7 @@
 //! Notes chat: route a turn, build its retrieval query, and write the
 //! prompts that answer over the retrieved notes or the conversation alone.
 
-use super::{PromptNote, cap, custom_prompt, with_conversation};
+use super::{PromptNote, cap, custom_prompt, json_object, with_conversation};
 use crate::llm::ChatMessage;
 use crate::models::NoteRecord;
 
@@ -91,10 +91,7 @@ pub fn route_messages(
 /// key must be PRESENT (a wrong-shape object is not a decision), with `null`
 /// or a blank query meaning no lookup.
 pub fn parse_route_reply(reply: &str) -> Option<RouteDecision> {
-    let start = reply.find('{')?;
-    let end = reply.rfind('}').filter(|&e| e > start)?;
-    let value: serde_json::Value = serde_json::from_str(&reply[start..=end]).ok()?;
-    let object = value.as_object()?;
+    let object = json_object(reply)?;
     // A write intent wins: the user asked to change their notes, not just read.
     if let Some(serde_json::Value::String(topic)) = object.get("write")
         && !topic.trim().is_empty()

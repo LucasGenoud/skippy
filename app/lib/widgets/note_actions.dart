@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../api/api_client.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../state/notes_store.dart';
@@ -63,9 +66,9 @@ Future<bool> rewriteWithAi(
 ) async {
   try {
     await store.rewriteNote(id, task);
-  } catch (_) {
+  } catch (error) {
     showAppSnack(
-      "Couldn't update the note with AI",
+      "Couldn't rewrite the note. ${_rewriteFailure(error)}",
       icon: Icons.error_outline,
       kind: SnackKind.danger,
     );
@@ -73,6 +76,18 @@ Future<bool> rewriteWithAi(
   }
   showAppSnack('${task.name} complete', icon: Icons.auto_fix_high_outlined);
   return true;
+}
+
+/// Why a rewrite failed, as a sentence: the server's own reason when it gave
+/// one ("the note changed while the AI was editing it"), else what broke.
+String _rewriteFailure(Object error) {
+  final reason = switch (error) {
+    ApiException() => error.serverMessage,
+    TimeoutException() => 'the AI took too long to answer',
+    _ => 'the server could not be reached',
+  };
+  final sentence = reason.endsWith('.') ? reason : '$reason.';
+  return sentence[0].toUpperCase() + sentence.substring(1);
 }
 
 /// [files] without the ones over the upload limit, saying so when any had to

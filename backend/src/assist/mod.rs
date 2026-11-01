@@ -5,11 +5,13 @@
 
 mod chat;
 mod labeling;
+mod reply;
 mod settings;
 mod write_plan;
 
 pub use chat::*;
 pub use labeling::*;
+pub use reply::*;
 pub use settings::*;
 pub use write_plan::*;
 

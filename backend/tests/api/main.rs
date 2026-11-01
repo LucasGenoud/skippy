@@ -19,6 +19,7 @@ mod notes;
 mod notify;
 mod ocr;
 mod password_reset;
+mod rewrite;
 mod search;
 mod settings;
 mod share_links;
