@@ -286,9 +286,9 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                           ),
                         ),
                       ),
-                    Expanded(child: _body()),
                     Padding(
-                      padding: const EdgeInsets.all(8),
+                      // The card list below brings its own top inset.
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                       child: SizedBox(
                         width: double.infinity,
                         // Quiet grey, not the accent: every column has one,
@@ -310,6 +310,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                         ),
                       ),
                     ),
+                    Expanded(child: _body()),
                   ],
                 ),
         ),

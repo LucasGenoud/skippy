@@ -146,7 +146,7 @@ class AppSidebar extends StatelessWidget {
                     for (final noteId in draggedIds(id)) {
                       if (store.noteById(noteId)?.workspaceId ==
                           c.workspaceId) {
-                        store.moveToCollection(noteId, c.id);
+                        store.restoreToCollection(noteId, c.id);
                       }
                     }
                     filed(id);
@@ -187,14 +187,19 @@ class AppSidebar extends StatelessWidget {
                   ),
                   willAcceptNote: (id) => acceptsAny(
                     id,
-                    (noteId) =>
-                        store.noteById(noteId)?.workspaceId ==
-                        store.activeWorkspaceId,
+                    (noteId) => switch (store.noteById(noteId)) {
+                      final note? =>
+                        !note.trashed &&
+                            note.workspaceId == store.activeWorkspaceId,
+                      null => false,
+                    },
                   ),
                   onAcceptNote: (id) {
                     for (final noteId in draggedIds(id)) {
-                      if (store.noteById(noteId)?.workspaceId ==
-                          store.activeWorkspaceId) {
+                      final note = store.noteById(noteId);
+                      if (note != null &&
+                          !note.trashed &&
+                          note.workspaceId == store.activeWorkspaceId) {
                         store.addLabelToNote(noteId, label.id);
                       }
                     }
@@ -267,17 +272,23 @@ class AppSidebar extends StatelessWidget {
                   isOpen: isOpen,
                   danger: entry.$1 == ViewSelection.trash,
                   onTap: () => onSelect(entry.$1),
+                  // A note in Trash only leaves it by being filed in a
+                  // collection, or through Restore.
                   willAcceptNote: (id) => acceptsAny(
                     id,
                     (noteId) =>
-                        entry.$1 == ViewSelection.archive ||
-                        (entry.$1 == ViewSelection.trash &&
-                            store.canTrash(noteId)),
+                        !(store.noteById(noteId)?.trashed ?? true) &&
+                        (entry.$1 == ViewSelection.archive ||
+                            (entry.$1 == ViewSelection.trash &&
+                                store.canTrash(noteId))),
                   ),
                   onAcceptNote: entry.$1 == ViewSelection.reminders
                       ? null
                       : (id) {
                           for (final noteId in draggedIds(id)) {
+                            if (store.noteById(noteId)?.trashed ?? true) {
+                              continue;
+                            }
                             if (entry.$1 == ViewSelection.archive) {
                               store.setArchived(noteId, true);
                             } else if (store.canTrash(noteId)) {

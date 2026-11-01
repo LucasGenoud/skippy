@@ -716,8 +716,10 @@ class _HomeScreenState extends State<HomeScreen> {
       // results stay put and only the in-bar spinner signals the fetch, so the
       // grid doesn't flash a skeleton on every keystroke.
       semanticLoading: semanticActive && _semanticBusy && rankedIds == null,
+      // Trash never reorders, but a card can still be dragged out of it onto
+      // a collection, which restores it there.
       dragEnabled:
-          canReorder || (_selectionMode && _selection.view != NoteView.trash),
+          canReorder || _selectionMode || _selection.view == NoteView.trash,
       density: settings.gridDensity,
       gridWidth: settings.gridWidth,
     );

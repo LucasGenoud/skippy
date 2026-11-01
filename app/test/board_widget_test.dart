@@ -1062,9 +1062,29 @@ void main() {
     await flushTimers(tester);
   });
 
+  testWidgets('a column offers Add note above its cards', (tester) async {
+    await setViewport(tester, const Size(1200, 900));
+    api.notes['n1'] = serverNote(
+      'n1',
+      title: 'card one',
+    ).copyWith(stageId: 'todo');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    final todo = find.ancestor(
+      of: find.text('Todo').first,
+      matching: find.byType(BoardColumnView),
+    );
+    final add = find.descendant(of: todo, matching: find.text('Add note'));
+    final card = find.descendant(of: todo, matching: find.text('card one'));
+    expect(tester.getTopLeft(add).dy, lessThan(tester.getTopLeft(card).dy));
+    await flushTimers(tester);
+  });
+
   /// A column needs its own way to start a note, or filing one there means
   /// creating it loose and moving it.
-  testWidgets('the column footer composes a note already in that column', (
+  testWidgets('the column add button composes a note already in that column', (
     tester,
   ) async {
     await setViewport(tester, const Size(1200, 900));

@@ -141,11 +141,7 @@ extension NotesStoreWorkspaces on NotesStore {
 
   void moveToCollection(String noteId, String collectionId) {
     final note = noteById(noteId);
-    if (note == null ||
-        !(workspaceById(
-              note.workspaceId,
-            )?.collections.any((c) => c.id == collectionId) ??
-            false)) {
+    if (note == null || !_hasCollection(note.workspaceId, collectionId)) {
       return;
     }
     _patch(noteId, note.copyWith(collectionId: collectionId, stageId: null), {
@@ -153,6 +149,41 @@ extension NotesStoreWorkspaces on NotesStore {
       'stage_id': null,
     });
   }
+
+  /// Files the note in [collectionId] as a live note: one waiting in the
+  /// archive or Trash comes back out in the same patch, so the move and the
+  /// restore cannot land apart. A drop on a collection asks for exactly this.
+  void restoreToCollection(String noteId, String collectionId) {
+    final note = noteById(noteId);
+    if (note == null || !_hasCollection(note.workspaceId, collectionId)) {
+      return;
+    }
+    if (!note.archived && !note.trashed) {
+      moveToCollection(noteId, collectionId);
+      return;
+    }
+    _patch(
+      noteId,
+      note.copyWith(
+        collectionId: collectionId,
+        stageId: null,
+        archived: false,
+        trashed: false,
+      ),
+      {
+        'collection_id': collectionId,
+        'stage_id': null,
+        'archived': false,
+        'trashed': false,
+      },
+    );
+  }
+
+  bool _hasCollection(String workspaceId, String collectionId) =>
+      workspaceById(
+        workspaceId,
+      )?.collections.any((c) => c.id == collectionId) ??
+      false;
 
   // Workspaces
 

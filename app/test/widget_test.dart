@@ -4853,6 +4853,100 @@ void main() {
       await flushTimers(tester);
     });
 
+    for (final (place, archived, trashed) in [
+      ('the archive', true, false),
+      ('Trash', false, true),
+    ]) {
+      testWidgets('dropping a note from $place on a collection restores it', (
+        tester,
+      ) async {
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'a',
+          workspaceId: 'w-default',
+          archived: archived,
+          trashed: trashed,
+        );
+        await store.load();
+        store.saveCollection(
+          const NoteCollection(
+            id: 'reading',
+            workspaceId: 'w-default',
+            name: 'Reading',
+          ),
+        );
+        await tester.pumpWidget(dragHarness(store));
+        await tester.pumpAndSettle();
+
+        await dropOn(tester, find.text('Reading'));
+
+        final note = store.noteById('n1')!;
+        expect(note.collectionId, 'reading');
+        expect(note.archived, isFalse);
+        expect(note.trashed, isFalse);
+        await flushTimers(tester);
+        expect(api.notes['n1']!.archived, isFalse);
+        expect(api.notes['n1']!.trashed, isFalse);
+        expect(api.notes['n1']!.collectionId, 'reading');
+      });
+    }
+
+    testWidgets('Archive refuses a note in Trash', (tester) async {
+      api.notes['n1'] = serverNote('n1', title: 'a', trashed: true);
+      await store.load();
+      await tester.pumpWidget(dragHarness(store));
+      await tester.pumpAndSettle();
+
+      await dropOn(tester, find.text('Archive'));
+
+      expect(store.noteById('n1')!.archived, isFalse);
+      expect(store.noteById('n1')!.trashed, isTrue);
+      await flushTimers(tester);
+    });
+
+    testWidgets(
+      'a card in Trash can be dragged onto a collection',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Binned note',
+          workspaceId: 'w-default',
+          trashed: true,
+        );
+        await store.load();
+        store.saveCollection(
+          const NoteCollection(
+            id: 'reading',
+            workspaceId: 'w-default',
+            name: 'Reading',
+          ),
+        );
+        await tester.pumpWidget(homeApp(store));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Trash'));
+        await tester.pumpAndSettle();
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('Binned note')),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await gesture.moveBy(const Offset(-24, 0));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(find.text('Reading')));
+        await tester.pump();
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(store.noteById('n1')!.trashed, isFalse);
+        expect(store.noteById('n1')!.collectionId, 'reading');
+        await flushTimers(tester);
+      },
+    );
+
     testWidgets('dropping a note on Archive archives it', (tester) async {
       api.notes['n1'] = serverNote('n1', title: 'a');
       await store.load();
