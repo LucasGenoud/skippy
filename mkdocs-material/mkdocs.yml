@@ -25,6 +25,7 @@ markdown_extensions:
 nav:
   - Overview: index.md
   - Set up Skippy: setup.md
+  - Privacy: privacy.md
 extra:
   app_url: https://skippy-notes.com
   github_url: https://github.com/LucasGenoud/skippy
