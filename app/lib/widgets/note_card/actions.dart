@@ -8,6 +8,9 @@ part of '../note_card.dart';
 /// (its reminder guard, its rect, its swipe) arrives as a callback; the rest
 /// runs here through the shared note actions.
 class _NoteActions extends StatelessWidget {
+  /// Keeps a hovered button's fill off the rule above the row.
+  static const double _ruleGap = 6;
+
   final Note note;
   final bool rewriting;
 
@@ -71,8 +74,9 @@ class _NoteActions extends StatelessWidget {
           note.reminderAt != null ||
           settings.locationReminderForNote(note.id) != null,
     );
-    return DecoratedBox(
+    return Container(
       key: ValueKey('note-actions-${note.id}'),
+      padding: const EdgeInsets.only(top: _ruleGap),
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.55)),

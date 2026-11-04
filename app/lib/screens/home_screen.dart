@@ -935,6 +935,7 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIds: _selectedNoteIds,
         onSelectionChanged: _toggleNoteSelection,
         onToggleColumnSelection: _toggleSelectAll,
+        onSelectionFiled: _cancelSelection,
       );
     }
     // Reminders fall on days rather than in a grid, so they get an agenda and

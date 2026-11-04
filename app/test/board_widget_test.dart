@@ -856,6 +856,86 @@ void main() {
       ),
     );
 
+    for (final exit in ['Archive', 'Trash']) {
+      testWidgets('dropping the selection on $exit leaves selection mode', (
+        tester,
+      ) async {
+        await setViewport(tester, const Size(1800, 900));
+        api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+          collections: [NoteCollection.general('w-default', layout: 'board')],
+        );
+        api.notes['a'] = serverNote('a', title: 'card a');
+        api.notes['b'] = serverNote('b', title: 'card b');
+        await store.load();
+        final settings = SettingsStore(api: api);
+        settings.setBoardExitColumn(
+          store.activeCollection?.id,
+          exit.toLowerCase(),
+          true,
+        );
+        await tester.pumpWidget(homeApp(store, settings: settings));
+        await tester.pumpAndSettle();
+
+        // Hold without moving selects; a tap then adds to the selection.
+        final hold = await tester.startGesture(
+          tester.getCenter(find.text('card a')),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        await hold.up();
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('card b'));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        final target = find.descendant(
+          of: find.byType(BoardView),
+          matching: find.text(exit),
+        );
+        final drag = await tester.startGesture(
+          tester.getCenter(find.text('card a')),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        await drag.moveTo(tester.getCenter(target));
+        await tester.pump();
+        await drag.up();
+        await tester.pumpAndSettle();
+
+        final moved = exit == 'Trash'
+            ? store.noteById('a')!.trashed && store.noteById('b')!.trashed
+            : store.noteById('a')!.archived && store.noteById('b')!.archived;
+        expect(moved, isTrue);
+        expect(find.text('2 selected'), findsNothing);
+        expect(find.byTooltip('Cancel selection'), findsNothing);
+        await flushTimers(tester);
+      });
+    }
+
+    testWidgets('a column header selects its cards without a selection', (
+      tester,
+    ) async {
+      await setViewport(tester, const Size(1200, 900));
+      api.notes['a'] = serverNote(
+        'a',
+        title: 'card a',
+      ).copyWith(stageId: 'todo');
+      api.notes['b'] = serverNote(
+        'b',
+        title: 'card b',
+      ).copyWith(stageId: 'todo');
+      await store.load();
+      final selected = <String>{};
+      await tester.pumpWidget(selectableBoard(selected));
+      await tester.pumpAndSettle();
+
+      // An empty column has nothing to select, so it offers nothing.
+      expect(find.byTooltip('Select all in Doing'), findsNothing);
+
+      await tester.tap(find.byTooltip('Select all in Todo'));
+      await tester.pumpAndSettle();
+      expect(selected, {'a', 'b'});
+      await flushTimers(tester);
+    });
+
     testWidgets('a column menu selects every card in that column', (
       tester,
     ) async {

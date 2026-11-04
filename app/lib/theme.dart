@@ -35,8 +35,8 @@ const double kRadius = 6;
 const double kMenuRadius = 8;
 
 /// A checkbox's corner. Smaller than [kRadius] because the box is: at 18px a
-/// 6px corner would read as a circle.
-const BorderRadius kCheckBorderRadius = BorderRadius.all(Radius.circular(4));
+/// 6px corner would read as a circle, and 4px still reads as a pill.
+const BorderRadius kCheckBorderRadius = BorderRadius.all(Radius.circular(3));
 
 /// Shared layout rhythm for the compact controls built outside Material
 /// components. Keeping these values together prevents individual features

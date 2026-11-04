@@ -260,7 +260,6 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                       _BoardColumnHeader(
                         column: widget.column,
                         onToggleCollapsed: widget.onToggleCollapsed,
-                        selectionMode: widget.selectionMode,
                         selection: _columnSelection,
                         onToggleSelection: _toggleSelection,
                       )
@@ -510,7 +509,6 @@ enum _ColumnAction { selectAll, rename, delete }
 class _BoardColumnHeader extends StatelessWidget {
   final BoardColumn column;
   final VoidCallback? onToggleCollapsed;
-  final bool selectionMode;
   final _ColumnSelection selection;
 
   /// Null when the column holds nothing to select.
@@ -519,7 +517,6 @@ class _BoardColumnHeader extends StatelessWidget {
   const _BoardColumnHeader({
     required this.column,
     this.onToggleCollapsed,
-    this.selectionMode = false,
     this.selection = _ColumnSelection.none,
     this.onToggleSelection,
   });
@@ -557,7 +554,7 @@ class _BoardColumnHeader extends StatelessWidget {
                 ),
               ),
               _AppearWhen(
-                visible: selectionMode && onToggleSelection != null,
+                visible: onToggleSelection != null,
                 child: _SelectColumnButton(
                   title: column.title,
                   selection: selection,

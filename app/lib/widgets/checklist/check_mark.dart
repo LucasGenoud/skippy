@@ -10,7 +10,7 @@ class CheckMark extends StatelessWidget {
   final bool checked;
   final double size;
 
-  const CheckMark({super.key, required this.checked, this.size = 18});
+  const CheckMark({super.key, required this.checked, this.size = 16});
 
   @override
   Widget build(BuildContext context) {

@@ -728,6 +728,12 @@ void main() {
         expect(find.byTooltip('More note options'), findsOneWidget);
         expect(find.byIcon(Icons.more_vert), findsOneWidget);
 
+        // A hovered button's fill must stop short of the rule above the row.
+        final ruleGap =
+            tester.getRect(find.byTooltip('Note color')).top -
+            tester.getRect(actions).top;
+        expect(ruleGap, greaterThanOrEqualTo(6));
+
         await tester.tap(find.byTooltip('More note options'));
         await tester.pumpAndSettle();
         expect(find.text('Share'), findsOneWidget);

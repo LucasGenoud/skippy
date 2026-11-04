@@ -465,7 +465,7 @@ class _ChecklistRow extends StatelessWidget {
     );
     final lineHeight = painter.preferredLineHeight;
     painter.dispose();
-    // The card's checkbox is visually 18px. Give it a first-line-sized band
+    // The card's checkbox has an 18px target. Give it a first-line-sized band
     // and centre it there so larger text and wrapped labels never leave it
     // stuck at the top of the row.
     final controlBandHeight = lineHeight > 18 ? lineHeight : 18.0;
