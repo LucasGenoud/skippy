@@ -65,6 +65,7 @@ Format touched Dart files with `dart format`. Format touched Rust files with `ca
 - `state/note_links.dart`: the `[[id|Title]]` note-link syntax, backlinks, link candidates, and the rules that make a link move and delete as one unit in the editor.
 - `state/pending_operation.dart`: persisted optimistic operation types and JSON encoding.
 - `state/sparse_position.dart`: the sparse `position` arithmetic every drag-reorder shares (cards, columns, labels, collections, smart views).
+- `state/starter_notes.dart`: the notes a just-created account opens on; `NotesStore` adds them after its first successful load.
 - `state/bulk_import.dart`: the awaited server writes behind backup restore and Keep import; `NotesStore` only decides when one may run.
 - `state/notes_cache_doc.dart`: encoding of the offline snapshot (notes, taxonomy, queue, sync issues); `state/sync_issue.dart`: a write the server refused for good.
 

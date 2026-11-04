@@ -2123,12 +2123,10 @@ void main() {
       expect(preview.selectable, isTrue);
       expect(find.byType(SelectionArea), findsNothing);
       expect(find.byType(SelectableText), findsWidgets);
-      expect(find.byKey(const Key('markdown-mode-switch')), findsOneWidget);
-      expect(find.text('Edit'), findsOneWidget);
-      expect(find.text('Preview'), findsOneWidget);
+      expect(find.byTooltip('Edit markdown'), findsOneWidget);
 
-      await tester.tap(find.text('Edit'));
-      await tester.pump();
+      await tester.tap(find.byTooltip('Edit markdown'));
+      await tester.pumpAndSettle();
       final source = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .last;
@@ -2136,10 +2134,63 @@ void main() {
       expect(source.controller, isA<MarkdownEditingController>());
       await tester.enterText(find.byType(TextField).last, '**Edited** preview');
       expect(store.noteById('n1')!.content, '**Edited** preview');
-      await tester.tap(find.text('Preview'));
-      await tester.pump();
+      await tester.tap(find.byTooltip('Preview'));
+      await tester.pumpAndSettle();
       expect(find.byType(MarkdownBody), findsOneWidget);
       expect(find.textContaining('Edited', findRichText: true), findsWidgets);
+      await flushTimers(tester);
+    });
+
+    testWidgets('markdown keeps no mode row above the body', (tester) async {
+      api.notes['n1'] = serverNote('n1', kind: NoteKind.markdown, content: 'x');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('markdown-mode-switch')), findsNothing);
+      expect(find.textContaining('syntax stays visible'), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('formatting shows only while the body has focus', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        title: 'Title',
+        kind: NoteKind.markdown,
+        content: 'Body',
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+      expect(find.byType(MarkdownToolbar), findsNothing);
+
+      await tester.tap(find.byTooltip('Edit markdown'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MarkdownToolbar), findsOneWidget);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pumpAndSettle();
+      expect(find.byType(MarkdownToolbar), findsNothing);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a formatting button keeps the bar and the caret', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote('n1', kind: NoteKind.markdown, content: 'x');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Edit markdown'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Bold'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MarkdownToolbar), findsOneWidget);
+      expect(store.noteById('n1')!.content, contains('****'));
       await flushTimers(tester);
     });
 

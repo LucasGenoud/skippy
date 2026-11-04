@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../models/note.dart';
 import '../util/network_error.dart';
 import 'local_cache.dart';
+import 'starter_notes.dart';
 
 enum AuthStatus { restoring, signedOut, signedIn }
 
@@ -23,6 +24,9 @@ class AuthStore extends ChangeNotifier {
   /// token. The notes cache uses this to migrate the one legacy, unscoped
   /// cache exactly once; a fresh login to another server must never claim it.
   bool restoredSession = false;
+
+  /// Set by registration, so the new account's notes store can welcome it.
+  AccountOrigin accountOrigin = AccountOrigin.existing;
 
   /// HTTP status of the last auth failure, when it was an [ApiException].
   /// Lets the login screen decide which fields to flag red (401 = both
@@ -127,6 +131,7 @@ class AuthStore extends ChangeNotifier {
       return;
     }
     restoredSession = true;
+    accountOrigin = AccountOrigin.existing;
     api.token = saved;
     final cached = _cachedUser(prefs);
     if (cached != null) {
@@ -216,8 +221,9 @@ class AuthStore extends ChangeNotifier {
   }
 
   Future<bool> _authenticate(
-    Future<({String token, AuthUser user})> Function() call,
-  ) async {
+    Future<({String token, AuthUser user})> Function() call, {
+    AccountOrigin origin = AccountOrigin.existing,
+  }) async {
     final generation = ++_authGeneration;
     final baseUrl = api.baseUrl;
     bool isCurrent() => generation == _authGeneration && api.baseUrl == baseUrl;
@@ -247,6 +253,7 @@ class AuthStore extends ChangeNotifier {
         return false;
       }
       restoredSession = false;
+      accountOrigin = origin;
       api.token = result.token;
       user = result.user;
       status = AuthStatus.signedIn;
@@ -285,7 +292,10 @@ class AuthStore extends ChangeNotifier {
       _authenticate(() => api.login(email, password));
 
   Future<bool> registerAccount(String name, String email, String password) =>
-      _authenticate(() => api.register(name, email, password));
+      _authenticate(
+        () => api.register(name, email, password),
+        origin: AccountOrigin.justCreated,
+      );
 
   Future<void> updateAccount({
     String? name,

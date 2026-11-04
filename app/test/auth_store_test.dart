@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:skippy/api/api_client.dart';
 import 'package:skippy/state/auth_store.dart';
+import 'package:skippy/state/starter_notes.dart';
 
 /// A saved session, as [AuthStore] writes it at sign-in.
 void seedSession() => SharedPreferences.setMockInitialValues({
@@ -24,6 +25,37 @@ AuthStore storeWith(http.Client client) => AuthStore(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('account origin', () {
+    final session = MockClient(
+      (_) async => http.Response(
+        jsonEncode({
+          'token': 'tok',
+          'user': {'id': 'u-me', 'name': 'Me', 'email': 'me@example.com'},
+        }),
+        200,
+      ),
+    );
+
+    test('registering marks the account as just created', () async {
+      SharedPreferences.setMockInitialValues({});
+      final auth = storeWith(session);
+
+      await auth.registerAccount('Me', 'me@example.com', 'password');
+
+      expect(auth.accountOrigin, AccountOrigin.justCreated);
+    });
+
+    test('signing in after registering is an existing account', () async {
+      SharedPreferences.setMockInitialValues({});
+      final auth = storeWith(session);
+
+      await auth.registerAccount('Me', 'me@example.com', 'password');
+      await auth.signIn('me@example.com', 'password');
+
+      expect(auth.accountOrigin, AccountOrigin.existing);
+    });
+  });
 
   group('session restore', () {
     test('a cached session opens without waiting for the server', () async {

@@ -277,6 +277,7 @@ class _SkippyAppState extends State<SkippyApp> {
               currentUserId: userId,
               cacheNamespace: _api.baseUrl,
               migrateLegacyCache: _auth.restoredSession,
+              accountOrigin: _auth.accountOrigin,
               // Settings changes on other devices arrive on the same socket.
               onRemoteChange: () => settings.load(),
             )

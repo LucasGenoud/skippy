@@ -225,6 +225,11 @@ class _EditorScreenState extends State<EditorScreen> {
   final _findController = TextEditingController();
   final _titleFocus = FocusNode();
   final _contentFocus = FocusNode();
+  final _formatBarFocus = FocusNode(
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+  bool _formatBarShown = false;
   final _findFocus = FocusNode();
 
   String? _noteId;
@@ -276,6 +281,8 @@ class _EditorScreenState extends State<EditorScreen> {
     _contentController.addListener(_onTextChanged);
     _contentController.addListener(_syncLinkQuery);
     _contentFocus.addListener(_syncLinkQuery);
+    _contentFocus.addListener(_syncFormatBar);
+    _formatBarFocus.addListener(_syncFormatBar);
     _findController.addListener(() => setState(() {}));
     _history = EditorHistory(_currentSnapshot());
     // A brand-new text/markdown note wants the body focused for immediate
@@ -319,6 +326,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _findController.dispose();
     _titleFocus.dispose();
     _contentFocus.dispose();
+    _formatBarFocus.dispose();
     _findFocus.dispose();
     // A summary landing after close is thrown away, so stop paying for it.
     for (final abort in _summaryAborts.values) {
@@ -989,6 +997,15 @@ class _EditorScreenState extends State<EditorScreen> {
                   key: const ValueKey('note-actions'),
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    AnimatedSize(
+                      duration: Motion.reduced(context)
+                          ? Duration.zero
+                          : Motion.fast,
+                      curve: Motion.standard,
+                      child: _kind == NoteKind.markdown && !trashed
+                          ? _markdownModeButton()
+                          : const SizedBox.shrink(),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.search),
                       tooltip: 'Find in note',
@@ -1222,9 +1239,6 @@ class _EditorScreenState extends State<EditorScreen> {
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         children: [
           _titleField(trashed: trashed),
-          AnimatedReveal(
-            child: _kind == NoteKind.markdown ? _markdownModeSwitch() : null,
-          ),
           // Turning a note into a checklist (or back) cross-fades the body.
           // Text and markdown share one field, so they are one state.
           StateCrossFade(
@@ -1326,16 +1340,23 @@ class _EditorScreenState extends State<EditorScreen> {
                 onPick: _insertNoteLink,
               ),
       ),
-      // Formatting accessory bar while editing markdown.
+      // Formatting accessory bar while writing markdown. The tap region stops
+      // a click on it from counting as a click away from the body.
       AnimatedReveal(
         child:
             _kind == NoteKind.markdown &&
+                _formatBarShown &&
                 !_previewMarkdown &&
                 !_finding &&
                 !trashed
-            ? MarkdownToolbar(
-                controller: _contentController,
-                focusNode: _contentFocus,
+            ? TextFieldTapRegion(
+                child: Focus(
+                  focusNode: _formatBarFocus,
+                  child: MarkdownToolbar(
+                    controller: _contentController,
+                    focusNode: _contentFocus,
+                  ),
+                ),
               )
             : null,
       ),
@@ -1570,53 +1591,27 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  Widget _markdownModeSwitch() {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 8),
-      child: Row(
-        children: [
-          SegmentedButton<bool>(
-            key: const Key('markdown-mode-switch'),
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment<bool>(
-                value: false,
-                icon: Icon(Icons.edit_outlined, size: 18),
-                label: Text('Edit'),
-                tooltip: 'Edit markdown source',
-              ),
-              ButtonSegment<bool>(
-                value: true,
-                icon: Icon(Icons.visibility_outlined, size: 18),
-                label: Text('Preview'),
-                tooltip: 'Preview rendered markdown',
-              ),
-            ],
-            selected: {_previewMarkdown},
-            onSelectionChanged: (selection) =>
-                _setMarkdownPreview(selection.single),
-          ),
-          const SizedBox(width: kSpaceMd),
-          // Held in place and faded, so the switch beside it never shifts.
-          Expanded(
-            child: AnimatedOpacity(
-              opacity: _previewMarkdown ? 0 : 1,
-              duration: Motion.fast,
-              curve: Motion.standard,
-              child: Text(
-                'Markdown syntax stays visible while formatting is styled',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-            ),
-          ),
-        ],
+  /// Switches a markdown note between its rendered and source forms.
+  Widget _markdownModeButton() => StateCrossFade(
+    state: _previewMarkdown,
+    alignment: AlignmentDirectional.center,
+    child: IconButton(
+      icon: Icon(
+        _previewMarkdown ? Icons.edit_outlined : Icons.visibility_outlined,
       ),
-    );
+      tooltip: _previewMarkdown ? 'Edit markdown' : 'Preview',
+      onPressed: () => _setMarkdownPreview(!_previewMarkdown),
+    ),
+  );
+
+  /// The bar follows focus into its own buttons, so keyboard users can reach it.
+  void _syncFormatBar() {
+    final shown = _contentFocus.hasFocus || _formatBarFocus.hasFocus;
+    if (shown == _formatBarShown || !mounted) {
+      return;
+    }
+
+    setState(() => _formatBarShown = shown);
   }
 
   void _setMarkdownPreview(bool preview) {

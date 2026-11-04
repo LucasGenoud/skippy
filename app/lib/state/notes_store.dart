@@ -22,6 +22,7 @@ import 'notes_cache_doc.dart';
 import 'pending_operation.dart';
 import 'pending_operation_executor.dart';
 import 'sparse_position.dart';
+import 'starter_notes.dart';
 import 'sync_issue.dart';
 import 'sync_retry_policy.dart';
 import 'workspace_reconciliation.dart';
@@ -66,6 +67,9 @@ class NotesStore extends ChangeNotifier {
   /// fresh login on another server must never migrate another server's data.
   final bool migrateLegacyCache;
 
+  /// A just-created account gets the starter notes after its first load.
+  final AccountOrigin accountOrigin;
+
   /// Invoked when whatever else the account keeps on the server may have
   /// moved: a push event on the socket, and the outage recovery where such an
   /// event would have been missed. Siblings that own the rest of the account
@@ -79,6 +83,8 @@ class NotesStore extends ChangeNotifier {
   final VoidCallback? onRemoteChange;
 
   static const _uuid = Uuid();
+
+  bool _starterNotesHandled = false;
 
   List<Note> _notes = [];
   // The editor writes optimistically, but its card keeps the version that was
@@ -200,6 +206,7 @@ class NotesStore extends ChangeNotifier {
     this.currentUserId,
     this.cacheNamespace = '',
     this.migrateLegacyCache = false,
+    this.accountOrigin = AccountOrigin.existing,
     this.onRemoteChange,
     this.offlineGrace = _defaultOfflineGrace,
   }) : cache = cache ?? MemoryLocalCache() {
@@ -740,8 +747,45 @@ class NotesStore extends ChangeNotifier {
       }
     } while (fetchAgain);
     if (!isCurrent()) return;
+    _addStarterNotes();
     loading = false;
     notifyListeners();
+  }
+
+  /// Fills a just-created account once the server has confirmed it is empty.
+  /// Drafts land in front, so the welcome note is created last to lead.
+  void _addStarterNotes() {
+    if (accountOrigin != AccountOrigin.justCreated ||
+        _starterNotesHandled ||
+        _connectionDown ||
+        activeWorkspace == null) {
+      return;
+    }
+
+    _starterNotesHandled = true;
+    if (_notes.isNotEmpty) {
+      return;
+    }
+
+    final guide = createDraft(kind: NoteKind.markdown);
+    final checklist = createDraft(kind: NoteKind.checklist);
+    final welcome = createDraft(kind: NoteKind.markdown);
+
+    updateNoteContent(
+      guide.id,
+      title: kStarterGuideTitle,
+      content: kStarterGuideBody,
+    );
+    updateNoteContent(
+      checklist.id,
+      title: kStarterChecklistTitle,
+      items: starterChecklistItems(_uuid.v4),
+    );
+    updateNoteContent(
+      welcome.id,
+      title: kStarterWelcomeTitle,
+      content: starterWelcomeBody(checklistId: checklist.id, guideId: guide.id),
+    );
   }
 
   /// A user-triggered re-pull (pull-to-refresh). Unlike [load] it
