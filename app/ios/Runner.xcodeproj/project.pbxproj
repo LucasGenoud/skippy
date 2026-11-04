@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -159,7 +159,6 @@
 				0CBC31010BC7EE1211E37050 /* Info.plist */,
 				D8BB50AB45B9F1D4D6F27229 /* SkippyWidget.entitlements */,
 			);
-			name = "Skippy Widget";
 			path = "Skippy Widget";
 			sourceTree = SOURCE_ROOT;
 		};
@@ -189,7 +188,6 @@
 				E21E4CEE4DDD7388BE88BA33 /* Info.plist */,
 				14B709FDF77329CFB5D5ACF8 /* ShareExtension.entitlements */,
 			);
-			name = "Share Extension";
 			path = "Share Extension";
 			sourceTree = "<group>";
 		};
@@ -364,7 +362,7 @@
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
-				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
+				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -1028,7 +1026,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */ = {
+		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};
