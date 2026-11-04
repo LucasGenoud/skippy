@@ -86,19 +86,76 @@ Copyright: `2026 Lucas Genoud`
 
 Notes for the reviewer:
 
+Answers Guideline 2.1 (Information Needed). Attach the screen recording to
+the reply, then paste this into the Notes field. Fill in the bracketed
+parts before sending.
+
 ```
-Skippy is a notes app. It connects to https://skippy-notes.com by default;
-no server setup is needed. Sign in with the demo account above, or create
-an account on the sign-in screen.
+1. SCREEN RECORDING
+Attached, recorded on an [iPhone model] running iOS [version]. It shows:
+launching the app, creating an account, creating a text note, a checklist
+and an audio note, setting a reminder, sharing a note with a second
+account, leaving that shared note from the second account, signing out,
+signing in, and deleting the account (Settings > Account > Delete account).
+The app has no paid content or in-app purchases.
 
+2. PURPOSE AND AUDIENCE
+Skippy is a notes app for individuals and small groups (families,
+friends, small teams) who want their notes, checklists and reminders on
+all their devices, including while offline. Every edit is saved on the
+device first and syncs when a connection returns. Notes can be organized
+as a grid, a list or a Kanban board, and shared with people the user
+chooses. The server is open source, so users who want full control of
+their data can run their own instead of the public one.
+
+3. SETUP AND MAIN FEATURES
+No setup is needed: the app connects to the public server
+https://skippy-notes.com by default.
+Demo account: [email] / [password]. It already holds sample notes.
+- Create a note: the bar at the top of the grid (text, checklist,
+  Markdown); the microphone button records an audio note.
+- Reminders: open a note, tap Remind me. Place reminders: Settings >
+  Reminders > Saved places.
+- Views: each collection's settings choose grid, list or board.
+- Sharing: open a note > Share, enter another account's email.
+- Search: the search field in the top bar.
+- Account deletion: Settings > Account > Delete account.
+
+4. EXTERNAL SERVICES
+- Skippy server at skippy-notes.com, operated by the developer: accounts,
+  sync, file storage. Authentication is the app's own email and password;
+  no third-party sign-in.
+- OpenStreetMap: map tiles when picking a place for a location reminder.
+- AI features (labeling, rewriting, chat) are optional, off until a user
+  enters their own OpenAI-compatible provider and key in Settings > AI &
+  search. [Confirm: the public server provides no AI provider itself.]
+- Reminder delivery channels (ntfy, Telegram, email) are optional and
+  only used if the user configures one.
+- Link previews are fetched by the Skippy server from the linked page.
+No payment processors, analytics, advertising or tracking services.
+
+5. REGIONS
+The app works the same in every region. Content and features do not vary
+by country.
+
+6. REGULATED INDUSTRY / THIRD-PARTY MATERIAL
+Not applicable. Skippy is not in a regulated industry and contains no
+third-party content; users only see notes they wrote or that someone
+shared with them.
+
+PERMISSIONS
 Location (Always): used only for reminders the user attaches to a saved
-place (Settings > Reminders > Saved places). The app registers geofences for those
-places so an arrival or departure reminder fires while the app is closed.
-No location is collected otherwise.
+place. The app registers geofences for those places so an arrival or
+departure reminder fires while the app is closed. No location is
+collected otherwise. Microphone: audio notes. Camera and photos:
+attaching images.
 
-Microphone: audio notes. Camera and photos: attaching images.
-
-Account deletion: Settings > Account > Delete account.
+USER CONTENT
+There is no public feed, directory or discovery. A note is visible only
+to its author and to people the author adds by email address. Anyone who
+receives a shared note or workspace can leave it at any time (Share >
+Leave note, or Workspace settings > Leave workspace), which removes it
+from their account.
 ```
 
 ## App Privacy
@@ -123,9 +180,15 @@ app only uses HTTPS.
 
 ## Screenshots
 
-In `screenshots/`, captured from the simulators against a local server with
-a demo account. Upload in this order:
+In `screenshots/`, light mode, captured from the simulators with a demo
+account. Upload in this order:
 
-- iPhone 6.9" (1320 x 2868): `iphone-1-grid.png`, `iphone-2-dark.png`
-- iPad 13" (2064 x 2752): `ipad-1-grid.png`, `ipad-2-board.png`,
-  `ipad-3-dark.png`
+- iPhone with Dynamic Island, medium display (1206 x 2622):
+  `iphone-1-grid.png`, `iphone-2-checklist.png`, `iphone-3-chat.png`
+- iPad 13" (2064 x 2752): `ipad-1-grid.png`, `ipad-2-editor.png`,
+  `ipad-3-board.png`
+
+Header and Search Results (optional), in `screenshots/marketing/`:
+
+- Header (3840 x 1646): `header.png`
+- Search Results (1920 x 1280): `search-results.png`
