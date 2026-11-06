@@ -3,6 +3,8 @@
 Skippy is a self-hosted notes app for the web, iOS, Android, macOS, and
 Windows. It supports offline work, collaboration, and optional AI services.
 
+<a href="https://apps.apple.com/us/app/skippy-notes/id6829535007"><img src="mkdocs-material/docs/assets/app-store-badge.svg" alt="Download on the App Store" height="40"></a>
+
 The full documentation is an [MkDocs Material site](mkdocs-material/docs/index.md). Start
 it with:
 
@@ -107,9 +109,9 @@ environment-variable reference.
 
 ## Mobile installation
 
-Android needs more testers before a public release. The iOS app is not in the
-App Store yet. Both apps can be installed directly; direct iOS installs must
-be refreshed every seven days.
+The iOS app is on the [App Store](https://apps.apple.com/us/app/skippy-notes/id6829535007).
+Android needs more testers before a public release. Both apps can be installed
+directly; direct iOS installs must be refreshed every seven days.
 
 For local device builds, use the server address reachable from the device:
 

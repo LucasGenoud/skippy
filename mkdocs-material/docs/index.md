@@ -3,6 +3,8 @@
 Skippy is a self-hosted notes app for the web, iOS, Android, macOS, and
 Windows. It works offline and syncs when a device reconnects.
 
+<a href="https://apps.apple.com/us/app/skippy-notes/id6829535007" target="_blank" rel="noopener"><img src="assets/app-store-badge.svg" alt="Download on the App Store" height="40"></a>
+
 ## Features
 
 - Text, Markdown, checklist, and audio notes with files, images, and links.
@@ -37,8 +39,8 @@ Windows. It works offline and syncs when a device reconnects.
 
 !!! note "Mobile availability"
 
-    Android needs more testers before a public release. The iOS app is not in
-    the App Store yet. Both can be installed directly; direct iOS installs
-    need refreshing every seven days.
+    The iOS app is on the [App Store](https://apps.apple.com/us/app/skippy-notes/id6829535007).
+    Android needs more testers before a public release. Both can be installed
+    directly; direct iOS installs need refreshing every seven days.
 
 Start with [Set up Skippy](setup.md).

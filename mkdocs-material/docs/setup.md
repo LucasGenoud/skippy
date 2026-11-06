@@ -137,7 +137,8 @@ the app. After a change, run your start command again.
 ## Install on a device
 
 These commands install Skippy directly from a development machine. They do not
-publish it to an app store.
+publish it to an app store. On iPhone or iPad, you can also get Skippy from the
+[App Store](https://apps.apple.com/us/app/skippy-notes/id6829535007).
 
 ### Android
 
