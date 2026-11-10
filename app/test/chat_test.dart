@@ -10,6 +10,7 @@ import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 
 import 'fake_api.dart';
+import 'finders.dart';
 
 void main() {
   group('ChatEvent.fromJson', () {
@@ -98,7 +99,7 @@ void main() {
       await tester.pumpWidget(harness(const ChatScreen()));
 
       await tester.enterText(find.byType(TextField), 'what do I need?');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
 
       expect(api.log, contains('chat:what do I need?'));
@@ -124,7 +125,7 @@ void main() {
       await tester.pumpWidget(harness(const ChatScreen()));
 
       await tester.enterText(find.byType(TextField), 'make a grocery list');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
 
       // The confirmation text and a "Created: Groceries" chip both render.
@@ -160,7 +161,7 @@ void main() {
       await tester.pumpWidget(harness(const ChatScreen()));
 
       await tester.enterText(find.byType(TextField), 'rewrite it');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Undo'));
       await tester.pumpAndSettle();
@@ -180,7 +181,7 @@ void main() {
       await tester.pumpWidget(harness(const ChatScreen()));
 
       await tester.enterText(find.byType(TextField), 'show my groceries');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
 
       expect(find.byType(MarkdownBody), findsOneWidget);
@@ -223,7 +224,7 @@ void main() {
       await tester.pumpWidget(harness(const ChatScreen()));
 
       // No conversation yet: nothing to clear.
-      final newConv = find.byTooltip('New conversation');
+      final newConv = findAction('New conversation');
       expect(
         tester
             .widget<IconButton>(
@@ -235,10 +236,10 @@ void main() {
 
       // Two turns build up history.
       await tester.enterText(find.byType(TextField), 'first');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'second');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
       expect(api.lastChatHistory, hasLength(2)); // first turn's user+assistant
 
@@ -251,7 +252,7 @@ void main() {
 
       // The next turn starts from scratch.
       await tester.enterText(find.byType(TextField), 'fresh start');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
       expect(api.lastChatHistory, isEmpty);
       expect(find.text('fresh start'), findsOneWidget);
@@ -267,7 +268,7 @@ void main() {
       await tester.pumpWidget(harness(const ChatScreen()));
 
       await tester.enterText(find.byType(TextField), 'hello?');
-      await tester.tap(find.byTooltip('Send'));
+      await tester.tap(findAction('Send'));
       await tester.pumpAndSettle();
 
       expect(
@@ -376,7 +377,7 @@ void main() {
       await tester.tap(find.text('Save').last);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Remove Fix grammar'));
+      await tester.tap(findAction('Remove Fix grammar'));
       await tester.tap(find.text('Add task'));
       await tester.pumpAndSettle();
       await tester.enterText(

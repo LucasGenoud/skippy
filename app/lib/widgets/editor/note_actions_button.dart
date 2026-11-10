@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/note.dart';
 import '../form_dialog.dart';
 import '../../theme.dart';
+import '../app_icon_button.dart';
 import '../menu_label.dart';
 
 /// Everything you do *to* a note, as opposed to what you put *into* it.
@@ -20,11 +21,18 @@ import '../menu_label.dart';
 /// rows — the AI rewrites and the kind conversions — collapse into a chip row
 /// each, which is what keeps the flat list short enough to scan.
 ///
-/// Copy to clipboard and Archive are not here: they are frequent enough to sit
-/// in the app bar as their own buttons, immediately left of this one.
+/// Find, copy and archive head the list rather than sitting in the app bar:
+/// every button there is built each time a note opens, and on a phone they are
+/// one tap further away, not hidden.
 class NoteActionsButton extends StatelessWidget {
   final bool isOwner;
   final NoteKind kind;
+  final VoidCallback? onFind;
+  final VoidCallback? onCopy;
+  final VoidCallback? onArchive;
+
+  /// Whether [onArchive] unarchives, which only changes its wording.
+  final bool archived;
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
   final VoidCallback? onDuplicate;
@@ -47,6 +55,10 @@ class NoteActionsButton extends StatelessWidget {
     super.key,
     required this.isOwner,
     required this.kind,
+    this.onFind,
+    this.onCopy,
+    this.onArchive,
+    this.archived = false,
     this.onShare,
     this.onDelete,
     this.onDuplicate,
@@ -90,6 +102,34 @@ class NoteActionsButton extends StatelessWidget {
       onRewrite != null && rewriteTasks.isNotEmpty && kind != NoteKind.audio;
 
   List<_NoteAction> _rows(ColorScheme scheme) => [
+    if (onFind != null)
+      const _NoteAction(
+        value: 'find',
+        icon: Icons.search,
+        label: 'Find in note',
+        hint: 'Highlight matches',
+      ),
+    if (onCopy != null)
+      const _NoteAction(
+        value: 'copy',
+        icon: Icons.content_copy_outlined,
+        label: 'Copy to clipboard',
+        hint: 'As plain text',
+      ),
+    if (onArchive != null)
+      archived
+          ? const _NoteAction(
+              value: 'archive',
+              icon: Icons.unarchive_outlined,
+              label: 'Unarchive',
+              hint: 'Back to your notes',
+            )
+          : const _NoteAction(
+              value: 'archive',
+              icon: Icons.archive_outlined,
+              label: 'Archive',
+              hint: 'Out of the way, kept',
+            ),
     if (onShare != null)
       const _NoteAction(
         value: 'share',
@@ -153,6 +193,9 @@ class NoteActionsButton extends StatelessWidget {
   ];
 
   void _dispatch(String value) {
+    if (value == 'find') onFind?.call();
+    if (value == 'copy') onCopy?.call();
+    if (value == 'archive') onArchive?.call();
     if (value == 'share') onShare?.call();
     if (value == 'delete') onDelete?.call();
     if (value == 'duplicate') onDuplicate?.call();
@@ -185,7 +228,7 @@ class NoteActionsButton extends StatelessWidget {
         _convertTargets.isEmpty &&
         !_offersRewrite &&
         onGridSpan == null;
-    return IconButton(
+    return AppIconButton(
       icon: rewriting
           ? const SizedBox(
               key: ValueKey('editor-rewrite-progress'),

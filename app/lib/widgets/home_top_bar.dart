@@ -14,6 +14,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 import 'screen_width.dart';
+import 'app_icon_button.dart';
 
 /// The top bar displays the active setting, matching Settings → Appearance.
 /// Tapping still cycles to the next choice.
@@ -196,7 +197,7 @@ class HomeTopBar extends StatelessWidget {
       color: scheme.surface,
       child: Row(
         children: [
-          IconButton(
+          AppIconButton(
             icon: const Icon(Icons.menu),
             tooltip: 'Main menu',
             onPressed: onToggleSidebar,
@@ -260,7 +261,7 @@ class HomeTopBar extends StatelessWidget {
                       builder: (context, value, _) => _fadeScale(
                         child: value.text.isEmpty
                             ? const SizedBox.shrink()
-                            : IconButton(
+                            : AppIconButton(
                                 icon: const Icon(Icons.close, size: 18),
                                 tooltip: 'Clear search',
                                 onPressed: () {
@@ -290,14 +291,14 @@ class HomeTopBar extends StatelessWidget {
                     Row(mainAxisSize: MainAxisSize.min, children: children),
                 children: [
                   if (_chatAvailable(context))
-                    IconButton(
+                    AppIconButton(
                       key: const ValueKey('chat'),
                       icon: const Icon(Icons.forum_outlined),
                       tooltip: 'Chat with your notes',
                       onPressed: () => ChatScreen.open(context),
                     ),
                   if (onShareView != null)
-                    IconButton(
+                    AppIconButton(
                       key: const ValueKey('share-view'),
                       icon: const Icon(Icons.ios_share),
                       tooltip: 'Share this view',
@@ -306,7 +307,7 @@ class HomeTopBar extends StatelessWidget {
                 ],
               ),
               const _SortButton(),
-              IconButton(
+              AppIconButton(
                 // The sun/moon rotates in as the theme flips, a nod to the
                 // day/night metaphor without slowing the switch down.
                 icon: AnimatedSwitcher(
@@ -328,7 +329,7 @@ class HomeTopBar extends StatelessWidget {
                 tooltip: 'Theme: ${themeAction.label}, tap to change',
                 onPressed: settings.cycleThemeMode,
               ),
-              IconButton(
+              AppIconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: 'Settings',
                 onPressed: () =>
@@ -345,7 +346,7 @@ class HomeTopBar extends StatelessWidget {
   }
 
   /// The in-pill filter control: opens the cheat sheet of search operators.
-  Widget _filtersControl() => IconButton(
+  Widget _filtersControl() => AppIconButton(
     icon: const Icon(Icons.tune, size: 20),
     tooltip: 'Search filters',
     onPressed: onOpenFilters,
@@ -365,7 +366,7 @@ class HomeTopBar extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          : IconButton(
+          : AppIconButton(
               key: const ValueKey('toggle'),
               icon: Icon(
                 Icons.auto_awesome,
@@ -398,7 +399,7 @@ class HomeTopBar extends StatelessWidget {
         focusNode: focusNode,
         child: Row(
           children: [
-            IconButton(
+            AppIconButton(
               icon: const Icon(Icons.menu),
               tooltip: 'Main menu',
               onPressed: onToggleSidebar,
@@ -434,7 +435,7 @@ class HomeTopBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (searching)
-                        IconButton(
+                        AppIconButton(
                           icon: const Icon(Icons.close, size: 20),
                           tooltip: 'Clear search',
                           onPressed: () {
@@ -453,7 +454,7 @@ class HomeTopBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (chatAvailable)
-                        IconButton(
+                        AppIconButton(
                           icon: const Icon(Icons.forum_outlined),
                           tooltip: 'Chat with your notes',
                           onPressed: () => ChatScreen.open(context),
@@ -482,7 +483,7 @@ class HomeTopBar extends StatelessWidget {
         ? 'Select notes'
         : '${selection.count} selected';
     final controls = <Widget>[
-      IconButton(
+      AppIconButton(
         icon: _fadeScale(
           child: Icon(
             selection.allSelected ? Icons.deselect_outlined : Icons.select_all,
@@ -572,27 +573,27 @@ class HomeTopBar extends StatelessWidget {
         )
       else ...[
         if (selection.canMoveToStage)
-          IconButton(
+          AppIconButton(
             icon: const Icon(Icons.view_kanban_outlined),
             tooltip: 'Move selected notes to a column',
             onPressed: selection.count == 0 ? null : selection.onMoveToStage,
           ),
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.label_outline),
           tooltip: 'Add label to selected notes',
           onPressed: selection.count == 0 ? null : selection.onAddLabel,
         ),
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.person_add_alt_outlined),
           tooltip: 'Share selected notes',
           onPressed: selection.count == 0 ? null : selection.onShare,
         ),
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.palette_outlined),
           tooltip: 'Change selected note colors',
           onPressed: selection.count == 0 ? null : selection.onSetColor,
         ),
-        IconButton(
+        AppIconButton(
           icon: PinIcon(pinned: !selection.pinSelected),
           tooltip: selection.pinSelected
               ? 'Pin selected notes'
@@ -601,7 +602,7 @@ class HomeTopBar extends StatelessWidget {
         ),
       ],
       if (selection.canArchive)
-        IconButton(
+        AppIconButton(
           icon: _fadeScale(
             child: Icon(
               selection.archiveSelected
@@ -616,13 +617,13 @@ class HomeTopBar extends StatelessWidget {
           onPressed: selection.count == 0 ? null : selection.onArchive,
         ),
       if (selection.canRestore)
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.restore_outlined),
           tooltip: 'Restore selected notes',
           onPressed: selection.count == 0 ? null : selection.onRestore,
         ),
       if (selection.canTrash)
-        IconButton(
+        AppIconButton(
           icon: Icon(Icons.delete_outline, color: scheme.error),
           tooltip: 'Move selected notes to Trash',
           onPressed: selection.count == 0 ? null : selection.onTrash,
@@ -699,7 +700,7 @@ class _SelectionBar extends StatelessWidget {
         children: [
           dropIn(
             0,
-            IconButton(
+            AppIconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Cancel selection',
               onPressed: onCancel,

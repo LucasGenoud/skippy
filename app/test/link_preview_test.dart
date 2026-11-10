@@ -7,6 +7,7 @@ import 'package:skippy/widgets/link_preview.dart';
 import 'package:skippy/widgets/linked_text.dart';
 
 import 'fake_api.dart';
+import 'finders.dart';
 
 void main() {
   group('LinkedText', () {
@@ -109,7 +110,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Summarize page'));
+      await tester.tap(findAction('Summarize page'));
       await tester.pump();
       expect(summarized, ['https://example.com/article']);
       expect(opened, isEmpty);

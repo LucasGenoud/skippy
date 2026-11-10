@@ -6,6 +6,7 @@ import 'package:skippy/widgets/settings/ai_access_section.dart';
 
 import 'checklist_test.dart' show harness;
 import 'fake_api.dart';
+import 'finders.dart';
 
 void main() {
   late FakeApi api;
@@ -59,7 +60,7 @@ void main() {
     await api.createApiToken('Old agent', TokenScope.read);
     await pumpSection(tester);
 
-    await tester.tap(find.byTooltip('Revoke token'));
+    await tester.tap(findAction('Revoke token'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Revoke'));
     await tester.pumpAndSettle();

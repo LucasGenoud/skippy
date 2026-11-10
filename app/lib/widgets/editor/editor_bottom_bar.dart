@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_icon_button.dart';
 import '../form_dialog.dart';
 
 /// The editor's bottom action strip: everything that puts something *into* the
@@ -89,7 +90,7 @@ class EditorBottomBar extends StatelessWidget {
           required IconData icon,
           required String tooltip,
           required VoidCallback? onPressed,
-        }) => IconButton(
+        }) => AppIconButton(
           icon: Icon(icon),
           tooltip: tooltip,
           onPressed: onPressed,

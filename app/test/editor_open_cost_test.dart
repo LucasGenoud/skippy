@@ -9,6 +9,7 @@ import 'package:skippy/widgets/note_card.dart';
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
 import 'widget_test.dart' show homeApp, flushTimers;
+import 'finders.dart';
 
 /// What the first frame of opening a note has to build.
 ///
@@ -66,21 +67,49 @@ void main() {
 
     final editor = find.byType(EditorScreen).evaluate().single;
     expect(elementsUnder(editor), lessThan(700));
-    expect(find.byTooltip('Find in note'), findsNothing);
-    expect(find.byTooltip('Undo'), findsNothing);
+    expect(findAction('Note actions'), findsNothing);
+    expect(findAction('Undo'), findsNothing);
 
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Find in note'), findsOneWidget);
-    expect(find.byTooltip('Undo'), findsOneWidget);
+    expect(findAction('Note actions'), findsOneWidget);
+    expect(findAction('Undo'), findsOneWidget);
     await flushTimers(tester);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   testWidgets('with reduced motion the toolbars come at once', (tester) async {
     await openFromGrid(tester, reduced: true);
 
-    expect(find.byTooltip('Find in note'), findsOneWidget);
-    expect(find.byTooltip('Undo'), findsOneWidget);
+    expect(findAction('Note actions'), findsOneWidget);
+    expect(findAction('Undo'), findsOneWidget);
     await tester.pumpAndSettle();
+    await flushTimers(tester);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('the opened editor stays light', (tester) async {
+    await openFromGrid(tester);
+    await tester.pumpAndSettle();
+
+    // Was ~1,110: twelve Material icon buttons, each ~56 widgets.
+    final editor = find.byType(EditorScreen).evaluate().single;
+    expect(elementsUnder(editor), lessThan(700));
+
+    // Find, copy and archive live in the note menu, not the bar.
+    final bar = find.byType(AppBar);
+    for (final icon in [
+      Icons.search,
+      Icons.content_copy_outlined,
+      Icons.archive_outlined,
+    ]) {
+      expect(
+        find.descendant(of: bar, matching: find.byIcon(icon)),
+        findsNothing,
+      );
+    }
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('Find in note'), findsOneWidget);
+    expect(find.text('Copy to clipboard'), findsOneWidget);
+    expect(find.text('Archive'), findsOneWidget);
     await flushTimers(tester);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }

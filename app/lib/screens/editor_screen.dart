@@ -45,6 +45,7 @@ import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/link_summary_indicator.dart';
+import '../widgets/app_icon_button.dart';
 import '../widgets/deferred_build.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/note_zoom.dart';
@@ -992,7 +993,7 @@ class _EditorScreenState extends State<EditorScreen> {
         DeferredBuild(
           child: _barCrossFade(
             _finding
-                ? IconButton(
+                ? AppIconButton(
                     key: const ValueKey('find-close'),
                     icon: const Icon(Icons.close),
                     tooltip: 'Close search',
@@ -1011,19 +1012,14 @@ class _EditorScreenState extends State<EditorScreen> {
                             ? _markdownModeButton()
                             : const SizedBox.shrink(),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.search),
-                        tooltip: 'Find in note',
-                        onPressed: _openFind,
-                      ),
                       if (!trashed) ...[
-                        IconButton(
+                        AppIconButton(
                           icon: PinIcon(pinned: pinned),
                           tooltip: pinned ? 'Unpin' : 'Pin',
                           onPressed: _togglePin,
                         ),
                       ] else ...[
-                        IconButton(
+                        AppIconButton(
                           icon: const Icon(Icons.restore_from_trash_outlined),
                           tooltip: 'Restore',
                           onPressed: () async {
@@ -1033,7 +1029,7 @@ class _EditorScreenState extends State<EditorScreen> {
                             }
                           },
                         ),
-                        IconButton(
+                        AppIconButton(
                           icon: const Icon(Icons.delete_forever_outlined),
                           tooltip: 'Delete forever',
                           onPressed: () {
@@ -1047,31 +1043,17 @@ class _EditorScreenState extends State<EditorScreen> {
                           },
                         ),
                       ],
-                      // Promoted out of the menu below: the two note actions used often
-                      // enough to earn a permanent target, kept adjacent to it so the
-                      // whole group still reads as "things you do to this note".
-                      IconButton(
-                        icon: const Icon(Icons.content_copy_outlined),
-                        tooltip: 'Copy to clipboard',
-                        onPressed: can.canCopy ? _copyNoteToClipboard : null,
-                      ),
-                      if (!trashed)
-                        IconButton(
-                          icon: Icon(
-                            (note?.archived ?? false)
-                                ? Icons.unarchive_outlined
-                                : Icons.archive_outlined,
-                          ),
-                          tooltip: (note?.archived ?? false)
-                              ? 'Unarchive'
-                              : 'Archive',
-                          onPressed: can.canArchive ? _archiveAndClose : null,
-                        ),
                       // Everything else you do *to* the note. The bottom bar keeps what
                       // goes *into* it, so neither menu has to nest.
                       NoteActionsButton(
                         isOwner: can.isOwner,
                         kind: _kind,
+                        onFind: _openFind,
+                        onCopy: can.canCopy ? _copyNoteToClipboard : null,
+                        onArchive: !trashed && can.canArchive
+                            ? _archiveAndClose
+                            : null,
+                        archived: note?.archived ?? false,
                         onShare: can.canEdit ? _openShare : null,
                         onDelete: can.canTrash ? _deleteAndClose : null,
                         onDuplicate: can.canDuplicate ? _duplicateNote : null,
@@ -1606,7 +1588,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget _markdownModeButton() => StateCrossFade(
     state: _previewMarkdown,
     alignment: AlignmentDirectional.center,
-    child: IconButton(
+    child: AppIconButton(
       icon: Icon(
         _previewMarkdown ? Icons.edit_outlined : Icons.visibility_outlined,
       ),

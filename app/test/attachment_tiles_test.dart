@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/widgets/editor/attachment_tiles.dart';
+import 'finders.dart';
 
 void main() {
   testWidgets(
@@ -41,7 +42,7 @@ void main() {
       );
       expect(fullImage.fit, BoxFit.contain);
 
-      await tester.tap(find.byTooltip('Close image'));
+      await tester.tap(findAction('Close image'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('image-viewer')), findsNothing);
     },

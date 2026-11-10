@@ -18,6 +18,7 @@ import 'package:skippy/widgets/workspace_menu.dart';
 
 import 'fake_api.dart';
 import 'widget_test.dart' show homeApp;
+import 'finders.dart';
 
 Note noteIn(
   String workspaceId,
@@ -702,7 +703,7 @@ void main() {
           null,
         ),
       );
-      await tester.tap(find.byTooltip('Copy workspace name'));
+      await tester.tap(findAction('Copy workspace name'));
       await tester.pump();
       expect(copied, 'Work');
 

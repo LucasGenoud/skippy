@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/widgets/editor/editor_bottom_bar.dart';
+import 'finders.dart';
 
 void main() {
   Widget bar({
@@ -45,9 +46,9 @@ void main() {
       'Undo',
       'Redo',
     ]) {
-      expect(find.byTooltip(tooltip), findsOneWidget, reason: tooltip);
+      expect(findAction(tooltip), findsOneWidget, reason: tooltip);
     }
-    expect(find.byTooltip('Add to note'), findsNothing);
+    expect(findAction('Add to note'), findsNothing);
   });
 
   testWidgets('the smallest phones fold the two insert actions together', (
@@ -65,11 +66,11 @@ void main() {
 
     // Reminder stays in the row: only inserting collapses, and it collapses
     // into one predictable category rather than a general overflow.
-    expect(find.byTooltip('Remind me'), findsOneWidget);
-    expect(find.byTooltip('Add image'), findsNothing);
-    expect(find.byTooltip('Attach file'), findsNothing);
+    expect(findAction('Remind me'), findsOneWidget);
+    expect(findAction('Add image'), findsNothing);
+    expect(findAction('Attach file'), findsNothing);
 
-    await tester.tap(find.byTooltip('Add to note'));
+    await tester.tap(findAction('Add to note'));
     await tester.pumpAndSettle();
     expect(find.text('Add image'), findsOneWidget);
     expect(find.text('Attach file'), findsOneWidget);
@@ -80,7 +81,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(addedImage, isTrue);
 
-    await tester.tap(find.byTooltip('Add to note'));
+    await tester.tap(findAction('Add to note'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Attach file'));
     await tester.pumpAndSettle();

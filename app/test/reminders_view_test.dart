@@ -16,6 +16,7 @@ import 'package:skippy/widgets/reminders/reminders_view.dart';
 import 'board_widget_test.dart' show flushTimers, setViewport;
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
+import 'finders.dart';
 
 void main() {
   late FakeApi api;
@@ -120,7 +121,7 @@ void main() {
     await setViewport(tester, const Size(420, 1000));
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Calendar'));
+    await tester.tap(findAction('Calendar'));
     await tester.pumpAndSettle();
 
     // A week after the stored turn, the weekly row comes round again. Late
@@ -129,7 +130,7 @@ void main() {
       RegExp('^${RegExp.escape(settings.formatDate(inDays(9, 0)))},'),
     );
     if (repeat.evaluate().isEmpty) {
-      await tester.tap(find.byTooltip('Next month'));
+      await tester.tap(findAction('Next month'));
       await tester.pumpAndSettle();
     }
     await tester.tap(repeat);

@@ -28,6 +28,7 @@ import 'package:skippy/widgets/checklist/animated_checklist.dart';
 import 'package:skippy/widgets/labels_sheet.dart';
 import 'package:skippy/widgets/editor/highlighted_text_field.dart';
 import 'package:skippy/widgets/app_drawer.dart';
+import 'package:skippy/widgets/app_icon_button.dart';
 import 'package:skippy/widgets/home_top_bar.dart';
 import 'package:skippy/widgets/linked_text.dart';
 import 'package:skippy/widgets/link_preview.dart';
@@ -42,6 +43,7 @@ import 'package:skippy/widgets/skeleton.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
+import 'finders.dart';
 
 Widget harness(NotesStore store, Widget child, {SettingsStore? settings}) {
   return MultiProvider(
@@ -89,6 +91,14 @@ Widget homeApp(
     home: const HomeScreen(),
   ),
 );
+
+/// Opens find-in-note, which lives in the note actions menu.
+Future<void> openFind(WidgetTester tester) async {
+  await tester.tap(findAction('Note actions'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Find in note'));
+  await tester.pumpAndSettle();
+}
 
 /// Flush the store's debounce (400ms) so no timers leak out of the test.
 Future<void> flushTimers(WidgetTester tester) async {
@@ -218,7 +228,7 @@ void main() {
       expect(find.text('Summarizing link…'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Stop summarizing'));
+      await tester.tap(findAction('Stop summarizing'));
       await tester.pump();
       expect(store.noteById('n1')!.summarizingLinks, isFalse);
       expect(api.log, contains('cancelLinkSummaries:n1'));
@@ -259,7 +269,7 @@ void main() {
           ),
         );
 
-        expect(find.byTooltip('Reading'), findsOneWidget);
+        expect(findAction('Reading'), findsOneWidget);
         expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
       },
     );
@@ -551,7 +561,7 @@ void main() {
 
       expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
       expect(find.text('abcdefghijklmno…'), findsOneWidget);
-      expect(find.byTooltip('Shared by abcdefghijklmnopq'), findsOneWidget);
+      expect(findAction('Shared by abcdefghijklmnopq'), findsOneWidget);
     });
 
     testWidgets(
@@ -590,7 +600,7 @@ void main() {
         // Hover alone must not move or resize the card either.
         expect(tester.getRect(find.byType(NoteTile)), atRest);
 
-        final badge = find.byTooltip('Select note');
+        final badge = findAction('Select note');
         // The whole tap target is the badge: no invisible padding around it.
         expect(tester.getSize(badge), const Size(20, 20));
         // ...and it straddles the card's top-left corner rather than sitting
@@ -610,7 +620,7 @@ void main() {
         await tester.pumpWidget(tile(selectionMode: true, selected: true));
         await tester.pumpAndSettle();
         expect(tester.getRect(find.byType(NoteTile)), atRest);
-        expect(find.byTooltip('Deselect note'), findsOneWidget);
+        expect(findAction('Deselect note'), findsOneWidget);
       },
     );
 
@@ -628,8 +638,8 @@ void main() {
         );
 
         // A grid mounts dozens of cards at once, and most are never hovered.
-        expect(find.byTooltip('Pin note'), findsNothing);
-        expect(find.byTooltip('Select note'), findsNothing);
+        expect(findAction('Pin note'), findsNothing);
+        expect(findAction('Select note'), findsNothing);
 
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         addTearDown(() => mouse.removePointer());
@@ -637,8 +647,8 @@ void main() {
           location: tester.getCenter(find.byType(NoteTile)),
         );
         await tester.pump();
-        expect(find.byTooltip('Pin note'), findsOneWidget);
-        expect(find.byTooltip('Select note'), findsOneWidget);
+        expect(findAction('Pin note'), findsOneWidget);
+        expect(findAction('Select note'), findsOneWidget);
 
         // Leaving fades them out rather than cutting them.
         await mouse.moveTo(const Offset(-100, -100));
@@ -647,13 +657,13 @@ void main() {
         final fading = tester
             .widgetList<AnimatedOpacity>(
               find.ancestor(
-                of: find.byTooltip('Pin note'),
+                of: findAction('Pin note'),
                 matching: find.byType(AnimatedOpacity),
               ),
             )
             .first;
         expect(fading.opacity, 0);
-        expect(find.byTooltip('Pin note'), findsOneWidget);
+        expect(findAction('Pin note'), findsOneWidget);
       },
     );
 
@@ -671,7 +681,7 @@ void main() {
         );
 
         final card = tester.getRect(find.byType(NoteTile));
-        final pin = tester.getRect(find.byTooltip('Unpin note'));
+        final pin = tester.getRect(findAction('Unpin note'));
         expect(pin.size, const Size(32, 32));
         expect(card.right - pin.right, 4);
         expect(pin.top - card.top, 4);
@@ -683,8 +693,8 @@ void main() {
           location: tester.getCenter(find.byType(NoteTile)),
         );
         await tester.pumpAndSettle();
-        expect(find.byTooltip('Select note'), findsOneWidget);
-        expect(tester.getRect(find.byTooltip('Unpin note')), pin);
+        expect(findAction('Select note'), findsOneWidget);
+        expect(tester.getRect(findAction('Unpin note')), pin);
       },
     );
 
@@ -707,7 +717,7 @@ void main() {
 
         final actions = find.byKey(const ValueKey('note-actions-n1'));
         expect(actions, findsNothing);
-        expect(find.byTooltip('Note color'), findsNothing);
+        expect(findAction('Note color'), findsNothing);
         final cardBottom = tester.getRect(find.byType(NoteTile)).bottom;
         final titleBottom = tester.getRect(find.text('Desktop actions')).bottom;
         expect(cardBottom - titleBottom, greaterThanOrEqualTo(48));
@@ -720,21 +730,21 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(actions, findsOneWidget);
-        expect(find.byTooltip('Note color'), findsOneWidget);
-        expect(find.byTooltip('Add label'), findsOneWidget);
-        expect(find.byTooltip('Add reminder'), findsOneWidget);
-        expect(find.byTooltip('Add image'), findsOneWidget);
-        expect(find.byTooltip('Archive note'), findsOneWidget);
-        expect(find.byTooltip('More note options'), findsOneWidget);
+        expect(findAction('Note color'), findsOneWidget);
+        expect(findAction('Add label'), findsOneWidget);
+        expect(findAction('Add reminder'), findsOneWidget);
+        expect(findAction('Add image'), findsOneWidget);
+        expect(findAction('Archive note'), findsOneWidget);
+        expect(findAction('More note options'), findsOneWidget);
         expect(find.byIcon(Icons.more_vert), findsOneWidget);
 
         // A hovered button's fill must stop short of the rule above the row.
         final ruleGap =
-            tester.getRect(find.byTooltip('Note color')).top -
+            tester.getRect(findAction('Note color')).top -
             tester.getRect(actions).top;
         expect(ruleGap, greaterThanOrEqualTo(6));
 
-        await tester.tap(find.byTooltip('More note options'));
+        await tester.tap(findAction('More note options'));
         await tester.pumpAndSettle();
         expect(find.text('Share'), findsOneWidget);
         expect(find.text('Move to column'), findsNothing);
@@ -840,7 +850,7 @@ void main() {
             null,
           ),
         );
-        await tester.tap(find.byTooltip('More note options'));
+        await tester.tap(findAction('More note options'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Copy to clipboard'));
         await tester.pumpAndSettle();
@@ -849,7 +859,7 @@ void main() {
         // Duplicate: a second note, same content. What exactly duplicate()
         // clones is NotesStore's business (covered there); what matters here
         // is that the menu reaches it, and that it isn't the clipboard entry.
-        await tester.tap(find.byTooltip('More note options'));
+        await tester.tap(findAction('More note options'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Duplicate'));
         await tester.pumpAndSettle();
@@ -900,7 +910,7 @@ void main() {
           location: tester.getCenter(find.byType(NoteTile)),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('More note options'));
+        await tester.tap(findAction('More note options'));
         await tester.pumpAndSettle();
         expect(find.text('AI edit'), findsOneWidget);
         expect(find.text('Make concise'), findsNothing);
@@ -1478,7 +1488,7 @@ void main() {
       expect(chip, findsOneWidget);
 
       await tester.tap(
-        find.descendant(of: chip, matching: find.byTooltip('Delete')),
+        find.descendant(of: chip, matching: findAction('Delete')),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
@@ -1597,7 +1607,7 @@ void main() {
       await store.load();
       await tester.pumpWidget(harness(store, const QuickAddBar()));
 
-      await tester.tap(find.byTooltip('New checklist'));
+      await tester.tap(findAction('New checklist'));
       await tester.pumpAndSettle();
 
       // Editing happens in the bar itself, no editor route is pushed.
@@ -1632,7 +1642,7 @@ void main() {
       await store.load();
       await tester.pumpWidget(harness(store, const QuickAddBar()));
 
-      await tester.tap(find.byTooltip('New markdown note'));
+      await tester.tap(findAction('New markdown note'));
       await tester.pumpAndSettle();
 
       expect(find.byType(MarkdownToolbar), findsOneWidget);
@@ -1643,7 +1653,7 @@ void main() {
         'hello',
       );
       // Bold with no selection drops the markers in at the caret.
-      await tester.tap(find.byTooltip('Bold'));
+      await tester.tap(findAction('Bold'));
       await tester.pump();
 
       await tester.tap(find.text('Close'));
@@ -1667,9 +1677,9 @@ void main() {
         'tinted',
       );
 
-      await tester.tap(find.byTooltip('Note color'));
+      await tester.tap(findAction('Note color'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Green'));
+      await tester.tap(findAction('Green'));
       await tester.pumpAndSettle();
       // Picking happens in a sheet of its own: the tap that lands on it must
       // not read as a tap outside the composer and collapse it.
@@ -1702,7 +1712,7 @@ void main() {
         'pancakes',
       );
 
-      await tester.tap(find.byTooltip('Labels'));
+      await tester.tap(findAction('Labels'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Recipes'));
       await tester.pumpAndSettle();
@@ -1745,7 +1755,7 @@ void main() {
         'water the plants',
       );
 
-      await tester.tap(find.byTooltip('Remind me'));
+      await tester.tap(findAction('Remind me'));
       await tester.pumpAndSettle();
       // The composer offers the same two kinds of reminder the editor does.
       await tester.tap(find.text('At a place'));
@@ -1783,7 +1793,7 @@ void main() {
         'never mind',
       );
 
-      await tester.tap(find.byTooltip('More'));
+      await tester.tap(findAction('More'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Discard note'));
       await tester.pumpAndSettle();
@@ -1848,7 +1858,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Summarize page'));
+      await tester.tap(findAction('Summarize page'));
       await tester.pumpAndSettle();
 
       expect(store.noteById('n1')!.content, '$url\n\nA very short summary.');
@@ -1874,13 +1884,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Summarize page'));
+      await tester.tap(findAction('Summarize page'));
       await tester.pump();
-      await tester.tap(find.byTooltip('Stop summarizing'));
+      await tester.tap(findAction('Stop summarizing'));
       await tester.pumpAndSettle();
 
       expect(api.abortedSummaries, [url]);
-      expect(find.byTooltip('Summarize page'), findsOneWidget);
+      expect(findAction('Summarize page'), findsOneWidget);
       expect(find.text("Couldn't summarize page"), findsNothing);
       expect(store.noteById('n1')!.content, url);
       await flushTimers(tester);
@@ -1909,7 +1919,7 @@ void main() {
 
       // The find bar is a search box, and searching is not writing: it keeps
       // the keyboard's hands off.
-      await tester.tap(find.byIcon(Icons.search));
+      await openFind(tester);
       await tester.pumpAndSettle();
       final find_ = tester.widget<TextField>(
         find.widgetWithText(TextField, 'Find in note'),
@@ -2064,7 +2074,7 @@ void main() {
 
       // The picker is a native screen. A field left focused across it comes
       // back with the keyboard up, and it then survives the editor closing.
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.image_outlined));
+      await tester.tap(find.widgetWithIcon(AppIconButton, Icons.image_outlined));
       await tester.pump();
       expect(tester.testTextInput.isVisible, isFalse);
 
@@ -2084,7 +2094,7 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pump();
 
-      await tester.tap(find.byTooltip('Note actions'));
+      await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Duplicate'));
       await tester.tap(find.text('Duplicate'));
@@ -2124,9 +2134,9 @@ void main() {
       expect(preview.selectable, isTrue);
       expect(find.byType(SelectionArea), findsNothing);
       expect(find.byType(SelectableText), findsWidgets);
-      expect(find.byTooltip('Edit markdown'), findsOneWidget);
+      expect(findAction('Edit markdown'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Edit markdown'));
+      await tester.tap(findAction('Edit markdown'));
       await tester.pumpAndSettle();
       final source = tester
           .widgetList<EditableText>(find.byType(EditableText))
@@ -2135,7 +2145,7 @@ void main() {
       expect(source.controller, isA<MarkdownEditingController>());
       await tester.enterText(find.byType(TextField).last, '**Edited** preview');
       expect(store.noteById('n1')!.content, '**Edited** preview');
-      await tester.tap(find.byTooltip('Preview'));
+      await tester.tap(findAction('Preview'));
       await tester.pumpAndSettle();
       expect(find.byType(MarkdownBody), findsOneWidget);
       expect(find.textContaining('Edited', findRichText: true), findsWidgets);
@@ -2167,7 +2177,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(MarkdownToolbar), findsNothing);
 
-      await tester.tap(find.byTooltip('Edit markdown'));
+      await tester.tap(findAction('Edit markdown'));
       await tester.pumpAndSettle();
       expect(find.byType(MarkdownToolbar), findsOneWidget);
 
@@ -2184,10 +2194,10 @@ void main() {
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Edit markdown'));
+      await tester.tap(findAction('Edit markdown'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Bold'));
+      await tester.tap(findAction('Bold'));
       await tester.pumpAndSettle();
 
       expect(find.byType(MarkdownToolbar), findsOneWidget);
@@ -2273,9 +2283,9 @@ void main() {
 
       // Filing a note is often the first thing you do, so the button is live
       // on an empty note, no typing required first.
-      final labels = find.widgetWithIcon(IconButton, Icons.label_outline);
+      final labels = find.widgetWithIcon(AppIconButton, Icons.label_outline);
       expect(
-        tester.widget<IconButton>(labels).onPressed,
+        tester.widget<AppIconButton>(labels).onPressed,
         isNotNull,
         reason: 'the Labels button must never be greyed out on a new note',
       );
@@ -2331,50 +2341,39 @@ void main() {
       );
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
-      await tester.pump();
-
-      final archive = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.archive_outlined),
-      );
-      expect(archive.onPressed, isNotNull);
+      await tester.pumpAndSettle();
 
       // The menu drops a row whose action is null, so the row being there is
       // the same statement as it being enabled.
-      await tester.tap(find.byTooltip('Note actions'));
+      await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
+      expect(find.text('Archive'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
     });
 
-    testWidgets('copy and archive sit in the app bar, next to the menu', (
-      tester,
-    ) async {
+    testWidgets('find, copy and archive head the note menu', (tester) async {
       api.notes['n1'] = serverNote('n1', title: 'Archive me');
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
-      await tester.pump();
-
-      final copy = find.byTooltip('Copy to clipboard');
-      final archive = find.byTooltip('Archive');
-      final menu = find.byTooltip('Note actions');
-      expect(copy, findsOneWidget);
-      expect(archive, findsOneWidget);
-      // In that order, immediately left of the menu they were promoted out of.
-      expect(tester.getCenter(copy).dx, lessThan(tester.getCenter(archive).dx));
-      expect(tester.getCenter(archive).dx, lessThan(tester.getCenter(menu).dx));
-      // They are in the app bar, not the bottom bar.
-      expect(
-        tester.getRect(find.byType(AppBar)).contains(tester.getCenter(copy)),
-        isTrue,
-      );
-
-      // Management no longer lives in the bottom bar at all.
-      expect(find.byTooltip('Collaborators'), findsNothing);
-
-      await tester.tap(menu);
       await tester.pumpAndSettle();
-      expect(find.text('Collaborators'), findsOneWidget);
-      // Not offered twice.
-      expect(find.text('Copy to clipboard'), findsNothing);
+
+      // The bar keeps only pin and the menu, so opening a note stays cheap.
+      for (final action in ['Find in note', 'Copy to clipboard', 'Archive']) {
+        expect(findAction(action), findsNothing);
+      }
+      expect(findAction('Collaborators'), findsNothing);
+
+      await tester.tap(findAction('Note actions'));
+      await tester.pumpAndSettle();
+      final rows = ['Find in note', 'Copy to clipboard', 'Archive'];
+      for (final row in rows) {
+        expect(find.text(row), findsOneWidget);
+      }
+      // Above the rarer management actions.
+      expect(
+        tester.getCenter(find.text('Archive')).dy,
+        lessThan(tester.getCenter(find.text('Collaborators')).dy),
+      );
     });
 
     testWidgets('turning a note into a checklist cross-fades the body', (
@@ -2385,7 +2384,7 @@ void main() {
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pump();
 
-      await tester.tap(find.byTooltip('Note actions'));
+      await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Checklist'));
       // The conversion waits for the menu to close first.
@@ -2417,25 +2416,32 @@ void main() {
       api.notes['n1'] = serverNote('n1', title: 'Findable', content: 'body');
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       // Mid-swap both sets of controls are on screen, one fading for the
       // other; once it settles only the new set is left.
-      await tester.tap(find.byTooltip('Find in note'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byTooltip('Close search'), findsOneWidget);
-      expect(find.byTooltip('Find in note'), findsOneWidget);
+      await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Find in note'), findsNothing);
+      await tester.tap(find.text('Find in note'));
+      for (var i = 0; i < 60; i++) {
+        if (findAction('Close search').evaluate().isNotEmpty) {
+          break;
+        }
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(findAction('Close search'), findsOneWidget);
+      expect(findAction('Note actions'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(findAction('Note actions'), findsNothing);
 
-      await tester.tap(find.byTooltip('Close search'));
+      await tester.tap(findAction('Close search'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byTooltip('Close search'), findsOneWidget);
-      expect(find.byTooltip('Find in note'), findsOneWidget);
+      expect(findAction('Close search'), findsOneWidget);
+      expect(findAction('Note actions'), findsOneWidget);
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Close search'), findsNothing);
+      expect(findAction('Close search'), findsNothing);
       expect(find.widgetWithText(TextField, 'Find in note'), findsNothing);
     });
 
@@ -2467,13 +2473,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(noteFieldHasFocus(), isTrue);
 
-      await tester.tap(find.byTooltip('Find in note'));
-      await tester.pumpAndSettle();
+      await openFind(tester);
       // The query goes to the search box, not into the note.
       expect(noteFieldHasFocus(), isFalse);
       expect(focusedFieldCount(), 1);
 
-      await tester.tap(find.byTooltip('Close search'));
+      await tester.tap(findAction('Close search'));
       await tester.pumpAndSettle();
       expect(focusedFieldCount(), 0);
     });
@@ -2495,7 +2500,7 @@ void main() {
 
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Note actions'));
+      await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
       expect(find.text('Move to column'), findsNothing);
       tester.state<NavigatorState>(find.byType(Navigator)).pop();
@@ -2505,7 +2510,7 @@ void main() {
         harness(store, const EditorScreen(noteId: 'n1', openedFromBoard: true)),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Note actions'));
+      await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
       expect(find.text('Move to column'), findsOneWidget);
     });
@@ -3449,7 +3454,7 @@ void main() {
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.search));
+      await openFind(tester);
       await tester.pump();
       await tester.enterText(
         find.widgetWithText(TextField, 'Find in note'),
@@ -3648,7 +3653,7 @@ void main() {
         'make me bold',
         const TextSelection(baseOffset: 8, extentOffset: 12),
       );
-      await tester.tap(find.byTooltip('Bold'));
+      await tester.tap(findAction('Bold'));
       await tester.pump();
       expect(controller.text, 'make me **bold**');
       // The wrapped word stays selected so it can be re-styled.
@@ -3664,7 +3669,7 @@ void main() {
         'x',
         const TextSelection.collapsed(offset: 1),
       );
-      await tester.tap(find.byTooltip('Italic'));
+      await tester.tap(findAction('Italic'));
       await tester.pump();
       expect(controller.text, 'x__');
       // Caret parked between the markers.
@@ -3680,11 +3685,11 @@ void main() {
         'Groceries',
         const TextSelection.collapsed(offset: 3),
       );
-      await tester.tap(find.byTooltip('Heading 2'));
+      await tester.tap(findAction('Heading 2'));
       await tester.pump();
       expect(controller.text, '## Groceries');
       // Re-leveling replaces the marker instead of stacking it.
-      await tester.tap(find.byTooltip('Heading 1'));
+      await tester.tap(findAction('Heading 1'));
       await tester.pump();
       expect(controller.text, '# Groceries');
       controller.dispose();
@@ -3698,7 +3703,7 @@ void main() {
         'see Flutter',
         const TextSelection(baseOffset: 4, extentOffset: 11),
       );
-      await tester.tap(find.byTooltip('Link'));
+      await tester.tap(findAction('Link'));
       await tester.pump();
       expect(controller.text, 'see [Flutter](url)');
       expect(controller.selection.textInside(controller.text), 'url');
@@ -3726,7 +3731,7 @@ void main() {
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
       homeSemantics.dispose();
-      await tester.tap(find.byTooltip('Account, 1 change needs attention'));
+      await tester.tap(findAction('Account, 1 change needs attention'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('1 change needs attention'));
       await tester.pumpAndSettle();
@@ -3759,7 +3764,7 @@ void main() {
 
         await tester.pumpWidget(homeApp(store));
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('Account, 1 change needs attention'));
+        await tester.tap(findAction('Account, 1 change needs attention'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('1 change needs attention'));
         await tester.pumpAndSettle();
@@ -3836,33 +3841,33 @@ void main() {
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Select notes'), findsNothing);
+      expect(findAction('Select notes'), findsNothing);
       await tester.longPress(find.text('First note'));
       // Settle: the selection bar's actions drop in from above, so they only
       // sit under the taps below once that entrance has landed.
       await tester.pumpAndSettle();
       expect(find.text('1 selected'), findsOneWidget);
-      expect(find.byTooltip('Archive selected notes'), findsOneWidget);
+      expect(findAction('Archive selected notes'), findsOneWidget);
 
       await tester.tap(find.text('Second note'));
       await tester.pump();
       expect(find.text('2 selected'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Pin selected notes'));
+      await tester.tap(findAction('Pin selected notes'));
       await tester.pump();
       expect(store.noteById('n1')!.pinned, isTrue);
       expect(store.noteById('n2')!.pinned, isTrue);
 
-      await tester.tap(find.byTooltip('Change selected note colors'));
+      await tester.tap(findAction('Change selected note colors'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Red'));
+      await tester.tap(findAction('Red'));
       await tester.pump();
       expect(store.noteById('n1')!.color, 'red');
       expect(store.noteById('n2')!.color, 'red');
       await tester.tapAt(const Offset(8, 80));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Share selected notes'));
+      await tester.tap(findAction('Share selected notes'));
       await tester.pumpAndSettle();
       expect(find.text('Share 2 notes'), findsOneWidget);
       await tester.enterText(find.byType(TextField).last, 'sam@example.test');
@@ -3871,7 +3876,7 @@ void main() {
       expect(store.noteById('n1')!.collaborators.single.name, 'sam');
       expect(store.noteById('n2')!.collaborators.single.name, 'sam');
 
-      await tester.tap(find.byTooltip('Add label to selected notes'));
+      await tester.tap(findAction('Add label to selected notes'));
       await tester.pumpAndSettle();
       expect(find.text('Add label to 2 notes'), findsOneWidget);
       await tester.tap(find.widgetWithText(ListTile, 'work'));
@@ -3881,13 +3886,13 @@ void main() {
 
       await tester.tapAt(const Offset(8, 80));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Archive selected notes'));
+      await tester.tap(findAction('Archive selected notes'));
       await tester.pump();
       expect(store.noteById('n1')!.archived, isTrue);
       expect(store.noteById('n2')!.archived, isTrue);
       // Let the selection bar's exit play out.
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Cancel selection'), findsNothing);
+      expect(findAction('Cancel selection'), findsNothing);
       await flushTimers(tester);
     });
 
@@ -3924,7 +3929,7 @@ void main() {
             of: find.text(title),
             matching: find.byType(NoteTile),
           ),
-          matching: find.byTooltip('Select note'),
+          matching: findAction('Select note'),
         );
         await tester.tap(badgeFor('First note'));
         await tester.pumpAndSettle();
@@ -3976,7 +3981,7 @@ void main() {
               of: find.text('First note'),
               matching: find.byType(NoteTile),
             ),
-            matching: find.byTooltip('Select note'),
+            matching: findAction('Select note'),
           ),
         );
         await tester.pumpAndSettle();
@@ -3997,7 +4002,7 @@ void main() {
 
         expect(store.noteById('n1')!.archived, isTrue);
         expect(store.noteById('n2')!.archived, isTrue);
-        expect(find.byTooltip('Cancel selection'), findsNothing);
+        expect(findAction('Cancel selection'), findsNothing);
         await flushTimers(tester);
       },
     );
@@ -4032,9 +4037,9 @@ void main() {
       // The bar retracts rather than vanishing: mid-exit its controls are
       // still on screen, and the browsing bar takes over once they leave.
       await tester.pump(const Duration(milliseconds: 60));
-      expect(find.byTooltip('Cancel selection'), findsOneWidget);
+      expect(findAction('Cancel selection'), findsOneWidget);
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Cancel selection'), findsNothing);
+      expect(findAction('Cancel selection'), findsNothing);
       expect(find.textContaining('selected'), findsNothing);
       await flushTimers(tester);
     });
@@ -4053,14 +4058,14 @@ void main() {
 
       await tester.longPress(find.text('First note'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Select all'));
+      await tester.tap(findAction('Select all'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       expect(find.byIcon(Icons.select_all), findsOneWidget);
       expect(find.byIcon(Icons.deselect_outlined), findsOneWidget);
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.select_all), findsNothing);
-      expect(find.byTooltip('Deselect all'), findsOneWidget);
+      expect(findAction('Deselect all'), findsOneWidget);
       await flushTimers(tester);
     });
 
@@ -4082,7 +4087,7 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
-      expect(find.byTooltip('Cancel selection'), findsNothing);
+      expect(findAction('Cancel selection'), findsNothing);
       expect(find.textContaining('selected'), findsNothing);
 
       // With nothing selected, Escape goes back to being the search's.
@@ -4190,18 +4195,18 @@ void main() {
       await store.load();
       await tester.pumpWidget(homeApp(store));
 
-      expect(find.byTooltip('Theme: Auto, tap to change'), findsOneWidget);
-      await tester.tap(find.byTooltip('Theme: Auto, tap to change'));
+      expect(findAction('Theme: Auto, tap to change'), findsOneWidget);
+      await tester.tap(findAction('Theme: Auto, tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Theme: Light, tap to change'), findsOneWidget);
+      expect(findAction('Theme: Light, tap to change'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Theme: Light, tap to change'));
+      await tester.tap(findAction('Theme: Light, tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Theme: Dark, tap to change'), findsOneWidget);
+      expect(findAction('Theme: Dark, tap to change'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Theme: Dark, tap to change'));
+      await tester.tap(findAction('Theme: Dark, tap to change'));
       await tester.pump();
-      expect(find.byTooltip('Theme: Auto, tap to change'), findsOneWidget);
+      expect(findAction('Theme: Auto, tap to change'), findsOneWidget);
       await flushTimers(tester);
     });
 
@@ -4341,7 +4346,7 @@ void main() {
       await tester.longPress(find.text('First note'));
       await tester.pump();
       final bar = tester.getRect(find.byType(HomeTopBar));
-      final entering = tester.getRect(find.byTooltip('Pin selected notes'));
+      final entering = tester.getRect(findAction('Pin selected notes'));
       expect(
         entering.center.dy,
         lessThan(bar.top),
@@ -4349,7 +4354,7 @@ void main() {
       );
 
       await tester.pumpAndSettle();
-      final landed = tester.getRect(find.byTooltip('Pin selected notes'));
+      final landed = tester.getRect(findAction('Pin selected notes'));
       expect(bar.contains(landed.center), isTrue);
     });
   });
@@ -4745,7 +4750,7 @@ void main() {
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Search filters'));
+      await tester.tap(findAction('Search filters'));
       await tester.pumpAndSettle();
 
       Finder chip(String token) => find.widgetWithText(FilterChip, token);
