@@ -57,6 +57,8 @@ import '../widgets/screen_width.dart';
 import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
 import '../widgets/state_cross_fade.dart';
+import '../widgets/note_markdown.dart';
+import '../widgets/note_pattern.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
 /// debounces the network write); empty notes are discarded on close, exactly
@@ -287,23 +289,23 @@ class _EditorScreenState extends State<EditorScreen> {
     _formatBarFocus.addListener(_syncFormatBar);
     _findController.addListener(() => setState(() {}));
     _history = EditorHistory(_currentSnapshot());
-    // A brand-new text/markdown note wants the body focused for immediate
-    // typing. But focusing on mount makes iOS raise the keyboard while the open
-    // transition (container morph / fade-scale modal) is still animating,
-    // the two animations fight and the layout resizes mid-open, which stutters.
-    // Wait for the route to finish opening, then focus.
-    if (widget.noteId == null && widget.kind != NoteKind.checklist) {
+    // A brand-new note opens on its title, whatever its kind. But focusing on
+    // mount makes iOS raise the keyboard while the open transition (container
+    // morph / fade-scale modal) is still animating, the two animations fight
+    // and the layout resizes mid-open, which stutters. Wait for the route to
+    // finish opening, then focus.
+    if (widget.noteId == null) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _focusBodyAfterOpen(),
+        (_) => _focusTitleAfterOpen(),
       );
     }
   }
 
-  void _focusBodyAfterOpen() {
+  void _focusTitleAfterOpen() {
     if (!mounted) return;
     final animation = ModalRoute.of(context)?.animation;
     if (animation == null || animation.isCompleted) {
-      _contentFocus.requestFocus();
+      _titleFocus.requestFocus();
       return;
     }
     void onStatus(AnimationStatus status) {
@@ -313,7 +315,7 @@ class _EditorScreenState extends State<EditorScreen> {
       }
       animation.removeStatusListener(onStatus);
       if (mounted && status == AnimationStatus.completed) {
-        _contentFocus.requestFocus();
+        _titleFocus.requestFocus();
       }
     }
 
@@ -573,6 +575,11 @@ class _EditorScreenState extends State<EditorScreen> {
   void _setColor(String color) {
     _ensureNote();
     _store.setColor(_noteId!, color);
+  }
+
+  void _setPattern(NotePattern pattern) {
+    _ensureNote();
+    _store.setPattern(_noteId!, pattern);
   }
 
   Future<void> _editLabels() async {
@@ -1155,38 +1162,41 @@ class _EditorScreenState extends State<EditorScreen> {
             duration: Motion.base,
             curve: Motion.standard,
             color: bg,
-            child: CallbackShortcuts(
-              bindings: _historyShortcuts,
-              child: _editorShell(
-                note: note,
-                body: SafeArea(
-                  // heightFactor 1 makes the modal hug its content instead of
-                  // stretching to the dialog's max height; fullscreen keeps the
-                  // usual fill (the column is max-size there anyway).
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    heightFactor: widget.modal ? 1.0 : null,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
-                      child: Column(
-                        // Modal: shrink to the note's content (the dialog grows
-                        // with the note) instead of filling the screen.
-                        mainAxisSize: widget.modal
-                            ? MainAxisSize.min
-                            : MainAxisSize.max,
-                        children: [
-                          Flexible(
-                            fit: widget.modal ? FlexFit.loose : FlexFit.tight,
-                            child: _noteFields(
-                              note,
-                              settings,
-                              labels,
-                              trashed: trashed,
-                              query: query,
+            child: NotePatternBackground(
+              pattern: note?.pattern ?? NotePattern.none,
+              child: CallbackShortcuts(
+                bindings: _historyShortcuts,
+                child: _editorShell(
+                  note: note,
+                  body: SafeArea(
+                    // heightFactor 1 makes the modal hug its content instead of
+                    // stretching to the dialog's max height; fullscreen keeps the
+                    // usual fill (the column is max-size there anyway).
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      heightFactor: widget.modal ? 1.0 : null,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 680),
+                        child: Column(
+                          // Modal: shrink to the note's content (the dialog grows
+                          // with the note) instead of filling the screen.
+                          mainAxisSize: widget.modal
+                              ? MainAxisSize.min
+                              : MainAxisSize.max,
+                          children: [
+                            Flexible(
+                              fit: widget.modal ? FlexFit.loose : FlexFit.tight,
+                              child: _noteFields(
+                                note,
+                                settings,
+                                labels,
+                                trashed: trashed,
+                                query: query,
+                              ),
                             ),
-                          ),
-                          ..._composeBars(note, settings, trashed: trashed),
-                        ],
+                            ..._composeBars(note, settings, trashed: trashed),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1282,6 +1292,13 @@ class _EditorScreenState extends State<EditorScreen> {
       // platform would do anyway.
       textCapitalization: TextCapitalization.sentences,
       textInputAction: TextInputAction.next,
+      // Enter moves on to the body. A checklist has no single body field, so
+      // `next` traversal carries the caret to its new-item row instead.
+      onSubmitted: (_) {
+        if (_kind != NoteKind.checklist) {
+          _contentFocus.requestFocus();
+        }
+      },
       contentInsertionConfiguration: PasteFileArea.insertionOf(context),
       style: Theme.of(
         context,
@@ -1373,6 +1390,8 @@ class _EditorScreenState extends State<EditorScreen> {
                     context,
                     selected: () => _note?.color ?? 'default',
                     onSelect: _setColor,
+                    selectedPattern: () => _note?.pattern ?? NotePattern.none,
+                    onSelectPattern: _setPattern,
                   ),
             // Labelling is available from the first moment, like colour and
             // pin: filing a note is often the first thing you do, and the draft
@@ -1508,9 +1527,7 @@ class _EditorScreenState extends State<EditorScreen> {
       return AnimatedChecklist(
         items: _items,
         readOnly: trashed || _rewriting,
-        autofocusNew:
-            (widget.noteId == null && widget.kind == NoteKind.checklist) ||
-            (widget.addChecklistItem && !trashed),
+        autofocusNew: widget.addChecklistItem && !trashed,
         highlightQuery: query,
         // Suggestions come from THIS note's checked history only, never
         // from other notes.
@@ -1554,6 +1571,8 @@ class _EditorScreenState extends State<EditorScreen> {
                 titleFor: _store.linkTitleFor,
               ),
         selectable: true,
+        styleSheet: noteMarkdownStyle(Theme.of(context)),
+        builders: noteMarkdownBuilders(CodeBlockMode.interactive),
         // A tap on preview text returns to its markdown source. Drag and
         // long-press gestures remain owned by the selectable text.
         onTapText: trashed ? null : _editMarkdownFromPreview,

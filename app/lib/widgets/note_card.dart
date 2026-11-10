@@ -40,6 +40,8 @@ import 'screen_width.dart';
 import 'swipe_to_archive.dart';
 import 'transcribing_indicator.dart';
 import 'workspace_menu.dart';
+import 'note_markdown.dart';
+import 'note_pattern.dart';
 
 part 'note_card/actions.dart';
 part 'note_card/content.dart';
@@ -364,13 +366,16 @@ class _NoteTileState extends State<NoteTile> {
             color: fill ?? scheme.surface,
             shape: cardShape,
             clipBehavior: Clip.antiAlias,
-            child: closedCard(
-              () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  settings: RouteSettings(name: noteRouteName(note.id)),
-                  builder: (_) => EditorScreen(
-                    noteId: note.id,
-                    openedFromBoard: widget.openedFromBoard,
+            child: NotePatternBackground(
+              pattern: note.pattern,
+              child: closedCard(
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    settings: RouteSettings(name: noteRouteName(note.id)),
+                    builder: (_) => EditorScreen(
+                      noteId: note.id,
+                      openedFromBoard: widget.openedFromBoard,
+                    ),
                   ),
                 ),
               ),
@@ -381,7 +386,10 @@ class _NoteTileState extends State<NoteTile> {
             closedColor: fill ?? scheme.surface,
             openColor: fill ?? scheme.surface,
             closedShape: cardShape,
-            closedBuilder: (context, open) => closedCard(open),
+            closedBuilder: (context, open) => NotePatternBackground(
+              pattern: note.pattern,
+              child: closedCard(open),
+            ),
             openBuilder: (context) => EditorScreen(
               noteId: note.id,
               openedFromBoard: widget.openedFromBoard,

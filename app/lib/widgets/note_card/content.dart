@@ -429,9 +429,11 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
       _builtTheme = theme;
       _built = MarkdownBody(
         data: widget.content,
-        styleSheet: MarkdownStyleSheet.fromTheme(
+        styleSheet: noteMarkdownStyle(
           theme,
-        ).copyWith(p: theme.textTheme.bodyMedium?.copyWith(height: 1.45)),
+          body: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+        ),
+        builders: noteMarkdownBuilders(CodeBlockMode.preview),
       );
     }
     return _built!;

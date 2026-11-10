@@ -1579,6 +1579,28 @@ void main() {
       await flushTimers(tester);
     });
 
+    for (final kind in ['Take a note…', 'New checklist']) {
+      testWidgets('a new quick note opens on its title ($kind)', (
+        tester,
+      ) async {
+        await store.load();
+        await tester.pumpWidget(harness(store, const QuickAddBar()));
+        await tester.tap(
+          kind == 'New checklist' ? find.byTooltip(kind) : find.text(kind),
+        );
+        await tester.pumpAndSettle();
+
+        final title = tester.widget<EditableText>(
+          find.descendant(
+            of: find.widgetWithText(TextField, 'Title'),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(title.focusNode.hasFocus, isTrue);
+        await flushTimers(tester);
+      });
+    }
+
     testWidgets('Tab moves from the quick-note title to its content', (
       tester,
     ) async {
@@ -4300,7 +4322,7 @@ void main() {
       expect(find.byType(Drawer), findsOneWidget);
     });
 
-    testWidgets('the wide bar names the open view and keeps search compact', (
+    testWidgets('the wide bar names the open view and bounds search', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(1400, 900);
@@ -4326,7 +4348,7 @@ void main() {
             )
             .first,
       );
-      expect(pill.width, lessThanOrEqualTo(320));
+      expect(pill.width, lessThanOrEqualTo(560));
       expect(pill.left, greaterThan(tester.getRect(title).right));
       expect(
         pill.right,
@@ -4504,6 +4526,13 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
       await tester.pumpAndSettle();
       expect(find.byType(EditorScreen), findsOneWidget);
+      final title = tester.widget<EditableText>(
+        find.descendant(
+          of: find.widgetWithText(TextField, 'Title'),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(title.focusNode.hasFocus, isTrue);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape); // dismiss modal
       await tester.pumpAndSettle();
       expect(find.byType(EditorScreen), findsNothing);
@@ -4516,9 +4545,13 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
 
+      // The toolbar waits for the body; a new note opens on its title.
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
       await tester.pumpAndSettle();
-      expect(find.byType(MarkdownToolbar), findsOneWidget);
+      expect(
+        tester.widget<EditorScreen>(find.byType(EditorScreen)).kind,
+        NoteKind.markdown,
+      );
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       await flushTimers(tester);

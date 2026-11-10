@@ -498,6 +498,9 @@ class FakeApi implements Api {
         gridSpan: (fields['grid_span'] as num?)?.toInt(),
         collectionId: fields['collection_id'] as String?,
         color: fields['color'] as String?,
+        pattern: fields.containsKey('pattern')
+            ? NotePattern.fromWire(fields['pattern'] as String?)
+            : null,
         pinned: fields['pinned'] as bool?,
         archived: fields['archived'] as bool?,
         trashed: fields['trashed'] as bool?,

@@ -14,6 +14,8 @@ import '../widgets/checklist/check_mark.dart';
 import '../widgets/linked_text.dart';
 import '../widgets/masonry.dart';
 import '../widgets/state_cross_fade.dart';
+import '../widgets/note_markdown.dart';
+import '../widgets/note_pattern.dart';
 
 /// The page behind a public link: someone else's notes, read only, with no
 /// account and no session.
@@ -489,70 +491,76 @@ class PublicNoteCard extends StatelessWidget {
         border: Border.all(color: hairlineColor(scheme)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (note.title.trim().isNotEmpty) ...[
-                  Text(
-                    note.title,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+      child: NotePatternBackground(
+        pattern: note.pattern,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (note.title.trim().isNotEmpty) ...[
+                    Text(
+                      note.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: expanded ? null : 3,
+                      overflow: expanded ? null : TextOverflow.ellipsis,
                     ),
-                    maxLines: expanded ? null : 3,
-                    overflow: expanded ? null : TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
+                    const SizedBox(height: 6),
+                  ],
+                  if (note.isChecklist)
+                    _Checklist(note: note, expanded: expanded)
+                  else if (note.kind == NoteKind.markdown)
+                    MarkdownBody(
+                      data: note.content,
+                      shrinkWrap: true,
+                      selectable: false,
+                      styleSheet: noteMarkdownStyle(theme),
+                      builders: noteMarkdownBuilders(CodeBlockMode.interactive),
+                    )
+                  else if (note.content.trim().isNotEmpty)
+                    LinkedText(
+                      text: note.content,
+                      style: theme.textTheme.bodyMedium,
+                      maxLines: expanded ? null : 12,
+                      overflow: expanded
+                          ? TextOverflow.clip
+                          : TextOverflow.ellipsis,
+                    ),
+                  if (noteLabels.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final label in noteLabels)
+                          _LabelChip(label: label),
+                      ],
+                    ),
+                  ],
                 ],
-                if (note.isChecklist)
-                  _Checklist(note: note, expanded: expanded)
-                else if (note.kind == NoteKind.markdown)
-                  MarkdownBody(
-                    data: note.content,
-                    shrinkWrap: true,
-                    selectable: false,
-                  )
-                else if (note.content.trim().isNotEmpty)
-                  LinkedText(
-                    text: note.content,
-                    style: theme.textTheme.bodyMedium,
-                    maxLines: expanded ? null : 12,
-                    overflow: expanded
-                        ? TextOverflow.clip
-                        : TextOverflow.ellipsis,
-                  ),
-                if (noteLabels.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final label in noteLabels) _LabelChip(label: label),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          // Images sit below the text, matching the signed-in card.
-          for (final image in images)
-            Image(
-              image: AttachmentImage(
-                attachmentId: image.id,
-                url: api.attachmentUrl(image),
               ),
-              fit: BoxFit.cover,
-              width: double.infinity,
-              frameBuilder: Motion.fadeInFrame,
-              errorBuilder: (context, _, _) => const SizedBox.shrink(),
             ),
-        ],
+            // Images sit below the text, matching the signed-in card.
+            for (final image in images)
+              Image(
+                image: AttachmentImage(
+                  attachmentId: image.id,
+                  url: api.attachmentUrl(image),
+                ),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                frameBuilder: Motion.fadeInFrame,
+                errorBuilder: (context, _, _) => const SizedBox.shrink(),
+              ),
+          ],
+        ),
       ),
     );
   }

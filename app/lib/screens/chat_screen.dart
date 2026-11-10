@@ -13,6 +13,7 @@ import '../util/motion.dart';
 import '../util/note_routes.dart';
 import '../widgets/note_zoom.dart';
 import 'editor_screen.dart';
+import '../widgets/note_markdown.dart';
 
 /// Ask questions about your notes. Each turn the server retrieves the most
 /// relevant notes (semantic search over the same embeddings the ✨ search
@@ -404,12 +405,13 @@ class _Bubble extends StatelessWidget {
             MarkdownBody(
               data: turn.text,
               selectable: true,
-              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                  .copyWith(
-                    p: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(height: 1.45),
-                  ),
+              styleSheet: noteMarkdownStyle(
+                Theme.of(context),
+                body: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(height: 1.45),
+              ),
+              builders: noteMarkdownBuilders(CodeBlockMode.interactive),
               onTapLink: (text, href, title) {
                 if (href != null) launchSafeLink(href);
               },

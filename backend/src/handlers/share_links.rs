@@ -411,6 +411,7 @@ fn public_note(view: &NoteView) -> PublicNote {
         content: view.note.content.clone(),
         items: view.note.items.clone(),
         color: view.note.color.clone(),
+        pattern: view.note.pattern.clone(),
         pinned: view.note.pinned,
         position: view.note.position,
         grid_span: view.note.grid_span,

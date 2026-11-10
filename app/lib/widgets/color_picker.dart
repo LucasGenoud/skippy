@@ -1,26 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/note.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
 import '../util/motion.dart';
 import 'form_dialog.dart';
+import 'note_pattern.dart';
 
 /// Horizontal strip of the user's note colors (personalized in Settings),
 /// shown in a phone sheet or compact web dialog. Selection updates live.
+/// Given [onSelectPattern], a second strip picks the note's background
+/// pattern, each swatch drawn in the chosen colour.
 class ColorPickerSheet extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelect;
+  final NotePattern selectedPattern;
+  final ValueChanged<NotePattern>? onSelectPattern;
   const ColorPickerSheet({
     super.key,
     required this.selected,
     required this.onSelect,
+    this.selectedPattern = NotePattern.none,
+    this.onSelectPattern,
   });
 
   static Future<void> show(
     BuildContext context, {
     required String Function() selected,
     required ValueChanged<String> onSelect,
+    NotePattern Function()? selectedPattern,
+    ValueChanged<NotePattern>? onSelectPattern,
   }) {
     final settings = context.read<SettingsStore>();
     return showAdaptiveSelectionSurface<void>(
@@ -34,6 +44,13 @@ class ColorPickerSheet extends StatelessWidget {
               onSelect(c);
               setSheetState(() {});
             },
+            selectedPattern: selectedPattern?.call() ?? NotePattern.none,
+            onSelectPattern: onSelectPattern == null
+                ? null
+                : (pattern) {
+                    onSelectPattern(pattern);
+                    setSheetState(() {});
+                  },
           ),
         ),
       ),
@@ -59,11 +76,31 @@ class ColorPickerSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const ModalHeader(title: 'Note color'),
+          ModalHeader(
+            title: onSelectPattern == null ? 'Note color' : 'Background',
+          ),
           Padding(
-            padding: modalBodyPadding(),
+            padding: modalBodyPadding(hasFooter: onSelectPattern != null),
             child: _swatches(context, entries, scheme),
           ),
+          if (onSelectPattern case final onPattern?) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kModalInset,
+                kSpaceMd,
+                kModalInset,
+                0,
+              ),
+              child: Text(
+                'PATTERN',
+                style: sectionLabelStyle(Theme.of(context)),
+              ),
+            ),
+            Padding(
+              padding: modalBodyPadding(),
+              child: _patternSwatches(context, entries, scheme, onPattern),
+            ),
+          ],
         ],
       ),
     );
@@ -103,6 +140,110 @@ class ColorPickerSheet extends StatelessWidget {
               child: dot(entry),
             ),
         ],
+      ),
+    );
+  }
+}
+
+extension on ColorPickerSheet {
+  Widget _patternSwatches(
+    BuildContext context,
+    List<({String key, String name, Color? fill})> entries,
+    ColorScheme scheme,
+    ValueChanged<NotePattern> onPattern,
+  ) {
+    final fill = entries
+        .where((entry) => entry.key == selected)
+        .firstOrNull
+        ?.fill;
+    Widget swatch(NotePattern pattern) => _PatternSwatch(
+      key: ValueKey('pattern-${pattern.wire}'),
+      pattern: pattern,
+      fill: fill ?? scheme.surface,
+      selected: pattern == selectedPattern,
+      onTap: () => onPattern(pattern),
+    );
+    if (!modalIsSheet(context)) {
+      return Wrap(
+        spacing: kSpaceMd,
+        runSpacing: kSpaceMd,
+        children: [for (final pattern in NotePattern.values) swatch(pattern)],
+      );
+    }
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final pattern in NotePattern.values)
+            Padding(
+              padding: const EdgeInsets.only(right: kSpaceMd),
+              child: swatch(pattern),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A rounded tile showing what [pattern] looks like on the note's colour.
+class _PatternSwatch extends StatelessWidget {
+  final NotePattern pattern;
+  final Color fill;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PatternSwatch({
+    super.key,
+    required this.pattern,
+    required this.fill,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: pattern.label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: kBorderRadius,
+        child: AnimatedContainer(
+          duration: Motion.fast,
+          curve: Motion.standard,
+          width: 48,
+          height: 48,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: kBorderRadius,
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+              width: selected ? 2.5 : 1,
+            ),
+          ),
+          child: NotePatternBackground(
+            pattern: pattern,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: Motion.fast,
+                switchInCurve: Curves.easeOutBack,
+                switchOutCurve: Motion.standard,
+                transitionBuilder: (child, animation) =>
+                    ScaleTransition(scale: animation, child: child),
+                child: selected
+                    ? Icon(
+                        Icons.check,
+                        key: const ValueKey('check'),
+                        size: 22,
+                        color: scheme.primary,
+                      )
+                    : const SizedBox.shrink(key: ValueKey('none')),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -1422,6 +1422,14 @@ class NotesStore extends ChangeNotifier {
     _patch(id, note.copyWith(color: color), {'color': color});
   }
 
+  void setPattern(String id, NotePattern pattern) {
+    final note = noteById(id);
+    if (note == null) {
+      return;
+    }
+    _patch(id, note.copyWith(pattern: pattern), {'pattern': pattern.wire});
+  }
+
   void setGridSpan(String id, int span) {
     final note = noteById(id);
     if (note == null || span == note.gridSpan || span < 1 || span > 3) return;
@@ -1628,6 +1636,7 @@ class NotesStore extends ChangeNotifier {
           ChecklistItem(id: _uuid.v4(), text: item.text, done: item.done),
       ],
       color: source.color,
+      pattern: source.pattern,
       position: _frontPosition(),
       gridSpan: source.gridSpan,
       createdAt: now,

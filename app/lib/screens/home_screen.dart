@@ -304,6 +304,15 @@ class _HomeScreenState extends State<HomeScreen> {
         store.setColor(note.id, color);
       }
     },
+    selectedPattern: () {
+      final patterns = {for (final note in _selectedNotes(store)) note.pattern};
+      return patterns.length == 1 ? patterns.single : NotePattern.none;
+    },
+    onSelectPattern: (pattern) {
+      for (final note in _selectedNotes(store)) {
+        store.setPattern(note.id, pattern);
+      }
+    },
   );
 
   void _setPinnedForSelected(NotesStore store, bool pinned) {

@@ -133,6 +133,11 @@ class MarkdownToolbar extends StatelessWidget {
           ),
           btn('Inline code', const Icon(Icons.code), () => _wrap('`', '`')),
           btn(
+            'Code block',
+            const Icon(Icons.data_object),
+            () => _wrap('```\n', '\n```'),
+          ),
+          btn(
             'Bulleted list',
             const Icon(Icons.format_list_bulleted),
             () => _lines((line) => _togglePrefix('- ', line)),

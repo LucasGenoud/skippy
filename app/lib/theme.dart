@@ -205,6 +205,41 @@ List<BoxShadow> cardShadow(ColorScheme scheme, CardLift lift) {
 /// on a tinted canvas.
 const Color _shadowInk = Color(0xFF0D101A);
 
+/// The fill behind code in a note: a veil of the text colour rather than a
+/// surface of its own, so it reads as recessed on every note colour.
+Color codeFillColor(ColorScheme scheme) => scheme.onSurface.withValues(
+  alpha: scheme.brightness == Brightness.light ? 0.06 : 0.09,
+);
+
+/// The ink a note's background pattern is drawn in: faint enough that text
+/// over it keeps its contrast, on any note colour.
+Color notePatternInk(ColorScheme scheme) => scheme.onSurface.withValues(
+  alpha: scheme.brightness == Brightness.light ? 0.09 : 0.12,
+);
+
+/// Syntax colours for code blocks, one per token kind. Fixed hues rather
+/// than the accent, so code reads the same in every theme, tuned per
+/// brightness for contrast on light and dark notes.
+({
+  Color keyword,
+  Color string,
+  Color number,
+  Color comment,
+  Color type,
+  Color call,
+})
+codeSyntaxColors(ColorScheme scheme) {
+  final light = scheme.brightness == Brightness.light;
+  return (
+    keyword: light ? const Color(0xFF8E3FB5) : const Color(0xFFD7A2F0),
+    string: light ? const Color(0xFF2F7D32) : const Color(0xFF9CD69A),
+    number: light ? const Color(0xFFB35A00) : const Color(0xFFF2B572),
+    comment: scheme.onSurfaceVariant,
+    type: light ? const Color(0xFF0B6E99) : const Color(0xFF7FCBEB),
+    call: light ? const Color(0xFF3A55B5) : const Color(0xFFA6B8F5),
+  );
+}
+
 /// The fill behind a board column: the trough of the depth model at the top of
 /// this file. Derived from the canvas rather than fixed, so it keeps the
 /// accent's tint and moves with it.

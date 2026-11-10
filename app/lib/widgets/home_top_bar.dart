@@ -129,9 +129,8 @@ class HomeTopBar extends StatelessWidget {
   static const double barHeight = 60;
   static const double _pillHeight = 36;
 
-  /// The wide bar's search field: enough for a query and its filter terms,
-  /// not a centrepiece.
-  static const double _searchWidth = 320;
+  /// The wide bar's search field: room for a query and several filter terms.
+  static const double _searchWidth = 560;
 
   /// Notes chat needs the server's retrieval, and the open workspace to allow
   /// chat with a provider from its owner.
@@ -226,7 +225,9 @@ class HomeTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: kSpaceLg),
+          // Twice the title's share, so the field grows with the window.
           Flexible(
+            flex: 2,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: _searchWidth),
               child: _SearchPill(
