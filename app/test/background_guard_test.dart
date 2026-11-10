@@ -85,4 +85,53 @@ void main() {
       focus.dispose();
     },
   );
+  testWidgets('focusing a field after a return trip lets the keyboard push '
+      'the layout again', (tester) async {
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    addTearDown(tester.view.reset);
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(viewInsets: EdgeInsets.only(bottom: 300)),
+        child: MaterialApp(
+          home: BackgroundGuard(
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: Column(
+                  children: [
+                    TextField(focusNode: focus),
+                    Text(
+                      'bottom inset: '
+                      '${MediaQuery.viewInsetsOf(context).bottom}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // The trip leaves a stale inset behind, which the guard holds at zero.
+    for (final s in const [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(s);
+    }
+    await tester.pump();
+    expect(find.text('bottom inset: 0.0'), findsOneWidget);
+
+    // A field taking focus is a real keyboard again.
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focus.hasFocus, isTrue);
+    expect(find.text('bottom inset: 300.0'), findsOneWidget);
+  });
 }

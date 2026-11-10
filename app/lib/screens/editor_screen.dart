@@ -24,6 +24,7 @@ import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/motion.dart';
 import '../util/note_routes.dart';
+import '../util/platform.dart';
 import '../util/snack.dart';
 import '../util/widget_payload.dart';
 import 'history_screen.dart';
@@ -132,6 +133,10 @@ const double _edgeDismissWidth = 24;
 const double _edgeDismissDistance = 72;
 const double _edgeDismissFlingVelocity = 700;
 
+/// How far the note has to be pulled down past its top to put the keyboard
+/// away. Far enough that a scroll back to the top never does it by accident.
+const double _pullToHideKeyboard = 48;
+
 /// Global-coordinate bounds of the widget that [context] belongs to, the box a
 /// container morph should grow out of. Pass the result to [openNoteEditor] as
 /// `sourceRect`; null (no render box yet, or none at all) simply falls back to
@@ -200,23 +205,51 @@ Future<void> openNoteEditor(
           openedFromBoard: openedFromBoard,
         ),
       );
-      return Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: _modalMaxWidth,
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-          ),
-          child: sourceRect == null || Motion.reduced(context)
-              ? dialog
-              : EditorMorph(
-                  animation: animation,
-                  source: sourceRect,
-                  child: dialog,
-                ),
-        ),
+      return _AboveKeyboard(
+        child: sourceRect == null || Motion.reduced(context)
+            ? dialog
+            : EditorMorph(
+                animation: animation,
+                source: sourceRect,
+                child: dialog,
+              ),
       );
     },
   );
+}
+
+/// Centres the modal editor in the space the keyboard leaves, so the line
+/// being written never ends up underneath it.
+///
+/// Reads the keyboard inset here rather than in the route's page builder: the
+/// inset changes on every frame of the keyboard's slide, and only this box
+/// needs to follow it, not the editor inside.
+class _AboveKeyboard extends StatelessWidget {
+  /// Share of the free height the dialog may take.
+  static const double _heightShare = 0.85;
+
+  final Widget child;
+
+  const _AboveKeyboard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: _modalMaxWidth,
+              maxHeight: constraints.maxHeight * _heightShare,
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EditorScreenState extends State<EditorScreen> {
@@ -253,6 +286,13 @@ class _EditorScreenState extends State<EditorScreen> {
   double _edgeSwipeDistance = 0;
   Offset _edgeSwipeOrigin = Offset.zero;
   bool _edgeSwipeDismissed = false;
+
+  // Marks where the note's content ends, so a tap below it can be told apart.
+  final _contentEndKey = GlobalKey();
+  // Bumped to hand the caret to the checklist's new-item row.
+  final _composerFocusRequests = ValueNotifier<int>(0);
+  double _pulledPastTop = 0;
+  bool _pullHidKeyboard = false;
 
   // Undo/redo session history (see EditorHistory for the grouping rules).
   // Replaced outright when the editor switches notes (duplicate).
@@ -325,6 +365,7 @@ class _EditorScreenState extends State<EditorScreen> {
   @override
   void dispose() {
     _finalize();
+    _composerFocusRequests.dispose();
     _titleController.dispose();
     _contentController.dispose();
     _findController.dispose();
@@ -391,6 +432,16 @@ class _EditorScreenState extends State<EditorScreen> {
       if (title.trim().isEmpty && content.trim().isEmpty) return;
       _ensureNote();
     }
+
+    // The controllers also notify when only the caret or selection moves;
+    // that is not an edit, and saving it would stamp the note as changed.
+    final note = _note;
+    if (note != null &&
+        note.title == title &&
+        (_kind == NoteKind.checklist || note.content == content)) {
+      return;
+    }
+
     _store.updateNoteContent(
       _noteId!,
       title: title,
@@ -1232,51 +1283,135 @@ class _EditorScreenState extends State<EditorScreen> {
       onTap: trashed
           ? () => showAppSnack("Can't edit in Trash, restore the note first")
           : null,
-      child: ListView(
-        shrinkWrap: widget.modal,
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        children: [
-          _titleField(trashed: trashed),
-          // Turning a note into a checklist (or back) cross-fades the body.
-          // Text and markdown share one field, so they are one state.
-          StateCrossFade(
-            state: _kind == NoteKind.markdown ? NoteKind.text : _kind,
-            child: _contentEditor(trashed: trashed, query: query),
-          ),
-          AnimatedReveal(
-            child: (note?.summarizingLinks ?? false)
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: LinkSummaryIndicator(
-                      onCancel: () => _store.cancelLinkSummaries(note!.id),
-                    ),
-                  )
-                : null,
-          ),
-          // Images sit directly under the text; other files follow as
-          // download tiles.
-          AnimatedPresence(
-            layout: (children) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
-            ),
-            children: _buildAttachments(note),
-          ),
-          AnimatedReveal(
-            child:
-                note != null &&
-                    (note.reminderAt != null ||
-                        settings.locationReminderForNote(note.id) != null ||
-                        labels.isNotEmpty)
-                ? _metaChips(note, settings, labels)
-                : null,
-          ),
-          AnimatedReveal(child: _linksSection(note)),
-          // Rich preview cards for any links in the note, kept as the very
-          // last thing so they always sit below everything else.
-          AnimatedReveal(child: _linkPreviews(note)),
-        ],
+      onTapUp: trashed ? null : _onTapBelowContent,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _hideKeyboardOnPull,
+        child: _noteList(
+          note,
+          settings,
+          labels,
+          trashed: trashed,
+          query: query,
+        ),
       ),
+    );
+  }
+
+  /// A tap in the empty space under the note carries on writing at its end,
+  /// the way a sheet of paper would.
+  void _onTapBelowContent(TapUpDetails details) {
+    final end = _contentEndKey.currentContext?.findRenderObject();
+    if (end is! RenderBox || !end.attached || _rewriting) {
+      return;
+    }
+    if (details.globalPosition.dy <= end.localToGlobal(Offset.zero).dy) {
+      return;
+    }
+
+    switch (_kind) {
+      case NoteKind.checklist:
+        _composerFocusRequests.value++;
+      case NoteKind.text || NoteKind.markdown when !_previewMarkdown:
+        _contentFocus.requestFocus();
+        _contentController.selection = TextSelection.collapsed(
+          offset: _contentController.text.length,
+        );
+      default:
+        break;
+    }
+  }
+
+  /// Pulling the note down past its top puts the keyboard away: there is
+  /// nothing above the title to scroll to, so the gesture means nothing else.
+  /// iOS reports it as a bounce below zero, Android as overscroll.
+  bool _hideKeyboardOnPull(ScrollNotification notification) {
+    if (notification.depth != 0) {
+      return false;
+    }
+    if (notification is ScrollStartNotification) {
+      _pulledPastTop = 0;
+      _pullHidKeyboard = false;
+      return false;
+    }
+
+    final dragging = switch (notification) {
+      ScrollUpdateNotification(:final dragDetails) => dragDetails != null,
+      OverscrollNotification(:final dragDetails) => dragDetails != null,
+      _ => false,
+    };
+    if (!dragging || _pullHidKeyboard) {
+      return false;
+    }
+
+    final metrics = notification.metrics;
+    if (notification is OverscrollNotification && notification.overscroll < 0) {
+      _pulledPastTop -= notification.overscroll;
+    } else if (metrics.pixels < metrics.minScrollExtent) {
+      _pulledPastTop = metrics.minScrollExtent - metrics.pixels;
+    }
+    if (_pulledPastTop < _pullToHideKeyboard) {
+      return false;
+    }
+
+    _pullHidKeyboard = true;
+    if (isTouchPrimaryPlatform && isEditingText()) {
+      dismissKeyboard();
+    }
+    return false;
+  }
+
+  Widget _noteList(
+    Note? note,
+    SettingsStore settings,
+    List<Label> labels, {
+    required bool trashed,
+    required String query,
+  }) {
+    return ListView(
+      shrinkWrap: widget.modal,
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+      children: [
+        _titleField(trashed: trashed),
+        // Turning a note into a checklist (or back) cross-fades the body.
+        // Text and markdown share one field, so they are one state.
+        StateCrossFade(
+          state: _kind == NoteKind.markdown ? NoteKind.text : _kind,
+          child: _contentEditor(trashed: trashed, query: query),
+        ),
+        AnimatedReveal(
+          child: (note?.summarizingLinks ?? false)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: LinkSummaryIndicator(
+                    onCancel: () => _store.cancelLinkSummaries(note!.id),
+                  ),
+                )
+              : null,
+        ),
+        // Images sit directly under the text; other files follow as
+        // download tiles.
+        AnimatedPresence(
+          layout: (children) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+          children: _buildAttachments(note),
+        ),
+        AnimatedReveal(
+          child:
+              note != null &&
+                  (note.reminderAt != null ||
+                      settings.locationReminderForNote(note.id) != null ||
+                      labels.isNotEmpty)
+              ? _metaChips(note, settings, labels)
+              : null,
+        ),
+        AnimatedReveal(child: _linksSection(note)),
+        // Rich preview cards for any links in the note, kept as the very
+        // last thing so they always sit below everything else.
+        AnimatedReveal(child: _linkPreviews(note)),
+        SizedBox(key: _contentEndKey),
+      ],
     );
   }
 
@@ -1544,6 +1679,7 @@ class _EditorScreenState extends State<EditorScreen> {
         reminders: _note?.itemReminders ?? const {},
         onSetReminder: trashed ? null : _editItemReminder,
         onIndentItem: trashed ? null : _indentItem,
+        focusComposer: _composerFocusRequests,
       );
     }
     if (_kind == NoteKind.markdown) {

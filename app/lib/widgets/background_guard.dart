@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../util/keyboard.dart';
+
 /// App-level guard for the fragile moments around a trip to the background.
 ///
 /// Two things happen on the way out, both once per backgrounding:
@@ -117,8 +119,7 @@ class _BackgroundGuardState extends State<BackgroundGuard>
     setState(() => _ignoreStaleKeyboardInset = false);
   }
 
-  bool get _textFieldFocused =>
-      FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+  bool get _textFieldFocused => isEditingText();
 
   void _releaseInsetIfFresh() {
     if (!mounted || !_ignoreStaleKeyboardInset) return;

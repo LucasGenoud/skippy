@@ -240,6 +240,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     : ListView.builder(
                         controller: _scroll,
                         reverse: true,
+                        // Reading back through the answers needs the room.
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         itemCount: _turns.length,
                         itemBuilder: (context, index) {

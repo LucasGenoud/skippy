@@ -65,6 +65,10 @@ class AnimatedChecklist extends StatefulWidget {
   /// only decides when it was asked for.
   final void Function(String itemId, int delta)? onIndentItem;
 
+  /// Each notification puts the caret in the new-item row, for a tap on the
+  /// empty space below the list.
+  final Listenable? focusComposer;
+
   const AnimatedChecklist({
     super.key,
     required this.items,
@@ -78,6 +82,7 @@ class AnimatedChecklist extends StatefulWidget {
     this.onInsertAfter,
     this.onSetReminder,
     this.onIndentItem,
+    this.focusComposer,
     this.reminders = const {},
     this.readOnly = false,
     this.autofocusNew = false,
@@ -222,6 +227,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     _syncItems();
     _refreshOrder();
     _composer.focusNode.addListener(_onComposerFocusChange);
+    widget.focusComposer?.addListener(_focusComposer);
     // Backspace in an empty composer steps back up to the line above, the same
     // as in any other empty row. Hardware keyboards get here; where the
     // keypress never surfaces as a key event, the empty-row marker catches it
@@ -248,8 +254,16 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
     });
   }
 
+  void _focusComposer() {
+    if (widget.readOnly) {
+      return;
+    }
+    _composer.focusNode.requestFocus();
+  }
+
   @override
   void dispose() {
+    widget.focusComposer?.removeListener(_focusComposer);
     for (final timer in [..._settling.values, ..._leaving.values]) {
       timer.cancel();
     }
@@ -276,6 +290,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   @override
   void didUpdateWidget(AnimatedChecklist oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusComposer != widget.focusComposer) {
+      oldWidget.focusComposer?.removeListener(_focusComposer);
+      widget.focusComposer?.addListener(_focusComposer);
+    }
+
     // A row that has gone away (an undo, another device) has nothing left to
     // hold or to fade out.
     final present = {for (final item in widget.items) item.id};

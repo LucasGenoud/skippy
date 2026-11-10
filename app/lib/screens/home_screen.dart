@@ -973,6 +973,9 @@ class _HomeScreenState extends State<HomeScreen> {
           elevation: 2,
           child: CustomScrollView(
             controller: _scrollController,
+            // Scrolling search results puts the keyboard away so they can be
+            // read; it covers half of them otherwise.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             // Phones keep pull-to-refresh available even when the list is
             // short. On desktop, forcing that physics makes a fully visible
             // grid move despite having nowhere to scroll.

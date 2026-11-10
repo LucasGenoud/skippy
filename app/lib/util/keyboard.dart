@@ -14,3 +14,17 @@ void dismissKeyboard() {
   FocusManager.instance.primaryFocus?.unfocus();
   SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
 }
+
+/// Whether the focused node belongs to a text field, the one thing focus can
+/// sit on that keeps the soft keyboard up.
+///
+/// The node's own context is the `Focus` that [EditableText] builds, not the
+/// field itself, so the field is found by looking up from it.
+bool isEditingText() {
+  final context = FocusManager.instance.primaryFocus?.context;
+  if (context == null) {
+    return false;
+  }
+  return context.widget is EditableText ||
+      context.findAncestorWidgetOfExactType<EditableText>() != null;
+}
