@@ -45,6 +45,7 @@ import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/link_summary_indicator.dart';
+import '../widgets/deferred_build.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/note_zoom.dart';
 import '../widgets/paste_files.dart';
@@ -984,123 +985,128 @@ class _EditorScreenState extends State<EditorScreen> {
             : const SizedBox.shrink(key: ValueKey('no-find-field')),
         alignment: AlignmentDirectional.centerStart,
       ),
+      // The editor fades in from a third of the way through its morph, so
+      // these buttons are built a frame late instead of in the one that
+      // starts it.
       actions: [
-        _barCrossFade(
-          _finding
-              ? IconButton(
-                  key: const ValueKey('find-close'),
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Close search',
-                  onPressed: _closeFind,
-                )
-              : Row(
-                  key: const ValueKey('note-actions'),
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSize(
-                      duration: Motion.reduced(context)
-                          ? Duration.zero
-                          : Motion.fast,
-                      curve: Motion.standard,
-                      child: _kind == NoteKind.markdown && !trashed
-                          ? _markdownModeButton()
-                          : const SizedBox.shrink(),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: 'Find in note',
-                      onPressed: _openFind,
-                    ),
-                    if (!trashed) ...[
-                      IconButton(
-                        icon: PinIcon(pinned: pinned),
-                        tooltip: pinned ? 'Unpin' : 'Pin',
-                        onPressed: _togglePin,
+        DeferredBuild(
+          child: _barCrossFade(
+            _finding
+                ? IconButton(
+                    key: const ValueKey('find-close'),
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close search',
+                    onPressed: _closeFind,
+                  )
+                : Row(
+                    key: const ValueKey('note-actions'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedSize(
+                        duration: Motion.reduced(context)
+                            ? Duration.zero
+                            : Motion.fast,
+                        curve: Motion.standard,
+                        child: _kind == NoteKind.markdown && !trashed
+                            ? _markdownModeButton()
+                            : const SizedBox.shrink(),
                       ),
-                    ] else ...[
                       IconButton(
-                        icon: const Icon(Icons.restore_from_trash_outlined),
-                        tooltip: 'Restore',
-                        onPressed: () async {
-                          await CollectionPicker.restore(context, note!.id);
-                          if (mounted) {
+                        icon: const Icon(Icons.search),
+                        tooltip: 'Find in note',
+                        onPressed: _openFind,
+                      ),
+                      if (!trashed) ...[
+                        IconButton(
+                          icon: PinIcon(pinned: pinned),
+                          tooltip: pinned ? 'Unpin' : 'Pin',
+                          onPressed: _togglePin,
+                        ),
+                      ] else ...[
+                        IconButton(
+                          icon: const Icon(Icons.restore_from_trash_outlined),
+                          tooltip: 'Restore',
+                          onPressed: () async {
+                            await CollectionPicker.restore(context, note!.id);
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_forever_outlined),
+                          tooltip: 'Delete forever',
+                          onPressed: () {
+                            _store.deleteForever(note!.id);
                             Navigator.of(context).pop();
-                          }
-                        },
-                      ),
+                            showAppSnack(
+                              'Note deleted forever',
+                              icon: Icons.delete_forever_outlined,
+                              kind: SnackKind.danger,
+                            );
+                          },
+                        ),
+                      ],
+                      // Promoted out of the menu below: the two note actions used often
+                      // enough to earn a permanent target, kept adjacent to it so the
+                      // whole group still reads as "things you do to this note".
                       IconButton(
-                        icon: const Icon(Icons.delete_forever_outlined),
-                        tooltip: 'Delete forever',
-                        onPressed: () {
-                          _store.deleteForever(note!.id);
-                          Navigator.of(context).pop();
-                          showAppSnack(
-                            'Note deleted forever',
-                            icon: Icons.delete_forever_outlined,
-                            kind: SnackKind.danger,
-                          );
-                        },
+                        icon: const Icon(Icons.content_copy_outlined),
+                        tooltip: 'Copy to clipboard',
+                        onPressed: can.canCopy ? _copyNoteToClipboard : null,
+                      ),
+                      if (!trashed)
+                        IconButton(
+                          icon: Icon(
+                            (note?.archived ?? false)
+                                ? Icons.unarchive_outlined
+                                : Icons.archive_outlined,
+                          ),
+                          tooltip: (note?.archived ?? false)
+                              ? 'Unarchive'
+                              : 'Archive',
+                          onPressed: can.canArchive ? _archiveAndClose : null,
+                        ),
+                      // Everything else you do *to* the note. The bottom bar keeps what
+                      // goes *into* it, so neither menu has to nest.
+                      NoteActionsButton(
+                        isOwner: can.isOwner,
+                        kind: _kind,
+                        onShare: can.canEdit ? _openShare : null,
+                        onDelete: can.canTrash ? _deleteAndClose : null,
+                        onDuplicate: can.canDuplicate ? _duplicateNote : null,
+                        onMoveToCollection: can.canMoveToCollection
+                            ? _moveToCollection
+                            : null,
+                        onMoveToWorkspace: can.canMoveToWorkspace
+                            ? () => MoveToWorkspaceSheet.show(context, _noteId!)
+                            : null,
+                        onMoveToStage:
+                            widget.openedFromBoard && can.canMoveToStage
+                            ? () => MoveToStageSheet.show(context, _noteId!)
+                            : null,
+                        onHistory: can.canShowHistory
+                            ? () => NoteHistoryScreen.open(context, _noteId!)
+                            : null,
+                        // A trashed note must not be pinnable: the widget would
+                        // outlive the note itself.
+                        onAddToHomeScreen: HomeWidgets.supported && can.canEdit
+                            ? _addToHomeScreen
+                            : null,
+                        onConvert: can.canEdit ? _convertKind : null,
+                        onRewrite: can.canRewrite ? _rewriteWithAi : null,
+                        rewriteTasks: can.rewriteTasks,
+                        rewriting:
+                            note != null && _store.isRewritingNote(note.id),
+                        gridSpan: note?.gridSpan ?? 1,
+                        onGridSpan: can.canSetGridSpan
+                            ? (span) => _store.setGridSpan(_noteId!, span)
+                            : null,
                       ),
                     ],
-                    // Promoted out of the menu below: the two note actions used often
-                    // enough to earn a permanent target, kept adjacent to it so the
-                    // whole group still reads as "things you do to this note".
-                    IconButton(
-                      icon: const Icon(Icons.content_copy_outlined),
-                      tooltip: 'Copy to clipboard',
-                      onPressed: can.canCopy ? _copyNoteToClipboard : null,
-                    ),
-                    if (!trashed)
-                      IconButton(
-                        icon: Icon(
-                          (note?.archived ?? false)
-                              ? Icons.unarchive_outlined
-                              : Icons.archive_outlined,
-                        ),
-                        tooltip: (note?.archived ?? false)
-                            ? 'Unarchive'
-                            : 'Archive',
-                        onPressed: can.canArchive ? _archiveAndClose : null,
-                      ),
-                    // Everything else you do *to* the note. The bottom bar keeps what
-                    // goes *into* it, so neither menu has to nest.
-                    NoteActionsButton(
-                      isOwner: can.isOwner,
-                      kind: _kind,
-                      onShare: can.canEdit ? _openShare : null,
-                      onDelete: can.canTrash ? _deleteAndClose : null,
-                      onDuplicate: can.canDuplicate ? _duplicateNote : null,
-                      onMoveToCollection: can.canMoveToCollection
-                          ? _moveToCollection
-                          : null,
-                      onMoveToWorkspace: can.canMoveToWorkspace
-                          ? () => MoveToWorkspaceSheet.show(context, _noteId!)
-                          : null,
-                      onMoveToStage:
-                          widget.openedFromBoard && can.canMoveToStage
-                          ? () => MoveToStageSheet.show(context, _noteId!)
-                          : null,
-                      onHistory: can.canShowHistory
-                          ? () => NoteHistoryScreen.open(context, _noteId!)
-                          : null,
-                      // A trashed note must not be pinnable: the widget would
-                      // outlive the note itself.
-                      onAddToHomeScreen: HomeWidgets.supported && can.canEdit
-                          ? _addToHomeScreen
-                          : null,
-                      onConvert: can.canEdit ? _convertKind : null,
-                      onRewrite: can.canRewrite ? _rewriteWithAi : null,
-                      rewriteTasks: can.rewriteTasks,
-                      rewriting:
-                          note != null && _store.isRewritingNote(note.id),
-                      gridSpan: note?.gridSpan ?? 1,
-                      onGridSpan: can.canSetGridSpan
-                          ? (span) => _store.setGridSpan(_noteId!, span)
-                          : null,
-                    ),
-                  ],
-                ),
-          alignment: AlignmentDirectional.centerEnd,
+                  ),
+            alignment: AlignmentDirectional.centerEnd,
+          ),
         ),
         const SizedBox(width: kSpaceXs),
       ],
@@ -1370,27 +1376,32 @@ class _EditorScreenState extends State<EditorScreen> {
               ? null
               : Border(top: BorderSide(color: hairlineColor(scheme))),
         ),
-        child: EditorBottomBar(
-          trashed: trashed,
-          editedStamp: note == null
-              ? ''
-              : 'Edited ${settings.editedLabel(note.updatedAt)}',
-          onPalette: trashed
-              ? null
-              : () => ColorPickerSheet.show(
-                  context,
-                  selected: () => _note?.color ?? 'default',
-                  onSelect: _setColor,
-                ),
-          // Labelling is available from the first moment, like colour and
-          // pin: filing a note is often the first thing you do, and the draft
-          // materializes on demand.
-          onLabels: trashed ? null : _editLabels,
-          onReminder: trashed ? null : _editReminder,
-          onImage: trashed || _uploading ? null : _pickImage,
-          onAttach: trashed || _uploading ? null : _pickFile,
-          onUndo: trashed || !_history.canUndo ? null : _undo,
-          onRedo: trashed || !_history.canRedo ? null : _redo,
+        // A frame after the app bar's buttons, for the same reason.
+        child: DeferredBuild(
+          frames: 2,
+          placeholder: EditorBottomBar.placeholder(context),
+          child: EditorBottomBar(
+            trashed: trashed,
+            editedStamp: note == null
+                ? ''
+                : 'Edited ${settings.editedLabel(note.updatedAt)}',
+            onPalette: trashed
+                ? null
+                : () => ColorPickerSheet.show(
+                    context,
+                    selected: () => _note?.color ?? 'default',
+                    onSelect: _setColor,
+                  ),
+            // Labelling is available from the first moment, like colour and
+            // pin: filing a note is often the first thing you do, and the draft
+            // materializes on demand.
+            onLabels: trashed ? null : _editLabels,
+            onReminder: trashed ? null : _editReminder,
+            onImage: trashed || _uploading ? null : _pickImage,
+            onAttach: trashed || _uploading ? null : _pickFile,
+            onUndo: trashed || !_history.canUndo ? null : _undo,
+            onRedo: trashed || !_history.canRedo ? null : _redo,
+          ),
         ),
       ),
     ];

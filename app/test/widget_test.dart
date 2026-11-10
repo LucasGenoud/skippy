@@ -2118,6 +2118,7 @@ void main() {
       );
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
 
       final preview = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
       expect(preview.selectable, isTrue);
@@ -2268,7 +2269,7 @@ void main() {
       await store.load();
       store.createLabel('Work');
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: null)));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       // Filing a note is often the first thing you do, so the button is live
       // on an empty note, no typing required first.
@@ -2493,6 +2494,7 @@ void main() {
       await store.load();
 
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Note actions'));
       await tester.pumpAndSettle();
       expect(find.text('Move to column'), findsNothing);
@@ -2502,6 +2504,7 @@ void main() {
       await tester.pumpWidget(
         harness(store, const EditorScreen(noteId: 'n1', openedFromBoard: true)),
       );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Note actions'));
       await tester.pumpAndSettle();
       expect(find.text('Move to column'), findsOneWidget);
@@ -3445,6 +3448,7 @@ void main() {
       );
       await store.load();
       await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.search));
       await tester.pump();
       await tester.enterText(
@@ -3473,6 +3477,7 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
 
       // The clock is reached from inside the one reminder surface: quick
       // options, then the custom date and time.

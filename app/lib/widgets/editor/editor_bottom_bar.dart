@@ -33,6 +33,17 @@ class EditorBottomBar extends StatelessWidget {
     this.onRedo,
   });
 
+  /// Space below the row of buttons.
+  static const double _bottomPadding = 8;
+
+  /// An empty box as tall as the bar, to hold its place before it is built.
+  static Widget placeholder(BuildContext context) {
+    final buttons = Theme.of(context).visualDensity.effectiveConstraints(
+      const BoxConstraints(minHeight: kMinInteractiveDimension),
+    );
+    return SizedBox(height: buttons.minHeight + _bottomPadding);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -85,7 +96,7 @@ class EditorBottomBar extends StatelessWidget {
         );
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, _bottomPadding),
           child: Row(
             children: [
               action(
