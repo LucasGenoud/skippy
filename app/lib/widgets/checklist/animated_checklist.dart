@@ -521,20 +521,30 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
 
   /// Park the marker in a row that is focused and empty, so the next backspace
   /// is something the platform reports (see [_kEmptyRowMarker]).
+  ///
+  /// Not now, but once the keyboard has gone quiet. The edit that emptied the
+  /// row may be the middle of a burst: SwiftKey applies a correction by
+  /// deleting the word a character at a time and inserting it again.
+  ///
+  ///   keyboard:  "Milk" -> "Mil" -> "Mi" -> "M" -> ""  -> "Milk "
+  ///   marker written here, on arrival of "" ------^
+  ///
+  /// Our write and the keyboard's insert cross on the way, and whichever
+  /// reaches the platform field last wins: the marker, and the word is gone.
   void _armEmptyMarker(_RowHandles handles) {
-    _parkMarker(handles);
-    // Once more after the frame: parking it is a write into a field the
-    // platform is also writing to (the marker goes in from inside the very
-    // keystroke that emptied the row, and focus lands a microtask after it is
-    // asked for), so a lost race would leave the row with nothing for the next
-    // backspace to delete, and no way to remove itself.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    handles.markerTimer?.cancel();
+    handles.markerTimer = Timer(_kMarkerQuietTime, () {
+      if (!mounted) {
+        return;
+      }
       _parkMarker(handles);
-      // Only now may an empty edit remove the row: the marker is in the field
-      // and the frame that put it there is on screen.
-      handles.emptyBackspaceArmed =
-          !handles.disposed && handles.controller.text == _kEmptyRowMarker;
+
+      // An empty edit may remove the row only a frame later: input clients
+      // that echo a stale empty value do so within the frame of the write.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        handles.emptyBackspaceArmed =
+            !handles.disposed && handles.controller.text == _kEmptyRowMarker;
+      });
     });
   }
 
@@ -783,7 +793,11 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   /// becomes of that item to the caller.
   void _releaseComposer() {
     _composingId = null;
-    _composer.controller.clear();
+    // Only when there is something to clear: a field the keyboard has just
+    // emptied itself must not be written to (see [_armEmptyMarker]).
+    if (_composer.controller.text.isNotEmpty) {
+      _composer.controller.clear();
+    }
     _composer.unacknowledged = null;
     _composer.typedSinceFocus = false;
     _refreshOrder();

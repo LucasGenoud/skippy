@@ -14,6 +14,11 @@ part of 'animated_checklist.dart';
 /// from ever reaching the note.
 const _kEmptyRowMarker = '\u200b';
 
+/// How long a row stays empty before the marker goes in. Long enough for a
+/// keyboard that deletes a word and retypes it to finish, short enough that
+/// a held backspace loses at most one repeat to it.
+const _kMarkerQuietTime = Duration(milliseconds: 150);
+
 String _withoutMarker(String text) => text.replaceAll(_kEmptyRowMarker, '');
 
 /// Repairs a malformed transition iOS can send when a quickly typed word is
@@ -99,6 +104,9 @@ class _RowHandles {
   /// take a row with them. See [_kEmptyRowMarker].
   bool emptyBackspaceArmed = false;
 
+  /// The pending parking of the marker, while the keyboard settles.
+  Timer? markerTimer;
+
   /// Set the moment the row goes away. Callbacks that outlive a row (the
   /// deferred marker re-arm, the post-frame focus handoff) check it before
   /// touching a controller or focus node that is no longer there.
@@ -151,6 +159,7 @@ class _RowHandles {
 
   void dispose() {
     disposed = true;
+    markerTimer?.cancel();
     controller.dispose();
     focusNode.dispose();
   }

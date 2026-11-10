@@ -33,6 +33,13 @@ Widget harness(NotesStore store, Widget child) => MultiProvider(
 Future<void> flushTimers(WidgetTester tester) async =>
     tester.pump(const Duration(milliseconds: 700));
 
+/// Wait out the pause an emptied row takes before it parks its backspace
+/// marker (150ms), so the next backspace is one the row can see.
+Future<void> settleKeyboard(WidgetTester tester) async {
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+}
+
 /// Let the store's serial queue reach the fake API and come back.
 Future<void> settleQueue(WidgetTester tester) async {
   await flushTimers(tester);
@@ -522,10 +529,11 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(shapeOf('n1'), ['0:Trip', '1:']);
+      await settleKeyboard(tester);
 
       // The row is empty and nested: the next backspace brings it out…
       backspace(tester);
-      await tester.pumpAndSettle();
+      await settleKeyboard(tester);
       expect(shapeOf('n1'), ['0:Trip', '0:']);
       // …and only then does it go.
       backspace(tester);
@@ -575,6 +583,7 @@ void main() {
       }
 
       // Only the next backspace, on a row that is already empty, takes it.
+      await settleKeyboard(tester);
       backspace(tester);
       await tester.pumpAndSettle();
       expect(itemsOf('n1'), isEmpty);
@@ -637,6 +646,40 @@ void main() {
       backspace(tester);
       await tester.pumpAndSettle();
       expect(itemsOf('n1'), isEmpty);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a row emptied mid-burst is not written to', (tester) async {
+      // The same delete-then-retype burst, in a row that already exists.
+      await openChecklist(
+        tester,
+        items: const [ChecklistItem(id: 'i1', text: 'Milk')],
+      );
+      await tester.tap(find.widgetWithText(TextField, 'Milk'));
+      await tester.pumpAndSettle();
+
+      tester.testTextInput.log.clear();
+      for (var left = 3; left >= 0; left--) {
+        backspace(tester);
+      }
+      await tester.pump();
+      expect(
+        tester.testTextInput.log.where(
+          (call) => call.method == 'TextInput.setEditingState',
+        ),
+        isEmpty,
+      );
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Milk ',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
+      await tester.pump();
+
+      expect(written(focusedField(tester)), 'Milk ');
+      expect(itemsOf('n1'), ['Milk ']);
       await flushTimers(tester);
     });
 
@@ -737,6 +780,44 @@ void main() {
 
       expect(written(focusedField(tester)), 'Pancake ');
       expect(itemsOf('n1'), ['Pancake ']);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a keyboard that retypes the word on Space keeps it', (
+      tester,
+    ) async {
+      // SwiftKey applies its correction by deleting the word one character
+      // at a time and inserting it again, all in one burst. The field is
+      // empty halfway through; anything written to the keyboard's copy of it
+      // at that moment can land on top of the word coming back.
+      await openChecklist(tester);
+      await tester.tap(find.widgetWithText(TextField, 'List item'));
+      await tester.pump();
+      tester.testTextInput.enterText('Milk');
+      await tester.pump();
+
+      tester.testTextInput.log.clear();
+      for (var left = 3; left >= 0; left--) {
+        backspace(tester);
+      }
+      await tester.pump();
+      expect(
+        tester.testTextInput.log.where(
+          (call) => call.method == 'TextInput.setEditingState',
+        ),
+        isEmpty,
+      );
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Milk ',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
+      await tester.pump();
+
+      expect(written(focusedField(tester)), 'Milk ');
+      expect(itemsOf('n1'), ['Milk']);
       await flushTimers(tester);
     });
 

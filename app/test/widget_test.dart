@@ -3046,6 +3046,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        // The marker waits for the keyboard to go quiet before it goes in.
+        await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
 
         final focused = tester
@@ -3110,6 +3112,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         tester.testTextInput.updateEditingValue(TextEditingValue.empty);
+        await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
 
         tester.testTextInput.updateEditingValue(TextEditingValue.empty);
