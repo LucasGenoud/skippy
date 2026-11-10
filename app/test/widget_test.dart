@@ -1329,14 +1329,10 @@ void main() {
       }
 
       // Where the tile is headed, not where its glide has got to.
-      double slotOf(WidgetTester tester, String title) => tester
-          .widget<AnimatedPositioned>(
-            find.ancestor(
-              of: find.text(title),
-              matching: find.byType(AnimatedPositioned),
-            ),
-          )
-          .top!;
+      // Where the card is drawn: still while it is left be, moving once it
+      // reflows.
+      double slotOf(WidgetTester tester, String title) =>
+          tester.getTopLeft(find.text(title)).dy;
 
       testWidgets(
         'sweeping across cards leaves them be; resting on one reflows',
@@ -1360,7 +1356,7 @@ void main() {
             await gesture.moveBy(const Offset(0, 2));
             await tester.pump(const Duration(milliseconds: 20));
           }
-          expect(slotOf(tester, 'BBB'), 0);
+          expect(slotOf(tester, 'BBB'), lessThan(bbb));
 
           await gesture.up();
           await tester.pumpAndSettle();
@@ -2077,6 +2073,41 @@ void main() {
           const Rect.fromLTWH(0, 0, 390, 844),
         );
         expect(find.text('Open note'), findsNothing);
+      });
+
+      testWidgets('a note flung back settles at the speed it was let go', (
+        tester,
+      ) async {
+        await openZoomed(tester);
+        double left() => tester.getRect(find.byType(EditorScreen)).left;
+
+        // Out slowly, then back quickly: about 1000 px/s toward the edge. The
+        // drag starts once the first move clears the slop.
+        final gesture = await tester.startGesture(const Offset(8, 300));
+        await gesture.moveBy(
+          const Offset(20, 0),
+          timeStamp: const Duration(milliseconds: 100),
+        );
+        await gesture.moveBy(
+          const Offset(40, 0),
+          timeStamp: const Duration(milliseconds: 200),
+        );
+        for (var ms = 210; ms <= 230; ms += 10) {
+          await gesture.moveBy(
+            const Offset(-10, 0),
+            timeStamp: Duration(milliseconds: ms),
+          );
+        }
+        await tester.pump();
+        final released = left();
+        await gesture.up(timeStamp: const Duration(milliseconds: 230));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 4));
+
+        // A settle that starts from rest would barely have moved yet.
+        expect(released - left(), greaterThan(1));
+        await tester.pumpAndSettle();
+        expect(left(), 0);
       });
     });
 

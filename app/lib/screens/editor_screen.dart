@@ -1490,6 +1490,7 @@ class _EditorScreenState extends State<EditorScreen> {
       final far = _edgeSwipeDistance >= _edgeDismissDistance;
       zoom.endDrag(
         dismiss: velocity >= _edgeDismissFlingVelocity || (far && !flungBack),
+        velocity: details.velocity.pixelsPerSecond,
       );
       _resetEdgeSwipe();
       return;

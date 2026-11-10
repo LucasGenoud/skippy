@@ -196,7 +196,6 @@ class _Layout {
 class AnimatedMasonryState extends State<AnimatedMasonry>
     with TickerProviderStateMixin {
   static const double _estimatedHeight = 120;
-  static const Duration _moveDuration = Duration(milliseconds: 240);
   static const int _buildBatchSize = 20;
 
   /// How long the pointer has to stay on one target before the grid reflows
@@ -859,10 +858,9 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     _Slot slot,
     _Layout layout,
     _Presence presence,
-  ) => AnimatedPositioned(
+  ) => _SpringPositioned(
     key: ValueKey(note.id),
-    duration: _snapFrame ? Duration.zero : _moveDuration,
-    curve: Motion.standard,
+    snap: _snapFrame,
     left: slot.x,
     top: slot.y,
     width: slot.width,
@@ -1138,6 +1136,84 @@ class _TilePresenceState extends State<_TilePresence>
     child: FadeTransition(
       opacity: _curve,
       child: ScaleTransition(scale: _scale, child: widget.child),
+    ),
+  );
+}
+
+/// A [Positioned] that glides to a new [left]/[top] on a [Motion.spring].
+/// A target that changes mid-glide carries the current speed into the next
+/// one, where a restarted tween would jump: cards retarget all through a drag
+/// reorder and whenever a card arrives above one still moving.
+class _SpringPositioned extends StatefulWidget {
+  final bool snap;
+  final double left;
+  final double top;
+  final double width;
+  final Widget child;
+
+  const _SpringPositioned({
+    super.key,
+    required this.snap,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.child,
+  });
+
+  @override
+  State<_SpringPositioned> createState() => _SpringPositionedState();
+}
+
+class _SpringPositionedState extends State<_SpringPositioned>
+    with TickerProviderStateMixin {
+  late final AnimationController _x = AnimationController.unbounded(
+    vsync: this,
+    value: widget.left,
+  );
+  late final AnimationController _y = AnimationController.unbounded(
+    vsync: this,
+    value: widget.top,
+  );
+  late final Listenable _both = Listenable.merge([_x, _y]);
+
+  @override
+  void didUpdateWidget(_SpringPositioned oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final jump =
+        widget.snap ||
+        Motion.reduced(context) ||
+        !TickerMode.valuesOf(context).enabled;
+    _glide(_x, oldWidget.left, widget.left, jump);
+    _glide(_y, oldWidget.top, widget.top, jump);
+  }
+
+  void _glide(AnimationController axis, double from, double to, bool jump) {
+    if (jump) {
+      axis.value = to;
+      return;
+    }
+    if (from == to) {
+      return;
+    }
+    axis.animateWith(Motion.springTo(axis.value, to, velocity: axis.velocity));
+  }
+
+  @override
+  void dispose() {
+    _x.dispose();
+    _y.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _both,
+    child: widget.child,
+    builder: (context, child) => Positioned(
+      left: _x.value,
+      top: _y.value,
+      width: widget.width,
+      child: child!,
     ),
   );
 }

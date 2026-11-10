@@ -1,3 +1,4 @@
+import 'package:flutter/physics.dart';
 import 'package:flutter/material.dart';
 
 /// Shared motion tokens so every animation in the app feels like one system.
@@ -32,6 +33,17 @@ class Motion {
 
   /// A calmer ease-out cubic, for hovers, fades, and moves in place.
   static const Curve standard = Curves.easeOutCubic;
+
+  /// For motion that can be retargeted or handed off from a finger: a moving
+  /// card, a released note. A tween restarted midway jumps in speed; a spring
+  /// starts from the speed it already has. Critically damped, so it never
+  /// overshoots, and perceived as [base] long.
+  static final SpringDescription spring =
+      SpringDescription.withDurationAndBounce(duration: base);
+
+  /// [spring] from [from] to [to], starting at [velocity] units per second.
+  static Simulation springTo(double from, double to, {double velocity = 0}) =>
+      SpringSimulation(spring, from, to, velocity, snapToEnd: true);
 
   /// Popup menus use Flutter's native anchored route and item sequencing, but
   /// the stock linear 300 ms grow feels sluggish beside the rest of Skippy.
