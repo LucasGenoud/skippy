@@ -3,10 +3,464 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Skippy's design tokens. docs/design.md is the reference.
+ *
+ * The two blocks below are generated: they must equal
+ * themeVariables(DEFAULT_ACCENT, brightness) from src/lib/theme/accent.ts
+ * (accent.test.ts checks it). applyTheme() injects the same blocks for any
+ * other accent at runtime. Regenerate with themeCss(DEFAULT_ACCENT).
+ */
+
 :root {
-  --radius: 6px;
+  --canvas: #ECEAE5;
+  --surface: #FFFFFF;
+  --surface-bright: #FFFFFF;
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-low: #FAF9F8;
+  --surface-container: #F5F4F2;
+  --surface-container-high: #F0EEEB;
+  --surface-container-highest: #E9E7E1;
+  --trough: #DCD8CF;
+  --trough-border: #D1CCC0;
+  --on-surface: #1F1B13;
+  --on-surface-variant: #4D4639;
+  --outline: #7F7667;
+  --outline-variant: #D0C5B4;
+  --hairline: #D0C5B4CC;
+  --primary: #785A0B;
+  --on-primary: #FFFFFF;
+  --primary-container: #FBBC04;
+  --on-primary-container: #1B1A16;
+  --secondary-tone: #6B5C3F;
+  --tertiary: #4B6546;
+  --secondary-container: #FEE8AA;
+  --on-secondary-container: #1F1B13;
+  --error: #BA1A1A;
+  --on-error: #FFFFFF;
+  --error-container: #FFDAD6;
+  --on-error-container: #93000A;
+  --inverse-surface: #353027;
+  --inverse-on-surface: #FAEFE2;
+  --excluded: #E8B1B1;
+  --code-fill: #1F1B130F;
+  --pattern-ink: #1F1B1317;
+  --hover: #1F1B130F;
+  --pressed: #1F1B131A;
+  --scrollbar-thumb: #1F1B132E;
+  --elevation-resting: 0 1px 3.3px -1px #0D101A14, 0 3px 10.2px -3px #0D101A17;
+  --elevation-raised: 0 6px 19.5px -4px #0D101A24, 0 1px 5.6px -2px #0D101A14;
+  --elevation-dialog: 0 6px 19.5px -4px #0D101A24, 0 1px 5.6px -2px #0D101A14, 0 20px 47.2px -12px #0D101A2E;
+  --code-keyword: #8E3FB5;
+  --code-string: #2F7D32;
+  --code-number: #B35A00;
+  --code-type: #0B6E99;
+  --code-call: #3A55B5;
+  --snack-success-bg: #D5EFDD;
+  --snack-success-fg: #0E5A2B;
+  --snack-warning-bg: #FBE9C7;
+  --snack-warning-fg: #7A5300;
 }
 
-body {
-  margin: 0;
+.dark {
+  --canvas: #11100E;
+  --surface: #2D2C27;
+  --surface-bright: #47443D;
+  --surface-container-lowest: #0C0C0B;
+  --surface-container-low: #33312B;
+  --surface-container: #3A3831;
+  --surface-container-high: #423F38;
+  --surface-container-highest: #47443D;
+  --trough: #1E1C18;
+  --trough-border: #26231E;
+  --on-surface: #EBE1D4;
+  --on-surface-variant: #D0C5B4;
+  --outline: #998F80;
+  --outline-variant: #4D4639;
+  --hairline: #4D4639CC;
+  --primary: #EAC16C;
+  --on-primary: #402D00;
+  --primary-container: #FBBC04;
+  --on-primary-container: #1B1A16;
+  --secondary-tone: #D8C4A0;
+  --tertiary: #B1CFA9;
+  --secondary-container: #6B571C;
+  --on-secondary-container: #EBE1D4;
+  --error: #FFB4AB;
+  --on-error: #690005;
+  --error-container: #93000A;
+  --on-error-container: #FFDAD6;
+  --inverse-surface: #EBE1D4;
+  --inverse-on-surface: #353027;
+  --excluded: #6C554F;
+  --code-fill: #EBE1D417;
+  --pattern-ink: #EBE1D41F;
+  --hover: #EBE1D40F;
+  --pressed: #EBE1D41A;
+  --scrollbar-thumb: #EBE1D42E;
+  --elevation-resting: 0 1px 3.3px -1px #0D101A57, 0 3px 10.2px -3px #0D101A52;
+  --elevation-raised: 0 6px 19.5px -4px #0D101A7A, 0 1px 5.6px -2px #0D101A52;
+  --elevation-dialog: 0 6px 19.5px -4px #0D101A7A, 0 1px 5.6px -2px #0D101A52, 0 20px 47.2px -12px #0D101A80;
+  --code-keyword: #D7A2F0;
+  --code-string: #9CD69A;
+  --code-number: #F2B572;
+  --code-type: #7FCBEB;
+  --code-call: #A6B8F5;
+  --snack-success-bg: #163521;
+  --snack-success-fg: #9BE0AE;
+  --snack-warning-bg: #3A2E12;
+  --snack-warning-fg: #F3C778;
+}
+
+/* Accent-independent tokens, and the shadcn names mapped onto the system. */
+:root {
+  --radius: 6px;
+  --radius-menu: 8px;
+  --check-radius: 3px;
+
+  --motion-fast: 150ms;
+  --motion-base: 240ms;
+  --motion-slow: 250ms;
+  --ease-emphasized-curve: cubic-bezier(0.2, 0, 0, 1);
+  --ease-standard-curve: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-back-curve: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  --font-system: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-app: "Inter", var(--font-system);
+  --font-code: "JetBrainsMono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --elevation-popover: var(--elevation-raised);
+  --code-comment: var(--on-surface-variant);
+
+  --background: var(--canvas);
+  --foreground: var(--on-surface);
+  --card: var(--surface);
+  --card-foreground: var(--on-surface);
+  --popover: var(--surface);
+  --popover-foreground: var(--on-surface);
+  --primary-foreground: var(--on-primary);
+  --secondary: var(--surface-container-high);
+  --secondary-foreground: var(--on-surface);
+  --muted: var(--surface-container);
+  --muted-foreground: var(--on-surface-variant);
+  --accent: var(--hover);
+  --accent-foreground: var(--on-surface);
+  --destructive: var(--error);
+  --destructive-foreground: var(--on-error);
+  --border: var(--outline-variant);
+  --input: var(--outline-variant);
+  --ring: var(--primary);
+
+  /* The docked sidebar is a surface, never the canvas. */
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--on-surface);
+  --sidebar-primary: var(--primary-container);
+  --sidebar-primary-foreground: var(--on-primary-container);
+  --sidebar-accent: var(--secondary-container);
+  --sidebar-accent-foreground: var(--on-secondary-container);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--primary);
+}
+
+:root {
+  --tooltip: var(--surface);
+}
+
+.dark {
+  /* A tooltip needs a step above the dark surface to read as raised. */
+  --tooltip: var(--surface-bright);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-bright: var(--surface-bright);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-trough: var(--trough);
+  --color-trough-border: var(--trough-border);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  --color-hairline: var(--hairline);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary-tone: var(--secondary-tone);
+  --color-tertiary: var(--tertiary);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+  --color-error: var(--error);
+  --color-on-error: var(--on-error);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-excluded: var(--excluded);
+  --color-code-fill: var(--code-fill);
+  --color-pattern-ink: var(--pattern-ink);
+  --color-hover: var(--hover);
+  --color-pressed: var(--pressed);
+  --color-tooltip: var(--tooltip);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-menu);
+  --radius-xl: var(--radius-menu);
+  --radius-check: var(--check-radius);
+
+  --shadow-card: var(--elevation-resting);
+  --shadow-raised: var(--elevation-raised);
+  --shadow-popover: var(--elevation-popover);
+  --shadow-dialog: var(--elevation-dialog);
+
+  --ease-emphasized: var(--ease-emphasized-curve);
+  --ease-standard: var(--ease-standard-curve);
+  --ease-back: var(--ease-back-curve);
+
+  --font-sans: var(--font-app);
+  --font-mono: var(--font-code);
+
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+
+  --animate-skeleton: skeleton-pulse 1.4s ease-in-out infinite;
+
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter/Inter-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter/Inter-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter/Inter-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter/Inter-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/Lora/Lora-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/Lora/Lora-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/Lora/Lora-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/Lora/Lora-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nunito";
+  src: url("/fonts/Nunito/Nunito-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nunito";
+  src: url("/fonts/Nunito/Nunito-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nunito";
+  src: url("/fonts/Nunito/Nunito-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Nunito";
+  src: url("/fonts/Nunito/Nunito-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrainsMono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrainsMono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrainsMono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrainsMono";
+  src: url("/fonts/JetBrainsMono/JetBrainsMono-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+  }
+
+  html {
+    color-scheme: light;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-app);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--secondary-container);
+    color: var(--on-secondary-container);
+  }
+
+  /* Thin, quiet scrollbars, rounded like everything else. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 2px solid transparent;
+    border-radius: var(--radius);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Reduce motion: every transition and keyframe settles at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
