@@ -25,10 +25,25 @@ enum NotePattern {
   grid('Grid'),
   lines('Lines'),
   diagonal('Diagonal'),
-  checks('Checks');
+  checks('Checks'),
+  airplanes('Airplanes', NotePatternGroup.motif),
+  cars('Cars', NotePatternGroup.motif),
+  notes('Notes', NotePatternGroup.motif),
+  ideas('Ideas', NotePatternGroup.motif),
+  hearts('Hearts', NotePatternGroup.motif),
+  stars('Stars', NotePatternGroup.motif),
+  coffee('Coffee', NotePatternGroup.motif),
+  leaves('Leaves', NotePatternGroup.motif),
+  weather('Weather', NotePatternGroup.motif),
+  music('Music', NotePatternGroup.motif),
+  paws('Paws', NotePatternGroup.motif),
+  space('Space', NotePatternGroup.motif),
+  sea('Sea', NotePatternGroup.motif),
+  food('Food', NotePatternGroup.motif);
 
   final String label;
-  const NotePattern(this.label);
+  final NotePatternGroup group;
+  const NotePattern(this.label, [this.group = NotePatternGroup.texture]);
 
   String get wire => name;
 
@@ -38,6 +53,10 @@ enum NotePattern {
     orElse: () => NotePattern.none,
   );
 }
+
+/// How the picker files a pattern: an abstract texture, or a scatter of
+/// small pictures.
+enum NotePatternGroup { texture, motif }
 
 /// Optional cadence for a note reminder. The wire values are shared with the
 /// backend; null on [Note.reminderRepeat] means a one-shot reminder.
