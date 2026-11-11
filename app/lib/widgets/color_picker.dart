@@ -83,33 +83,24 @@ class ColorPickerSheet extends StatelessWidget {
             padding: modalBodyPadding(hasFooter: onSelectPattern != null),
             child: _swatches(context, entries, scheme),
           ),
-          if (onSelectPattern case final onPattern?)
-            for (final group in NotePatternGroup.values) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  kModalInset,
-                  kSpaceMd,
-                  kModalInset,
-                  0,
-                ),
-                child: Text(
-                  _groupTitle(group),
-                  style: sectionLabelStyle(Theme.of(context)),
-                ),
+          if (onSelectPattern case final onPattern?) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kModalInset,
+                kSpaceMd,
+                kModalInset,
+                0,
               ),
-              Padding(
-                padding: modalBodyPadding(
-                  hasFooter: group != NotePatternGroup.values.last,
-                ),
-                child: _patternSwatches(
-                  context,
-                  entries,
-                  scheme,
-                  group,
-                  onPattern,
-                ),
+              child: Text(
+                'PATTERN',
+                style: sectionLabelStyle(Theme.of(context)),
               ),
-            ],
+            ),
+            Padding(
+              padding: modalBodyPadding(),
+              child: _patternSwatches(context, entries, scheme, onPattern),
+            ),
+          ],
         ],
       ),
     );
@@ -155,22 +146,12 @@ class ColorPickerSheet extends StatelessWidget {
 }
 
 extension on ColorPickerSheet {
-  String _groupTitle(NotePatternGroup group) => switch (group) {
-    NotePatternGroup.texture => 'PATTERN',
-    NotePatternGroup.motif => 'MOTIF',
-  };
-
   Widget _patternSwatches(
     BuildContext context,
     List<({String key, String name, Color? fill})> entries,
     ColorScheme scheme,
-    NotePatternGroup group,
     ValueChanged<NotePattern> onPattern,
   ) {
-    final patterns = [
-      for (final pattern in NotePattern.values)
-        if (pattern.group == group) pattern,
-    ];
     final fill = entries
         .where((entry) => entry.key == selected)
         .firstOrNull
@@ -186,7 +167,7 @@ extension on ColorPickerSheet {
       return Wrap(
         spacing: kSpaceMd,
         runSpacing: kSpaceMd,
-        children: [for (final pattern in patterns) swatch(pattern)],
+        children: [for (final pattern in NotePattern.values) swatch(pattern)],
       );
     }
     return SizedBox(
@@ -194,7 +175,7 @@ extension on ColorPickerSheet {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          for (final pattern in patterns)
+          for (final pattern in NotePattern.values)
             Padding(
               padding: const EdgeInsets.only(right: kSpaceMd),
               child: swatch(pattern),

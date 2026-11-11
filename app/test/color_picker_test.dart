@@ -8,7 +8,7 @@ import 'package:skippy/widgets/color_picker.dart';
 import 'fake_api.dart';
 
 void main() {
-  testWidgets('motifs get their own strip and pick like any pattern', (
+  testWidgets('motifs share the pattern strip and pick like any pattern', (
     tester,
   ) async {
     NotePattern? picked;
@@ -29,21 +29,14 @@ void main() {
       ),
     );
 
+    // One strip holds textures and motifs alike.
     expect(find.text('PATTERN'), findsOneWidget);
-    expect(find.text('MOTIF'), findsOneWidget);
+    expect(find.text('MOTIF'), findsNothing);
     for (final pattern in NotePattern.values) {
       expect(find.byKey(ValueKey('pattern-${pattern.wire}')), findsOneWidget);
     }
 
-    // Motifs follow the motif heading, textures stay above it.
-    final motifTop = tester.getTopLeft(find.text('MOTIF')).dy;
-    expect(
-      tester.getTopLeft(find.byKey(const ValueKey('pattern-grid'))).dy,
-      lessThan(motifTop),
-    );
     final airplanes = find.byKey(const ValueKey('pattern-airplanes'));
-    expect(tester.getTopLeft(airplanes).dy, greaterThan(motifTop));
-
     await tester.tap(airplanes);
     expect(picked, NotePattern.airplanes);
   });
