@@ -81,6 +81,19 @@ pub fn allow_private() -> bool {
 /// linkifier's permissive "link-shaped run" rule, while URL parsing filters
 /// malformed candidates before an automatic summary can fetch anything.
 pub fn urls_in(text: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    for (_, url) in url_spans(text) {
+        if !urls.contains(&url.to_string()) {
+            urls.push(url.to_string());
+        }
+    }
+    urls
+}
+
+/// Every link candidate in `text` as the byte range it occupies plus its
+/// parsed form, in order, by the same rule as [`urls_in`]. Candidates can
+/// overlap: "https://www.x" also yields one starting at "www.".
+pub fn url_spans(text: &str) -> Vec<(std::ops::Range<usize>, reqwest::Url)> {
     let mut starts = text
         .match_indices("http://")
         .chain(text.match_indices("https://"))
@@ -89,7 +102,7 @@ pub fn urls_in(text: &str) -> Vec<String> {
         .collect::<Vec<_>>();
     starts.sort_unstable();
     starts.dedup();
-    let mut urls = Vec::new();
+    let mut spans = Vec::new();
     for start in starts {
         if start > 0
             && text[..start]
@@ -104,6 +117,7 @@ pub fn urls_in(text: &str) -> Vec<String> {
             .next()
             .unwrap_or_default()
             .trim_end_matches(['.', ',', ';', ':', '!', '?', '\'', '"', ')', ']', '}']);
+        let span = start..start + raw.len();
         let raw = if raw.starts_with("www.") {
             format!("https://{raw}")
         } else {
@@ -112,11 +126,11 @@ pub fn urls_in(text: &str) -> Vec<String> {
         let Ok(parsed) = reqwest::Url::parse(&raw) else {
             continue;
         };
-        if matches!(parsed.scheme(), "http" | "https") && !urls.contains(&parsed.to_string()) {
-            urls.push(parsed.to_string());
+        if matches!(parsed.scheme(), "http" | "https") {
+            spans.push((span, parsed));
         }
     }
-    urls
+    spans
 }
 
 /// Fetch and parse a preview for `raw`. Returns `Err` only when the URL is

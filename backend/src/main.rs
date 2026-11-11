@@ -6,7 +6,7 @@ use sticky_notes_server::config::ManagedSettings;
 use sticky_notes_server::files::{DiskStore, FileStore, S3Config, S3Store};
 use sticky_notes_server::ocr::{ImageOcr, TesseractService};
 use sticky_notes_server::search::{
-    ApiEmbedder, EmbedConfig, SearchService, SqliteVectorIndex, TextEmbedder,
+    ApiEmbedder, EmbedConfig, SearchService, SqliteVectorIndex, TextEmbedder, index_signature,
 };
 use sticky_notes_server::store::sqlite::SqliteRepository;
 use sticky_notes_server::transcribe::{Transcriber, WhisperService};
@@ -141,9 +141,9 @@ async fn init_search(db_path: &str) -> Option<Arc<SearchService>> {
             return None;
         }
     };
-    // Identifies the model+dimension behind the stored vectors; a change here
-    // triggers a rebuild of the index (see SqliteVectorIndex::connect).
-    let signature = format!("{}:{}", embedder.model_name(), embedder.dims());
+    // Identifies the model, dimension and text shape behind the stored vectors;
+    // a change here triggers a rebuild of the index (see SqliteVectorIndex::connect).
+    let signature = index_signature(embedder.as_ref());
     let index = match SqliteVectorIndex::connect(db_path, embedder.dims(), &signature).await {
         Ok(index) => index,
         Err(e) => {

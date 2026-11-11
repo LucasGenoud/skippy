@@ -100,6 +100,23 @@ async fn semantic_search_ranks_scopes_and_tracks_lifecycle() {
 }
 
 #[tokio::test]
+async fn a_link_is_searchable_by_the_words_in_it() {
+    let app = build_app(state_with_search().await);
+    let (ada, _) = register(&app, "ada").await;
+    let link = create_note(
+        &app,
+        &ada,
+        json!({"content": "https://github.com/rust-lang/rust/issues/12345?ref=feed"}),
+    )
+    .await;
+    create_note(&app, &ada, json!({"content": "buy milk and bread"})).await;
+    settle_index().await;
+
+    let (_, hits) = send(&app, "GET", "/api/search?q=rust%20issues", Some(&ada), None).await;
+    assert_eq!(hits[0]["note_id"], link["id"]);
+}
+
+#[tokio::test]
 async fn semantic_search_reports_unavailable_when_disabled() {
     let app = app().await; // no search service wired
     let (ada, _) = register(&app, "ada").await;
