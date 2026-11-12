@@ -4,6 +4,7 @@ import { Globe, ImageUp, Keyboard, Mic, ScanSearch, Server, Monitor } from "luci
 import { useApi, useSettings } from "@/lib/store";
 import { SettingsRow, SettingsSection } from "../kit/rows";
 import { CLIENT_VERSION } from "../kit/version";
+import { openShortcutHelp } from "@/features/shell/shortcut-help";
 
 const NOT_SET_UP = "Not set up on this server";
 
@@ -31,7 +32,7 @@ export function AboutPage() {
         <SettingsRow icon={ImageUp} title="Text in images" subtitle={ocr ? "Words in pictures are read so search can find them" : NOT_SET_UP} />
       </SettingsSection>
       <SettingsSection>
-        <SettingsRow icon={Keyboard} title="Keyboard shortcuts" subtitle="Press ? on the notes screen to see them" />
+        <SettingsRow icon={Keyboard} title="Keyboard shortcuts" subtitle="Press ? on the notes screen" onClick={openShortcutHelp} />
       </SettingsSection>
     </>
   );

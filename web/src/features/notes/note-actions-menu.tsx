@@ -2,8 +2,6 @@
 
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import {
-  Archive,
-  ArchiveArrowUp,
   CheckSquare,
   Code,
   Columns3,
@@ -17,7 +15,6 @@ import {
   Globe,
   History,
   Kanban,
-  Pin,
   RotateCcw,
   Tag,
   Trash2,
@@ -58,7 +55,7 @@ import { useIsRewriting, useNote, useNoteAvailability, useNotesController, useSt
 import { LabelIcon } from "@/lib/theme/label-style";
 import { exportNotes, exportFormatSpec, type ExportFormat } from "@/lib/util/note-export";
 
-import { copyNoteText, duplicateNote, rewriteWithAi, toggleArchive, trashNote } from "./note-actions";
+import { copyNoteText, duplicateNote, rewriteWithAi, trashNote } from "./note-actions";
 import { downloadFile } from "./platform";
 
 // Everything you do *to* a note, flat and split by intent (`note_card/actions.dart`
@@ -118,12 +115,6 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
     afterClose.current = action;
   };
 
-  const archive = (): void => {
-    toggleArchive(notes, note);
-    if (editor && !note.archived) {
-      close();
-    }
-  };
 
   const trash = (): void => {
     trashNote(notes, note.id);
@@ -243,7 +234,7 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
             </>
           ) : (
             <>
-              {can.canRewrite ? (
+              {can.canRewrite && !editor ? (
                 <>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger disabled={rewriting}>
@@ -263,20 +254,6 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
                 </>
               ) : null}
 
-              {editor ? (
-                <>
-                  <DropdownMenuItem onSelect={() => notes.togglePin(note.id)}>
-                    <Pin />
-                    <MenuLabel label={note.pinned ? "Unpin" : "Pin"} hint={note.pinned ? "Back among the others" : "Keep at the top"} />
-                  </DropdownMenuItem>
-                  {can.canArchive ? (
-                    <DropdownMenuItem onSelect={archive}>
-                      {note.archived ? <ArchiveArrowUp /> : <Archive />}
-                      <MenuLabel label={note.archived ? "Unarchive" : "Archive"} hint={note.archived ? "Back to your notes" : "Out of the way, kept"} />
-                    </DropdownMenuItem>
-                  ) : null}
-                </>
-              ) : null}
 
               {can.canEdit ? (
                 <DropdownMenuItem onSelect={() => queue(() => labelAnchor.current?.click())}>
@@ -305,7 +282,7 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
                 <MenuLabel label="Duplicate" hint="Make a copy" />
               </DropdownMenuItem>
 
-              {can.canEdit && convertTargets.length > 0 ? (
+              {can.canEdit && !editor && convertTargets.length > 0 ? (
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
                     <FileText />

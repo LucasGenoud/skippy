@@ -4,7 +4,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { closeTo, useRoute, type Route } from "@/lib/router";
 import { SessionProvider, useActiveLayout, useSettings, useUi } from "@/lib/store/hooks";
 import type { Session } from "@/lib/store/session";
-import { AppShell } from "@/features/shell";
+import { AppShell, ShortcutHelpHost } from "@/features/shell";
 import { NotesView } from "@/features/notes";
 import { BoardView } from "@/features/board";
 import { RemindersView } from "@/features/reminders";
@@ -102,6 +102,8 @@ export function SignedInApp({ session }: { session: Session }) {
       <SignedInTheme />
       <SessionLifecycle session={session} />
       <RouteOutlet route={route} />
+      {/* Once for every route: Settings > About opens it too. */}
+      <ShortcutHelpHost />
     </SessionProvider>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Archive, Bell, Bookmark, Folder, MessagesSquare, Pencil, Plus, Settings, Sparkles, Tag, Trash2, Library, type LucideIcon } from "lucide-react";
 import { cn } from "cn";
 import { SectionLabel } from "@/components/common/section-label";
@@ -16,8 +16,10 @@ import {
   useNotesController,
   useSavedViews,
   useUi,
+  useUiController,
   type Destination,
 } from "@/lib/store";
+import { NOTE_DROP_EVENT, type NoteDropDetail } from "@/features/notes/masonry";
 import { labelColor, labelIconFor } from "@/lib/theme/label-style";
 import { useChatAvailable, useOpenDestination } from "./shell-actions";
 import { useShellDialogs } from "./shell-dialogs";
@@ -67,6 +69,7 @@ function Collections({ compact, destination, done }: SectionProps) {
   const collections = useCollections();
   const active = useActiveCollection();
   const notes = useNotesController();
+  const ui = useUiController();
   const dialogs = useShellDialogs();
   const open = useOpenDestination();
   const workspaceId = notes.activeWorkspaceId;
@@ -86,6 +89,14 @@ function Collections({ compact, destination, done }: SectionProps) {
             selected={active?.id === c.id && !isWorkspaceWide(destination)}
             dragProps={handle.handleProps}
             dragging={handle.dragging}
+            onNoteDrop={(ids) => {
+              for (const id of ids) {
+                if (notes.noteById(id)?.workspaceId === c.workspaceId) {
+                  notes.restoreToCollection(id, c.id);
+                }
+              }
+              ui.clearSelection();
+            }}
             onClick={() => {
               open("notes", c.id);
               done();
@@ -120,6 +131,7 @@ function Collections({ compact, destination, done }: SectionProps) {
 
 function Labels({ compact, destination, done }: SectionProps) {
   const labels = useLabels();
+  const notes = useNotesController();
   const dialogs = useShellDialogs();
   const open = useOpenDestination();
   const current = typeof destination !== "string" && "label" in destination ? destination.label : null;
@@ -136,6 +148,14 @@ function Labels({ compact, destination, done }: SectionProps) {
           label={label.name}
           compact={compact}
           selected={current === label.id}
+          onNoteDrop={(ids) => {
+            for (const id of ids) {
+              const note = notes.noteById(id);
+              if (note && !note.trashed && note.workspaceId === notes.activeWorkspaceId) {
+                notes.addLabelToNote(id, label.id);
+              }
+            }
+          }}
           onClick={() => {
             open(current === label.id ? "notes" : { label: label.id });
             done();
@@ -212,6 +232,22 @@ const LIBRARY: readonly { destination: "reminders" | "archive" | "trash"; icon: 
 
 function LibraryRows({ compact, destination, done }: SectionProps) {
   const open = useOpenDestination();
+  const notes = useNotesController();
+  const ui = useUiController();
+  // Filing into Archive or Trash, as the Flutter drawer does; Reminders takes no drops.
+  const fileInto = (target: "archive" | "trash", ids: readonly string[]): void => {
+    for (const id of ids) {
+      if (notes.noteById(id)?.trashed ?? true) {
+        continue;
+      }
+      if (target === "archive") {
+        notes.setArchived(id, true);
+      } else if (notes.canTrash(id)) {
+        notes.moveToTrash(id);
+      }
+    }
+    ui.clearSelection();
+  };
   return (
     <section>
       <SectionHeader icon={Library} label="Library" compact={compact} />
@@ -222,6 +258,8 @@ function LibraryRows({ compact, destination, done }: SectionProps) {
           label={entry.label}
           compact={compact}
           selected={destination === entry.destination}
+          onNoteDrop={entry.destination === "reminders" ? undefined : (ids) => fileInto(entry.destination as "archive" | "trash", ids)}
+          dropTone={entry.destination === "trash" ? "danger" : "default"}
           onClick={() => {
             open(entry.destination);
             done();
@@ -292,6 +330,8 @@ function SidebarRow({
   editLabel,
   dragProps,
   dragging = false,
+  onNoteDrop,
+  dropTone = "default",
 }: {
   icon: LucideIcon;
   /** Shown when the entity has no icon of its own. */
@@ -308,15 +348,25 @@ function SidebarRow({
   editLabel?: string;
   dragProps?: Record<string, unknown>;
   dragging?: boolean;
+  /** Makes the row a target for cards dragged out of the grid. */
+  onNoteDrop?: (noteIds: readonly string[]) => void;
+  /** Trash highlights a hovered drop in the error colour. */
+  dropTone?: "default" | "danger";
 }) {
+  const dropRef = useNoteDropTarget(onNoteDrop);
   const Glyph = hasCustomIcon || !fallbackIcon ? Icon : fallbackIcon;
   const tint = labelColor(iconColor);
   const row: ReactNode = (
     <div
+      ref={dropRef}
+      data-note-drop={onNoteDrop ? "" : undefined}
       className={cn(
         "group/row relative mx-2 flex h-9 items-center rounded-md transition-[background-color,box-shadow] duration-150 ease-standard",
         selected ? "bg-secondary-container" : "hover:bg-hover",
         dragging && "bg-surface shadow-raised",
+        dropTone === "danger"
+          ? "data-[drop-hover]:bg-error-container data-[drop-hover]:ring-2 data-[drop-hover]:ring-error"
+          : "data-[drop-hover]:bg-secondary-container data-[drop-hover]:ring-2 data-[drop-hover]:ring-primary",
       )}
     >
       <span
@@ -367,4 +417,26 @@ function SidebarRow({
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
   );
+}
+
+/** Listens for the grid's `skippy:note-drop` on the row while [onDrop] is set. */
+function useNoteDropTarget(onDrop: ((noteIds: readonly string[]) => void) | undefined) {
+  const latest = useRef(onDrop);
+  useEffect(() => {
+    latest.current = onDrop;
+  });
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const enabled = onDrop !== undefined;
+  useEffect(() => {
+    if (!node || !enabled) {
+      return;
+    }
+    const listener = (event: Event): void => {
+      const detail = (event as CustomEvent<NoteDropDetail>).detail;
+      latest.current?.(detail.noteIds);
+    };
+    node.addEventListener(NOTE_DROP_EVENT, listener);
+    return () => node.removeEventListener(NOTE_DROP_EVENT, listener);
+  }, [node, enabled]);
+  return setNode;
 }

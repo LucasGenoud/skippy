@@ -1,7 +1,6 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { Brightness } from "@/lib/theme/accent";
 
 // Window-size and theme answers the shell branches on. Each hook notifies only
 // when its answer flips, so a window drag rebuilds nothing between breakpoints

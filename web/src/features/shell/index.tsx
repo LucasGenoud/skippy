@@ -14,7 +14,6 @@ import { ShellDialogsProvider, useShellDialogs } from "./shell-dialogs";
 import { SIDEBAR_OPEN_PX, SIDEBAR_RAIL_PX, SidebarContent } from "./sidebar";
 import { pillState } from "./sync-rules";
 import { TopBar } from "./top-bar";
-import { ShortcutHelpHost } from "./shortcut-help";
 import { useHomeShortcuts } from "./use-shortcuts";
 import { OfflineBanner, ViewEmptyState, ViewHeader } from "./view-chrome";
 
@@ -115,7 +114,6 @@ function ShellFrame({ children }: { children: ReactNode }) {
           </Sheet>
         )}
         <FileDropOverlay visible={dragging} />
-        <ShortcutHelpHost />
       </div>
     </ScrollRootContext.Provider>
   );
