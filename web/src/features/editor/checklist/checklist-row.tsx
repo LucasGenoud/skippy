@@ -76,7 +76,7 @@ export function Suggestions({
               onClick={() => onPick(text)}
               className={cn(
                 "flex w-full items-center gap-3 px-3.5 py-2 text-left text-sm text-on-surface transition-colors duration-150 ease-standard",
-                i === active ? "bg-hover" : "hover:bg-hover",
+                i === active ? "bg-hover" : "hover:bg-hover active:bg-pressed",
               )}
             >
               <History aria-hidden className="size-4 shrink-0 text-on-surface-variant" />

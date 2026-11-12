@@ -38,6 +38,7 @@ import { AudioPlayer } from "@/features/notes/audio-player";
 import { LinkSummaryIndicator } from "@/features/notes/link-summary-indicator";
 import { NoteMarkdown } from "@/features/notes/note-markdown";
 import { filesWithinLimit, rewriteWithAi, toggleArchive } from "@/features/notes/note-actions";
+import { PresenceRow, StateCrossFade } from "@/features/notes/motion-kit";
 import { TranscribingIndicator, TranscriptFailed } from "@/features/notes/transcribing-indicator";
 import { ChecklistEditor } from "./checklist/checklist-editor";
 import { matchingRows } from "./checklist/checklist-view";
@@ -132,6 +133,19 @@ export function EditorBody({
 
   const title = useRef<HTMLTextAreaElement>(null);
   const body = useRef<BodyFieldHandle>(null);
+  // Two body fields overlap while one cross-fades into the other; the one
+  // leaving must not clear the handle of the one that replaced it.
+  const bindBody = useCallback((handle: BodyFieldHandle | null) => {
+    if (!handle) {
+      return;
+    }
+    body.current = handle;
+    return () => {
+      if (body.current === handle) {
+        body.current = null;
+      }
+    };
+  }, []);
   const imageInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const restoring = useRef(false);
@@ -644,7 +658,6 @@ export function EditorBody({
     return null;
   }
 
-  const transition = transitionFor(TRANSITION.base, reduced);
   const clip = audioClip(note);
   const urls = linkPreviewUrls(noteLinkText(note));
   const reminder: ReminderValue | null = note.reminderAt ? { at: note.reminderAt, repeat: note.reminderRepeat ?? undefined } : null;
@@ -669,7 +682,7 @@ export function EditorBody({
   const bodyField = (markdown: boolean, placeholder: string) => (
     <BodyField
       key={markdown ? "markdown" : "text"}
-      ref={body}
+      ref={bindBody}
       initialText={note.content}
       markdown={markdown}
       readOnly={readOnly}
@@ -696,21 +709,23 @@ export function EditorBody({
             <AudioPlayer noteId={noteId} attachmentId={clip.id} variant="editor" />
           </div>
         ) : null}
-        <AnimatePresence initial={false} mode="popLayout">
+        {/* Transcribing, failed and the transcript come and go as the server works; each grows in or out. */}
+        <AnimatePresence initial={false}>
           {isTranscribing(note) ? (
-            <motion.div key="transcribing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transition} className="py-2">
-              <TranscribingIndicator />
-            </motion.div>
-          ) : (
-            <motion.div key="transcript" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transition}>
-              {transcriptFailed(note) ? (
-                <div className="py-1">
-                  <TranscriptFailed onRetry={trashed ? undefined : () => notes.retranscribe(noteId)} />
-                </div>
-              ) : null}
-              {bodyField(false, "Transcript")}
-            </motion.div>
-          )}
+            <PresenceRow key="transcribing">
+              <div className="py-2">
+                <TranscribingIndicator />
+              </div>
+            </PresenceRow>
+          ) : null}
+          {!isTranscribing(note) && transcriptFailed(note) ? (
+            <PresenceRow key="failed">
+              <div className="py-1">
+                <TranscriptFailed onRetry={trashed ? undefined : () => notes.retranscribe(noteId)} />
+              </div>
+            </PresenceRow>
+          ) : null}
+          {!isTranscribing(note) ? <PresenceRow key="transcript">{bodyField(false, "Transcript")}</PresenceRow> : null}
         </AnimatePresence>
       </div>
     );
@@ -850,17 +865,8 @@ export function EditorBody({
               }
             }}
           />
-          <AnimatePresence initial={false} mode="wait">
-            <motion.div
-              key={kind === "markdown" ? `markdown-${preview}` : kind === "text" ? "text" : kind}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={transitionFor(TRANSITION.fast, reduced)}
-            >
-              {content}
-            </motion.div>
-          </AnimatePresence>
+          {/* A new kind, or markdown's source and preview, cross-fade in place. */}
+          <StateCrossFade stateKey={kind === "markdown" ? `markdown-${preview}` : kind}>{content}</StateCrossFade>
           <Reveal>
             {note.summarizingLinks ? (
               <div className="pt-3">
@@ -916,16 +922,27 @@ export function EditorBody({
       </Reveal>
       <Reveal>{formatBar ? <MarkdownToolbar onAction={formatMarkdown} /> : null}</Reveal>
       <div className="relative h-0.5 shrink-0 overflow-hidden" aria-hidden={uploads.length === 0}>
-        {uploads.length > 0 ? (
-          <motion.span
-            role="progressbar"
-            aria-label="Uploading"
-            className="absolute inset-y-0 w-1/3 bg-primary"
-            initial={{ x: "-100%" }}
-            animate={reduced ? { x: "100%" } : { x: ["-100%", "300%"] }}
-            transition={reduced ? { duration: 0 } : { duration: 1.1, ease: "easeInOut", repeat: Infinity }}
-          />
-        ) : null}
+        <AnimatePresence initial={false}>
+          {uploads.length > 0 ? (
+            <motion.span
+              key="uploading"
+              className="absolute inset-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={transitionFor(TRANSITION.fast, reduced)}
+            >
+              <motion.span
+                role="progressbar"
+                aria-label="Uploading"
+                className="absolute inset-y-0 w-1/3 bg-primary"
+                initial={{ x: "-100%" }}
+                animate={reduced ? { x: "100%" } : { x: ["-100%", "300%"] }}
+                transition={reduced ? { duration: 0 } : { duration: 1.1, ease: "easeInOut", repeat: Infinity }}
+              />
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
       </div>
       <div className={cn(!wide && "border-t border-hairline")}>
         <BottomBar

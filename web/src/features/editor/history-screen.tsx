@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, CloudOff, History, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { cn } from "cn";
 
 import {
   AlertDialog,
@@ -18,11 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/common/empty-state";
 import { IconButton } from "@/components/common/icon-button";
+import { useOverlayPresence } from "@/components/common/overlay-presence";
 import { CrossFade } from "@/components/common/reveal";
 import { showAppSnack } from "@/components/common/snack";
+import { StaggeredEntrance } from "@/components/common/staggered-entrance";
 import type { ChecklistItem, NoteKind, NoteVersion } from "@/lib/models/note";
 import { formatClock, formatDate, useNote, useNotesController, useSession, useSettings } from "@/lib/store";
-import { TRANSITION, transitionFor } from "@/lib/theme/motion";
+import { TRANSITION, pageVariants, transitionFor } from "@/lib/theme/motion";
 
 // A note's version timeline (`history_screen.dart`): the current state on top,
 // then every earlier version newest first, each restorable. The server saves
@@ -129,6 +132,24 @@ export default function HistoryScreen({ noteId, onClose }: { noteId: string; onC
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<NoteVersion | null>(null);
+  const presence = useOverlayPresence();
+  const closed = useRef(false);
+
+  // Back, Escape and a restore all leave through here, once: the route then
+  // leaving is what plays the exit, so browser back looks the same.
+  const close = useCallback(() => {
+    if (closed.current || !presence.present) {
+      return;
+    }
+    closed.current = true;
+    onClose();
+  }, [onClose, presence.present]);
+
+  useEffect(() => {
+    if (!presence.present && reduced) {
+      presence.safeToRemove();
+    }
+  }, [presence, reduced]);
 
   const stamp = useCallback(
     (t: Date) => `${formatDate(t, dateFormat, t.getFullYear() !== new Date().getFullYear())} · ${formatClock(t, use24h)}`,
@@ -157,18 +178,18 @@ export default function HistoryScreen({ noteId, onClose }: { noteId: string; onC
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape" && confirm === null) {
-        onClose();
+        close();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, confirm]);
+  }, [close, confirm]);
 
   const restore = async (version: NoteVersion): Promise<void> => {
     setRestoringId(version.id);
     try {
       await notes.restoreNoteVersion(noteId, version.id);
-      onClose();
+      close();
       showAppSnack(`Restored version from ${stamp(version.createdAt)}`, { icon: History });
     } catch {
       setRestoringId(null);
@@ -210,17 +231,18 @@ export default function HistoryScreen({ noteId, onClose }: { noteId: string; onC
             Edits you make from now on are saved here automatically.
           </p>
         ) : null}
-        {load.versions.map((version) => (
-          <VersionCard
-            key={version.id}
-            stamp={stamp(version.createdAt)}
-            author={authorOf(version)}
-            current={false}
-            onRestore={canRestore && restoringId === null ? () => setConfirm(version) : null}
-            restoring={restoringId === version.id}
-          >
-            <VersionPreview kind={version.kind} title={version.title} content={version.content} items={version.items} />
-          </VersionCard>
+        {load.versions.map((version, index) => (
+          <StaggeredEntrance key={version.id} index={index + 1}>
+            <VersionCard
+              stamp={stamp(version.createdAt)}
+              author={authorOf(version)}
+              current={false}
+              onRestore={canRestore && restoringId === null ? () => setConfirm(version) : null}
+              restoring={restoringId === version.id}
+            >
+              <VersionPreview kind={version.kind} title={version.title} content={version.content} items={version.items} />
+            </VersionCard>
+          </StaggeredEntrance>
         ))}
       </div>
     );
@@ -231,13 +253,19 @@ export default function HistoryScreen({ noteId, onClose }: { noteId: string; onC
       role="dialog"
       aria-modal="true"
       aria-label="Version history"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={transitionFor(TRANSITION.base, reduced)}
-      className="fixed inset-0 z-50 flex flex-col bg-canvas"
+      // A page pushed over the note, leaving the way it came (also on browser back).
+      variants={pageVariants(reduced)}
+      initial="enter"
+      animate={presence.present ? "shown" : "leave"}
+      onAnimationComplete={(definition) => {
+        if (definition === "leave") {
+          presence.safeToRemove();
+        }
+      }}
+      className={cn("fixed inset-0 z-50 flex flex-col bg-canvas", !presence.present && "pointer-events-none")}
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-hairline bg-surface px-2">
-        <IconButton label="Back" icon={<ArrowLeft />} onClick={onClose} />
+        <IconButton label="Back" icon={<ArrowLeft />} onClick={close} />
         <h1 className="text-base font-semibold text-on-surface">Version history</h1>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">

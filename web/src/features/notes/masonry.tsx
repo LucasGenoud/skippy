@@ -56,6 +56,8 @@ const STAGGER_MS = 18;
 const STAGGER_CAP_MS = 200;
 const HIDDEN_SCALE = 0.95;
 const GHOST_OPACITY = 0.3;
+/** Geometry changes and reduced motion place cards outright. */
+const SNAP: Transition = { duration: 0 };
 
 /** Card heights remembered across grids, so a grid built again lays out right at once. */
 const knownHeights = new Map<string, { width: number; height: number }>();
@@ -435,6 +437,8 @@ export function Masonry({
     draggingRef.current = next;
     setDragging(next);
     setDragOrder([...order]);
+    // The whole page shows the grab while a card is carried, not just the card.
+    document.body.style.cursor = "grabbing";
   };
 
   const onDragMove = (event: DragMoveEvent): void => {
@@ -485,6 +489,7 @@ export function Masonry({
     hoverTarget.current?.removeAttribute("data-drop-hover");
     hoverTarget.current = null;
     clickGuardUntil.current = Date.now() + CLICK_GUARD_MS;
+    document.body.style.cursor = "";
     if (!active) {
       return;
     }
@@ -517,9 +522,16 @@ export function Masonry({
   const activeId = dragging?.id ?? null;
   const activeSlot = activeId ? layout.slots.get(activeId) : undefined;
 
+  // One element per card for as long as the order holds, so a re-pack (a
+  // card growing, a neighbour arriving) only re-renders the tiles that move.
+  const cards = useMemo(() => new Map(order.map((id) => [id, renderCard(id)])), [order, renderCard]);
+  const guardClick = useCallback(() => {
+    clickGuardUntil.current = Date.now() + CLICK_GUARD_MS;
+  }, []);
+
   // -- render --------------------------------------------------------------------
 
-  const spring: Transition = reduced || snap ? { duration: 0 } : TRANSITION.spring;
+  const spring: Transition = reduced || snap ? SNAP : TRANSITION.spring;
   const rendered = order.filter((id) => visible.has(id) && layout.slots.has(id));
   // Leaving cards paint first, so cards gliding into their gap pass over them; a raised card paints last.
   const raised = raisedId && rendered.includes(raisedId) ? raisedId : null;
@@ -569,9 +581,9 @@ export function Masonry({
             raised={id === raised}
             onMeasured={onMeasured}
             onLongPress={onLongPress}
-            guardClick={() => (clickGuardUntil.current = Date.now() + CLICK_GUARD_MS)}
+            guardClick={guardClick}
           >
-            {renderCard(id)}
+            {cards.get(id) ?? renderCard(id)}
           </Tile>
         ))}
       </div>
@@ -615,6 +627,20 @@ interface TileProps {
   onLongPress: (id: string) => void;
   guardClick: () => void;
   children: ReactNode;
+}
+
+/** Tiles compare their slot by value: every pack makes new slot objects. */
+function tilePropsEqual(a: TileProps, b: TileProps): boolean {
+  for (const key of Object.keys(b) as (keyof TileProps)[]) {
+    if (key === "slot") {
+      if (a.slot.x !== b.slot.x || a.slot.y !== b.slot.y || a.slot.width !== b.slot.width) {
+        return false;
+      }
+    } else if (!Object.is(a[key], b[key])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** One card at its slot: glides on a spring, fades in when it joins a grid already shown. */
@@ -718,7 +744,7 @@ const Tile = memo(function Tile({
       </div>
     </motion.div>
   );
-});
+}, tilePropsEqual);
 
 /** A card that left the grid, fading where it last stood while the rest closes the gap. */
 function LeavingTile({ slot, reduced, onGone, children }: { slot: MasonrySlot; reduced: boolean; onGone: () => void; children: ReactNode }) {

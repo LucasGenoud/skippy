@@ -5,7 +5,8 @@ import { animate, useReducedMotion } from "motion/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { cn } from "cn";
 
-import { NotePattern } from "@/components/common/note-pattern";
+import { useOverlayPresence } from "@/components/common/overlay-presence";
+import { FadingPattern } from "@/features/notes/motion-kit";
 import { isChecklist } from "@/lib/models/note";
 import type { NotesStore } from "@/lib/store";
 import { useNote, useNotesController, useNotesLoading, useSettings } from "@/lib/store";
@@ -18,13 +19,25 @@ import { MORPH_REST, boxOf, morphFrom, noteCardBox } from "./lib/morph";
 
 // The note editor's surface (`openNoteEditor`, `EditorMorph`): a centred
 // dialog on wide screens, the whole screen on phones, growing out of the
-// card that opened it and shrinking back into it. Escape, the back button,
-// a tap outside and the close button all close it; the draft is flushed (and
-// an empty one discarded) as it unmounts.
+// card that opened it and shrinking back into it. Escape, the close button,
+// a tap outside and the browser's back button all close it through one path;
+// the draft is flushed (and an empty one discarded) as it unmounts.
+//
+//   Esc / close / outside      browser back (route already left)
+//            |                            |
+//            +------> playClose() <-------+   one morph, shared promise
+//                         |
+//          route still here? -- yes --> onClose() navigates; the route
+//                         |              leaving then finds the morph done
+//                         no
+//                         v
+//                  safeToRemove()  -> unmount -> finalize the draft once
 
 const MS = 1000;
-/** The editor's face reaches full opacity a quarter of the way into the morph. */
-const FACE_SHARE = 0.25;
+/** The surface is opaque by this share of the opening morph (Flutter's `t * 4` on the emphasized curve). */
+const OPEN_FADE_SHARE = 0.12;
+/** Closing, the surface starts to dissolve into the card this far in (`t * 4` on the standard curve). */
+const CLOSE_FADE_FROM = 0.37;
 
 // Finalizing waits a tick, so a remount of the same note (React's strict
 // double mount, a re-key) does not discard a draft that is still open.
@@ -90,6 +103,12 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
   const scrim = useRef<HTMLDivElement>(null);
   const body = useRef<EditorBodyHandle>(null);
   const [closing, setClosing] = useState(false);
+  const closingRun = useRef<Promise<void> | null>(null);
+  const presence = useOverlayPresence();
+  const presenceRef = useRef(presence);
+  useLayoutEffect(() => {
+    presenceRef.current = presence;
+  }, [presence]);
   const exists = note !== null;
   const loading = useNotesLoading();
   const [opened, setOpened] = useState(false);
@@ -129,12 +148,17 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
       return;
     }
     const duration = DURATION.slow / MS;
-    animate(content, { opacity: [0, 1] }, { duration: duration * FACE_SHARE, ease: [...EASE.standard] });
+    // The growing note reads as one opaque object leaving the grid, not a fade.
+    animate(el, { opacity: [0, 1] }, { duration: duration * OPEN_FADE_SHARE, ease: [...EASE.standard] });
     void animate(
       el,
       { transform: [frame.transform, MORPH_REST.transform], clipPath: [frame.clipPath, MORPH_REST.clipPath] },
       { duration, ease: [...EASE.emphasized] },
     ).then(() => {
+      // A close that began mid-open owns the transform from here.
+      if (closingRun.current) {
+        return;
+      }
       el.style.clipPath = "";
       el.style.transform = "";
       done();
@@ -143,35 +167,64 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exists]);
 
-  const requestClose = (): void => {
-    if (closing) {
+  const closeMorph = async (): Promise<void> => {
+    const el = panel.current;
+    if (!el || reduced) {
       return;
+    }
+    const source = noteCardBox(noteId);
+    const frame = source ? morphFrom(source, boxOf(el.getBoundingClientRect())) : null;
+    // With no card to return to, the note fades out where it is, quicker.
+    const duration = (frame ? DURATION.slow : DURATION.fast) / MS;
+    if (scrim.current) {
+      animate(scrim.current, { opacity: 0 }, { duration, ease: [...EASE.standard] });
+    }
+    if (!frame) {
+      await animate(el, { opacity: 0, scale: 0.96 }, { duration, ease: [...EASE.standard] });
+      return;
+    }
+    // Calmer on the way back in: easing into the card rather than arriving at
+    // full speed, and dissolving into it over the second half.
+    animate(el, { opacity: [1, 1, 0] }, { duration, times: [0, CLOSE_FADE_FROM, 1], ease: [...EASE.standard] });
+    await animate(el, { transform: [MORPH_REST.transform, frame.transform], clipPath: [MORPH_REST.clipPath, frame.clipPath] }, { duration, ease: [...EASE.standard] });
+  };
+
+  // The close morph, played once however many ways ask for it.
+  const playClose = (): Promise<void> => {
+    if (closingRun.current) {
+      return closingRun.current;
     }
     setClosing(true);
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-    const el = panel.current;
-    const content = face.current;
-    if (!el || !content || reduced) {
-      onClose();
-      return;
-    }
-    const duration = DURATION.slow / MS;
-    if (scrim.current) {
-      animate(scrim.current, { opacity: 0 }, { duration, ease: [...EASE.standard] });
-    }
-    const source = noteCardBox(noteId);
-    const frame = source ? morphFrom(source, boxOf(el.getBoundingClientRect())) : null;
-    if (!frame) {
-      void animate(el, { opacity: 0, scale: 0.96 }, { duration: DURATION.fast / MS, ease: [...EASE.standard] }).then(onClose);
-      return;
-    }
-    animate(content, { opacity: 0 }, { duration: duration * FACE_SHARE, delay: duration * (1 - FACE_SHARE), ease: [...EASE.standard] });
-    void animate(el, { transform: [MORPH_REST.transform, frame.transform], clipPath: [MORPH_REST.clipPath, frame.clipPath] }, { duration, ease: [...EASE.emphasized] }).then(
-      onClose,
-    );
+    closingRun.current = closeMorph();
+    return closingRun.current;
   };
+
+  // Esc, the close button, a tap outside: shrink into the card, then leave the route.
+  const requestClose = (): void => {
+    if (closingRun.current) {
+      return;
+    }
+    void playClose().then(() => {
+      if (presenceRef.current.present) {
+        onClose();
+      } else {
+        presenceRef.current.safeToRemove();
+      }
+    });
+  };
+
+  // The route left first (the browser's back): the same morph, then release.
+  useEffect(() => {
+    if (presence.present) {
+      return;
+    }
+    void playClose().then(() => presence.safeToRemove());
+    // playClose reads refs; the route leaving is the only trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presence]);
 
   if (!note) {
     return null;
@@ -211,12 +264,14 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
             }}
             style={{ background: noteBackground(note.color, brightness, palette), transformOrigin: "0 0" }}
             className={cn(
-              "pointer-events-auto relative flex flex-col overflow-hidden text-on-surface outline-none transition-[background-color] duration-240 ease-standard",
+              "relative flex flex-col overflow-hidden text-on-surface outline-none transition-[background-color] duration-240 ease-standard",
+              // A closing editor is on its way out: clicks reach nothing in it.
+              closing ? "pointer-events-none" : "pointer-events-auto",
               wide ? "max-h-[85dvh] w-full max-w-[600px] rounded-md shadow-dialog" : "h-dvh w-full",
             )}
           >
             <DialogPrimitive.Title className="sr-only">{note.title.trim() || "Note"}</DialogPrimitive.Title>
-            <NotePattern pattern={note.pattern} />
+            <FadingPattern pattern={note.pattern} />
             <div ref={face} className="relative flex min-h-0 flex-1 flex-col">
               <EditorBody noteId={noteId} wide={wide} onClose={requestClose} handleRef={body} />
             </div>

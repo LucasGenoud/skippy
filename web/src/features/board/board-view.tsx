@@ -24,15 +24,16 @@ import {
 import { SortableContext, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Archive, Plus, SquareKanban, Trash2 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { cn } from "cn";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { RollingCount } from "@/components/common/rolling-count";
+import { moveCardFocus } from "@/features/notes/card-focus";
 import { NoteCard } from "@/features/notes/note-card";
 import { boardOf, boardExitsFor, listIdentityEqual, semanticSearchAvailable, useActiveCollection, useActiveSort, useNav, useNotesController, useSelectedIds, useSettings, useUiController } from "@/lib/store";
 import type { BoardExit } from "@/lib/store";
-import { DURATION, EASE, cssEase } from "@/lib/theme/motion";
+import { DURATION, EASE, TRANSITION, cssEase, transitionFor } from "@/lib/theme/motion";
 import { normalizeHex } from "@/lib/theme/palette";
 
 import { BoardColumnView, COLUMN_WIDTH, columnTitleOf, type ColumnDragHandle } from "./board-column";
@@ -155,7 +156,16 @@ function BoardBody({ collectionId }: { collectionId: string | null }) {
   }
 
   return (
-    <>
+    // Arrow keys move focus between cards, across columns too; Enter opens, Space selects.
+    <div
+      className="contents"
+      data-card-grid
+      onKeyDown={(event) => {
+        if (moveCardFocus(event.nativeEvent, event.currentTarget)) {
+          event.preventDefault();
+        }
+      }}
+    >
       <BoardDnd
         columns={columns}
         exits={exits}
@@ -166,7 +176,7 @@ function BoardBody({ collectionId }: { collectionId: string | null }) {
         onDeleteStage={(stageId) => notes.deleteStage(stageId)}
       />
       {dialogs}
-    </>
+    </div>
   );
 }
 
@@ -524,17 +534,23 @@ function WideBoard({
   return (
     <motion.div layoutScroll className="flex h-full min-h-0 gap-3 overflow-x-auto overflow-y-hidden px-4 py-3">
       <SortableContext items={stageIds} strategy={horizontalListSortingStrategy}>
-        {columns.map((column) => {
-          const extra = { collapsed: collapsed.has(column.key), onToggleCollapsed: () => toggle(column.key) };
-          if (column.stage === null) {
-            return <div key={column.key} className="h-full shrink-0">{renderColumn(column, extra)}</div>;
-          }
-          return (
-            <SortableStageColumn key={column.key} stageId={column.stage.id} disabled={extra.collapsed}>
-              {(handle) => renderColumn(column, { ...extra, handle })}
-            </SortableStageColumn>
-          );
-        })}
+        {/* A column added or deleted opens or closes its slot; the rest slide over. */}
+        <AnimatePresence initial={false}>
+          {columns.map((column) => {
+            const extra = { collapsed: collapsed.has(column.key), onToggleCollapsed: () => toggle(column.key) };
+            return (
+              <PresenceColumn key={column.key}>
+                {column.stage === null ? (
+                  <div className="h-full shrink-0">{renderColumn(column, extra)}</div>
+                ) : (
+                  <SortableStageColumn stageId={column.stage.id} disabled={extra.collapsed}>
+                    {(handle) => renderColumn(column, { ...extra, handle })}
+                  </SortableStageColumn>
+                )}
+              </PresenceColumn>
+            );
+          })}
+        </AnimatePresence>
       </SortableContext>
       {ordered.length > 0 ? (
         // Both exits share one slot, stacked, so they read as a pair of
@@ -555,6 +571,37 @@ function WideBoard({
         <Plus className="size-4" />
         Add column
       </button>
+    </motion.div>
+  );
+}
+
+/** The board's gap between columns, which a column arriving or leaving takes with it. */
+const COLUMN_GAP_PX = 12;
+
+/**
+ * A wide board's column slot: opens from nothing as a stage is added and
+ * closes as one is deleted, so its neighbours glide instead of jumping. It
+ * clips only while its width is moving.
+ */
+function PresenceColumn({ children }: { children: ReactNode }) {
+  const reduced = useReducedMotion();
+  const ref = useRef<HTMLDivElement | null>(null);
+  const clip = (on: boolean): void => {
+    if (ref.current) {
+      ref.current.style.overflow = on ? "hidden" : "";
+    }
+  };
+  return (
+    <motion.div
+      ref={ref}
+      className="h-full shrink-0"
+      initial={{ width: 0, marginLeft: -COLUMN_GAP_PX, opacity: 0 }}
+      animate={{ width: "auto", marginLeft: 0, opacity: 1, transition: transitionFor(TRANSITION.base, reduced) }}
+      exit={{ width: 0, marginLeft: -COLUMN_GAP_PX, opacity: 0, transition: transitionFor(TRANSITION.base, reduced) }}
+      onAnimationStart={() => clip(true)}
+      onAnimationComplete={() => clip(false)}
+    >
+      {children}
     </motion.div>
   );
 }
@@ -717,7 +764,7 @@ function StageStrip({
       <button
         type="button"
         onClick={onEditStages}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-3 text-sm font-medium text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline px-3 text-sm font-medium text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <Plus className="size-4" />
         Add column
@@ -762,7 +809,7 @@ function StageChip({
           ? "border-primary bg-primary-container text-on-primary-container ring-1 ring-primary"
           : selected
             ? "border-transparent bg-secondary-container text-on-secondary-container"
-            : "border-hairline text-on-surface-variant hover:bg-hover",
+            : "border-hairline text-on-surface-variant hover:bg-hover active:bg-pressed",
       )}
     >
       <span aria-hidden className="size-2 rounded-xs" style={{ background: hex ?? "var(--on-surface-variant)" }} />

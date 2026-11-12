@@ -44,7 +44,7 @@ export function NoteLinkPicker({
                 onClick={() => onPick(note)}
                 className={cn(
                   "flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-on-surface transition-colors duration-150 ease-standard outline-none",
-                  i === active ? "bg-hover" : "hover:bg-hover",
+                  i === active ? "bg-hover" : "hover:bg-hover active:bg-pressed",
                 )}
               >
                 <Link2 aria-hidden className="size-4 shrink-0 text-on-surface-variant" />

@@ -26,12 +26,63 @@ interface Known {
 
 const known = new Map<string, Known>();
 
+// Aspect ratios outlive the page, so a reload lays a picture out at its real
+// height at once instead of growing the card when the bytes arrive.
+const ASPECT_STORE_KEY = "skippy.imageAspects";
+const ASPECT_STORE_CAP = 400;
+let storedAspects: Map<string, number> | null = null;
+
+function aspects(): Map<string, number> {
+  if (storedAspects) {
+    return storedAspects;
+  }
+  if (typeof window === "undefined") {
+    return new Map();
+  }
+  storedAspects = new Map();
+  try {
+    const raw = window.localStorage.getItem(ASPECT_STORE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === "object") {
+      for (const [id, value] of Object.entries(parsed)) {
+        if (typeof value === "number" && value > 0) {
+          storedAspects.set(id, value);
+        }
+      }
+    }
+  } catch {
+    // No storage (private window, blocked site data): heights are learnt again.
+  }
+  return storedAspects;
+}
+
+function rememberAspect(id: string, aspect: number): void {
+  const map = aspects();
+  if (map.get(id) === aspect) {
+    return;
+  }
+  map.delete(id);
+  map.set(id, aspect);
+  while (map.size > ASPECT_STORE_CAP) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    map.delete(oldest);
+  }
+  try {
+    window.localStorage.setItem(ASPECT_STORE_KEY, JSON.stringify(Object.fromEntries(map)));
+  } catch {
+    // Best effort.
+  }
+}
+
 function sourceFor(attachment: Attachment, url: string): Known {
   const entry = known.get(attachment.id);
   if (entry) {
     return entry;
   }
-  const fresh = { url, aspect: null };
+  const fresh = { url, aspect: aspects().get(attachment.id) ?? null };
   known.set(attachment.id, fresh);
   return fresh;
 }
@@ -79,6 +130,7 @@ export const NoteImage = memo(function NoteImage({
           if (image.naturalWidth > 0 && image.naturalHeight > 0) {
             const ratio = image.naturalWidth / image.naturalHeight;
             entry.aspect = ratio;
+            rememberAspect(attachment.id, ratio);
             setAspect(ratio);
           }
           setLoaded(true);

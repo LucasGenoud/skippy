@@ -74,9 +74,19 @@ export const BoardCard = memo(function BoardCard({
         style={style}
         data-board-card={noteId}
         {...longPress}
-        className={cn("touch-manipulation transition-opacity duration-150 ease-standard", (isDragging || dimmed) && "opacity-40")}
+        className="relative touch-manipulation"
       >
-        <NoteCard noteId={noteId} variant="board" dragHandleProps={handle} />
+        <div className={cn("transition-opacity duration-150 ease-standard", isDragging ? "opacity-0" : dimmed && "opacity-40")}>
+          <NoteCard noteId={noteId} variant="board" dragHandleProps={handle} />
+        </div>
+        {/* Where the carried card will land: an outline in its slot (`_IncomingSlot`), not a ghost of it. */}
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 rounded-md border-2 border-primary bg-primary/10 transition-opacity duration-150 ease-standard",
+            isDragging ? "opacity-100" : "opacity-0",
+          )}
+        />
       </div>
     </motion.div>
   );

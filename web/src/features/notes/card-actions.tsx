@@ -92,6 +92,7 @@ export const CardActions = memo(function CardActions({ note, onOverlayChange }: 
           label={note.archived ? "Unarchive note" : "Archive note"}
           size="sm"
           icon={note.archived ? <ArchiveArrowUp /> : <Archive />}
+          shortcut="E"
           onClick={() => toggleArchive(notes, notes.noteById(note.id) ?? note)}
         />
         <NoteActionsMenu noteId={note.id} surface="card" onOpenChange={onOverlayChange} />

@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OverlayPresenceProvider, type OverlayPresenceSlot } from "@/components/common/overlay-presence";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MemoryKeyValueStore } from "@/lib/state/local-cache";
 import { SessionProvider } from "@/lib/store/hooks";
@@ -46,6 +47,9 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   session.dispose();
+  // Let motion's frame loop finish the frame it asked for under fake timers,
+  // or the next test's animations wait on a frame that never comes.
+  vi.runOnlyPendingTimers();
   vi.useRealTimers();
 });
 
@@ -162,5 +166,66 @@ describe("NoteEditor", () => {
     const find = screen.getByLabelText("Find in note");
     fireEvent.change(find, { target: { value: "o" } });
     expect(screen.getByText("1 of 1")).toBeTruthy();
+  });
+});
+
+// Closing with Escape (or the close button, or a tap outside) and closing with
+// the browser's back button share one path: one close morph, one navigation at
+// most, and one release of the route's slot.
+describe("NoteEditor closing", () => {
+  function slot(present: boolean, safeToRemove: () => void): OverlayPresenceSlot {
+    return { present, safeToRemove: present ? () => undefined : safeToRemove, register: () => () => undefined };
+  }
+
+  function openIn(present: boolean, onClose: () => void, safeToRemove: () => void) {
+    const tree = (value: boolean) => (
+      <SessionProvider session={session}>
+        <OverlayPresenceProvider value={slot(value, safeToRemove)}>
+          <TooltipProvider>
+            <NoteEditor noteId="t" onClose={onClose} />
+          </TooltipProvider>
+        </OverlayPresenceProvider>
+      </SessionProvider>
+    );
+    const view = render(tree(present));
+    return { leave: () => view.rerender(tree(false)) };
+  }
+
+  async function settle(): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  }
+
+  it("plays the close on browser back and releases without navigating", async () => {
+    const onClose = vi.fn();
+    const safeToRemove = vi.fn();
+    const { leave } = openIn(true, onClose, safeToRemove);
+    await settle();
+
+    leave();
+    await settle();
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(safeToRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it("navigates once on Escape, then releases when the route leaves", async () => {
+    const onClose = vi.fn();
+    const safeToRemove = vi.fn();
+    const { leave } = openIn(true, onClose, safeToRemove);
+    await settle();
+
+    const title = screen.getByLabelText("Title");
+    fireEvent.keyDown(title, { key: "Escape" });
+    fireEvent.keyDown(title, { key: "Escape" });
+    await settle();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(safeToRemove).not.toHaveBeenCalled();
+
+    leave();
+    await settle();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(safeToRemove).toHaveBeenCalledTimes(1);
   });
 });

@@ -15,7 +15,7 @@ export function LinkSummaryIndicator({ compact = false, onCancel }: { compact?: 
           aria-label="Stop summarizing"
           title="Stop summarizing"
           className={cn(
-            "inline-flex shrink-0 items-center justify-center rounded-md transition-colors duration-150 ease-standard outline-none hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "inline-flex shrink-0 items-center justify-center rounded-md transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50",
             compact ? "size-7" : "size-8",
           )}
           onClick={(event) => {

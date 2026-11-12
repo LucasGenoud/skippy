@@ -33,7 +33,9 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IconButton } from "@/components/common/icon-button";
 import { MenuLabel } from "@/components/common/menu-label";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { CrossFade } from "@/components/common/reveal";
+import { TRANSITION, transitionFor } from "@/lib/theme/motion";
 import type { NoteKind, NoteRewriteTask } from "@/lib/models/note";
 import { NoteActionsMenu } from "@/features/notes";
 import { PinIcon } from "@/features/notes/pin-icon";
@@ -159,6 +161,7 @@ function ToolsMenu(props: TopBarProps) {
 }
 
 export function TopBar(props: TopBarProps) {
+  const reduced = useReducedMotion();
   return (
     <TooltipProvider>
       <header className={cn("flex h-14 shrink-0 items-center gap-1 px-2", !props.wide && "border-b border-hairline")}>
@@ -168,37 +171,47 @@ export function TopBar(props: TopBarProps) {
             {props.finding ? <FindField {...props} /> : <span />}
           </CrossFade>
         </div>
-        {props.finding ? null : (
-          <div className="flex items-center gap-0.5 animate-in fade-in-0 duration-150">
-            {props.preview !== null && !props.trashed ? (
-              <CrossFade stateKey={props.preview}>
-                <IconButton
-                  label={props.preview ? "Edit markdown" : "Preview"}
-                  icon={props.preview ? <Pencil /> : <Eye />}
-                  onClick={props.onTogglePreview}
-                />
-              </CrossFade>
-            ) : null}
-            {props.trashed ? (
-              <>
-                <IconButton label="Restore" icon={<RotateCcw />} onClick={props.onRestore} />
-                <IconButton label="Delete forever" icon={<Trash2 />} onClick={props.onDeleteForever} />
-              </>
-            ) : (
-              <>
-                <IconButton label={props.pinned ? "Unpin" : "Pin"} icon={<PinIcon pinned={props.pinned} />} active={props.pinned} onClick={props.onTogglePin} />
-                {props.onArchive ? (
-                  <IconButton label={props.archived ? "Unarchive" : "Archive"} icon={props.archived ? <ArchiveRestore /> : <Archive />} onClick={props.onArchive} />
-                ) : null}
-                {props.onShare ? <IconButton label="Collaborators" icon={<UserPlus />} onClick={props.onShare} /> : null}
-                <ToolsMenu {...props} />
-              </>
-            )}
-            <NoteActionsMenu noteId={props.noteId} surface="editor">
-              <IconButton label="Note actions" icon={<MoreVertical />} />
-            </NoteActionsMenu>
-          </div>
-        )}
+        {/* Find and the note's actions trade one slot: the actions fade out over the field, not off a cliff. */}
+        <AnimatePresence initial={false} mode="popLayout">
+          {props.finding ? null : (
+            <motion.div
+              key="actions"
+              className="flex items-center gap-0.5"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, pointerEvents: "none" }}
+              transition={transitionFor(TRANSITION.fast, reduced)}
+            >
+              {props.preview !== null && !props.trashed ? (
+                <CrossFade stateKey={props.preview}>
+                  <IconButton
+                    label={props.preview ? "Edit markdown" : "Preview"}
+                    icon={props.preview ? <Pencil /> : <Eye />}
+                    onClick={props.onTogglePreview}
+                  />
+                </CrossFade>
+              ) : null}
+              {props.trashed ? (
+                <>
+                  <IconButton label="Restore" icon={<RotateCcw />} onClick={props.onRestore} />
+                  <IconButton label="Delete forever" icon={<Trash2 />} onClick={props.onDeleteForever} />
+                </>
+              ) : (
+                <>
+                  <IconButton label={props.pinned ? "Unpin" : "Pin"} icon={<PinIcon pinned={props.pinned} />} active={props.pinned} onClick={props.onTogglePin} />
+                  {props.onArchive ? (
+                    <IconButton label={props.archived ? "Unarchive" : "Archive"} icon={props.archived ? <ArchiveRestore /> : <Archive />} onClick={props.onArchive} />
+                  ) : null}
+                  {props.onShare ? <IconButton label="Collaborators" icon={<UserPlus />} onClick={props.onShare} /> : null}
+                  <ToolsMenu {...props} />
+                </>
+              )}
+              <NoteActionsMenu noteId={props.noteId} surface="editor">
+                <IconButton label="Note actions" icon={<MoreVertical />} />
+              </NoteActionsMenu>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
     </TooltipProvider>
   );

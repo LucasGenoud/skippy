@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronRight, X } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Variants } from "motion/react";
 import {
   DndContext,
   KeyboardSensor,
@@ -123,6 +123,8 @@ export function ChecklistEditor(props: ChecklistEditorProps) {
   const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [drag, setDrag] = useState<{ activeId: string; depthDelta: number } | null>(null);
   const [suppressLayout, setSuppressLayout] = useState(false);
+  // Which rows each section drew last, so a row crossing over is told apart from a new one.
+  const [sections, setSections] = useState<Sections>(() => ({ open: [], checked: [], wasOpen: new Set(), wasChecked: new Set() }));
   const elements = useRef(new Map<string, HTMLTextAreaElement>());
   const composer = useRef<HTMLTextAreaElement>(null);
   const pendingFocus = useRef<string | null>(null);
@@ -493,6 +495,15 @@ export function ChecklistEditor(props: ChecklistEditorProps) {
 
   const rowTransition = transitionFor(TRANSITION.base, reduced);
   const layoutMode = suppressLayout || drag ? false : "position";
+  // A row ticked or unticked glides between the list and the checked section
+  // as one element (`layoutId`), rather than leaving one and entering the other.
+  const shownChecked = showChecked ? checked.map((i) => i.id) : NO_IDS;
+  if (!sameIds(sections.open, visibleOrder) || !sameIds(sections.checked, shownChecked)) {
+    setSections({ open: visibleOrder, checked: shownChecked, wasOpen: new Set(sections.open), wasChecked: new Set(sections.checked) });
+  }
+  const openIds = new Set(visibleOrder);
+  const checkedShown = new Set(shownChecked);
+  const shareId = (id: string): string | undefined => (layoutMode ? `${CHECKLIST_LAYOUT}-${id}` : undefined);
 
   const row = (item: ChecklistItem, extra: Partial<React.ComponentProps<typeof ChecklistRow>> = {}): ReactNode => (
     <ChecklistRow
@@ -514,179 +525,226 @@ export function ChecklistEditor(props: ChecklistEditorProps) {
   const composerDepth = composing?.depth ?? items[items.length - 1]?.depth ?? 0;
 
   return (
-    <div className="relative py-1">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={onDragStart}
-        onDragMove={onDragMove}
-        onDragEnd={onDragEnd}
-        onDragCancel={() => setDrag(null)}
-      >
-        <SortableContext items={visibleOrder} strategy={verticalListSortingStrategy}>
-          <AnimatePresence initial={false}>
-            {visibleOrder.map((id) => {
-              const item = byId.get(id);
-              if (!item) {
-                return null;
-              }
-              return (
-                <motion.div
-                  key={id}
-                  layout={layoutMode}
-                  initial={noEntrance.has(id) ? false : { opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={drag ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, height: 0 }}
-                  transition={rowTransition}
-                >
-                  <SortableRow id={id} disabled={readOnly || item.done}>
-                    {(sortable) =>
-                      row(item, {
-                        dragging: sortable.dragging,
-                        depthPreview: sortable.dragging ? (drag?.depthDelta ?? 0) : 0,
-                        handleProps: sortable.handle,
-                        setSortableNode: sortable.setNode,
-                        sortableStyle: sortable.style,
-                        carried:
-                          sortable.dragging && carried.length > 0 ? (
-                            <div className="rounded-b-md bg-surface-container-high shadow-raised">
-                              {carried.map((childId) => {
-                                const child = byId.get(childId);
-                                return child ? <div key={childId}>{row(child, { depthPreview: drag?.depthDelta ?? 0 })}</div> : null;
-                              })}
-                            </div>
-                          ) : undefined,
-                      })
-                    }
-                  </SortableRow>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </SortableContext>
-      </DndContext>
-
-      {readOnly ? null : (
-        <div style={{ paddingLeft: composerDepth * INDENT_STEP }} className="transition-[padding] duration-150 ease-standard">
-          <div className="group/row relative flex min-h-11 items-start rounded-md focus-within:bg-primary/[0.035]">
-            <span className="w-6 shrink-0" />
-            <ComposerLeading
-              composing={composing !== null}
-              onTick={() => {
-                const item = composing;
-                commitComposing();
-                if (item) {
-                  toggle(item);
+    <LayoutGroup id={CHECKLIST_LAYOUT}>
+      <div className="relative py-1">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+          onDragCancel={() => setDrag(null)}
+        >
+          <SortableContext items={visibleOrder} strategy={verticalListSortingStrategy}>
+            <AnimatePresence initial={false} custom={checkedShown}>
+              {visibleOrder.map((id) => {
+                const item = byId.get(id);
+                if (!item) {
+                  return null;
                 }
-              }}
-            />
-            <div className="flex min-w-0 flex-1 py-2.5">
-              <textarea
-                ref={composer}
-                rows={1}
-                aria-label="List item"
-                placeholder="List item"
-                autoCapitalize="sentences"
-                enterKeyHint="next"
-                className="block w-full resize-none overflow-hidden bg-transparent text-base leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/70"
-                onInput={(e) => {
-                  fitHeight(e.currentTarget);
-                  composerInput(e.currentTarget.value);
-                }}
-                onKeyDown={(e) => {
-                  if (composerKey(e)) {
-                    e.preventDefault();
-                  }
-                }}
-                onFocus={() => {
-                  setFocusedId(COMPOSER);
-                  setSuggestion({ rowId: COMPOSER, text: composer.current?.value ?? "", typed: false, hidden: false });
-                }}
-                onBlur={() => {
-                  setFocusedId((id) => (id === COMPOSER ? null : id));
-                  commitComposing();
-                }}
-              />
-            </div>
-            <span
-              className={cn(
-                "flex h-11 items-center pr-1 transition-opacity duration-150 ease-standard",
-                focusedId === COMPOSER ? "opacity-100" : "pointer-events-none opacity-0",
-              )}
-            >
-              <IconButton
-                size="sm"
-                label={composing ? "Remove item" : "Close keyboard"}
-                icon={<X />}
-                onPointerDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (composing) {
-                    const id = composing.id;
-                    releaseComposer();
-                    props.onRemove(id);
-                  } else {
-                    composer.current?.blur();
-                  }
-                }}
-              />
-            </span>
-            {focusedId === COMPOSER && suggestionList.length > 0 ? (
-              <Suggestions suggestions={suggestionList} query={suggestion?.text ?? ""} active={activeSuggestion} onPick={(t) => pick(COMPOSER, t)} />
-            ) : null}
-          </div>
-        </div>
-      )}
+                return (
+                  <motion.div
+                    key={id}
+                    layout={layoutMode}
+                    // Only a row crossing sections shares its layout, so a drag reorder never replays as a glide.
+                    layoutId={item.done || sections.wasChecked.has(id) ? shareId(id) : undefined}
+                    custom={checkedShown}
+                    variants={rowVariants(id, drag !== null)}
+                    initial={noEntrance.has(id) || sections.wasChecked.has(id) ? false : "enter"}
+                    animate="shown"
+                    exit="gone"
+                    transition={rowTransition}
+                  >
+                    <SortableRow id={id} disabled={readOnly || item.done}>
+                      {(sortable) =>
+                        row(item, {
+                          dragging: sortable.dragging,
+                          depthPreview: sortable.dragging ? (drag?.depthDelta ?? 0) : 0,
+                          handleProps: sortable.handle,
+                          setSortableNode: sortable.setNode,
+                          sortableStyle: sortable.style,
+                          carried:
+                            sortable.dragging && carried.length > 0 ? (
+                              <div className="rounded-b-md bg-surface-container-high shadow-raised">
+                                {carried.map((childId) => {
+                                  const child = byId.get(childId);
+                                  return child ? <div key={childId}>{row(child, { depthPreview: drag?.depthDelta ?? 0 })}</div> : null;
+                                })}
+                              </div>
+                            ) : undefined,
+                        })
+                      }
+                    </SortableRow>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </SortableContext>
+        </DndContext>
 
-      <AnimatePresence initial={false}>
-        {checked.length > 0 ? (
-          <motion.div
-            key="checked-header"
-            layout={layoutMode}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={rowTransition}
-            className="overflow-hidden"
-          >
-            <div className="flex items-center gap-2 py-1">
-              <button
-                type="button"
-                aria-expanded={showChecked}
-                onClick={() => setShowChecked((v) => !v)}
-                className="flex min-h-9 flex-1 items-center gap-2 rounded-md px-1 text-left text-xs text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        {readOnly ? null : (
+          // Glides down for a row added above it instead of jumping a row's height.
+          <motion.div layout={layoutMode} transition={rowTransition} style={{ paddingLeft: composerDepth * INDENT_STEP }} className="transition-[padding] duration-150 ease-standard">
+            <div className="group/row relative flex min-h-11 items-start rounded-md focus-within:bg-primary/[0.035]">
+              <span className="w-6 shrink-0" />
+              <ComposerLeading
+                composing={composing !== null}
+                onTick={() => {
+                  const item = composing;
+                  commitComposing();
+                  if (item) {
+                    toggle(item);
+                  }
+                }}
+              />
+              <div className="flex min-w-0 flex-1 py-2.5">
+                <textarea
+                  ref={composer}
+                  rows={1}
+                  aria-label="List item"
+                  placeholder="List item"
+                  autoCapitalize="sentences"
+                  enterKeyHint="next"
+                  className="block w-full resize-none overflow-hidden bg-transparent text-base leading-6 text-on-surface outline-none placeholder:text-on-surface-variant/70"
+                  onInput={(e) => {
+                    fitHeight(e.currentTarget);
+                    composerInput(e.currentTarget.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (composerKey(e)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onFocus={() => {
+                    setFocusedId(COMPOSER);
+                    setSuggestion({ rowId: COMPOSER, text: composer.current?.value ?? "", typed: false, hidden: false });
+                  }}
+                  onBlur={() => {
+                    setFocusedId((id) => (id === COMPOSER ? null : id));
+                    commitComposing();
+                  }}
+                />
+              </div>
+              <span
+                className={cn(
+                  "flex h-11 items-center pr-1 transition-opacity duration-150 ease-standard",
+                  focusedId === COMPOSER ? "opacity-100" : "pointer-events-none opacity-0",
+                )}
               >
-                <ChevronRight aria-hidden className={cn("size-5 transition-transform duration-150 ease-standard", showChecked && "rotate-90")} />
-                {checked.length} checked {checked.length === 1 ? "item" : "items"}
-              </button>
-              {readOnly ? null : (
-                <Button variant="ghost" size="sm" onClick={props.onClearChecked}>
-                  Clear checked
-                </Button>
-              )}
+                <IconButton
+                  size="sm"
+                  label={composing ? "Remove item" : "Close keyboard"}
+                  icon={<X />}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (composing) {
+                      const id = composing.id;
+                      releaseComposer();
+                      props.onRemove(id);
+                    } else {
+                      composer.current?.blur();
+                    }
+                  }}
+                />
+              </span>
+              {focusedId === COMPOSER && suggestionList.length > 0 ? (
+                <Suggestions suggestions={suggestionList} query={suggestion?.text ?? ""} active={activeSuggestion} onPick={(t) => pick(COMPOSER, t)} />
+              ) : null}
             </div>
           </motion.div>
-        ) : null}
-        {showChecked
-          ? checked.map((item) => (
-              <motion.div
-                key={`checked-${item.id}`}
-                layout={layoutMode}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={rowTransition}
-              >
-                {row(item)}
-              </motion.div>
-            ))
-          : null}
-      </AnimatePresence>
+        )}
 
-      {celebration !== null ? (
-        <div className="pointer-events-none absolute inset-0">
-          <AllDoneBurst key={celebration} onDone={() => setCelebration(null)} />
-        </div>
-      ) : null}
-    </div>
+        <AnimatePresence initial={false} custom={openIds}>
+          {checked.length > 0 ? (
+            <motion.div
+              key="checked-header"
+              layout={layoutMode}
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={rowTransition}
+              className="overflow-hidden"
+            >
+              <div className="flex items-center gap-2 py-1">
+                <button
+                  type="button"
+                  aria-expanded={showChecked}
+                  onClick={() => setShowChecked((v) => !v)}
+                  className="flex min-h-9 flex-1 items-center gap-2 rounded-md px-1 text-left text-xs text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  <ChevronRight aria-hidden className={cn("size-5 transition-transform duration-150 ease-standard", showChecked && "rotate-90")} />
+                  {checked.length} checked {checked.length === 1 ? "item" : "items"}
+                </button>
+                {readOnly ? null : (
+                  <Button variant="ghost" size="sm" onClick={props.onClearChecked}>
+                    Clear checked
+                  </Button>
+                )}
+              </div>
+            </motion.div>
+          ) : null}
+          {showChecked
+            ? checked.map((item) => (
+                <motion.div
+                  key={`checked-${item.id}`}
+                  layout={layoutMode}
+                  layoutId={shareId(item.id)}
+                  custom={openIds}
+                  variants={checkedVariants(item.id)}
+                  // Opening the section unfolds its rows; a row just ticked arrives from where it was.
+                  initial={sections.wasOpen.has(item.id) ? false : "enter"}
+                  animate="shown"
+                  exit="gone"
+                  transition={rowTransition}
+                >
+                  {row(item)}
+                </motion.div>
+              ))
+            : null}
+        </AnimatePresence>
+
+        {celebration !== null ? (
+          <div className="pointer-events-none absolute inset-0">
+            <AllDoneBurst key={celebration} onDone={() => setCelebration(null)} />
+          </div>
+        ) : null}
+      </div>
+    </LayoutGroup>
   );
+}
+
+const CHECKLIST_LAYOUT = "checklist-row";
+const NO_IDS: readonly string[] = [];
+const INSTANT_OUT = { opacity: 0, transition: { duration: 0 } };
+
+interface Sections {
+  readonly open: readonly string[];
+  readonly checked: readonly string[];
+  readonly wasOpen: ReadonlySet<string>;
+  readonly wasChecked: ReadonlySet<string>;
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/**
+ * An open row: slides in when new, folds away when removed, and leaves at
+ * once when it is crossing to the checked section, whose copy takes over.
+ */
+function rowVariants(id: string, dragging: boolean): Variants {
+  return {
+    enter: { opacity: 0, x: 20 },
+    shown: { opacity: 1, x: 0 },
+    gone: (elsewhere: ReadonlySet<string> | undefined) => (dragging || elsewhere?.has(id) ? INSTANT_OUT : { opacity: 0, height: 0 }),
+  };
+}
+
+/** A checked row: unfolds with its section, and hands over to the list when unticked. */
+function checkedVariants(id: string): Variants {
+  return {
+    enter: { opacity: 0, height: 0 },
+    shown: { opacity: 1, height: "auto" },
+    gone: (elsewhere: ReadonlySet<string> | undefined) => (elsewhere?.has(id) ? INSTANT_OUT : { opacity: 0, height: 0 }),
+  };
 }

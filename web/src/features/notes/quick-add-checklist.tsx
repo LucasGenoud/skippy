@@ -112,7 +112,7 @@ export function QuickAddChecklist({
                 onClick={() => update(item.id, { done: !item.done })}
                 className={cn(
                   "inline-flex size-[18px] shrink-0 items-center justify-center rounded-check border transition-colors duration-150 ease-standard outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                  item.done ? "border-primary-container bg-primary-container text-on-primary-container" : "border-outline hover:bg-hover",
+                  item.done ? "border-primary-container bg-primary-container text-on-primary-container" : "border-outline hover:bg-hover active:bg-pressed",
                 )}
               >
                 {item.done ? (
@@ -139,7 +139,7 @@ export function QuickAddChecklist({
                 type="button"
                 aria-label="Remove item"
                 onClick={() => remove(item.id)}
-                className="inline-flex size-6 items-center justify-center rounded-md text-on-surface-variant opacity-0 transition-opacity duration-150 ease-standard outline-none group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:bg-hover focus-visible:opacity-100"
+                className="inline-flex size-6 items-center justify-center rounded-md text-on-surface-variant opacity-0 transition-opacity duration-150 ease-standard outline-none group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:bg-hover active:bg-pressed focus-visible:opacity-100"
               >
                 <X aria-hidden className="size-4" />
               </button>

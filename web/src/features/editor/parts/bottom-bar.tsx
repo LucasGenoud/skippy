@@ -10,7 +10,9 @@ import { BackgroundPicker } from "@/components/common/color-picker";
 import { IconButton } from "@/components/common/icon-button";
 import { MenuLabel } from "@/components/common/menu-label";
 import { ReminderPicker, type ReminderValue } from "@/components/common/reminder-picker";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SyncPill, type SyncState } from "@/components/common/sync-pill";
+import { TRANSITION, transitionFor } from "@/lib/theme/motion";
 import type { NotePattern } from "@/lib/models/note";
 import type { Brightness } from "@/lib/theme/accent";
 import type { PaletteEntry } from "@/lib/theme/palette";
@@ -45,6 +47,7 @@ export interface BottomBarProps {
 
 export function BottomBar(props: BottomBarProps) {
   const [reminderOpen, setReminderOpen] = useState(false);
+  const reduced = useReducedMotion();
   const veryNarrow = !useMediaQuery("(min-width: 360px)");
   const mod = isApplePlatform() ? "⌘" : "Ctrl+";
   const live = !props.trashed;
@@ -112,7 +115,13 @@ export function BottomBar(props: BottomBarProps) {
         )}
         <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
           {props.wide ? <span className="min-w-0 truncate text-xs text-on-surface-variant">{props.editedStamp}</span> : null}
-          {props.syncState === "synced" && !props.wide ? null : <SyncPill state={props.syncState} count={props.pendingChanges} />}
+          <AnimatePresence initial={false}>
+            {props.syncState === "synced" && !props.wide ? null : (
+              <motion.span key="sync" className="inline-flex" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transitionFor(TRANSITION.fast, reduced)}>
+                <SyncPill state={props.syncState} count={props.pendingChanges} />
+              </motion.span>
+            )}
+          </AnimatePresence>
         </div>
         <IconButton label="Undo" shortcut={`${mod}Z`} icon={<Undo2 />} side="top" disabled={!props.onUndo} onClick={() => props.onUndo?.()} />
         <IconButton label="Redo" shortcut={`${mod}⇧Z`} icon={<Redo2 />} side="top" disabled={!props.onRedo} onClick={() => props.onRedo?.()} />

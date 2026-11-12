@@ -5,7 +5,7 @@ import { Archive, ArchiveArrowUp } from "lucide-react";
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
 import { cn } from "cn";
 
-import { DURATION, EASE } from "@/lib/theme/motion";
+import { DURATION, EASE, TRANSITION } from "@/lib/theme/motion";
 
 import { swipeCommitDistance, swipeOpacity, swipeOutcome } from "./card-rules";
 
@@ -63,14 +63,16 @@ export function SwipeToArchive({
   const glide = (to: number, duration: number, ease: readonly number[]) =>
     animate(x, to, { duration: reduced ? 0 : duration / 1000, ease: [...ease] as [number, number, number, number] });
 
-  const settleBack = async (): Promise<void> => {
-    await glide(0, DURATION.fast, EASE.standard);
+  // Let go short of the line, the card springs home from the finger's own speed.
+  const settleBack = async (velocity: number): Promise<void> => {
+    await animate(x, 0, reduced ? { duration: 0 } : { ...TRANSITION.spring, velocity });
     onActive?.(false);
   };
 
-  const commit = async (direction: number): Promise<void> => {
+  const commit = async (direction: number, velocity: number): Promise<void> => {
     setLeaving(true);
-    await glide((direction === 0 ? 1 : direction) * size.width, DURATION.base, EASE.emphasized);
+    // Carried off at the speed the finger let go with, not restarted from rest.
+    await animate(x, (direction === 0 ? 1 : direction) * size.width, reduced ? { duration: 0 } : { ...TRANSITION.spring, velocity });
     onArchive();
     // Most views drop the note now; one that keeps it (a label lists archived
     // notes too) would otherwise show a hole, so slide it back after a frame.
@@ -139,9 +141,9 @@ export function SwipeToArchive({
     }
     const travelled = x.get();
     if (!cancelled && swipeOutcome(travelled, t.width, t.velocity) === "commit") {
-      void commit(Math.sign(travelled));
+      void commit(Math.sign(travelled), t.velocity);
     } else {
-      void settleBack();
+      void settleBack(cancelled ? 0 : t.velocity);
     }
   };
 

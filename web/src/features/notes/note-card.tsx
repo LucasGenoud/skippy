@@ -5,8 +5,8 @@ import { Check, Folder } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "cn";
 
+import { Kbd } from "@/components/common/kbd";
 import { LabelChip, LabelMarker, LabelOverflowMarker } from "@/components/common/label-chip";
-import { NotePattern } from "@/components/common/note-pattern";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { generalCollectionId } from "@/lib/models/workspace";
 import type { Note } from "@/lib/models/note";
@@ -19,14 +19,20 @@ import type { NotePatternId } from "@/lib/theme/patterns";
 
 import { CardActions } from "./card-actions";
 import { cardClickIntent, linkPreviewUrls, noteLinkText, type CardClick } from "./card-rules";
-import { toggleArchive } from "./note-actions";
+import { CARD_FOCUS_ATTR, focusAfterLeaving } from "./card-focus";
+import { toggleArchive, trashNote } from "./note-actions";
+import { NoteContextMenu } from "./note-actions-menu";
 import { cardTags, tagEqual, tagOf, tagsEqual, type CardTag } from "./card-tags";
 import { Spinner } from "./link-summary-indicator";
 import { LINK_PREVIEW_HEIGHT } from "./link-preview-card";
+import { FadingPattern, useFollowHeight } from "./motion-kit";
 import { NoteCardContent } from "./note-card-content";
 import { PinIcon } from "./pin-icon";
 import { observeSize, useTouchPrimary } from "./platform";
 import { SwipeToArchive } from "./swipe-to-archive";
+
+/** Keys a focused card answers to (shown in its tooltips). */
+export const CARD_KEYS = { pin: "p", archive: "e" } as const;
 
 export interface NoteCardProps {
   noteId: string;
@@ -111,6 +117,10 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
   const [hovered, setHovered] = useState(false);
   const [everHovered, setEverHovered] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const surface = useRef<HTMLElement | null>(null);
+  const body = useRef<HTMLDivElement | null>(null);
+  // Content that grows or shrinks (a transcript, a picture's real height) resizes the card smoothly.
+  useFollowHeight(surface, body, model.note !== null);
 
   const { note, selected, selectionMode, rewriting, labels, collection, query } = model;
   if (!note) {
@@ -148,6 +158,10 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
     if (event.target !== event.currentTarget) {
       return;
     }
+    if (cardShortcut(event)) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Enter") {
       event.preventDefault();
       if (selectionMode) {
@@ -159,6 +173,31 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
       event.preventDefault();
       select("toggle");
     }
+  };
+
+  // A focused card's own keys: P pins, E archives, Delete trashes. Focus
+  // moves on to a neighbour when the card leaves the view.
+  const cardShortcut = (event: KeyboardEvent): boolean => {
+    if (event.altKey || event.ctrlKey || event.metaKey || note.trashed) {
+      return false;
+    }
+    const card = event.currentTarget as HTMLElement;
+    const key = event.key.toLowerCase();
+    if (key === CARD_KEYS.pin) {
+      notes.togglePin(note.id);
+      return true;
+    }
+    if (key === CARD_KEYS.archive) {
+      focusAfterLeaving(card);
+      toggleArchive(notes, notes.noteById(note.id) ?? note);
+      return true;
+    }
+    if ((event.key === "Delete" || event.key === "Backspace") && notes.canTrash(note.id)) {
+      focusAfterLeaving(card);
+      trashNote(notes, note.id);
+      return true;
+    }
+    return false;
   };
 
   const style = {
@@ -177,113 +216,132 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
       onArchive={() => toggleArchive(notes, notes.noteById(note.id) ?? note)}
       onActive={(active) => env?.onSwipeActive?.(note.id, active)}
     >
-      <div
-        className="relative"
-        data-note-card={note.id}
-        onPointerEnter={(event) => {
-          if (event.pointerType === "mouse" || event.pointerType === "pen") {
-            setHovered(true);
-            setEverHovered(true);
-          }
-        }}
-        onPointerLeave={() => setHovered(false)}
-      >
-        <article
-          role="button"
-          tabIndex={0}
-          aria-label={`${selectionMode ? (selected ? "Deselect" : "Select") : "Open"} ${title}`}
-          aria-pressed={selectionMode ? selected : undefined}
-          {...dragHandleProps}
-          onClick={(event) => {
-            onClick(event);
-            if (!event.defaultPrevented) {
-              (dragHandleProps?.onClick as ((e: MouseEvent) => void) | undefined)?.(event);
+      <NoteContextMenu noteId={note.id} disabled={touch} onOpenChange={setOverlayOpen}>
+        <div
+          className="relative"
+          data-note-card={note.id}
+          onPointerEnter={(event) => {
+            if (event.pointerType === "mouse" || event.pointerType === "pen") {
+              setHovered(true);
+              setEverHovered(true);
             }
           }}
-          onKeyDown={(event) => {
-            // Enter opens and Space selects; a board's own keys get what is left.
-            onKeyDown(event);
-            if (!event.defaultPrevented) {
-              (dragHandleProps?.onKeyDown as ((e: KeyboardEvent) => void) | undefined)?.(event);
-            }
-          }}
-          style={style}
-          className={cn(
-            "relative cursor-pointer overflow-hidden rounded-md border text-on-surface outline-none select-none [-webkit-touch-callout:none]",
-            "bg-(--note-fill-l) dark:bg-(--note-fill-d)",
-            "transition-[box-shadow,border-color] duration-150 ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            selected
-              ? "border-primary ring-1 ring-primary"
-              : hovered
-                ? "border-(--note-edge-hover-l) dark:border-(--note-edge-hover-d)"
-                : "border-(--note-edge-l) dark:border-(--note-edge-d)",
-            hovered ? "shadow-raised" : "shadow-card",
-          )}
+          onPointerLeave={() => setHovered(false)}
         >
-          <NotePattern pattern={note.pattern as NotePatternId} />
-          <div className="relative">
-            <NoteCardContent note={note} query={query} reserveActions={actionsSlot} labels={labels} />
-          </div>
-
-          {collection ? <CollectionMarker tag={collection} /> : null}
-
-          {!note.trashed ? (
-            <motion.div
-              className="absolute top-1 right-1"
-              initial={false}
-              animate={{ opacity: !rewriting && (hovered || note.pinned) ? 1 : 0 }}
-              transition={TRANSITION.fast}
-              style={{ pointerEvents: !rewriting && (hovered || note.pinned) ? "auto" : "none" }}
-            >
-              {everHovered || note.pinned ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label={note.pinned ? "Unpin note" : "Pin note"}
-                      className="inline-flex size-8 items-center justify-center rounded-md text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        notes.togglePin(note.id);
-                      }}
-                      onPointerDown={(event) => event.stopPropagation()}
-                    >
-                      <PinIcon pinned={note.pinned} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>{note.pinned ? "Unpin note" : "Pin note"}</TooltipContent>
-                </Tooltip>
-              ) : null}
-            </motion.div>
-          ) : null}
-
-          {rewriting ? (
-            <span role="status" aria-label="AI editing note" className="absolute top-[11px] right-[11px]">
-              <Spinner className="size-[18px]" />
-            </span>
-          ) : null}
-
-          {actionsSlot ? (
-            <div className="absolute right-2 left-2" style={{ bottom: 4 + previewInset, height: FOOTER_HEIGHT }}>
-              <AnimatePresence initial={false}>
-                {desktopActions && actionsVisible ? (
-                  <motion.div key="actions" className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={TRANSITION.fast}>
-                    <CardActions note={note} onOverlayChange={setOverlayOpen} />
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
+          <article
+            ref={surface}
+            {...{ [CARD_FOCUS_ATTR]: note.id }}
+            role="button"
+            tabIndex={0}
+            aria-label={`${selectionMode ? (selected ? "Deselect" : "Select") : "Open"} ${title}`}
+            aria-pressed={selectionMode ? selected : undefined}
+            {...dragHandleProps}
+            onClick={(event) => {
+              onClick(event);
+              if (!event.defaultPrevented) {
+                (dragHandleProps?.onClick as ((e: MouseEvent) => void) | undefined)?.(event);
+              }
+            }}
+            onKeyDown={(event) => {
+              // Enter opens and Space selects; a board's own keys get what is left.
+              onKeyDown(event);
+              if (!event.defaultPrevented) {
+                (dragHandleProps?.onKeyDown as ((e: KeyboardEvent) => void) | undefined)?.(event);
+              }
+            }}
+            style={style}
+            className={cn(
+              "relative cursor-pointer overflow-hidden rounded-md border text-on-surface outline-none select-none [-webkit-touch-callout:none]",
+              "bg-(--note-fill-l) dark:bg-(--note-fill-d)",
+              "transition-[box-shadow,border-color,background-color] duration-150 ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              selected
+                ? "border-primary ring-1 ring-primary"
+                : hovered
+                  ? "border-(--note-edge-hover-l) dark:border-(--note-edge-hover-d)"
+                  : "border-(--note-edge-l) dark:border-(--note-edge-d)",
+              hovered ? "shadow-raised" : "shadow-card",
+            )}
+          >
+            <FadingPattern pattern={note.pattern as NotePatternId} />
+            <div ref={body} className="relative">
+              <NoteCardContent note={note} query={query} reserveActions={actionsSlot} labels={labels} />
             </div>
-          ) : null}
 
-          {actionsSlot && labels.length > 0 ? (
-            <FooterLabels labels={labels} visible={!(desktopActions && actionsVisible)} bottom={8 + previewInset} />
-          ) : null}
-        </article>
+            {collection ? <CollectionMarker tag={collection} /> : null}
 
-        {!touch ? (
-          <SelectionBadge selected={selected} visible={selectionMode || hovered} built={everHovered || selectionMode} onToggle={() => select("toggle")} />
-        ) : null}
-      </div>
+            {!note.trashed ? (
+              <motion.div
+                className="absolute top-1 right-1"
+                initial={false}
+                animate={{ opacity: !rewriting && (hovered || note.pinned) ? 1 : 0 }}
+                transition={TRANSITION.fast}
+                style={{ pointerEvents: !rewriting && (hovered || note.pinned) ? "auto" : "none" }}
+              >
+                {everHovered || note.pinned ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={note.pinned ? "Unpin note" : "Pin note"}
+                        aria-keyshortcuts="P"
+                        className="inline-flex size-8 items-center justify-center rounded-md text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          notes.togglePin(note.id);
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <PinIcon pinned={note.pinned} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {note.pinned ? "Unpin note" : "Pin note"}
+                      <Kbd className="ml-1.5">P</Kbd>
+                    </TooltipContent>
+                  </Tooltip>
+                ) : null}
+              </motion.div>
+            ) : null}
+
+            <AnimatePresence initial={false}>
+              {rewriting ? (
+                <motion.span
+                  key="rewriting"
+                  role="status"
+                  aria-label="AI editing note"
+                  className="absolute top-[11px] right-[11px]"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={TRANSITION.fast}
+                >
+                  <Spinner className="size-[18px]" />
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
+
+            {actionsSlot ? (
+              <div className="absolute right-2 left-2" style={{ bottom: 4 + previewInset, height: FOOTER_HEIGHT }}>
+                <AnimatePresence initial={false}>
+                  {desktopActions && actionsVisible ? (
+                    <motion.div key="actions" className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={TRANSITION.fast}>
+                      <CardActions note={note} onOverlayChange={setOverlayOpen} />
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </div>
+            ) : null}
+
+            {actionsSlot && labels.length > 0 ? (
+              <FooterLabels labels={labels} visible={!(desktopActions && actionsVisible)} bottom={8 + previewInset} />
+            ) : null}
+          </article>
+
+          {!touch ? (
+            <SelectionBadge selected={selected} visible={selectionMode || hovered} built={everHovered || selectionMode} onToggle={() => select("toggle")} />
+          ) : null}
+        </div>
+      </NoteContextMenu>
     </SwipeToArchive>
   );
 });

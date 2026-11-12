@@ -235,7 +235,7 @@ function StageManager() {
           { id: "trash", label: "Trash", icon: Trash2 },
         ] as const
       ).map(({ id, label, icon: Icon }) => (
-        <label key={id} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 transition-colors duration-150 ease-standard hover:bg-hover">
+        <label key={id} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 transition-colors duration-150 ease-standard hover:bg-hover active:bg-pressed">
           <Icon className="size-4 text-on-surface-variant" />
           <span className="grid flex-1">
             <span className="text-sm text-on-surface">{label}</span>
@@ -278,7 +278,7 @@ function StageRow({ stage, index, onEdit, onDelete }: { stage: Stage; index: num
         ref={setNodeRef}
         style={style}
         className={
-          "flex h-10 items-center gap-1 rounded-md bg-surface pr-1 transition-shadow duration-150 ease-standard hover:bg-hover " +
+          "flex h-10 items-center gap-1 rounded-md bg-surface pr-1 transition-shadow duration-150 ease-standard hover:bg-hover active:bg-pressed " +
           (isDragging ? "shadow-raised" : "")
         }
       >

@@ -270,7 +270,7 @@ function CardChecklistRow({ item, canToggle, onCheck }: { item: ChecklistItem; c
         onPointerDown={(event) => event.stopPropagation()}
         className={cn(
           "mt-[1px] inline-flex size-[18px] shrink-0 items-center justify-center rounded-check border transition-colors duration-150 ease-standard outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-default",
-          done ? "border-primary-container bg-primary-container text-on-primary-container" : "border-outline hover:bg-hover",
+          done ? "border-primary-container bg-primary-container text-on-primary-container" : "border-outline hover:bg-hover active:bg-pressed",
         )}
       >
         <AnimatePresence initial={false}>

@@ -48,6 +48,18 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { NoteLabelPicker } from "@/features/editor/label-picker";
 import { isNoteEmpty, type NoteKind } from "@/lib/models/note";
 import { closeTo, navigate } from "@/lib/router";
@@ -78,6 +90,41 @@ const DOWNLOAD_FORMATS: readonly ExportFormat[] = ["markdown", "text", "json"];
 
 type Dialog = "share" | "publicLink" | "deleteForever" | null;
 
+/**
+ * The menu's rows are the same whether they drop down from the "more" button
+ * or open at the pointer on a right-click; only the primitives differ.
+ */
+interface MenuKit {
+  readonly Item: typeof DropdownMenuItem;
+  readonly Sub: typeof DropdownMenuSub;
+  readonly SubTrigger: typeof DropdownMenuSubTrigger;
+  readonly SubContent: typeof DropdownMenuSubContent;
+  readonly RadioGroup: typeof DropdownMenuRadioGroup;
+  readonly RadioItem: typeof DropdownMenuRadioItem;
+  readonly Separator: typeof DropdownMenuSeparator;
+}
+
+const DROPDOWN_KIT: MenuKit = {
+  Item: DropdownMenuItem,
+  Sub: DropdownMenuSub,
+  SubTrigger: DropdownMenuSubTrigger,
+  SubContent: DropdownMenuSubContent,
+  RadioGroup: DropdownMenuRadioGroup,
+  RadioItem: DropdownMenuRadioItem,
+  Separator: DropdownMenuSeparator,
+};
+
+// The context-menu primitives take the same props as their dropdown twins.
+const CONTEXT_KIT: MenuKit = {
+  Item: ContextMenuItem as unknown as typeof DropdownMenuItem,
+  Sub: ContextMenuSub as unknown as typeof DropdownMenuSub,
+  SubTrigger: ContextMenuSubTrigger as unknown as typeof DropdownMenuSubTrigger,
+  SubContent: ContextMenuSubContent as unknown as typeof DropdownMenuSubContent,
+  RadioGroup: ContextMenuRadioGroup as unknown as typeof DropdownMenuRadioGroup,
+  RadioItem: ContextMenuRadioItem as unknown as typeof DropdownMenuRadioItem,
+  Separator: ContextMenuSeparator as unknown as typeof DropdownMenuSeparator,
+};
+
 export interface NoteActionsMenuProps {
   noteId: string;
   surface: "card" | "editor";
@@ -91,7 +138,47 @@ export interface NoteActionsMenuProps {
   onConvert?(kind: NoteKind): void;
 }
 
-export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClose, onConvert }: NoteActionsMenuProps) {
+export function NoteActionsMenu(props: NoteActionsMenuProps) {
+  return <NoteMenu {...props} variant="dropdown" />;
+}
+
+/**
+ * Right-click on a card opens the same actions at the pointer. The rows (and
+ * their store subscriptions) are only built once the menu first opens, so a
+ * grid of cards pays for one trigger each. Touch keeps its long press for
+ * selection, so the menu is off there.
+ */
+export function NoteContextMenu({
+  noteId,
+  disabled,
+  onOpenChange,
+  children,
+}: {
+  noteId: string;
+  disabled?: boolean;
+  onOpenChange?(open: boolean): void;
+  children: ReactNode;
+}) {
+  const [built, setBuilt] = useState(false);
+  return (
+    <ContextMenu
+      modal={false}
+      onOpenChange={(open) => {
+        if (open) {
+          setBuilt(true);
+        }
+        onOpenChange?.(open);
+      }}
+    >
+      <ContextMenuTrigger asChild disabled={disabled}>
+        {children}
+      </ContextMenuTrigger>
+      {built ? <NoteMenu noteId={noteId} surface="card" variant="context" /> : null}
+    </ContextMenu>
+  );
+}
+
+function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert, variant }: NoteActionsMenuProps & { variant: "dropdown" | "context" }) {
   const notes = useNotesController();
   const note = useNote(noteId);
   const can = useNoteAvailability(noteId);
@@ -105,8 +192,9 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
   const afterClose = useRef<(() => void) | null>(null);
 
   if (!note) {
-    return children ? <>{children}</> : null;
+    return children && variant === "dropdown" ? <>{children}</> : null;
   }
+  const M = variant === "dropdown" ? DROPDOWN_KIT : CONTEXT_KIT;
 
   const editor = surface === "editor";
   const close = (): void => (onClose ? onClose() : closeTo());
@@ -170,65 +258,59 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
     />
   );
 
-  return (
+  const runAfterClose = (event: Event): void => {
+    const action = afterClose.current;
+    afterClose.current = null;
+    if (action) {
+      event.preventDefault();
+      action();
+    }
+  };
+
+  const rows = (
     <>
-      <DropdownMenu modal={false} onOpenChange={onOpenChange}>
-        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className="w-64"
-          onClick={(event) => event.stopPropagation()}
-          onCloseAutoFocus={(event) => {
-            const action = afterClose.current;
-            afterClose.current = null;
-            if (action) {
-              event.preventDefault();
-              action();
-            }
-          }}
-        >
           {note.trashed ? (
             <>
               {collectionLive || collections.length === 0 ? (
-                <DropdownMenuItem onSelect={() => restore()}>
+                <M.Item onSelect={() => restore()}>
                   <RotateCcw />
                   <MenuLabel label="Restore" hint="Back to its collection" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <RotateCcw />
                     <MenuLabel label="Restore to…" hint="Its collection is gone" />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
+                  </M.SubTrigger>
+                  <M.SubContent>
                     {collections.map((c) => (
-                      <DropdownMenuItem key={c.id} onSelect={() => restore(c.id)}>
+                      <M.Item key={c.id} onSelect={() => restore(c.id)}>
                         {c.icon ? <LabelIcon iconKey={c.icon} /> : <Folder />}
                         <span className="truncate">{c.name}</span>
-                      </DropdownMenuItem>
+                      </M.Item>
                     ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                  </M.SubContent>
+                </M.Sub>
               )}
               {can.canCopy ? (
-                <DropdownMenuItem onSelect={() => void copyNoteText(note)}>
+                <M.Item onSelect={() => void copyNoteText(note)}>
                   <Copy />
                   <MenuLabel label="Copy to clipboard" hint="As plain text" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : null}
               {can.canShowHistory ? (
-                <DropdownMenuItem onSelect={() => navigate({ name: "history", noteId: note.id })}>
+                <M.Item onSelect={() => navigate({ name: "history", noteId: note.id })}>
                   <History />
                   <MenuLabel label="Version history" hint="Restore an earlier copy" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : null}
               {can.isOwner ? (
                 <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => queue(() => setDialog("deleteForever"))}>
+                  <M.Separator />
+                  <M.Item variant="destructive" onSelect={() => queue(() => setDialog("deleteForever"))}>
                     <X />
                     <MenuLabel label="Delete forever" hint="Cannot be undone" tone="destructive" />
-                  </DropdownMenuItem>
+                  </M.Item>
                 </>
               ) : null}
             </>
@@ -236,116 +318,116 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
             <>
               {can.canRewrite && !editor ? (
                 <>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger disabled={rewriting}>
+                  <M.Sub>
+                    <M.SubTrigger disabled={rewriting}>
                       <WandSparkles />
                       <MenuLabel label="AI edit" hint={rewriting ? "Working…" : "Rewrite with AI"} />
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
+                    </M.SubTrigger>
+                    <M.SubContent>
                       {can.rewriteTasks.map((task) => (
-                        <DropdownMenuItem key={task.id} disabled={rewriting} onSelect={() => void rewriteWithAi(notes, note.id, task)}>
+                        <M.Item key={task.id} disabled={rewriting} onSelect={() => void rewriteWithAi(notes, note.id, task)}>
                           <WandSparkles />
                           <span className="truncate">{task.name}</span>
-                        </DropdownMenuItem>
+                        </M.Item>
                       ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                  <DropdownMenuSeparator />
+                    </M.SubContent>
+                  </M.Sub>
+                  <M.Separator />
                 </>
               ) : null}
 
 
               {can.canEdit ? (
-                <DropdownMenuItem onSelect={() => queue(() => labelAnchor.current?.click())}>
+                <M.Item onSelect={() => queue(() => labelAnchor.current?.click())}>
                   <Tag />
                   <MenuLabel label="Labels" hint="Add or remove" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : null}
               {can.canEdit ? (
-                <DropdownMenuItem onSelect={() => queue(share)}>
+                <M.Item onSelect={() => queue(share)}>
                   <UserPlus />
                   <MenuLabel label="Collaborators" hint="Share with people" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : null}
               {can.canEdit && !isNoteEmpty(note) ? (
-                <DropdownMenuItem onSelect={() => queue(() => setDialog("publicLink"))}>
+                <M.Item onSelect={() => queue(() => setDialog("publicLink"))}>
                   <Globe />
                   <MenuLabel label="Public link" hint="Anyone with the link" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : null}
-              <DropdownMenuItem disabled={!can.canCopy} onSelect={() => void copyNoteText(note)}>
+              <M.Item disabled={!can.canCopy} onSelect={() => void copyNoteText(note)}>
                 <Copy />
                 <MenuLabel label="Copy to clipboard" hint="As plain text" />
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={!can.canDuplicate} onSelect={() => duplicateNote(notes, note.id)}>
+              </M.Item>
+              <M.Item disabled={!can.canDuplicate} onSelect={() => duplicateNote(notes, note.id)}>
                 <CopyPlus />
                 <MenuLabel label="Duplicate" hint="Make a copy" />
-              </DropdownMenuItem>
+              </M.Item>
 
               {can.canEdit && !editor && convertTargets.length > 0 ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <FileText />
                     <MenuLabel label="Turn into" hint="Another kind of note" />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
+                  </M.SubTrigger>
+                  <M.SubContent>
                     {convertTargets.map(({ kind, label, icon: Icon }) => (
-                      <DropdownMenuItem key={kind} onSelect={() => convert(kind)}>
+                      <M.Item key={kind} onSelect={() => convert(kind)}>
                         <Icon />
                         {label}
-                      </DropdownMenuItem>
+                      </M.Item>
                     ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                  </M.SubContent>
+                </M.Sub>
               ) : null}
 
               {can.canSetGridSpan ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <Columns3 />
                     <MenuLabel label="Card width" hint={note.gridSpan === 1 ? "Standard" : `${note.gridSpan} columns`} />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup value={String(note.gridSpan)} onValueChange={(value) => notes.setGridSpan(note.id, Number(value))}>
+                  </M.SubTrigger>
+                  <M.SubContent>
+                    <M.RadioGroup value={String(note.gridSpan)} onValueChange={(value) => notes.setGridSpan(note.id, Number(value))}>
                       {GRID_SPANS.map((span) => (
-                        <DropdownMenuRadioItem key={span} value={String(span)}>
+                        <M.RadioItem key={span} value={String(span)}>
                           {span === 1 ? "Standard" : `${span} columns`}
-                        </DropdownMenuRadioItem>
+                        </M.RadioItem>
                       ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                    </M.RadioGroup>
+                  </M.SubContent>
+                </M.Sub>
               ) : null}
 
-              {can.canMoveToStage || can.canMoveToCollection || can.canMoveToWorkspace ? <DropdownMenuSeparator /> : null}
+              {can.canMoveToStage || can.canMoveToCollection || can.canMoveToWorkspace ? <M.Separator /> : null}
 
               {can.canMoveToStage ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <Kanban />
                     <MenuLabel label="Move to column" hint="Another column on this board" />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup value={note.stageId ?? ""} onValueChange={(value) => notes.setNoteStage(note.id, value === "" ? null : value)}>
+                  </M.SubTrigger>
+                  <M.SubContent>
+                    <M.RadioGroup value={note.stageId ?? ""} onValueChange={(value) => notes.setNoteStage(note.id, value === "" ? null : value)}>
                       {stages.map((stage) => (
-                        <DropdownMenuRadioItem key={stage.id} value={stage.id}>
+                        <M.RadioItem key={stage.id} value={stage.id}>
                           <span className="truncate">{stage.name}</span>
-                        </DropdownMenuRadioItem>
+                        </M.RadioItem>
                       ))}
-                      <DropdownMenuRadioItem value="">Unassigned</DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                      <M.RadioItem value="">Unassigned</M.RadioItem>
+                    </M.RadioGroup>
+                  </M.SubContent>
+                </M.Sub>
               ) : null}
 
               {can.canMoveToCollection && collections.length > 0 ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <Folder />
                     <MenuLabel label="Move to collection" hint="Within this workspace" />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
+                  </M.SubTrigger>
+                  <M.SubContent>
+                    <M.RadioGroup
                       value={note.collectionId ?? ""}
                       onValueChange={(value) => {
                         if (value !== note.collectionId) {
@@ -354,64 +436,79 @@ export function NoteActionsMenu({ noteId, surface, children, onOpenChange, onClo
                       }}
                     >
                       {collections.map((c) => (
-                        <DropdownMenuRadioItem key={c.id} value={c.id}>
+                        <M.RadioItem key={c.id} value={c.id}>
                           <span className="truncate">{c.name}</span>
-                        </DropdownMenuRadioItem>
+                        </M.RadioItem>
                       ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                    </M.RadioGroup>
+                  </M.SubContent>
+                </M.Sub>
               ) : null}
 
               {can.canMoveToWorkspace ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <FolderInput />
                     <MenuLabel label="Move to workspace" hint="To another workspace" />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup value={note.workspaceId} onValueChange={moveToWorkspace}>
+                  </M.SubTrigger>
+                  <M.SubContent>
+                    <M.RadioGroup value={note.workspaceId} onValueChange={moveToWorkspace}>
                       {workspaces.map((w) => (
-                        <DropdownMenuRadioItem key={w.id} value={w.id}>
+                        <M.RadioItem key={w.id} value={w.id}>
                           <span className="truncate">{w.name}</span>
-                        </DropdownMenuRadioItem>
+                        </M.RadioItem>
                       ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                    </M.RadioGroup>
+                  </M.SubContent>
+                </M.Sub>
               ) : null}
 
-              <DropdownMenuSeparator />
+              <M.Separator />
 
               {can.canShowHistory ? (
-                <DropdownMenuItem onSelect={() => navigate({ name: "history", noteId: note.id })}>
+                <M.Item onSelect={() => navigate({ name: "history", noteId: note.id })}>
                   <History />
                   <MenuLabel label="Version history" hint="Restore an earlier copy" />
-                </DropdownMenuItem>
+                </M.Item>
               ) : null}
               {!isNoteEmpty(note) ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                <M.Sub>
+                  <M.SubTrigger>
                     <Download />
                     <MenuLabel label="Download" hint="As a file" />
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
+                  </M.SubTrigger>
+                  <M.SubContent>
                     {DOWNLOAD_FORMATS.map((format) => (
-                      <DropdownMenuItem key={format} onSelect={() => download(format)}>
+                      <M.Item key={format} onSelect={() => download(format)}>
                         {exportFormatSpec(format).label}
-                      </DropdownMenuItem>
+                      </M.Item>
                     ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                  </M.SubContent>
+                </M.Sub>
               ) : null}
-              <DropdownMenuItem variant={can.canTrash ? "destructive" : "default"} disabled={!can.canTrash} onSelect={trash}>
+              <M.Item variant={can.canTrash ? "destructive" : "default"} disabled={!can.canTrash} onSelect={trash}>
                 <Trash2 />
                 <MenuLabel label={can.canTrash ? "Move to Trash" : "Only the owner can delete"} hint={can.canTrash ? "Undo for a moment" : undefined} tone={can.canTrash ? "destructive" : "default"} />
-              </DropdownMenuItem>
+              </M.Item>
             </>
           )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+    </>
+  );
+
+  return (
+    <>
+      {variant === "dropdown" ? (
+        <DropdownMenu modal={false} onOpenChange={onOpenChange}>
+          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64" onClick={(event) => event.stopPropagation()} onCloseAutoFocus={runAfterClose}>
+            {rows}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <ContextMenuContent className="w-64" onClick={(event) => event.stopPropagation()} onCloseAutoFocus={runAfterClose}>
+          {rows}
+        </ContextMenuContent>
+      )}
 
       {/* The labels picker opens from the menu's place once the menu has closed. */}
       {can.canEdit && !note.trashed ? (

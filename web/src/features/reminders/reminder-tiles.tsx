@@ -145,9 +145,11 @@ export function ReminderTile({ reminder, now, timeStyle = "clock", draggable }: 
         // The title button is the keyboard path; the whole row is the pointer's.
         tabIndex={-1}
         role={undefined}
+        // The editor grows out of this row and shrinks back into it.
+        data-note-card={reminder.note.id}
         onClick={open}
         className={cn(
-          "group/tile relative flex min-h-14 cursor-pointer items-center gap-2 py-2 pr-1 pl-2 transition-[background-color,opacity] duration-150 ease-standard hover:bg-hover",
+          "group/tile relative flex min-h-14 cursor-pointer items-center gap-2 py-2 pr-1 pl-2 transition-[background-color,opacity] duration-150 ease-standard hover:bg-hover active:bg-pressed",
           isDragging && "opacity-40",
         )}
       >

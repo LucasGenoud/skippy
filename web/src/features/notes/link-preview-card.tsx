@@ -117,7 +117,7 @@ export const LinkPreviewCard = memo(function LinkPreviewCard({ url, variant, onS
           type="button"
           aria-label={summarizing ? "Stop summarizing" : "Summarize page"}
           title={summarizing ? "Stop summarizing" : "Summarize page"}
-          className="mr-1 inline-flex size-9 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="mr-1 inline-flex size-9 shrink-0 items-center justify-center rounded-md text-on-surface-variant transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={(event) => {
             event.stopPropagation();
             if (summarizing) {
@@ -148,6 +148,7 @@ function Thumb({ preview }: { preview: LinkPreview | null }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [iconLoaded, setIconLoaded] = useState(false);
   const image = !imageFailed ? preview?.image : null;
   const favicon = !iconFailed ? preview?.favicon : null;
   return (
@@ -163,7 +164,15 @@ function Thumb({ preview }: { preview: LinkPreview | null }) {
           className={cn("size-full object-cover transition-opacity duration-240 ease-standard", loaded ? "opacity-100" : "opacity-0")}
         />
       ) : favicon ? (
-        <img src={favicon} alt="" loading="lazy" draggable={false} onError={() => setIconFailed(true)} className="size-[22px] object-contain" />
+        <img
+          src={favicon}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          onLoad={() => setIconLoaded(true)}
+          onError={() => setIconFailed(true)}
+          className={cn("size-[22px] object-contain transition-opacity duration-240 ease-standard", iconLoaded ? "opacity-100" : "opacity-0")}
+        />
       ) : (
         <Globe aria-hidden className="size-[22px] text-on-surface-variant" />
       )}

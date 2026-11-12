@@ -26,7 +26,6 @@ import { AppLogo } from "@/components/common/app-logo";
 import { BackgroundPicker } from "@/components/common/color-picker";
 import { IconButton } from "@/components/common/icon-button";
 import { MenuLabel } from "@/components/common/menu-label";
-import { NotePattern } from "@/components/common/note-pattern";
 import { REPEAT_LABELS, formatWhen } from "@/components/common/reminder-format";
 import { ReminderPicker } from "@/components/common/reminder-picker";
 import { showAppSnack } from "@/components/common/snack";
@@ -42,6 +41,7 @@ import { TRANSITION } from "@/lib/theme/motion";
 import { noteColor } from "@/lib/theme/palette";
 import { newId } from "@/lib/util/id";
 
+import { FadingPattern, StateCrossFade, useFollowHeight } from "./motion-kit";
 import { droppedFile, filesWithinLimit, toggleArchive, uploadFiles } from "./note-actions";
 import { PinIcon } from "./pin-icon";
 import { pickFiles, useBrightness } from "./platform";
@@ -110,6 +110,8 @@ export function QuickAddBar({ labelIds }: { labelIds: readonly string[] }) {
   const [uploading, setUploading] = useState(false);
   const [shareId, setShareId] = useState<string | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
+  const inner = useRef<HTMLDivElement | null>(null);
+  useFollowHeight(root, inner);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
   // A picker, menu or file dialog of ours is open: a click on it is not a click outside.
@@ -281,11 +283,9 @@ export function QuickAddBar({ labelIds }: { labelIds: readonly string[] }) {
 
   return (
     <TooltipProvider>
-      <motion.div
+      <div
         ref={root}
-        layout
-        transition={TRANSITION.base}
-        className="relative overflow-hidden rounded-md border border-outline-variant bg-surface shadow-raised"
+        className="relative overflow-hidden rounded-md border border-outline-variant bg-surface shadow-raised transition-[background-color] duration-240 ease-standard"
         style={fill ? { background: fill } : undefined}
         onKeyDown={(event) => {
           if (event.key === "Escape" && draft) {
@@ -294,120 +294,132 @@ export function QuickAddBar({ labelIds }: { labelIds: readonly string[] }) {
           }
         }}
       >
-        {draft ? <NotePattern pattern={draft.pattern} /> : null}
-        <AnimatePresence initial={false} mode="popLayout">
-          {draft ? (
-            <motion.div key="composer" className="relative" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0 } }} transition={TRANSITION.base}>
-              <div className="px-4 pt-2">
-                <div className="flex items-start gap-1">
-                  <input
-                    ref={titleRef}
-                    value={draft.title}
-                    placeholder="Title"
-                    aria-label="Title"
-                    onChange={(event) => patch({ title: event.target.value })}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && draft.kind !== "checklist")) {
-                        if (draft.kind !== "checklist") {
-                          event.preventDefault();
-                          bodyRef.current?.focus();
+        <FadingPattern pattern={draft?.pattern ?? "none"} />
+        {/* The bar unfurls into the composer: the box's height follows its content. */}
+        <div ref={inner} className="relative">
+          <AnimatePresence initial={false} mode="popLayout">
+            {draft ? (
+              <motion.div key="composer" className="relative" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0 } }} transition={TRANSITION.base}>
+                <div className="px-4 pt-2">
+                  <div className="flex items-start gap-1">
+                    <input
+                      ref={titleRef}
+                      value={draft.title}
+                      placeholder="Title"
+                      aria-label="Title"
+                      onChange={(event) => patch({ title: event.target.value })}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && draft.kind !== "checklist")) {
+                          if (draft.kind !== "checklist") {
+                            event.preventDefault();
+                            bodyRef.current?.focus();
+                          }
                         }
-                      }
-                    }}
-                    className="min-w-0 flex-1 bg-transparent py-2 text-base font-semibold outline-none placeholder:text-on-surface-variant"
-                  />
-                  <IconButton label={draft.pinned ? "Unpin" : "Pin"} size="sm" icon={<PinIcon pinned={draft.pinned} />} onClick={() => patch({ pinned: !draft.pinned })} />
-                </div>
-                {draft.kind === "checklist" ? (
-                  <QuickAddChecklist items={draft.items} onChange={(items) => patch({ items })} autoFocus={checklistFocus} />
-                ) : (
-                  <AutoGrowArea
-                    ref={bodyRef}
-                    value={draft.content}
-                    placeholder={draft.kind === "markdown" ? "Markdown…" : "Take a note…"}
-                    monospace={draft.kind === "markdown"}
-                    onChange={(content) => patch({ content })}
-                  />
-                )}
-                <PendingFiles files={draft.files} onRemove={(file) => patch({ files: draft.files.filter((f) => f !== file) })} />
-                <MetaChips
-                  draft={draft}
-                  use24h={use24h}
-                  onClearReminder={() => patch({ reminder: null })}
-                  onRemoveLabel={(id) => patch({ labelIds: draft.labelIds.filter((l) => l !== id) })}
-                />
-              </div>
-              <div className="flex items-center gap-0.5 px-2 py-1">
-                <Popover onOpenChange={tracked}>
-                  <PopoverTrigger asChild>
-                    <IconButton label="Note color" size="sm" icon={<Palette />} />
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[332px]">
-                    <BackgroundPicker
-                      color={draft.color}
-                      onColorChange={(color) => patch({ color })}
-                      pattern={draft.pattern}
-                      onPatternChange={(pattern) => patch({ pattern })}
-                      brightness={brightness}
-                      palette={palette}
+                      }}
+                      className="min-w-0 flex-1 bg-transparent py-2 text-base font-semibold outline-none placeholder:text-on-surface-variant"
                     />
-                  </PopoverContent>
-                </Popover>
-                <DraftLabelPicker selected={draft.labelIds} onChange={(ids) => patch({ labelIds: ids })} onOpenChange={tracked}>
-                  <IconButton label="Labels" size="sm" icon={<Tag />} />
-                </DraftLabelPicker>
-                <ReminderButton value={draft.reminder} use24h={use24h} onChange={(reminder) => patch({ reminder })} onOpenChange={tracked} />
-                <IconButton label="Add image" size="sm" icon={<ImagePlus />} onClick={() => void pick("image/*")} />
-                <IconButton label="Attach file" size="sm" icon={<Paperclip />} onClick={() => void pick()} />
-                <IconButton label="Collaborators" size="sm" icon={<UserPlus />} onClick={share} />
-                <IconButton label="Archive" size="sm" icon={<Archive />} onClick={archive} />
-                <DropdownMenu modal={false} onOpenChange={tracked}>
-                  <DropdownMenuTrigger asChild>
-                    <IconButton label="More" size="sm" icon={<EllipsisVertical />} />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-60">
-                    {CONVERT.filter((c) => c.kind !== draft.kind).map(({ kind, label, icon: Icon }) => (
-                      <DropdownMenuItem key={kind} onSelect={() => convert(kind)}>
-                        <Icon />
-                        <MenuLabel label={label} />
+                    <IconButton label={draft.pinned ? "Unpin" : "Pin"} size="sm" icon={<PinIcon pinned={draft.pinned} />} onClick={() => patch({ pinned: !draft.pinned })} />
+                  </div>
+                  {/* Turning the draft into a checklist (or back) cross-fades the body in place. */}
+                  <StateCrossFade stateKey={draft.kind === "checklist"}>
+                    {draft.kind === "checklist" ? (
+                      <QuickAddChecklist items={draft.items} onChange={(items) => patch({ items })} autoFocus={checklistFocus} />
+                    ) : (
+                      <AutoGrowArea
+                        ref={bodyRef}
+                        value={draft.content}
+                        placeholder={draft.kind === "markdown" ? "Markdown…" : "Take a note…"}
+                        monospace={draft.kind === "markdown"}
+                        onChange={(content) => patch({ content })}
+                      />
+                    )}
+                  </StateCrossFade>
+                  <PendingFiles files={draft.files} onRemove={(file) => patch({ files: draft.files.filter((f) => f !== file) })} />
+                  <AnimatePresence initial={false}>
+                    {draft.reminder || draft.labelIds.length > 0 ? (
+                      <motion.div key="meta" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: TRANSITION.fast }} transition={TRANSITION.base}>
+                        <MetaChips
+                          draft={draft}
+                          use24h={use24h}
+                          onClearReminder={() => patch({ reminder: null })}
+                          onRemoveLabel={(id) => patch({ labelIds: draft.labelIds.filter((l) => l !== id) })}
+                        />
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+                <div className="flex items-center gap-0.5 px-2 py-1">
+                  <Popover onOpenChange={tracked}>
+                    <PopoverTrigger asChild>
+                      <IconButton label="Note color" size="sm" icon={<Palette />} />
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[332px]">
+                      <BackgroundPicker
+                        color={draft.color}
+                        onColorChange={(color) => patch({ color })}
+                        pattern={draft.pattern}
+                        onPatternChange={(pattern) => patch({ pattern })}
+                        brightness={brightness}
+                        palette={palette}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <DraftLabelPicker selected={draft.labelIds} onChange={(ids) => patch({ labelIds: ids })} onOpenChange={tracked}>
+                    <IconButton label="Labels" size="sm" icon={<Tag />} />
+                  </DraftLabelPicker>
+                  <ReminderButton value={draft.reminder} use24h={use24h} onChange={(reminder) => patch({ reminder })} onOpenChange={tracked} />
+                  <IconButton label="Add image" size="sm" icon={<ImagePlus />} onClick={() => void pick("image/*")} />
+                  <IconButton label="Attach file" size="sm" icon={<Paperclip />} onClick={() => void pick()} />
+                  <IconButton label="Collaborators" size="sm" icon={<UserPlus />} onClick={share} />
+                  <IconButton label="Archive" size="sm" icon={<Archive />} onClick={archive} />
+                  <DropdownMenu modal={false} onOpenChange={tracked}>
+                    <DropdownMenuTrigger asChild>
+                      <IconButton label="More" size="sm" icon={<EllipsisVertical />} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-60">
+                      {CONVERT.filter((c) => c.kind !== draft.kind).map(({ kind, label, icon: Icon }) => (
+                        <DropdownMenuItem key={kind} onSelect={() => convert(kind)}>
+                          <Icon />
+                          <MenuLabel label={label} />
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onSelect={() => setDraft(null)}>
+                        <Trash2 />
+                        <MenuLabel label="Discard note" tone="destructive" />
                       </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onSelect={() => setDraft(null)}>
-                      <Trash2 />
-                      <MenuLabel label="Discard note" tone="destructive" />
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <span className="flex-1" />
-                <Button variant="ghost" size="sm" onClick={saveAndCollapse}>
-                  Close
-                </Button>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div key="bar" className="relative flex cursor-text items-center gap-2 py-1 pr-1 pl-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0 } }} transition={TRANSITION.base} onClick={() => expand("text")}>
-              <AppLogo size={22} />
-              <span className="flex-1 text-base text-on-surface-variant">Take a note…</span>
-              <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
-                <IconButton label="New checklist" icon={<CheckSquare />} onClick={() => expand("checklist")} />
-                <IconButton label="New markdown note" icon={<Code />} onClick={() => expand("markdown")} />
-                <AnimatePresence initial={false} mode="popLayout">
-                  {uploading ? (
-                    <motion.span key="spin" className="inline-flex size-9 items-center justify-center" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={TRANSITION.fast}>
-                      <Spinner className="size-[18px]" />
-                    </motion.span>
-                  ) : (
-                    <motion.span key="image" className="inline-flex" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={TRANSITION.fast}>
-                      <IconButton label="New note with image" icon={<ImagePlus />} onClick={() => void quickImageNote()} />
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <span className="flex-1" />
+                  <Button variant="ghost" size="sm" onClick={saveAndCollapse}>
+                    Close
+                  </Button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div key="bar" className="relative flex cursor-text items-center gap-2 py-1 pr-1 pl-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0 } }} transition={TRANSITION.base} onClick={() => expand("text")}>
+                <AppLogo size={22} />
+                <span className="flex-1 text-base text-on-surface-variant">Take a note…</span>
+                <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
+                  <IconButton label="New checklist" icon={<CheckSquare />} onClick={() => expand("checklist")} />
+                  <IconButton label="New markdown note" icon={<Code />} onClick={() => expand("markdown")} />
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {uploading ? (
+                      <motion.span key="spin" className="inline-flex size-9 items-center justify-center" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={TRANSITION.fast}>
+                        <Spinner className="size-[18px]" />
+                      </motion.span>
+                    ) : (
+                      <motion.span key="image" className="inline-flex" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={TRANSITION.fast}>
+                        <IconButton label="New note with image" icon={<ImagePlus />} onClick={() => void quickImageNote()} />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
       <Suspense fallback={null}>{shareId ? <ShareDialog noteId={shareId} open onOpenChange={(open) => !open && setShareId(null)} /> : null}</Suspense>
     </TooltipProvider>
   );
@@ -478,7 +490,7 @@ function PendingFiles({ files, onRemove }: { files: readonly File[]; onRemove: (
               <span className="inline-flex h-7 max-w-56 items-center gap-1.5 rounded-md border border-outline-variant pr-1 pl-2 text-xs">
                 <FileText aria-hidden className="size-4 shrink-0 text-on-surface-variant" />
                 <span className="truncate">{file.name}</span>
-                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => onRemove(file)} className="inline-flex size-5 items-center justify-center rounded-xs hover:bg-hover">
+                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => onRemove(file)} className="inline-flex size-5 items-center justify-center rounded-xs transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50">
                   <X aria-hidden className="size-3.5" />
                 </button>
               </span>
@@ -504,7 +516,7 @@ function MetaChips({ draft, use24h, onClearReminder, onRemoveLabel }: { draft: D
           <CalendarDays aria-hidden className="size-4 text-on-surface-variant" />
           {formatWhen(draft.reminder.at, { use24h })}
           {draft.reminder.repeat ? ` · ${REPEAT_LABELS[draft.reminder.repeat]}` : ""}
-          <button type="button" aria-label="Remove reminder" onClick={onClearReminder} className="inline-flex size-5 items-center justify-center rounded-xs hover:bg-hover">
+          <button type="button" aria-label="Remove reminder" onClick={onClearReminder} className="inline-flex size-5 items-center justify-center rounded-xs transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50">
             <X aria-hidden className="size-3.5" />
           </button>
         </span>
@@ -513,7 +525,7 @@ function MetaChips({ draft, use24h, onClearReminder, onRemoveLabel }: { draft: D
         <span key={label.id} className="inline-flex h-7 items-center gap-1.5 rounded-md border pr-1 pl-2 text-xs" style={labelStyle(label.color)}>
           <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5" />
           {label.name}
-          <button type="button" aria-label={`Remove ${label.name}`} onClick={() => onRemoveLabel(label.id)} className="inline-flex size-5 items-center justify-center rounded-xs hover:bg-hover">
+          <button type="button" aria-label={`Remove ${label.name}`} onClick={() => onRemoveLabel(label.id)} className="inline-flex size-5 items-center justify-center rounded-xs transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50">
             <X aria-hidden className="size-3.5" />
           </button>
         </span>
@@ -604,7 +616,7 @@ function DraftLabelPicker({
                 role="menuitemcheckbox"
                 aria-checked={on}
                 onClick={() => toggle(label.id)}
-                className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm outline-none hover:bg-hover focus-visible:bg-hover"
+                className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm outline-none hover:bg-hover active:bg-pressed focus-visible:bg-hover"
               >
                 <LabelIcon iconKey={label.icon} aria-hidden className="size-4 shrink-0" style={label.color ? { color: label.color } : undefined} />
                 <span className="flex-1 truncate">{label.name}</span>
@@ -631,7 +643,7 @@ function DraftLabelPicker({
                 toggle(label.id);
                 setQuery("");
               }}
-              className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm outline-none hover:bg-hover focus-visible:bg-hover"
+              className="flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm outline-none hover:bg-hover active:bg-pressed focus-visible:bg-hover"
             >
               <Plus aria-hidden className="size-4" />
               <span className="truncate">Create “{trimmed}”</span>

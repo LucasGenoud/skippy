@@ -29,10 +29,12 @@ import {
 } from "@/lib/store";
 import { TRANSITION } from "@/lib/theme/motion";
 
+import { moveCardFocus } from "./card-focus";
 import { rangeSelection } from "./card-rules";
 import { gridMetrics } from "./masonry-layout";
 import { Masonry } from "./masonry";
 import { CardEnvironmentContext, NoteCard, type CardEnvironment } from "./note-card";
+import { PresenceRow } from "./motion-kit";
 import { QuickAddBar } from "./quick-add-bar";
 
 const CollectionSettingsDialog = lazy(() =>
@@ -181,15 +183,22 @@ export function NotesView() {
   } else {
     body = (
       <motion.div key={viewKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: TRANSITION.fast }} transition={TRANSITION.base}>
+        {/* The pinned section grows in and out, so the grid below glides rather than jumps. */}
         <AnimatePresence initial={false}>
           {pinned.length > 0 ? (
-            <motion.div key="pinned-label" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={TRANSITION.fast}>
+            <PresenceRow key="pinned">
               <SectionLabel className="block px-2 pt-3 pb-2">Pinned</SectionLabel>
-            </motion.div>
+              {grid(pinned, "pinned")}
+            </PresenceRow>
           ) : null}
         </AnimatePresence>
-        {pinned.length > 0 ? grid(pinned, "pinned") : null}
-        {pinned.length > 0 && others.length > 0 ? <SectionLabel className="block px-2 pt-5 pb-2">Others</SectionLabel> : null}
+        <AnimatePresence initial={false}>
+          {pinned.length > 0 && others.length > 0 ? (
+            <PresenceRow key="others-label">
+              <SectionLabel className="block px-2 pt-5 pb-2">Others</SectionLabel>
+            </PresenceRow>
+          ) : null}
+        </AnimatePresence>
         {grid(others, "others")}
       </motion.div>
     );
@@ -197,7 +206,17 @@ export function NotesView() {
 
   return (
     <CardEnvironmentContext.Provider value={environment}>
-      <div ref={scrollRef} className="w-full">
+      {/* Arrow keys move focus between cards across both sections, Enter opens, Space selects. */}
+      <div
+        ref={scrollRef}
+        className="w-full"
+        data-card-grid
+        onKeyDown={(event) => {
+          if (moveCardFocus(event.nativeEvent, event.currentTarget)) {
+            event.preventDefault();
+          }
+        }}
+      >
         <div className="mx-auto pt-6" style={{ paddingLeft: metrics.pad, paddingRight: metrics.pad, maxWidth: metrics.maxWidth + metrics.pad * 2 }}>
           {showQuickAdd ? (
             <div className="mx-auto w-full max-w-[600px] pt-4 pb-6">
