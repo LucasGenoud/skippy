@@ -10,7 +10,7 @@ import { ACCENT_BOARD, ACCENT_PRESETS, accentPreview } from "@/lib/theme/accent"
 import { hexToRgb, isDarkColor } from "@/lib/theme/color";
 import { normalizeHex } from "@/lib/theme/palette";
 import { FormDialog } from "../kit/form-dialog";
-import { useBrightness } from "../kit/use-brightness";
+import { useBrightness } from "@/lib/theme/use-brightness";
 import { useDialog } from "../kit/use-dialog";
 
 const checkColor = (hex: string): string => {

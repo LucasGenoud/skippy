@@ -100,22 +100,4 @@ export function pickFiles(options: { accept?: string; multiple?: boolean } = {})
   });
 }
 
-// -- the theme's brightness, read off the `dark` class applyTheme sets ------------
-
-function subscribeBrightness(onChange: () => void): () => void {
-  if (typeof document === "undefined" || typeof MutationObserver === "undefined") {
-    return () => {};
-  }
-  const watcher = new MutationObserver(onChange);
-  watcher.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  return () => watcher.disconnect();
-}
-
-const brightnessSnapshot = (): "light" | "dark" =>
-  typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light";
-const lightSnapshot = (): "light" | "dark" => "light";
-
-/** "light" or "dark", for pickers that draw swatches in the current theme. */
-export function useBrightness(): "light" | "dark" {
-  return useSyncExternalStore(subscribeBrightness, brightnessSnapshot, lightSnapshot);
-}
+export { useBrightness } from "@/lib/theme/use-brightness";

@@ -49,20 +49,7 @@ export function useMinWidth(px: number): boolean {
 export const useWide = (): boolean => useMinWidth(WIDE_MIN_WIDTH);
 export const useTitledBar = (): boolean => useMinWidth(TITLED_BAR_MIN_WIDTH);
 
-function subscribeDarkClass(onChange: () => void): () => void {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  return () => observer.disconnect();
-}
-
-/** The brightness the page is painted in (the `dark` class applyTheme sets). */
-export function useBrightness(): Brightness {
-  return useSyncExternalStore(
-    subscribeDarkClass,
-    () => (document.documentElement.classList.contains("dark") ? "dark" : "light"),
-    () => "light",
-  );
-}
+export { useBrightness } from "@/lib/theme/use-brightness";
 
 /** "Cmd" or "Ctrl" for this machine. */
 export function usePlatformName(): string {

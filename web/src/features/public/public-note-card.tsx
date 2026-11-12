@@ -13,7 +13,7 @@ import { formatBytes } from "@/lib/util/mime";
 import { LinkedText } from "@/features/notes/linked-text";
 import { NoteMarkdown } from "@/features/notes/note-markdown";
 import { checklistPreview } from "./public-layout";
-import { useBrightness } from "./use-brightness";
+import { useBrightness } from "@/lib/theme/use-brightness";
 
 // One note, drawn read-only (`PublicNoteCard`). Deliberately not NoteCard:
 // that reads the signed-in stores. This takes everything as props and offers

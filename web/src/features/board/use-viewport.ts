@@ -34,23 +34,7 @@ export function useMinWidth(px: number): boolean {
   return useMediaQuery(`(min-width: ${px}px)`);
 }
 
-function subscribeToScheme(onChange: () => void): () => void {
-  if (typeof document === "undefined" || typeof MutationObserver === "undefined") {
-    return noop;
-  }
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  return () => observer.disconnect();
-}
-
-/** "dark" while the theme layer has put the `dark` class on <html>. */
-export function useBrightness(): "light" | "dark" {
-  return useSyncExternalStore(
-    subscribeToScheme,
-    () => (document.documentElement.classList.contains("dark") ? "dark" : "light"),
-    () => "light",
-  );
-}
+export { useBrightness } from "@/lib/theme/use-brightness";
 
 /** The width of the element the returned ref is attached to (0 until measured). */
 export function useElementWidth<T extends HTMLElement>(): [(node: T | null) => void, number] {
