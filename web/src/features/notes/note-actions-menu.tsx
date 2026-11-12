@@ -500,12 +500,12 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
       {variant === "dropdown" ? (
         <DropdownMenu modal={false} onOpenChange={onOpenChange}>
           <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64" onClick={(event) => event.stopPropagation()} onCloseAutoFocus={runAfterClose}>
+          <DropdownMenuContent align="end" className="w-max min-w-72 max-w-[26rem]" onClick={(event) => event.stopPropagation()} onCloseAutoFocus={runAfterClose}>
             {rows}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <ContextMenuContent className="w-64" onClick={(event) => event.stopPropagation()} onCloseAutoFocus={runAfterClose}>
+        <ContextMenuContent className="w-max min-w-72 max-w-[26rem]" onClick={(event) => event.stopPropagation()} onCloseAutoFocus={runAfterClose}>
           {rows}
         </ContextMenuContent>
       )}

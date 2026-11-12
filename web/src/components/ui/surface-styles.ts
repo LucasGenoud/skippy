@@ -18,7 +18,7 @@ export const menuItem =
 
 /** The grey one-line hint beside a menu item's label (`MenuLabel`). */
 export const menuDescription =
-  "min-w-0 flex-[2_1_0%] truncate text-xs text-on-surface-variant"
+  "shrink-0 whitespace-nowrap text-xs text-on-surface-variant"
 
 /** The scrim behind a modal: a quiet ink veil that fades. */
 export const scrim =
