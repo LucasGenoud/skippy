@@ -176,7 +176,7 @@ ones (camelCase): `note_collection`, `board_layout`, `note_conversion`,
 
 ### API (CORE)
 
-`lib/api/client.ts` defines `interface Api` mirroring `app/lib/api/api_client.dart`
+`lib/api/client.ts` defines `interface Api` (implemented by `HttpApi` in `lib/api/http-api.ts`) mirroring `app/lib/api/api_client.dart`
 method for method, and `HttpApi` implementing it with `fetch`. Wire types in
 `lib/models` mirror `backend/src/models.rs` and the Dart models, including
 null-vs-omitted PATCH semantics (reminders), `depth` omitted at 0, and

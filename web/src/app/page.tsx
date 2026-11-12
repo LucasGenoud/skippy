@@ -1,3 +1,5 @@
+import { AppLoader } from "@/features/app";
+
 export default function Page() {
-  return <main>Skippy</main>;
+  return <AppLoader />;
 }
