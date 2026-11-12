@@ -95,7 +95,11 @@ function PickRow({ selected, onPick, leading, title, subtitle }: { selected: boo
         <span className="truncate text-sm text-on-surface">{title}</span>
         {subtitle ? <span className="truncate text-xs text-on-surface-variant">{subtitle}</span> : null}
       </span>
-      {selected ? <Check aria-hidden className="size-4 text-primary" /> : null}
+      {/* The check pops in rather than appearing in one frame. */}
+      <Check
+        aria-hidden
+        className={cn("size-4 shrink-0 text-primary transition-[opacity,scale] duration-150", selected ? "scale-100 opacity-100 ease-back" : "scale-50 opacity-0 ease-standard")}
+      />
     </button>
   );
 }

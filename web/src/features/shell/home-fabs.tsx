@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { FileText, ListChecks, Mic, PenLine, Plus, type LucideIcon } from "lucide-react";
+import { Kbd } from "@/components/common/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { NoteKind } from "@/lib/models/note";
 import { composeLabelIdsOf, useUiController } from "@/lib/store";
 import { DURATION, EASE, TRANSITION, transitionFor } from "@/lib/theme/motion";
@@ -21,11 +23,12 @@ import { useShellDialogs } from "./shell-dialogs";
 /** How far into the unfold each kind starts after the one below it. */
 const STAGGER_S = 0.035;
 
-const KINDS: readonly { kind: NoteKind | "audio-recording"; icon: LucideIcon; label: string }[] = [
+/** Each kind with the key that starts it from the grid (`shortcuts.ts`), shown beside it. */
+const KINDS: readonly { kind: NoteKind | "audio-recording"; icon: LucideIcon; label: string; key?: string }[] = [
   { kind: "audio-recording", icon: Mic, label: "Audio" },
-  { kind: "markdown", icon: FileText, label: "Markdown" },
-  { kind: "checklist", icon: ListChecks, label: "Checklist" },
-  { kind: "text", icon: PenLine, label: "Note" },
+  { kind: "markdown", icon: FileText, label: "Markdown", key: "M" },
+  { kind: "checklist", icon: ListChecks, label: "Checklist", key: "L" },
+  { kind: "text", icon: PenLine, label: "Note", key: "N" },
 ];
 
 export function HomeFabs() {
@@ -68,8 +71,21 @@ export function HomeFabs() {
     newNote(kind);
   };
 
+  // Up and Down walk the unfolded kinds and the button, as in a menu.
+  const onArrow = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!open || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) {
+      return;
+    }
+    const buttons = Array.from(root.current?.querySelectorAll("button") ?? []);
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const step = event.key === "ArrowUp" ? -1 : 1;
+    const next = buttons[at < 0 ? buttons.length - 1 : (at + step + buttons.length) % buttons.length];
+    next?.focus();
+    event.preventDefault();
+  };
+
   return (
-    <div ref={root} className="pointer-events-none flex flex-col items-end gap-2">
+    <div ref={root} onKeyDown={onArrow} className="pointer-events-none flex flex-col items-end gap-2">
       <AnimatePresence>
         {open
           ? KINDS.map((entry, i) => {
@@ -86,25 +102,35 @@ export function HomeFabs() {
                 >
                   <entry.icon aria-hidden className="size-[18px] text-on-surface-variant" />
                   {entry.label}
+                  {entry.key ? (
+                    <Kbd className="ml-1 [@media(hover:none)]:hidden">{entry.key}</Kbd>
+                  ) : null}
                 </motion.button>
               );
             })
           : null}
       </AnimatePresence>
-      <motion.button
-        type="button"
-        aria-label={open ? "Close" : "New note"}
-        aria-expanded={open}
-        title={open ? "Close" : "New note"}
-        onClick={() => setOpen((v) => !v)}
-        whileHover={reduced ? undefined : { scale: 1.06 }}
-        transition={transitionFor(TRANSITION.fast, reduced)}
-        className="pointer-events-auto mt-1 inline-flex size-14 items-center justify-center rounded-md bg-primary-container text-on-primary-container shadow-raised outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <motion.span animate={{ rotate: open ? 45 : 0 }} transition={transitionFor(TRANSITION.base, reduced)} className="inline-flex">
-          <Plus className="size-7" />
-        </motion.span>
-      </motion.button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <motion.button
+            type="button"
+            aria-label={open ? "Close" : "New note"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            whileHover={reduced ? undefined : { scale: 1.06 }}
+            transition={transitionFor(TRANSITION.fast, reduced)}
+            className="pointer-events-auto mt-1 inline-flex size-14 items-center justify-center rounded-md bg-primary-container text-on-primary-container shadow-raised outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <motion.span animate={{ rotate: open ? 45 : 0 }} transition={transitionFor(TRANSITION.base, reduced)} className="inline-flex">
+              <Plus className="size-7" />
+            </motion.span>
+          </motion.button>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="flex items-center gap-2">
+          {open ? "Close" : "New note"}
+          <Kbd className="h-4 min-w-4 px-0.5">{open ? "Esc" : "N"}</Kbd>
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }

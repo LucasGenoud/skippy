@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, MessageSquarePlus, MessagesSquare, Settings } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { IconButton } from "@/components/common/icon-button";
 import { MenuLabel } from "@/components/common/menu-label";
 import { Reveal } from "@/components/common/reveal";
@@ -88,7 +88,7 @@ export function ChatScreen() {
   return (
     <div className="flex h-dvh flex-col bg-canvas">
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-hairline bg-surface px-2 sm:px-3">
-        <IconButton label="Back" icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
+        <IconButton label="Back" shortcut="Esc" data-page-back icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <h1 className="truncate pl-1 text-base font-semibold text-on-surface">Chat with your notes</h1>
           {workspaces.length > 1 ? (
@@ -104,32 +104,35 @@ export function ChatScreen() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto">
-        {/* column-reverse keeps the newest turn in view as answers grow. */}
-        <div className="mx-auto w-full max-w-[720px] px-4 pt-4 pb-2">
-          {turns.length === 0 ? (
-            <motion.div
-              key={blocked ? availability : "hint"}
-              className="flex min-h-[50dvh] flex-col items-center justify-center text-center"
-              initial={{ opacity: 0, y: RISE_PX }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={transitionFor(TRANSITION.slow, reduced)}
-            >
-              <MessagesSquare aria-hidden className="size-12 text-on-surface-variant/40" strokeWidth={1.25} />
-              {blocked ? (
-                <Unavailable availability={availability} role={role} workspaceId={scopeId} />
-              ) : (
-                <p className="mt-4 max-w-sm text-sm text-on-surface-variant">
-                  Ask about your notes; answers cite the notes they came from. You can also ask to create, edit, or organize them.
-                </p>
-              )}
-            </motion.div>
-          ) : (
-            <div role="log" aria-live="polite" aria-label="Conversation">
-              {turns.map((turn) => (
-                <ChatBubble key={turn.id} turn={turn} onUndo={(id) => void conversation.undo(id)} />
-              ))}
-            </div>
-          )}
+        {/* column-reverse keeps the newest turn in view as answers grow; starting over fades the conversation out. */}
+        <div className="relative mx-auto w-full max-w-[720px] px-4 pt-4 pb-2">
+          <AnimatePresence initial={false} mode="popLayout">
+            {turns.length === 0 ? (
+              <motion.div
+                key={blocked ? availability : "hint"}
+                className="flex min-h-[50dvh] flex-col items-center justify-center text-center"
+                initial={{ opacity: 0, y: RISE_PX }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, transition: transitionFor(TRANSITION.fast, reduced) }}
+                transition={transitionFor(TRANSITION.slow, reduced)}
+              >
+                <MessagesSquare aria-hidden className="size-12 text-on-surface-variant/40" strokeWidth={1.25} />
+                {blocked ? (
+                  <Unavailable availability={availability} role={role} workspaceId={scopeId} />
+                ) : (
+                  <p className="mt-4 max-w-sm text-sm text-on-surface-variant">
+                    Ask about your notes; answers cite the notes they came from. You can also ask to create, edit, or organize them.
+                  </p>
+                )}
+              </motion.div>
+            ) : (
+              <motion.div key="log" role="log" aria-live="polite" aria-label="Conversation" exit={{ opacity: 0, transition: transitionFor(TRANSITION.fast, reduced) }}>
+                {turns.map((turn) => (
+                  <ChatBubble key={turn.id} turn={turn} onUndo={(id) => void conversation.undo(id)} />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 

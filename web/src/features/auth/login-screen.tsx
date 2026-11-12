@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import { BadgeCheck, LockKeyhole, LogIn, Mail, UserPlus } from "lucide-react";
 import { AnimatedFormError } from "@/components/common/form-error-banner";
-import { Reveal } from "@/components/common/reveal";
+import { CrossFade, Reveal } from "@/components/common/reveal";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth, useAuthController } from "@/lib/store/hooks";
@@ -283,9 +283,14 @@ export function LoginScreen() {
 
           <AnimatedFormError message={error} />
 
+          {/* The tab switch and the busy spinner trade the button's icon and label in place. */}
           <Button type="submit" size="lg" className="mt-6 w-full" disabled={busy}>
-            {busy ? <ButtonSpinner /> : creating ? <UserPlus /> : <LogIn />}
-            {creating ? "Create account" : "Sign in"}
+            <CrossFade stateKey={`${mode}-${busy}`} className="justify-items-center">
+              <span className="inline-flex items-center gap-2">
+                {busy ? <ButtonSpinner /> : creating ? <UserPlus /> : <LogIn />}
+                {creating ? "Create account" : "Sign in"}
+              </span>
+            </CrossFade>
           </Button>
         </div>
       </form>

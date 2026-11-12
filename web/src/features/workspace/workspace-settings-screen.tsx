@@ -6,7 +6,7 @@ import { IconButton } from "@/components/common/icon-button";
 import type { NoteCollection } from "@/lib/models";
 import { closeTo, navigate } from "@/lib/router";
 import { isWorkspaceOwnedBy } from "@/lib/models";
-import { useNotesController, useNotesSelector, useWorkspace } from "@/lib/store";
+import { useNotesController, useNotesSelector } from "@/lib/store";
 import { LabelIcon, labelColor } from "@/lib/theme/label-style";
 import { computeWorkspaceStats } from "@/lib/util/workspace-stats";
 import { plural } from "@/features/settings/kit/files";
@@ -19,13 +19,14 @@ import { DuplicateWorkspaceDialog } from "./duplicate-workspace-dialog";
 import { PeopleSection } from "./people-section";
 import { WorkspaceAiSection } from "./workspace-ai-section";
 import { RenameWorkspaceDialog } from "./workspace-dialogs";
+import { useLeavingWorkspace } from "./use-leaving-workspace";
 
 /** A full page with a back button, shared by the workspace's settings and stats. */
 export function WorkspacePage({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="flex h-dvh flex-col bg-surface text-on-surface">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-hairline px-2">
-        <IconButton label="Back" icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
+        <IconButton label="Back" shortcut="Esc" data-page-back icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
         <div className="flex min-w-0 flex-col">
           <h1 className="truncate text-base leading-5 font-semibold">{title}</h1>
           {subtitle ? <span className="truncate text-xs text-on-surface-variant">{subtitle}</span> : null}
@@ -50,7 +51,7 @@ function CollectionIcon({ collection }: { collection: NoteCollection }) {
  */
 export function WorkspaceSettingsScreen({ workspaceId }: { workspaceId: string }) {
   const notes = useNotesController();
-  const workspace = useWorkspace(workspaceId);
+  const workspace = useLeavingWorkspace(workspaceId);
   const rename = useDialog();
   const duplicate = useDialog();
   const collection = useDialog<{ id?: string }>();

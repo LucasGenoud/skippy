@@ -26,14 +26,18 @@ export function PublicLinksSection() {
   const { remote: load, reload: refresh, update } = useRemote<readonly ShareLink[]>(() => api.fetchShareLinks());
   const [confirming, setConfirming] = useState<ShareLink | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [revokingToken, setRevokingToken] = useState<string | null>(null);
 
   async function revoke(link: ShareLink) {
+    setRevokingToken(link.token);
     try {
       await api.deleteShareLink(link.token);
       update((links) => links.filter((x) => x.token !== link.token));
       showAppSnack("Public link revoked", { icon: Unlink, kind: "danger" });
     } catch {
       showAppSnack("Couldn't revoke the link", { kind: "danger" });
+    } finally {
+      setRevokingToken(null);
     }
   }
 
@@ -77,6 +81,7 @@ export function PublicLinksSection() {
               icon={<Icon aria-hidden />}
               title={link.title}
               meta={meta}
+              state={revokingToken === link.token ? "pending" : "idle"}
               actions={
                 <>
                   <IconButton size="sm" label="Copy link" icon={<Copy />} onClick={() => void copy(link)} />

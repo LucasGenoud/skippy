@@ -1,5 +1,6 @@
 "use client"
 
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { Check, CircleAlert, CloudOff, LoaderCircle, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
@@ -36,13 +37,49 @@ export function SyncPill({ state, count = 0, className }: { state: SyncState; co
         className,
       )}
     >
-      <CrossFade stateKey={state} className="items-center">
-        <span className="inline-flex items-center gap-1.5" aria-hidden>
-          {Icon ? <Icon className="size-3.5" strokeWidth={2.25} /> : <LoaderCircle className="size-3 animate-spin" />}
-          {label}
-          {showCount ? <RollingCount count={count} className="text-on-surface-variant/80" /> : null}
-        </span>
-      </CrossFade>
+      <TweenWidth>
+        <CrossFade stateKey={state} className="items-center">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap" aria-hidden>
+            {Icon ? <Icon className="size-3.5" strokeWidth={2.25} /> : <LoaderCircle className="size-3 animate-spin" />}
+            {label}
+            {showCount ? <RollingCount count={count} className="text-on-surface-variant/80" /> : null}
+          </span>
+        </CrossFade>
+      </TweenWidth>
     </div>
+  )
+}
+
+/**
+ * Grows or shrinks to its content's width over BASE instead of jumping
+ * (the pill's `AnimatedSize`): "Synced" to "Saving 3" widens smoothly. One
+ * small element, so animating its width is cheap. The first width is taken
+ * as it is.
+ */
+function TweenWidth({ children }: { children: ReactNode }) {
+  const inner = useRef<HTMLSpanElement>(null)
+  const [width, setWidth] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    const el = inner.current
+    if (!el || typeof ResizeObserver === "undefined") {
+      return
+    }
+    const measure = (): void => setWidth(el.getBoundingClientRect().width)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <span
+      className={cn("inline-flex overflow-hidden", width !== null && "transition-[width] duration-240 ease-emphasized")}
+      style={width === null ? undefined : { width }}
+    >
+      <span ref={inner} className="inline-flex shrink-0">
+        {children}
+      </span>
+    </span>
   )
 }

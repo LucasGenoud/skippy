@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, Copy, Eye, KeyRound, NotebookPen, Plus, RefreshCw } from "lucide-react";
+import { Bot, Copy, Eye, KeyRound, LoaderCircle, NotebookPen, Plus, RefreshCw } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
 import { CrossFade } from "@/components/common/reveal";
 import { showAppSnack } from "@/components/common/snack";
@@ -49,14 +49,19 @@ export function AiAccessSection() {
   const [createdOpen, setCreatedOpen] = useState(false);
   const [revoking, setRevoking] = useState<ApiToken | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   async function create(name: string, scope: TokenScope) {
     let result: CreatedApiToken;
+    setCreating(true);
     try {
       result = await api.createApiToken(name, scope);
     } catch {
       showAppSnack("Couldn't create the token", { kind: "danger" });
       return;
+    } finally {
+      setCreating(false);
     }
     update((tokens) => [...tokens, result.token]);
     setCreated(result);
@@ -64,12 +69,15 @@ export function AiAccessSection() {
   }
 
   async function revoke(token: ApiToken) {
+    setRevokingId(token.id);
     try {
       await api.deleteApiToken(token.id);
       update((tokens) => tokens.filter((t) => t.id !== token.id));
       showAppSnack("Token revoked", { icon: KeyRound });
     } catch {
       showAppSnack("Couldn't revoke the token", { kind: "danger" });
+    } finally {
+      setRevokingId(null);
     }
   }
 
@@ -99,8 +107,8 @@ export function AiAccessSection() {
                 : `${plural(live, "token")} can reach your notes`
             }
             trailing={
-              <Button variant="ghost" size="sm" onClick={() => creator.show(true)}>
-                <Plus aria-hidden />
+              <Button variant="ghost" size="sm" disabled={creating} onClick={() => creator.show(true)}>
+                <CrossFade stateKey={creating}>{creating ? <LoaderCircle aria-hidden className="animate-spin" /> : <Plus aria-hidden />}</CrossFade>
                 New token
               </Button>
             }
@@ -113,6 +121,7 @@ export function AiAccessSection() {
             icon={token.scope === "write" ? <NotebookPen aria-hidden /> : <Eye aria-hidden />}
             title={token.name}
             meta={tokenMeta(token, (d) => formatDate(d, dateFormat))}
+            state={revokingId === token.id ? "pending" : "idle"}
             actions={
               <IconButton
                 size="sm"

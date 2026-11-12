@@ -64,7 +64,8 @@ it("opens one page at a time on a phone, pushed over the index", async () => {
   expect(screen.getByRole("navigation", { name: "Settings pages" })).toBeTruthy();
   await act(async () => fireEvent.click(screen.getByText("About")));
   expect(getRoute()).toEqual({ name: "settings", page: "about" });
-  expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
+  // The index stays underneath, out of reach, as a pushed route leaves it.
+  expect(screen.getByRole("navigation", { name: "Settings pages" }).hasAttribute("inert")).toBe(true);
   expect(screen.getByText("Client version")).toBeTruthy();
 });
 

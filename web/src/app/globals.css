@@ -453,6 +453,25 @@
   }
 }
 
+/*
+ * Toasts slide and fade on the house timing (BASE, emphasized) instead of
+ * sonner's 400ms default, so a snack lands like every other surface.
+ */
+[data-sonner-toaster] [data-sonner-toast] {
+  transition-duration: var(--motion-base) !important;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+/*
+ * A theme change (fadeTheme in lib/theme/accent.ts) cross-fades the page's
+ * old colours into the new ones over BASE.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-base);
+  animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
 /* Reduce motion: every transition and keyframe settles at once. */
 @media (prefers-reduced-motion: reduce) {
   *,

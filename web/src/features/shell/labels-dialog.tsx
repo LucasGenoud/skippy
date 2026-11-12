@@ -33,7 +33,7 @@ export function LabelsDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           </Button>
           <Separator className="my-1.5" />
           {labels.length === 0 ? <p className="px-2 py-4 text-sm text-on-surface-variant">No labels yet.</p> : null}
-          <SortableRows items={labels} idOf={(l) => l.id} onMove={(id, index) => notes.moveLabel(id, index)}>
+          <SortableRows items={labels} idOf={(l) => l.id} onMove={(id, index) => notes.moveLabel(id, index)} entrance="staggered">
             {(label, handle) => (
               <ManageRow
                 dragging={handle.dragging}

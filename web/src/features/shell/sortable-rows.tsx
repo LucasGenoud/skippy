@@ -4,7 +4,9 @@ import type { CSSProperties, ReactNode } from "react";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { AnimatePresence } from "motion/react";
 import { cn } from "cn";
+import { StaggeredEntrance } from "@/components/common/staggered-entrance";
 
 /** Pixels a press must travel before it becomes a drag, so a tap still opens the row. */
 const DRAG_ACTIVATION_PX = 4;
@@ -27,6 +29,7 @@ export function SortableRows<T>({
   children,
   className,
   keyboard = "enabled",
+  entrance = "none",
 }: {
   items: readonly T[];
   idOf(item: T): string;
@@ -38,6 +41,11 @@ export function SortableRows<T>({
    * them (the sidebar); keyboard reordering needs a grip of its own.
    */
   keyboard?: "enabled" | "disabled";
+  /**
+   * "staggered" cascades the rows in when the list opens and folds a removed
+   * row away (a dialog's list); "none" for a list that is always on screen.
+   */
+  entrance?: "staggered" | "none";
 }) {
   const pointer = useSensor(PointerSensor, { activationConstraint: { distance: DRAG_ACTIVATION_PX } });
   const keys = useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates });
@@ -59,11 +67,21 @@ export function SortableRows<T>({
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <div className={className}>
-          {items.map((item, index) => (
-            <SortableRow key={idOf(item)} id={idOf(item)}>
-              {(handle) => children(item, handle, index)}
-            </SortableRow>
-          ))}
+          {entrance === "staggered" ? (
+            <AnimatePresence initial>
+              {items.map((item, index) => (
+                <SortableRow key={idOf(item)} id={idOf(item)}>
+                  {(handle) => <StaggeredEntrance index={index}>{children(item, handle, index)}</StaggeredEntrance>}
+                </SortableRow>
+              ))}
+            </AnimatePresence>
+          ) : (
+            items.map((item, index) => (
+              <SortableRow key={idOf(item)} id={idOf(item)}>
+                {(handle) => children(item, handle, index)}
+              </SortableRow>
+            ))
+          )}
         </div>
       </SortableContext>
     </DndContext>

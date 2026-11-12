@@ -6,7 +6,7 @@
 // Tailwind easings ease-emphasized / ease-standard / ease-back, so
 // `duration-150 ease-standard` in a class is the FAST/standard pair here.
 
-import type { Transition } from "motion/react";
+import type { Transition, Variants } from "motion/react";
 
 /** Durations in milliseconds. */
 export const DURATION = {
@@ -76,3 +76,36 @@ export function prefersReducedMotion(): boolean {
 export function transitionFor(transition: Transition, reduced: boolean | null = prefersReducedMotion()): Transition {
   return reduced ? NO_MOTION : transition;
 }
+
+/** How far a full page travels as it arrives or leaves (`MaterialPageRoute`). */
+const PAGE_SHIFT_PX = 24;
+
+/**
+ * A full page pushed over another (settings, workspace pages, chat, a phone
+ * settings page over its index): it arrives from a short way to the right
+ * while fading in, and leaves the same way, faster. Only the page moves; the
+ * one beneath stays put. Use as `motion` variants with `initial="enter"`,
+ * `animate="shown"` and `exit="leave"`.
+ */
+export const PAGE = {
+  enter: { opacity: 0, x: PAGE_SHIFT_PX },
+  shown: { opacity: 1, x: 0, transition: TRANSITION.base },
+  leave: { opacity: 0, x: PAGE_SHIFT_PX / 2, transition: TRANSITION.fast },
+} as const satisfies Variants;
+
+const STILL_PAGE = {
+  enter: { opacity: 0, x: 0 },
+  shown: { opacity: 1, x: 0, transition: NO_MOTION },
+  leave: { opacity: 0, x: 0, transition: NO_MOTION },
+} as const satisfies Variants;
+
+/** [PAGE] or, under reduced motion, a page that appears and leaves at once. */
+export function pageVariants(reduced: boolean | null): Variants {
+  return reduced ? STILL_PAGE : PAGE;
+}
+
+/**
+ * The longest an exit may hold its slot before it is removed regardless: a
+ * safety net for an overlay whose exit never reports back.
+ */
+export const EXIT_TIMEOUT_MS = 1000;

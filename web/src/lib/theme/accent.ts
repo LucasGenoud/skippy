@@ -13,6 +13,7 @@
 // icons on a surface) and `primaryContainer` (the accent itself, as a fill),
 // with `onPrimaryContainer` picked for legibility on it.
 
+import { prefersReducedMotion } from "./motion";
 import { alphaBlend, contrastRatio, hexToRgb, hslToRgb, rgbaHex, rgbToHex, rgbToHsl, type Hsl } from "./color";
 import { hctHue, hctToRgb, type Rgb } from "./hct";
 
@@ -322,6 +323,21 @@ export function themeCss(accentHex: string, selectors: { light: string; dark: st
 /** The toned `primary` an accent produces, for previewing a custom accent. */
 export function accentPreview(accentHex: string, brightness: Brightness): string {
   return themeColors(accentHex, brightness).primary;
+}
+
+/**
+ * Runs [change] (a theme switch) as one cross-fade of the whole page through
+ * the View Transitions API: the browser fades a snapshot of the old colours
+ * into the new ones, so no element needs a colour transition of its own.
+ * Where the API is missing, or motion is reduced, the change is immediate.
+ */
+export function fadeTheme(change: () => void): void {
+  const start = typeof document === "undefined" ? undefined : document.startViewTransition?.bind(document);
+  if (!start || prefersReducedMotion()) {
+    change();
+    return;
+  }
+  start(change);
 }
 
 const STYLE_ID = "skippy-theme";

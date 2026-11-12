@@ -4,6 +4,7 @@ import { ArrowUpDown, CircleAlert, CloudCheck, CloudOff, Keyboard, LayoutGrid, L
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { cn } from "cn";
 import { IconButton } from "@/components/common/icon-button";
+import { Kbd } from "@/components/common/kbd";
 import { MenuLabel } from "@/components/common/menu-label";
 import {
   DropdownMenu,
@@ -13,6 +14,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -32,7 +34,9 @@ import {
   type ThemeMode,
 } from "@/lib/store";
 import { TRANSITION, transitionFor } from "@/lib/theme/motion";
+import { usePlatformName } from "./responsive";
 import { useShellDialogs } from "./shell-dialogs";
+import { modifierName } from "./shortcuts";
 import { syncMenuLabel } from "./sync-rules";
 
 const SORT_LABELS: Record<SortMode, string> = {
@@ -129,34 +133,46 @@ export function useToggleGridLayout(): (() => void) | null {
 
 export function LayoutToggle() {
   const toggle = useToggleGridLayout();
+  const mod = modifierName(usePlatformName());
   const { layout } = useGridControls();
   const reduced = useReducedMotion();
-  if (!toggle) {
-    return null;
-  }
   const list = layout === "list";
+  // A board or the agenda has no grid to switch: the button bows out rather than vanishing.
   return (
-    <IconButton
-      label={list ? "Show as grid" : "Show as list"}
-      shortcut="G"
-      onClick={toggle}
-      icon={
-        <span className="inline-grid">
-          <AnimatePresence initial={false}>
-            <motion.span
-              key={list ? "grid" : "list"}
-              className="[grid-area:1/1]"
-              initial={{ opacity: 0, scale: 0.6 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.6 }}
-              transition={transitionFor(TRANSITION.fast, reduced)}
-            >
-              {list ? <LayoutGrid className="size-5" /> : <Rows3 className="size-5" />}
-            </motion.span>
-          </AnimatePresence>
-        </span>
-      }
-    />
+    <AnimatePresence initial={false}>
+      {toggle ? (
+        <motion.span
+          key="layout"
+          className="inline-flex"
+          initial={{ opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.6 }}
+          transition={transitionFor(TRANSITION.fast, reduced)}
+        >
+          <IconButton
+            label={list ? "Show as grid" : "Show as list"}
+            shortcut={`${mod} G`}
+            onClick={toggle}
+            icon={
+              <span className="inline-grid">
+                <AnimatePresence initial={false}>
+                  <motion.span
+                    key={list ? "grid" : "list"}
+                    className="[grid-area:1/1]"
+                    initial={{ opacity: 0, scale: 0.6 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.6 }}
+                    transition={transitionFor(TRANSITION.fast, reduced)}
+                  >
+                    {list ? <LayoutGrid className="size-5" /> : <Rows3 className="size-5" />}
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+            }
+          />
+        </motion.span>
+      ) : null}
+    </AnimatePresence>
   );
 }
 
@@ -268,7 +284,10 @@ export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
         ) : (
           <DropdownMenuItem onSelect={() => dialogs.open({ type: "shortcuts" })}>
             <Keyboard />
-            <MenuLabel label="Keyboard shortcuts" hint="?" />
+            <MenuLabel label="Keyboard shortcuts" />
+            <DropdownMenuShortcut>
+              <Kbd>?</Kbd>
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />

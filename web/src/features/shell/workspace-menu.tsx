@@ -26,9 +26,10 @@ export function workspaceInitial(name: string): string {
 /**
  * The switcher heading the sidebar: the open workspace's name, and a menu to
  * switch, create, rename, duplicate or manage (`WorkspaceMenu`). [beforeAction]
- * lets the phone drawer close before a dialog or page opens.
+ * runs an action once the phone drawer has closed, so a dialog or page it
+ * opens does not animate through the closing drawer.
  */
-export function WorkspaceMenu({ compact, beforeAction }: { compact: boolean; beforeAction?: () => void }) {
+export function WorkspaceMenu({ compact, beforeAction }: { compact: boolean; beforeAction?: (run: () => void) => void }) {
   const workspaces = useWorkspaces();
   const active = useActiveWorkspace();
   const notes = useNotesController();
@@ -39,7 +40,10 @@ export function WorkspaceMenu({ compact, beforeAction }: { compact: boolean; bef
   const owner = active !== null && isWorkspaceOwnedBy(active, userId);
 
   const act = (run: () => void): void => {
-    beforeAction?.();
+    if (beforeAction) {
+      beforeAction(run);
+      return;
+    }
     run();
   };
 

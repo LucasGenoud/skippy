@@ -21,7 +21,8 @@ export function TextField({
     <div className={cn("flex flex-col gap-1.5", className)}>
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined} {...input} />
-      {hint && !error ? <p className="text-xs text-on-surface-variant">{hint}</p> : null}
+      {/* The hint folds away as an error takes its place, rather than both jumping. */}
+      <Reveal>{hint && !error ? <p className="text-xs text-on-surface-variant">{hint}</p> : null}</Reveal>
       <Reveal>
         {error ? (
           <p id={`${id}-error`} role="alert" className="text-xs text-error">
@@ -54,7 +55,7 @@ export function GlyphBadge({
   return (
     <span
       aria-hidden
-      className={cn("inline-flex shrink-0 items-center justify-center rounded-md border", size === "sm" ? "size-6" : "size-7")}
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-md border transition-colors duration-150 ease-standard", size === "sm" ? "size-6" : "size-7")}
       style={labelStyle(color)}
     >
       {icon || !Fallback ? <LabelIcon iconKey={icon} className={iconClass} /> : <Fallback className={iconClass} />}

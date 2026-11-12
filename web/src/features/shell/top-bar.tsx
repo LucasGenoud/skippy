@@ -116,6 +116,7 @@ function WideBar({ onMenu }: { onMenu(): void }) {
 /** Phone: the whole bar is one search pill holding the drawer button, the field, chat and the avatar. */
 function CompactBar({ onMenu }: { onMenu(): void }) {
   const chat = useChatAvailable();
+  const reduced = useReducedMotion();
   return (
     <div className="flex min-w-0 flex-1 items-center">
       <SearchField
@@ -123,7 +124,13 @@ function CompactBar({ onMenu }: { onMenu(): void }) {
         leading={<IconButton size="sm" label="Main menu" icon={<Menu />} onClick={onMenu} />}
         idleControls={
           <span className="flex items-center gap-0.5 pr-0.5">
-            {chat ? <IconButton size="sm" label="Chat with your notes" icon={<MessagesSquare />} onClick={() => navigate({ name: "chat" })} /> : null}
+            <AnimatePresence initial={false}>
+              {chat ? (
+                <motion.span key="chat" className="inline-flex" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={transitionFor(TRANSITION.fast, reduced)}>
+                  <IconButton size="sm" label="Chat with your notes" icon={<MessagesSquare />} onClick={() => navigate({ name: "chat" })} />
+                </motion.span>
+              ) : null}
+            </AnimatePresence>
             <UserMenu variant="compact" />
           </span>
         }

@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { LabelChip } from "@/components/common/label-chip";
 import { Progress } from "@/components/ui/progress";
 import type { NoteKind } from "@/lib/models";
-import { editedLabel, formatDate, useSettings, useWorkspace, useWorkspaceStats } from "@/lib/store";
+import { editedLabel, formatDate, useSettings, useWorkspaceStats } from "@/lib/store";
 import { labelColor } from "@/lib/theme/label-style";
 import { DURATION } from "@/lib/theme/motion";
 import { busiestMonth, checklistProgress, formatStatBytes, statsEmpty, type WorkspaceStats } from "@/lib/util/workspace-stats";
@@ -15,6 +15,7 @@ import { plural } from "@/features/settings/kit/files";
 import { SettingsSection } from "@/features/settings/kit/rows";
 import { Breakdown, FactRow, MonthChart, seriesColor, StatCard } from "./stats-charts";
 import { WorkspacePage } from "./workspace-settings-screen";
+import { useLeavingWorkspace } from "./use-leaving-workspace";
 
 const KIND_LABELS: Record<NoteKind, string> = { text: "Text", checklist: "Checklists", markdown: "Markdown", audio: "Audio" };
 
@@ -41,7 +42,7 @@ function Staggered({ index, children }: { index: number; children: ReactNode }) 
  * request, works offline). Sections with nothing to say are left out.
  */
 export default function WorkspaceStatsScreen({ workspaceId }: { workspaceId: string }) {
-  const workspace = useWorkspace(workspaceId);
+  const workspace = useLeavingWorkspace(workspaceId);
   const stats = useWorkspaceStats(workspaceId);
 
   if (!workspace) {

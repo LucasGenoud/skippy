@@ -4,9 +4,10 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { IconButton } from "@/components/common/icon-button";
 import { PageHeader } from "@/components/common/page-header";
+import { CrossFade } from "@/components/common/reveal";
 import { closeTo, navigate, SETTINGS_PAGES, type SettingsPageId } from "@/lib/router";
 import { useAuth } from "@/lib/store";
-import { TRANSITION, transitionFor } from "@/lib/theme/motion";
+import { pageVariants, TRANSITION, transitionFor } from "@/lib/theme/motion";
 import { cn } from "@/lib/utils";
 import { AboutPage } from "./about/about-page";
 import { AccountPage } from "./account/account-page";
@@ -66,45 +67,88 @@ export function SettingsScreen({ page }: { page?: SettingsPageId }) {
     closeTo({ name: "home" });
   }
 
+  const title = phonePage && layout.page ? pageTitle(layout.page) : "Settings";
   return (
     <div className="flex h-dvh flex-col bg-surface text-on-surface">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-hairline px-2">
-        <IconButton label="Back" icon={<ArrowLeft />} onClick={leave} />
-        <h1 className="truncate text-base font-semibold">{phonePage && layout.page ? pageTitle(layout.page) : "Settings"}</h1>
+        <IconButton label="Back" shortcut="Esc" data-page-back icon={<ArrowLeft />} onClick={leave} />
+        <h1 className="min-w-0 truncate text-base font-semibold">
+          <CrossFade stateKey={title}>{title}</CrossFade>
+        </h1>
       </header>
-      <div className="flex min-h-0 flex-1">
-        {layout.index ? (
-          <nav aria-label="Settings pages" className={cn("overflow-y-auto", wide ? "w-[300px] shrink-0 border-r border-hairline px-3 py-2" : "flex-1 px-4 py-2")}>
-            <div className={wide ? "" : "mx-auto max-w-[640px]"}>{wide ? <WideIndex selected={layout.page} onOpen={open} /> : <NarrowIndex onOpen={open} />}</div>
+      {wide ? (
+        <div className="flex min-h-0 flex-1">
+          <nav aria-label="Settings pages" className="w-[300px] shrink-0 overflow-y-auto border-r border-hairline px-3 py-2">
+            <WideIndex selected={layout.page} onOpen={open} />
           </nav>
-        ) : null}
-        {layout.page ? (
-          <main className="min-w-0 flex-1 overflow-y-auto">
-            <PageView page={layout.page} titled={wide} />
-          </main>
-        ) : null}
-      </div>
+          {layout.page ? (
+            <main className="min-w-0 flex-1 overflow-y-auto">
+              <PageView page={layout.page} titled />
+            </main>
+          ) : null}
+        </div>
+      ) : (
+        <PhoneStack page={layout.page} onOpen={open} />
+      )}
     </div>
   );
 }
 
+/**
+ * A phone shows the index or one page. Opening a page pushes it over the
+ * index, as the Flutter phone layout pushes a route; going back lets it
+ * leave and finds the index where it was.
+ */
+function PhoneStack({ page, onOpen }: { page: SettingsPageId | null; onOpen: (page: SettingsPageId) => void }) {
+  const reduced = useReducedMotion();
+  return (
+    <div className="relative min-h-0 flex-1">
+      <nav aria-label="Settings pages" inert={page !== null || undefined} className="absolute inset-0 overflow-y-auto px-4 py-2">
+        <div className="mx-auto max-w-[640px]">
+          <NarrowIndex onOpen={onOpen} />
+        </div>
+      </nav>
+      <AnimatePresence initial={false}>
+        {page ? (
+          <motion.main
+            key={page}
+            className="absolute inset-0 overflow-y-auto bg-surface"
+            variants={pageVariants(reduced)}
+            initial="enter"
+            animate="shown"
+            exit="leave"
+          >
+            <PageView page={page} titled={false} />
+          </motion.main>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * One page. Beside the wide index another page cross-fades in place
+ * (`StateCrossFade`): both share the slot while the old one fades out.
+ */
 function PageView({ page, titled }: { page: SettingsPageId; titled: boolean }) {
   const reduced = useReducedMotion();
   const Body = PAGE_BODIES[page];
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={page}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={transitionFor(TRANSITION.fast, reduced)}
-        className={cn("max-w-[640px] px-4 pb-8", titled ? "pl-6" : "mx-auto")}
-      >
-        {titled ? <PageHeader title={pageTitle(page)} /> : null}
-        <Body />
-      </motion.div>
-    </AnimatePresence>
+    <div className="grid">
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={page}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={transitionFor(TRANSITION.fast, reduced)}
+          className={cn("w-full max-w-[640px] px-4 pb-8 [grid-area:1/1]", titled ? "pl-6" : "mx-auto")}
+        >
+          {titled ? <PageHeader title={pageTitle(page)} /> : null}
+          <Body />
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Ban, BookmarkPlus, Check } from "lucide-react";
 import { cn } from "cn";
 import { CrossFade } from "@/components/common/reveal";
@@ -95,14 +95,26 @@ function FilterChip({ token, query, onCycle }: { token: string; query: string; o
           aria-pressed={state !== "off"}
           aria-label={state === "excluding" ? `Excluding ${token}` : token}
           className={cn(
-            "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors duration-150 ease-standard outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "relative inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs transition-colors duration-150 ease-standard outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
             state === "off" && "border-outline-variant text-on-surface hover:bg-hover",
             state === "matching" && "border-transparent bg-secondary-container text-on-secondary-container",
             state === "excluding" && "border-transparent bg-excluded text-on-surface",
           )}
         >
-          {state === "matching" ? <Check aria-hidden className="size-3.5" /> : null}
-          {state === "excluding" ? <Ban aria-hidden className="size-3.5 text-error" /> : null}
+          <AnimatePresence initial={false} mode="popLayout">
+            {state !== "off" ? (
+              <motion.span
+                key={state}
+                className="inline-flex"
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={transitionFor(TRANSITION.pop, reduced)}
+              >
+                {state === "matching" ? <Check aria-hidden className="size-3.5" /> : <Ban aria-hidden className="size-3.5 text-error" />}
+              </motion.span>
+            ) : null}
+          </AnimatePresence>
           <CrossFade stateKey={text}>{text}</CrossFade>
         </motion.button>
       </TooltipTrigger>

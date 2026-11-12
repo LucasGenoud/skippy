@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { applyTheme, DEFAULT_ACCENT } from "@/lib/theme/accent";
+import { useEffect, useRef } from "react";
+import { applyTheme, DEFAULT_ACCENT, fadeTheme } from "@/lib/theme/accent";
 import { loadFont } from "@/lib/theme/fonts";
 import type { AppFont, ThemeMode } from "@/lib/store/settings-store";
 
@@ -25,8 +25,17 @@ function rememberScheme(mode: ThemeMode): void {
 }
 
 export function ThemeSync({ accent = DEFAULT_ACCENT, mode, font = "system" }: { accent?: string; mode: ThemeMode; font?: AppFont }) {
+  // The first paint takes the theme as it is; a change after that (the
+  // toggle, Settings > Appearance) fades the whole page across, as
+  // MaterialApp's AnimatedTheme does.
+  const applied = useRef(false);
   useEffect(() => {
-    applyTheme(accent, mode);
+    if (applied.current) {
+      fadeTheme(() => applyTheme(accent, mode));
+    } else {
+      applyTheme(accent, mode);
+      applied.current = true;
+    }
     rememberScheme(mode);
   }, [accent, mode]);
 

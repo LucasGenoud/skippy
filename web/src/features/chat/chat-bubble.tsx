@@ -4,7 +4,7 @@ import { memo, type ReactElement } from "react";
 import { Check, FilePen, FilePlus2, LoaderCircle, StickyNote, Undo2 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "cn";
-import { Reveal } from "@/components/common/reveal";
+import { CrossFade, Reveal } from "@/components/common/reveal";
 import { Button } from "@/components/ui/button";
 import type { ChatSource } from "@/lib/models/misc";
 import { navigate } from "@/lib/router";
@@ -68,8 +68,8 @@ export const ChatBubble = memo(function ChatBubble({ turn, onUndo }: { turn: Tur
         ) : (
           <NoteMarkdown source={turn.text} variant="editor" />
         )}
-        {turn.status === "error" && turn.text !== "" ? <p className="mt-1.5 text-xs text-error">Interrupted: {turn.error}</p> : null}
-        {turn.status === "stopped" ? <p className="mt-1.5 text-xs text-on-surface-variant">Stopped</p> : null}
+        <Reveal>{turn.status === "error" && turn.text !== "" ? <p className="pt-1.5 text-xs text-error">Interrupted: {turn.error}</p> : null}</Reveal>
+        <Reveal>{turn.status === "stopped" ? <p className="pt-1.5 text-xs text-on-surface-variant">Stopped</p> : null}</Reveal>
       </div>
 
       <Reveal>
@@ -82,14 +82,18 @@ export const ChatBubble = memo(function ChatBubble({ turn, onUndo }: { turn: Tur
             />
             {Object.keys(turn.write.undo).length > 0 ? (
               <Button variant="ghost" size="xs" disabled={turn.write.undoState !== "idle"} onClick={() => onUndo(turn.id)}>
-                {turn.write.undoState === "undoing" ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : turn.write.undoState === "undone" ? (
-                  <Check />
-                ) : (
-                  <Undo2 />
-                )}
-                {turn.write.undoState === "undone" ? "Undone" : "Undo"}
+                <CrossFade stateKey={turn.write.undoState}>
+                  <span className="inline-flex items-center gap-1">
+                    {turn.write.undoState === "undoing" ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : turn.write.undoState === "undone" ? (
+                      <Check />
+                    ) : (
+                      <Undo2 />
+                    )}
+                    {turn.write.undoState === "undone" ? "Undone" : "Undo"}
+                  </span>
+                </CrossFade>
               </Button>
             ) : null}
           </div>

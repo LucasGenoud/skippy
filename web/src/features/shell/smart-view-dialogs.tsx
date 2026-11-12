@@ -39,6 +39,7 @@ export function SmartViewsDialog({ open, onOpenChange }: { open: boolean; onOpen
             items={views}
             idOf={(v) => v.id}
             onMove={(id, index) => notes.reorderSavedViews(views.findIndex((v) => v.id === id), index)}
+            entrance="staggered"
           >
             {(view, handle) => (
               <ManageRow

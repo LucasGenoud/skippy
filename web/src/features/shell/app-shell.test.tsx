@@ -152,3 +152,16 @@ it("opens the shortcut reference from outside the shell through a host", async (
   act(() => openShortcutHelp());
   expect(await screen.findByText("Keyboard shortcuts")).toBeTruthy();
 });
+
+it("offers a label's actions on right-click, deleting only after a confirm", async () => {
+  renderShell();
+  const row = screen.getByRole("button", { name: "Work" }).parentElement as HTMLElement;
+  fireEvent.contextMenu(row);
+  expect(await screen.findByRole("menuitem", { name: "Edit label…" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete label…" }));
+  const confirm = await screen.findByRole("button", { name: "Delete label" });
+  expect(session.notes.state.labels.map((l) => l.id)).toEqual(["l1"]);
+  fireEvent.click(confirm);
+  await waitFor(() => expect(session.notes.state.labels).toEqual([]));
+});

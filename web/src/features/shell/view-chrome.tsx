@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Archive, Bell, Bookmark, CloudOff, Kanban, LoaderCircle, PenLine, SearchX, StickyNote, Tag, Trash2, type LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
+import { CrossFade } from "@/components/common/reveal";
 import { showAppSnack } from "@/components/common/snack";
 import { Button } from "@/components/ui/button";
 import {
@@ -165,7 +166,9 @@ export function OfflineBanner() {
             <CloudOff aria-hidden className="size-5 shrink-0 text-on-surface-variant" />
             <p className="min-w-0 flex-1 text-xs text-on-surface-variant">Can&apos;t reach the server, showing your saved notes. Changes sync when the connection is back.</p>
             <Button variant="ghost" size="sm" disabled={retrying} onClick={() => void retry()} aria-label={retrying ? "Retrying" : "Retry"}>
-              {retrying ? <LoaderCircle className="animate-spin" /> : "Retry"}
+              <CrossFade stateKey={retrying} className="justify-items-center">
+                {retrying ? <LoaderCircle className="size-4 animate-spin" /> : "Retry"}
+              </CrossFade>
             </Button>
           </div>
         </motion.div>
@@ -201,10 +204,10 @@ export function ViewEmptyState() {
   const newNote = useNewNote();
   const open = useOpenDestination();
 
+  const reduced = useReducedMotion();
+
   const waitingForRanking = ranking && semanticActive && rankedPending;
-  if (loading || waitingForRanking || pinned.length + others.length > 0) {
-    return null;
-  }
+  const empty = !(loading || waitingForRanking || pinned.length + others.length > 0);
   const copy = emptyCopy(selection, query.trim() !== "");
   const action =
     copy.action === "browse"
@@ -212,14 +215,22 @@ export function ViewEmptyState() {
       : copy.action === "create"
         ? { label: "Create note", icon: undefined, run: () => newNote("text") }
         : null;
+  // The first note to arrive fades the empty state out (lifted out of the
+  // flow, so the grid does not wait under it) instead of cutting it.
   return (
-    <EmptyState
-      icon={EMPTY_ICONS[copy.icon]}
-      message={copy.message}
-      mark={copy.mark}
-      actionLabel={action?.label}
-      actionIcon={action?.icon}
-      onAction={action?.run}
-    />
+    <AnimatePresence initial={false} mode="popLayout">
+      {empty ? (
+        <motion.div key="empty" exit={{ opacity: 0 }} transition={transitionFor(TRANSITION.fast, reduced)}>
+          <EmptyState
+            icon={EMPTY_ICONS[copy.icon]}
+            message={copy.message}
+            mark={copy.mark}
+            actionLabel={action?.label}
+            actionIcon={action?.icon}
+            onAction={action?.run}
+          />
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

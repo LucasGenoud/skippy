@@ -102,6 +102,17 @@ export function shortcutSections(mod: string): readonly { title: string; rows: r
       ],
     },
     {
+      title: "Focused card",
+      rows: [
+        { keys: ["← → ↑ ↓"], description: "Move between cards" },
+        { keys: ["Enter"], description: "Open" },
+        { keys: ["Space"], description: "Select" },
+        { keys: ["P"], description: "Pin or unpin" },
+        { keys: ["E"], description: "Archive" },
+        { keys: ["Delete", "Backspace"], description: "Move to trash (workspace owner)" },
+      ],
+    },
+    {
       title: "Editor",
       rows: [
         { keys: [`${mod} Z`], description: "Undo" },
@@ -112,6 +123,10 @@ export function shortcutSections(mod: string): readonly { title: string; rows: r
     {
       title: "Quick add",
       rows: [{ keys: ["Esc"], description: "Save and close" }],
+    },
+    {
+      title: "Settings, workspace and chat pages",
+      rows: [{ keys: ["Esc"], description: "Go back" }],
     },
   ];
 }

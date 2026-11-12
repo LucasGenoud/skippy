@@ -5,6 +5,7 @@ import { cn } from "cn";
 import { SyncPill } from "@/components/common/sync-pill";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useActiveCollection, useActiveLayout, useNotesSelector, useUi, useUiController } from "@/lib/store";
 import { FileDropOverlay, useFileIntake } from "./file-intake";
 import { HomeFabs } from "./home-fabs";
@@ -82,7 +83,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             <main
               ref={scrollRoot}
               data-shell-scroll
-              className={cn("h-full overflow-x-hidden pb-[env(safe-area-inset-bottom)]", grid ? "overflow-y-auto" : "flex flex-col overflow-y-hidden")}
+              className={cn("relative h-full overflow-x-hidden pb-[env(safe-area-inset-bottom)]", grid ? "overflow-y-auto" : "flex flex-col overflow-y-hidden")}
             >
               <div className={cn("shrink-0", grid ? "px-4 lg:px-8" : "px-4")}>
                 <OfflineBanner />
@@ -128,14 +129,19 @@ function CornerControls({ wide }: { wide: boolean }) {
   return (
     <div className="pointer-events-none absolute right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-10 flex items-end gap-3">
       {wide ? (
-        <button
-          type="button"
-          onClick={() => dialogs.open({ type: "sync" })}
-          className="pointer-events-auto mb-3.5 rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          aria-label="Sync status details"
-        >
-          <SyncPill state={pillState(status)} count={pending} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => dialogs.open({ type: "sync" })}
+              className="pointer-events-auto mb-3.5 rounded-md outline-none transition-[filter] duration-150 ease-standard hover:brightness-[0.97] focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:hover:brightness-110"
+              aria-label="Sync status details"
+            >
+              <SyncPill state={pillState(status)} count={pending} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Sync details</TooltipContent>
+        </Tooltip>
       ) : null}
       {collection !== null ? <HomeFabs /> : null}
     </div>
