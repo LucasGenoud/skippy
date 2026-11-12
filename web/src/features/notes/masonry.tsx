@@ -70,8 +70,14 @@ function dropTargetAt(x: number, y: number): HTMLElement | null {
   if (typeof document === "undefined") {
     return null;
   }
-  const element = document.elementFromPoint(x, y);
-  return element instanceof HTMLElement ? element.closest<HTMLElement>("[data-note-drop]") : null;
+  // The drag overlay sits under the pointer, so look through it rather than at the topmost element.
+  for (const element of document.elementsFromPoint(x, y)) {
+    const target = element instanceof HTMLElement ? element.closest<HTMLElement>("[data-note-drop]") : null;
+    if (target) {
+      return target;
+    }
+  }
+  return null;
 }
 
 export interface MasonryProps {

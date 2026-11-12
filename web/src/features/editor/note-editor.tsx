@@ -185,6 +185,12 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
           <DialogPrimitive.Content
             ref={panel}
             aria-describedby={undefined}
+            // Focus the panel, not its first button: that would pop the Close tooltip on open.
+            // A new note's body takes focus itself once the open animation ends.
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              panel.current?.focus({ preventScroll: true });
+            }}
             onEscapeKeyDown={(event) => {
               if (body.current?.escape()) {
                 event.preventDefault();
