@@ -222,10 +222,10 @@ class _NoteCardContent extends StatelessWidget {
               images: images,
               store: store,
               borderRadius: BorderRadius.vertical(
-                top: hasTextBlock ? Radius.zero : kRadiusCorner,
+                top: hasTextBlock ? Radius.zero : kCardCorner,
                 bottom: hasFooter || hasLinkPreviews || reserveActions
                     ? Radius.zero
-                    : kRadiusCorner,
+                    : kCardCorner,
               ),
             ),
           ),
@@ -310,7 +310,7 @@ class _NoteCardContent extends StatelessWidget {
             outlined: false,
             borderRadius: i < linkPreviewUrls.length - 1
                 ? BorderRadius.zero
-                : const BorderRadius.vertical(bottom: kRadiusCorner),
+                : const BorderRadius.vertical(bottom: kCardCorner),
           ),
       ],
     );

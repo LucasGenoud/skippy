@@ -315,7 +315,7 @@ void main() {
       );
       expect(
         previews.last.borderRadius,
-        const BorderRadius.vertical(bottom: kRadiusCorner),
+        const BorderRadius.vertical(bottom: kCardCorner),
       );
       expect(find.byKey(const Key('link-preview-group')), findsNothing);
       expect(
@@ -4412,6 +4412,98 @@ void main() {
     });
   });
 
+  group('sidebar selection', () {
+    Future<void> pumpSidebar(WidgetTester tester, ViewSelection initial) async {
+      var selection = initial;
+      final settings = SettingsStore(api: store.api);
+      addTearDown(settings.dispose);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider.value(value: settings),
+          ],
+          child: MaterialApp(
+            theme: buildTheme(Brightness.light),
+            home: Scaffold(
+              body: Row(
+                children: [
+                  StatefulBuilder(
+                    builder: (context, setState) => AppSidebar(
+                      isOpen: true,
+                      selection: selection,
+                      onSelect: (next) => setState(() => selection = next),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder washes() => find.descendant(
+      of: find.byType(AppSidebar),
+      matching: find.byType(AnimatedPositioned),
+    );
+
+    Rect rowOf(WidgetTester tester, String name) => tester.getRect(
+      find.ancestor(of: find.text(name), matching: find.byType(InkWell)),
+    );
+
+    testWidgets('the sidebar runs the full height of the window', (
+      tester,
+    ) async {
+      await pumpSidebar(tester, ViewSelection.reminders);
+      final screen = tester.getSize(find.byType(Scaffold));
+      final sidebar = tester.getRect(find.byType(AppSidebar));
+      expect(sidebar.top, 0);
+      expect(sidebar.height, screen.height);
+    });
+
+    testWidgets('within a section the wash slides to the new row', (
+      tester,
+    ) async {
+      await pumpSidebar(tester, ViewSelection.reminders);
+      expect(washes(), findsOneWidget);
+      final from = tester.getRect(washes()).top;
+
+      await tester.tap(find.text('Trash'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final midway = tester.getRect(washes()).top;
+
+      await tester.pumpAndSettle();
+      final to = tester.getRect(washes()).top;
+      expect(to, closeTo(rowOf(tester, 'Trash').top, 1));
+      expect(midway, greaterThan(from));
+      expect(midway, lessThan(to));
+    });
+
+    testWidgets('a wash never jumps into another section', (tester) async {
+      store.createLabel('Work');
+      await pumpSidebar(tester, ViewSelection.trash);
+      final trash = tester.getRect(washes()).top;
+
+      await tester.tap(find.text('Work'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+
+      // Library's wash stays on Trash while it fades; the label section's
+      // own wash is already on Work.
+      final tops = [
+        for (final element in washes().evaluate())
+          tester.getRect(find.byWidget(element.widget)).top,
+      ];
+      expect(tops, contains(closeTo(trash, 1)));
+      expect(tops, contains(closeTo(rowOf(tester, 'Work').top, 1)));
+    });
+  });
+
   group('theme switching', () {
     testWidgets('the sidebar changes colour in step with the app', (
       tester,
@@ -4767,13 +4859,13 @@ void main() {
         final settings = SettingsStore(api: api);
         addTearDown(settings.dispose);
         await settings.load();
-        store.addSavedView(name: 'Pinned', query: 'is:pinned');
+        store.addSavedView(name: 'Pinned only', query: 'is:pinned');
 
         await tester.pumpWidget(homeApp(store, settings: settings));
         await tester.pumpAndSettle();
         expect(find.text('Loose thought'), findsOneWidget);
 
-        await tester.tap(find.text('Pinned'));
+        await tester.tap(find.text('Pinned only'));
         await tester.pumpAndSettle();
         expect(find.text('Pinned report'), findsOneWidget);
         expect(find.text('Pinned recipe'), findsOneWidget);
@@ -4787,10 +4879,10 @@ void main() {
         expect(find.text('Pinned report'), findsNothing);
         store.createWorkspace('Other workspace');
         await tester.pumpAndSettle();
-        expect(find.text('Pinned'), findsNothing);
+        expect(find.text('Pinned only'), findsNothing);
         store.setActiveWorkspace('w-default');
         await tester.pumpAndSettle();
-        expect(find.text('Pinned'), findsWidgets);
+        expect(find.text('Pinned only'), findsWidgets);
         await flushTimers(tester);
       },
     );

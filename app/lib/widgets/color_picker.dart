@@ -68,7 +68,7 @@ class ColorPickerSheet extends StatelessWidget {
         (
           key: entry.key,
           name: entry.name,
-          fill: brightness == Brightness.light ? entry.light : entry.dark,
+          fill: entry.fill(brightness),
         ),
     ];
     return SafeArea(
@@ -92,7 +92,7 @@ class ColorPickerSheet extends StatelessWidget {
                 0,
               ),
               child: Text(
-                'PATTERN',
+                'Pattern',
                 style: sectionLabelStyle(Theme.of(context)),
               ),
             ),

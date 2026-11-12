@@ -101,6 +101,26 @@ class Motion {
     );
   }
 
+  /// How far a view's notes travel when another view replaces them.
+  static const double viewSlide = 28;
+
+  /// An [AnimatedSwitcher.transitionBuilder] for one set of notes replacing
+  /// another: the new set rises into place from below while the old one sinks
+  /// away, both fading. The outgoing child runs this same builder in reverse,
+  /// which is what sends it down rather than up.
+  static Widget viewSwap(Widget child, Animation<double> animation) =>
+      FadeTransition(
+        opacity: animation,
+        child: AnimatedBuilder(
+          animation: animation,
+          child: child,
+          builder: (context, child) => Transform.translate(
+            offset: Offset(0, (1 - animation.value) * viewSlide),
+            child: child,
+          ),
+        ),
+      );
+
   /// True when the OS "reduce motion" accessibility setting is on. Callers skip
   /// or shorten decorative animation so the app stays comfortable to use.
   ///

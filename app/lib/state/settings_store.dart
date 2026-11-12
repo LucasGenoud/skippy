@@ -47,6 +47,26 @@ class PaletteEntry {
     return Color(0xFF000000 | value);
   }
 
+  /// The colour to draw this entry as in [brightness]. The stock colours are
+  /// drawn softer than the Keep colours they are stored as (see
+  /// [_kSoftFills]); a colour the user picked is drawn as picked, and the
+  /// stored palette is never rewritten.
+  Color fill(Brightness brightness) {
+    final light = brightness == Brightness.light;
+    final stored = light ? this.light : dark;
+    final soft = _kSoftFills[key];
+    if (soft == null) {
+      return stored;
+    }
+
+    for (final stock in kDefaultPalette) {
+      if (stock.key == key && (light ? stock.light : stock.dark) == stored) {
+        return light ? soft.light : soft.dark;
+      }
+    }
+    return stored;
+  }
+
   Map<String, dynamic> toJson() => {
     'key': key,
     'name': name,
@@ -71,6 +91,18 @@ class PaletteEntry {
     );
   }
 }
+
+/// How the stock palette is drawn: pale tints in light, muted ones in dark,
+/// instead of the saturated Keep colours it is stored as.
+const Map<String, ({Color light, Color dark})> _kSoftFills = {
+  'red': (light: Color(0xFFFAD2CF), dark: Color(0xFF3D2423)),
+  'orange': (light: Color(0xFFFBDDBA), dark: Color(0xFF3D2C1C)),
+  'yellow': (light: Color(0xFFFAEAA8), dark: Color(0xFF39321A)),
+  'green': (light: Color(0xFFD2EDC6), dark: Color(0xFF213322)),
+  'teal': (light: Color(0xFFC2E9E2), dark: Color(0xFF1A3331)),
+  'blue': (light: Color(0xFFCCDFF8), dark: Color(0xFF1D2B3D)),
+  'gray': (light: Color(0xFFE5E4E1), dark: Color(0xFF2A2927)),
+};
 
 /// The default 8 colors, the palette users start from and can reset to.
 const List<PaletteEntry> kDefaultPalette = [
@@ -813,12 +845,12 @@ class SettingsStore extends ChangeNotifier {
     if (key == 'default') return null;
     for (final entry in palette) {
       if (entry.key == key) {
-        return brightness == Brightness.light ? entry.light : entry.dark;
+        return entry.fill(brightness);
       }
     }
     for (final entry in kDefaultPalette) {
       if (entry.key == key) {
-        return brightness == Brightness.light ? entry.light : entry.dark;
+        return entry.fill(brightness);
       }
     }
     return null;

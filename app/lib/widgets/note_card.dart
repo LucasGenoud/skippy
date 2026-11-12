@@ -47,6 +47,12 @@ part 'note_card/actions.dart';
 part 'note_card/content.dart';
 part 'note_card/labels.dart';
 
+/// How far a card's edge leans from its fill toward the text colour: a
+/// coloured card at rest in light and dark, and any card under the pointer.
+const double _edgeInkLight = 0.09;
+const double _edgeInkDark = 0.10;
+const double _edgeInkHover = 0.16;
+
 /// A note in the grid. Narrow layouts use [NoteZoom] to morph into the
 /// fullscreen editor; wide layouts open their own modal from the card.
 class NoteTile extends StatefulWidget {
@@ -219,26 +225,16 @@ class _NoteTileState extends State<NoteTile> {
     final isRewriting = context.select<NotesStore, bool>(
       (store) => store.isRewritingNote(note.id),
     );
-    // A coloured card used to go borderless at rest, losing the crisp edge
-    // plain cards keep, worst on pale fills, which dissolve into the canvas.
-    // The border is the same palette entry from the *opposite* theme (the dark
-    // shade in light mode, the light one in dark mode), so it is always the
-    // card's own hue at contrasting depth, and it honours a custom palette for
-    // free. Lerped most of the way back toward the fill: at full strength it
-    // reads as an outline drawn around the card rather than the card's edge.
-    final counterFill = context.select<SettingsStore, Color?>(
-      (s) => s.resolveColor(
-        note.color,
-        brightness == Brightness.light ? Brightness.dark : Brightness.light,
-      ),
-    );
-    final borderColor = fill == null
-        ? scheme.outlineVariant
-        : Color.lerp(
-            fill,
-            counterFill ?? scheme.outlineVariant,
-            _hovered ? 0.55 : 0.35,
-          )!;
+    // Every card draws its edge: the separation from the canvas is the edge's
+    // job, not the fill's. A coloured card's edge is its own fill a step toward
+    // the text colour, so it reads as the card's edge rather than an outline
+    // drawn around it, on any palette.
+    final light = brightness == Brightness.light;
+    final edgeBase = fill ?? scheme.outlineVariant;
+    final edgeInk = _hovered
+        ? _edgeInkHover
+        : (fill == null ? 0.0 : (light ? _edgeInkLight : _edgeInkDark));
+    final borderColor = Color.lerp(edgeBase, scheme.onSurface, edgeInk)!;
     // Two separate things: the footer slot the card always reserves (so its
     // height never depends on hover or selection), and whether the action
     // icons in that slot are live. Selection mode only silences the icons,
@@ -283,14 +279,14 @@ class _NoteTileState extends State<NoteTile> {
         : null;
 
     final cardShape = RoundedRectangleBorder(
-      borderRadius: kBorderRadius,
+      borderRadius: kCardBorderRadius,
       side: BorderSide(
         color: widget.selected ? scheme.primary : borderColor,
         width: widget.selected ? 2 : 1,
       ),
     );
     Widget closedCard(VoidCallback open) => InkWell(
-      borderRadius: kBorderRadius,
+      borderRadius: kCardBorderRadius,
       onTap: () {
         if (_selectionModeNow) {
           widget.onSelectionChanged?.call(!widget.selected);
@@ -401,7 +397,7 @@ class _NoteTileState extends State<NoteTile> {
       duration: Motion.fast,
       curve: Motion.standard,
       decoration: BoxDecoration(
-        borderRadius: kBorderRadius,
+        borderRadius: kCardBorderRadius,
         boxShadow: cardShadow(
           scheme,
           _hovered ? CardLift.raised : CardLift.resting,

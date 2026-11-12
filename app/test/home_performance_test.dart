@@ -253,9 +253,18 @@ void main() {
       addTearDown(tester.view.reset);
     }
 
+    // Where each card sits within its own grid. The whole grid slides in when
+    // the view changes, on purpose; what must not move is a card inside it.
     Map<String, Rect> cardRects(WidgetTester tester, String prefix) => {
       for (var i = 0; i < 6; i++)
-        '$prefix $i': tester.getRect(find.text('$prefix $i')),
+        '$prefix $i': () {
+          final card = find.text('$prefix $i');
+          final grid = find.ancestor(
+            of: card,
+            matching: find.byType(AnimatedMasonry),
+          );
+          return tester.getRect(card).shift(-tester.getTopLeft(grid));
+        }(),
     };
 
     testWidgets('a collection shown before reopens where its cards settled', (

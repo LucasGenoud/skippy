@@ -5,6 +5,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
+import '../util/platform.dart';
 import 'collection_settings.dart';
 import 'labels_sheet.dart';
 import 'saved_view_dialog.dart';
@@ -30,7 +31,7 @@ class AppDrawer extends StatelessWidget {
   );
 }
 
-class AppSidebar extends StatelessWidget {
+class AppSidebar extends StatefulWidget {
   final bool isOpen;
   final bool inDrawer;
   final ViewSelection selection;
@@ -50,12 +51,101 @@ class AppSidebar extends StatelessWidget {
     required this.onSelect,
   });
 
+  @override
+  State<AppSidebar> createState() => _AppSidebarState();
+}
+
+/// Vertical inset of a row's highlight inside its slot: the row's own padding.
+const double _rowInsetV = 1;
+const double _rowInsetH = 12;
+
+/// Where a section's selection wash sits, and how it got there.
+typedef _Wash = ({double top, double height, bool shown, bool slides});
+
+class _AppSidebarState extends State<AppSidebar> {
+  // One wash per section (collections, labels, smart views, library) rather
+  // than a fill per row: a new selection inside a section slides that
+  // section's wash from the old row to the new one, while a section losing
+  // its selection fades its wash where it stands. Rows are found by key after
+  // layout; the washes sit under them in one Stack.
+  final _stackKey = GlobalKey();
+  final _rowKeys = <String, GlobalKey>{};
+  Map<String, _Wash> _washes = const {};
+
+  GlobalKey _rowKey(String id) => _rowKeys.putIfAbsent(id, GlobalKey.new);
+
+  /// After this frame's layout, puts each section's wash under its selected
+  /// row in [selected] (section to row id, null for none).
+  void _placeWashes(Map<String, String?> selected) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final stack = _stackKey.currentContext?.findRenderObject();
+      if (stack is! RenderBox) {
+        return;
+      }
+
+      final next = <String, _Wash>{};
+      for (final MapEntry(key: section, value: rowId) in selected.entries) {
+        final was = _washes[section];
+        final row = rowId == null
+            ? null
+            : _rowKeys[rowId]?.currentContext?.findRenderObject();
+        if (row is! RenderBox || !row.attached) {
+          if (was != null) {
+            next[section] = (
+              top: was.top,
+              height: was.height,
+              shown: false,
+              slides: false,
+            );
+          }
+          continue;
+        }
+
+        final top = row.localToGlobal(Offset.zero, ancestor: stack).dy;
+        next[section] = (
+          top: top + _rowInsetV,
+          height: row.size.height - 2 * _rowInsetV,
+          // Slide only from a row that was showing; appearing fresh, it lands.
+          shown: true,
+          slides: was != null && was.shown,
+        );
+      }
+
+      if (_sameWashes(next, _washes)) {
+        return;
+      }
+      setState(() => _washes = next);
+    });
+  }
+
+  /// Equal where it shows: whether a wash slid to its place is history.
+  bool _sameWashes(Map<String, _Wash> a, Map<String, _Wash> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+
+    for (final MapEntry(:key, :value) in a.entries) {
+      final other = b[key];
+      if (other == null ||
+          other.top != value.top ||
+          other.height != value.height ||
+          other.shown != value.shown) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   Future<void> _afterDrawer(
     BuildContext context,
     void Function(BuildContext context) show,
   ) async {
     final navigator = Navigator.of(context);
-    if (inDrawer) {
+    if (widget.inDrawer) {
       navigator.pop();
       await Future<void>.delayed(Motion.slow);
       if (!navigator.mounted) return;
@@ -65,6 +155,12 @@ class AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isOpen = widget.isOpen;
+    final inDrawer = widget.inDrawer;
+    final selection = widget.selection;
+    final onSelect = widget.onSelect;
+    final selectedNoteIds = widget.selectedNoteIds;
+    final onSelectionFiled = widget.onSelectionFiled;
     final store = context.watch<NotesStore>();
     final scheme = Theme.of(context).colorScheme;
     final activeCollection = store.activeCollection;
@@ -88,6 +184,24 @@ class AppSidebar extends StatelessWidget {
       }
     }
 
+    const library = [
+      (ViewSelection.reminders, Icons.notifications_outlined, 'Reminders'),
+      (ViewSelection.archive, Icons.archive_outlined, 'Archive'),
+      (ViewSelection.trash, Icons.delete_outline, 'Trash'),
+    ];
+    _placeWashes({
+      'collections': activeCollection != null && collectionScopeVisible
+          ? 'collection:${activeCollection.id}'
+          : null,
+      'labels': selection.labelId == null ? null : 'label:${selection.labelId}',
+      'views': selection.savedViewId == null
+          ? null
+          : 'view:${selection.savedViewId}',
+      'library': collectionScopeVisible
+          ? null
+          : 'library:${selection.view.name}',
+    });
+
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -101,203 +215,214 @@ class AppSidebar extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: 12),
             children: [
-              WorkspaceMenu(
-                compact: !isOpen,
-                onBeforeAction: !inDrawer
-                    ? null
-                    : () async {
-                        Navigator.of(context).pop();
-                        await Future<void>.delayed(Motion.slow);
-                      },
-              ),
-              const SizedBox(height: kSpaceLg),
-              _SidebarSectionHeader(
-                icon: Icons.folder_outlined,
-                label: 'COLLECTIONS',
-                isOpen: isOpen,
-              ),
-              for (final c in store.collections)
-                _SidebarItem(
-                  icon: c.icon == null
-                      ? Icons.folder_outlined
-                      : labelIconFor(c.icon),
-                  selectedIcon: c.icon == null
-                      ? Icons.folder
-                      : filledLabelIconFor(c.icon),
-                  iconColor: PaletteEntry.hexToColor(c.color),
-                  label: c.name,
-                  isOpen: isOpen,
-                  isSelected:
-                      activeCollection?.id == c.id && collectionScopeVisible,
-                  onTap: () {
-                    store.selectCollection(c.id);
-                    onSelect(
-                      c.layout == 'board'
-                          ? ViewSelection.board
-                          : ViewSelection.notes,
-                    );
-                  },
-                  willAcceptNote: (id) => acceptsAny(
-                    id,
-                    (noteId) =>
-                        store.noteById(noteId)?.workspaceId == c.workspaceId,
-                  ),
-                  onAcceptNote: (id) {
-                    for (final noteId in draggedIds(id)) {
-                      if (store.noteById(noteId)?.workspaceId ==
-                          c.workspaceId) {
-                        store.restoreToCollection(noteId, c.id);
-                      }
-                    }
-                    filed(id);
-                  },
-                ),
-              _SidebarItem(
-                icon: Icons.edit_outlined,
-                selectedIcon: Icons.edit,
-                label: 'Manage collections',
-                isSelected: false,
-                isOpen: isOpen,
-                action: true,
-                onTap: () =>
-                    _afterDrawer(context, ManageCollectionsDialog.show),
-              ),
-              const Divider(height: 32, indent: 16, endIndent: 16),
-              _SidebarSectionHeader(
-                icon: Icons.label_outline,
-                label: 'LABELS',
-                isOpen: isOpen,
-              ),
-              for (final label in store.labels)
-                _SidebarItem(
-                  icon: label.icon == null
-                      ? Icons.label_outline
-                      : labelIcon(label),
-                  selectedIcon: label.icon == null
-                      ? Icons.label
-                      : labelIcon(label),
-                  iconColor: labelColorOrNull(label),
-                  label: label.name,
-                  isSelected: selection.labelId == label.id,
-                  isOpen: isOpen,
-                  onTap: () => onSelect(
-                    selection.labelId == label.id
-                        ? baseSelection
-                        : ViewSelection(NoteView.label, label.id),
-                  ),
-                  willAcceptNote: (id) => acceptsAny(
-                    id,
-                    (noteId) => switch (store.noteById(noteId)) {
-                      final note? =>
-                        !note.trashed &&
-                            note.workspaceId == store.activeWorkspaceId,
-                      null => false,
-                    },
-                  ),
-                  onAcceptNote: (id) {
-                    for (final noteId in draggedIds(id)) {
-                      final note = store.noteById(noteId);
-                      if (note != null &&
-                          !note.trashed &&
-                          note.workspaceId == store.activeWorkspaceId) {
-                        store.addLabelToNote(noteId, label.id);
-                      }
-                    }
-                  },
-                ),
-              _SidebarItem(
-                icon: Icons.edit_outlined,
-                selectedIcon: Icons.edit,
-                label: store.labels.isEmpty ? 'Create labels' : 'Manage labels',
-                isSelected: false,
-                isOpen: isOpen,
-                action: true,
-                onTap: () => _afterDrawer(context, EditLabelsDialog.show),
-              ),
-              const Divider(height: 24, indent: 16, endIndent: 16),
-              _SidebarSectionHeader(
-                icon: Icons.auto_awesome_outlined,
-                label: 'SMART VIEWS',
-                isOpen: isOpen,
-              ),
-              for (final view in store.savedViews)
-                _SidebarItem(
-                  icon: view.icon == null
-                      ? Icons.bookmark_outline
-                      : labelIconFor(view.icon),
-                  selectedIcon: view.icon == null
-                      ? Icons.bookmark
-                      : labelIconFor(view.icon),
-                  iconColor: PaletteEntry.hexToColor(view.color),
-                  label: view.name,
-                  isSelected: selection.savedViewId == view.id,
-                  isOpen: isOpen,
-                  onTap: () => onSelect(
-                    selection.savedViewId == view.id
-                        ? baseSelection
-                        : ViewSelection.smart(view.id),
-                  ),
-                ),
-              _SidebarItem(
-                icon: Icons.edit_outlined,
-                selectedIcon: Icons.edit,
-                label: store.savedViews.isEmpty
-                    ? 'Create a smart view'
-                    : 'Manage smart views',
-                isSelected: false,
-                isOpen: isOpen,
-                action: true,
-                onTap: () => _afterDrawer(context, EditSmartViewsDialog.show),
-              ),
-              const Divider(height: 32, indent: 16, endIndent: 16),
-              _SidebarSectionHeader(
-                icon: Icons.inventory_2_outlined,
-                label: 'LIBRARY',
-                isOpen: isOpen,
-              ),
-              for (final entry in [
-                (
-                  ViewSelection.reminders,
-                  Icons.notifications_outlined,
-                  'Reminders',
-                ),
-                (ViewSelection.archive, Icons.archive_outlined, 'Archive'),
-                (ViewSelection.trash, Icons.delete_outline, 'Trash'),
-              ])
-                _SidebarItem(
-                  icon: entry.$2,
-                  selectedIcon: entry.$2,
-                  label: entry.$3,
-                  isSelected: selection == entry.$1,
-                  isOpen: isOpen,
-                  danger: entry.$1 == ViewSelection.trash,
-                  onTap: () => onSelect(entry.$1),
-                  // A note in Trash only leaves it by being filed in a
-                  // collection, or through Restore.
-                  willAcceptNote: (id) => acceptsAny(
-                    id,
-                    (noteId) =>
-                        !(store.noteById(noteId)?.trashed ?? true) &&
-                        (entry.$1 == ViewSelection.archive ||
-                            (entry.$1 == ViewSelection.trash &&
-                                store.canTrash(noteId))),
-                  ),
-                  onAcceptNote: entry.$1 == ViewSelection.reminders
-                      ? null
-                      : (id) {
-                          for (final noteId in draggedIds(id)) {
-                            if (store.noteById(noteId)?.trashed ?? true) {
-                              continue;
+              Stack(
+                key: _stackKey,
+                children: [
+                  for (final MapEntry(:key, value: wash) in _washes.entries)
+                    _SlidingHighlight(
+                      key: ValueKey(key),
+                      top: wash.top,
+                      height: wash.height,
+                      shown: wash.shown,
+                      slides: wash.slides,
+                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      WorkspaceMenu(
+                        compact: !isOpen,
+                        onBeforeAction: !inDrawer
+                            ? null
+                            : () async {
+                                Navigator.of(context).pop();
+                                await Future<void>.delayed(Motion.slow);
+                              },
+                      ),
+                      const SizedBox(height: kSpaceLg),
+                      _SidebarSectionHeader(
+                        label: 'Collections',
+                        isOpen: isOpen,
+                      ),
+                      for (final c in store.collections)
+                        _SidebarItem(
+                          key: _rowKey('collection:${c.id}'),
+                          icon: c.icon == null
+                              ? Icons.folder_outlined
+                              : labelIconFor(c.icon),
+                          selectedIcon: c.icon == null
+                              ? Icons.folder
+                              : filledLabelIconFor(c.icon),
+                          iconColor: PaletteEntry.hexToColor(c.color),
+                          label: c.name,
+                          isOpen: isOpen,
+                          isSelected:
+                              activeCollection?.id == c.id &&
+                              collectionScopeVisible,
+                          onTap: () {
+                            store.selectCollection(c.id);
+                            onSelect(
+                              c.layout == 'board'
+                                  ? ViewSelection.board
+                                  : ViewSelection.notes,
+                            );
+                          },
+                          willAcceptNote: (id) => acceptsAny(
+                            id,
+                            (noteId) =>
+                                store.noteById(noteId)?.workspaceId ==
+                                c.workspaceId,
+                          ),
+                          onAcceptNote: (id) {
+                            for (final noteId in draggedIds(id)) {
+                              if (store.noteById(noteId)?.workspaceId ==
+                                  c.workspaceId) {
+                                store.restoreToCollection(noteId, c.id);
+                              }
                             }
-                            if (entry.$1 == ViewSelection.archive) {
-                              store.setArchived(noteId, true);
-                            } else if (store.canTrash(noteId)) {
-                              store.moveToTrash(noteId);
+                            filed(id);
+                          },
+                        ),
+                      _SidebarItem(
+                        icon: Icons.edit_outlined,
+                        selectedIcon: Icons.edit,
+                        label: 'Manage collections',
+                        isSelected: false,
+                        isOpen: isOpen,
+                        action: true,
+                        onTap: () =>
+                            _afterDrawer(context, ManageCollectionsDialog.show),
+                      ),
+                      const Divider(height: 32, indent: 16, endIndent: 16),
+                      _SidebarSectionHeader(label: 'Labels', isOpen: isOpen),
+                      for (final label in store.labels)
+                        _SidebarItem(
+                          key: _rowKey('label:${label.id}'),
+                          icon: label.icon == null
+                              ? Icons.label_outline
+                              : labelIcon(label),
+                          selectedIcon: label.icon == null
+                              ? Icons.label
+                              : labelIcon(label),
+                          iconColor: labelColorOrNull(label),
+                          label: label.name,
+                          isSelected: selection.labelId == label.id,
+                          isOpen: isOpen,
+                          onTap: () => onSelect(
+                            selection.labelId == label.id
+                                ? baseSelection
+                                : ViewSelection(NoteView.label, label.id),
+                          ),
+                          willAcceptNote: (id) => acceptsAny(
+                            id,
+                            (noteId) => switch (store.noteById(noteId)) {
+                              final note? =>
+                                !note.trashed &&
+                                    note.workspaceId == store.activeWorkspaceId,
+                              null => false,
+                            },
+                          ),
+                          onAcceptNote: (id) {
+                            for (final noteId in draggedIds(id)) {
+                              final note = store.noteById(noteId);
+                              if (note != null &&
+                                  !note.trashed &&
+                                  note.workspaceId == store.activeWorkspaceId) {
+                                store.addLabelToNote(noteId, label.id);
+                              }
                             }
-                          }
-                          filed(id);
-                        },
-                ),
+                          },
+                        ),
+                      _SidebarItem(
+                        icon: Icons.edit_outlined,
+                        selectedIcon: Icons.edit,
+                        label: store.labels.isEmpty
+                            ? 'Create labels'
+                            : 'Manage labels',
+                        isSelected: false,
+                        isOpen: isOpen,
+                        action: true,
+                        onTap: () =>
+                            _afterDrawer(context, EditLabelsDialog.show),
+                      ),
+                      const Divider(height: 24, indent: 16, endIndent: 16),
+                      _SidebarSectionHeader(
+                        label: 'Smart views',
+                        isOpen: isOpen,
+                      ),
+                      for (final view in store.savedViews)
+                        _SidebarItem(
+                          key: _rowKey('view:${view.id}'),
+                          icon: view.icon == null
+                              ? Icons.bookmark_outline
+                              : labelIconFor(view.icon),
+                          selectedIcon: view.icon == null
+                              ? Icons.bookmark
+                              : labelIconFor(view.icon),
+                          iconColor: PaletteEntry.hexToColor(view.color),
+                          label: view.name,
+                          isSelected: selection.savedViewId == view.id,
+                          isOpen: isOpen,
+                          onTap: () => onSelect(
+                            selection.savedViewId == view.id
+                                ? baseSelection
+                                : ViewSelection.smart(view.id),
+                          ),
+                        ),
+                      _SidebarItem(
+                        icon: Icons.edit_outlined,
+                        selectedIcon: Icons.edit,
+                        label: store.savedViews.isEmpty
+                            ? 'Create a smart view'
+                            : 'Manage smart views',
+                        isSelected: false,
+                        isOpen: isOpen,
+                        action: true,
+                        onTap: () =>
+                            _afterDrawer(context, EditSmartViewsDialog.show),
+                      ),
+                      const Divider(height: 32, indent: 16, endIndent: 16),
+                      _SidebarSectionHeader(label: 'Library', isOpen: isOpen),
+                      for (final entry in library)
+                        _SidebarItem(
+                          key: _rowKey('library:${entry.$1.view.name}'),
+                          icon: entry.$2,
+                          selectedIcon: entry.$2,
+                          label: entry.$3,
+                          isSelected: selection == entry.$1,
+                          isOpen: isOpen,
+                          danger: entry.$1 == ViewSelection.trash,
+                          onTap: () => onSelect(entry.$1),
+                          // A note in Trash only leaves it by being filed in a
+                          // collection, or through Restore.
+                          willAcceptNote: (id) => acceptsAny(
+                            id,
+                            (noteId) =>
+                                !(store.noteById(noteId)?.trashed ?? true) &&
+                                (entry.$1 == ViewSelection.archive ||
+                                    (entry.$1 == ViewSelection.trash &&
+                                        store.canTrash(noteId))),
+                          ),
+                          onAcceptNote: entry.$1 == ViewSelection.reminders
+                              ? null
+                              : (id) {
+                                  for (final noteId in draggedIds(id)) {
+                                    if (store.noteById(noteId)?.trashed ??
+                                        true) {
+                                      continue;
+                                    }
+                                    if (entry.$1 == ViewSelection.archive) {
+                                      store.setArchived(noteId, true);
+                                    } else if (store.canTrash(noteId)) {
+                                      store.moveToTrash(noteId);
+                                    }
+                                  }
+                                  filed(id);
+                                },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -307,18 +432,12 @@ class AppSidebar extends StatelessWidget {
 }
 
 class _SidebarSectionHeader extends StatelessWidget {
-  final IconData icon;
   final String label;
   final bool isOpen;
-  const _SidebarSectionHeader({
-    required this.icon,
-    required this.label,
-    required this.isOpen,
-  });
+  const _SidebarSectionHeader({required this.label, required this.isOpen});
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       height: 28,
       child: AnimatedOpacity(
@@ -327,24 +446,22 @@ class _SidebarSectionHeader extends StatelessWidget {
         curve: Curves.easeInOutCubic,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
-          child: Row(
-            children: [
-              Icon(icon, size: 14, color: scheme.onSurfaceVariant),
-              const SizedBox(width: kSpaceSm),
-              Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.clip,
-                style: sectionLabelStyle(Theme.of(context)),
-              ),
-            ],
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.clip,
+            style: sectionLabelStyle(Theme.of(context)),
           ),
         ),
       ),
     );
   }
 }
+
+const double _pointerRowHeight = 34;
+const double _touchRowHeight = 44;
+const double _iconSize = 18;
 
 class _SidebarItem extends StatelessWidget {
   final IconData icon;
@@ -372,6 +489,7 @@ class _SidebarItem extends StatelessWidget {
   final bool Function(String noteId)? willAcceptNote;
 
   const _SidebarItem({
+    super.key,
     required this.icon,
     required this.selectedIcon,
     required this.label,
@@ -415,34 +533,38 @@ class _SidebarItem extends StatelessWidget {
         : (action
               ? scheme.onSurfaceVariant.withValues(alpha: 0.72)
               : (isSelected ? scheme.onSecondaryContainer : scheme.onSurface));
+    // Compact rows for a pointer, a comfortable target for a finger. The icon
+    // keeps its 48px column either way, which is the collapsed rail's width.
+    final rowHeight = isTouchPrimaryPlatform
+        ? _touchRowHeight
+        : _pointerRowHeight;
     return Tooltip(
       message: isOpen ? '' : label,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
         child: _RowHighlight(
-          selected: isSelected,
           dropTarget: dropTarget,
           danger: danger,
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
               onTap: onTap,
-              borderRadius: kBorderRadius,
+              borderRadius: kSmallBorderRadius,
               child: SizedBox(
-                height: 48,
+                height: rowHeight,
                 child: OverflowBox(
                   alignment: Alignment.centerLeft,
                   minWidth: 48,
                   maxWidth: 244,
-                  maxHeight: 48,
+                  maxHeight: rowHeight,
                   child: Row(
                     children: [
                       SizedBox(
                         width: 48,
-                        height: 48,
+                        height: rowHeight,
                         child: Icon(
                           isSelected ? selectedIcon : icon,
-                          size: kStandardIconSize,
+                          size: _iconSize,
                           // A label's custom colour wins, except while it's a
                           // drop target (keep the highlight legible).
                           color: dropTarget
@@ -450,7 +572,7 @@ class _SidebarItem extends StatelessWidget {
                               : (iconColor ?? foreground),
                         ),
                       ),
-                      const SizedBox(width: kSpaceMd),
+                      const SizedBox(width: kSpaceXs),
                       Expanded(
                         child: Text(
                           label,
@@ -459,11 +581,9 @@ class _SidebarItem extends StatelessWidget {
                           style: Theme.of(context).textTheme.labelLarge
                               ?.copyWith(
                                 color: labelColor,
-                                fontWeight: action
-                                    ? FontWeight.w400
-                                    : (isSelected
-                                          ? FontWeight.w600
-                                          : FontWeight.w500),
+                                fontWeight: isSelected
+                                    ? FontWeight.w500
+                                    : FontWeight.w400,
                               ),
                         ),
                       ),
@@ -479,24 +599,19 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
-/// A sidebar row's fill and border. Selection and drop-target both fade, but
-/// what animates is the *fraction*, not the colour: the endpoints are re-read
-/// from the live scheme on every frame. Animating the colours directly (what
-/// AnimatedContainer does) means chasing a target MaterialApp is already
-/// cross-fading, so a light/dark switch left the sidebar visibly trailing the
-/// rest of the app, the same reason [AppSidebar] paints its own fill.
+/// A sidebar row's drop-target fill and border. What animates is the
+/// *fraction*, not the colour: the endpoints are re-read from the live scheme
+/// on every frame. Animating the colours directly (what AnimatedContainer
+/// does) means chasing a target MaterialApp is already cross-fading, so a
+/// light/dark switch left the sidebar visibly trailing the rest of the app,
+/// the same reason [AppSidebar] paints its own fill. The selection is not
+/// drawn here: each section's [_SlidingHighlight] carries it from row to row.
 class _RowHighlight extends StatelessWidget {
-  static const double _markerWidth = 3;
-  static const double _markerInset = 12;
-  static const double _markerHalfHeight = 12;
-
-  final bool selected;
   final bool dropTarget;
   final bool danger;
   final Widget child;
 
   const _RowHighlight({
-    required this.selected,
     required this.dropTarget,
     this.danger = false,
     required this.child,
@@ -505,51 +620,29 @@ class _RowHighlight extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final radius = kBorderRadius;
+    const radius = kSmallBorderRadius;
     return _fade(dropTarget, (drop) {
-      return _fade(selected, (sel) {
-        return DecoratedBox(
-          decoration: BoxDecoration(
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: Color.lerp(
+            Colors.transparent,
+            danger ? scheme.errorContainer : scheme.primaryContainer,
+            drop,
+          ),
+          borderRadius: radius,
+          // Kept even at zero opacity: a border that appears only while
+          // dragging would inset the row and shift its contents.
+          border: Border.all(
             color: Color.lerp(
-              Color.lerp(Colors.transparent, scheme.secondaryContainer, sel),
-              danger ? scheme.errorContainer : scheme.primaryContainer,
+              Colors.transparent,
+              danger ? scheme.error : scheme.primary,
               drop,
-            ),
-            borderRadius: radius,
-            // Kept even at zero opacity: a border that appears only while
-            // dragging would inset the row and shift its contents.
-            border: Border.all(
-              color: Color.lerp(
-                Colors.transparent,
-                danger ? scheme.error : scheme.primary,
-                drop,
-              )!,
-              width: 1.5,
-            ),
+            )!,
+            width: 1.5,
           ),
-          // The marker carries the selection where the wash alone is close
-          // to the ground's own lightness. It grows from the row's middle.
-          child: Stack(
-            children: [
-              ClipRRect(borderRadius: radius, child: child),
-              Positioned(
-                left: 0,
-                width: _markerWidth,
-                top: _markerInset + (1 - sel) * _markerHalfHeight,
-                bottom: _markerInset + (1 - sel) * _markerHalfHeight,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: sel * (1 - drop)),
-                      borderRadius: BorderRadius.circular(_markerWidth),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      });
+        ),
+        child: ClipRRect(borderRadius: radius, child: child),
+      );
     });
   }
 
@@ -563,6 +656,50 @@ class _RowHighlight extends StatelessWidget {
       duration: Motion.fast,
       curve: Motion.standard,
       builder: (context, t, _) => builder(t),
+    );
+  }
+}
+
+/// A section's selection wash: it slides from the old row to the new one
+/// within its section, and fades where it stands when the section loses its
+/// selection.
+class _SlidingHighlight extends StatelessWidget {
+  final double top;
+  final double height;
+  final bool shown;
+  final bool slides;
+
+  const _SlidingHighlight({
+    super.key,
+    required this.top,
+    required this.height,
+    required this.shown,
+    required this.slides,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = Motion.reduced(context);
+    return AnimatedPositioned(
+      duration: slides && !reduced ? Motion.base : Duration.zero,
+      curve: Motion.emphasized,
+      left: _rowInsetH,
+      right: _rowInsetH,
+      top: top,
+      height: height,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: shown ? 1 : 0,
+          duration: reduced ? Duration.zero : Motion.fast,
+          curve: Motion.standard,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              borderRadius: kSmallBorderRadius,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

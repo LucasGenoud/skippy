@@ -252,74 +252,68 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                   column: widget.column,
                   onExpand: widget.onToggleCollapsed,
                 )
-              : Column(
+              : _Trough(
                   key: const ValueKey('expanded'),
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (widget.showHeader)
-                      _BoardColumnHeader(
-                        column: widget.column,
-                        onToggleCollapsed: widget.onToggleCollapsed,
-                        selection: _columnSelection,
-                        onToggleSelection: _toggleSelection,
-                      )
-                    else
-                      // The phone has no header to hold the toggle, so it
-                      // gets a row of its own while selecting.
-                      _AppearWhen(
-                        visible:
-                            widget.selectionMode && _toggleSelection != null,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                            child: _SelectColumnButton(
-                              title: widget.column.title,
-                              selection: _columnSelection,
-                              onPressed: _toggleSelection,
-                              showLabel: true,
+                  // One surface for the whole column, header included: the
+                  // stage's colour caps it, the title sits on it, the cards
+                  // below.
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _StageRule(column: widget.column),
+                      if (widget.showHeader)
+                        _BoardColumnHeader(
+                          column: widget.column,
+                          onToggleCollapsed: widget.onToggleCollapsed,
+                          selection: _columnSelection,
+                          onToggleSelection: _toggleSelection,
+                        )
+                      else
+                        // The phone has no header to hold the toggle, so it
+                        // gets a row of its own while selecting.
+                        _AppearWhen(
+                          visible:
+                              widget.selectionMode && _toggleSelection != null,
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                              child: _SelectColumnButton(
+                                title: widget.column.title,
+                                selection: _columnSelection,
+                                onPressed: _toggleSelection,
+                                showLabel: true,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    Expanded(
-                      child: _Trough(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                    // Caps the trough rather than the header, so the phone,
-                    // which hides the header, still gets the stage's colour.
-                    _StageRule(column: widget.column),
-                    Padding(
-                      // The card list below brings its own top inset.
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                      child: SizedBox(
-                        width: double.infinity,
-                        // Quiet grey, not the accent: every column has one,
-                        // and a row of tinted buttons outshouted the cards. A
-                        // shade darker than the trough so it still reads as a
-                        // button.
-                        child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                            foregroundColor: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                            backgroundColor: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.07),
+                      Padding(
+                        // The card list below brings its own top inset.
+                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                        child: SizedBox(
+                          width: double.infinity,
+                          // Quiet grey, not the accent: every column has one,
+                          // and a row of tinted buttons outshouted the cards.
+                          // A shade darker than the trough so it still reads
+                          // as a button.
+                          child: TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.07),
+                            ),
+                            onPressed: () => addCardToStage(context, _stageId),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add note'),
                           ),
-                          onPressed: () => addCardToStage(context, _stageId),
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Add note'),
                         ),
                       ),
-                    ),
-                    Expanded(child: _body()),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                      Expanded(child: _body()),
+                    ],
+                  ),
                 ),
         ),
       ),
@@ -530,7 +524,12 @@ class _BoardColumnHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
+          padding: EdgeInsets.fromLTRB(
+            onToggleCollapsed == null ? kSpaceMd : kSpaceXs,
+            kSpaceXs,
+            kSpaceXs,
+            0,
+          ),
           child: Row(
             children: [
               if (onToggleCollapsed != null)
@@ -650,55 +649,54 @@ class _CollapsedColumn extends StatelessWidget {
         splashColor: Colors.transparent,
         child: _Trough(
           child: Column(
-          children: [
-            _StageRule(column: column),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.keyboard_double_arrow_right,
-                    size: 20,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: kSpaceSm),
-                  RotatedBox(
-                    quarterTurns: 3,
-                    child: Text(
-                      '${column.title} (${column.totalCount})',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: scheme.onSurfaceVariant,
+            children: [
+              _StageRule(column: column),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.keyboard_double_arrow_right,
+                      size: 20,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: kSpaceSm),
+                    RotatedBox(
+                      quarterTurns: 3,
+                      child: Text(
+                        '${column.title} (${column.totalCount})',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: kSpaceSm),
-                  RotatedBox(
-                    quarterTurns: 3,
-                    child: Text(
-                      'Expand',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                    const SizedBox(height: kSpaceSm),
+                    RotatedBox(
+                      quarterTurns: 3,
+                      child: Text(
+                        'Expand',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// The recessed region a column's cards sit in: the trough of the depth model
-/// in `theme.dart`. The header stays outside it, on the canvas, so the trough
-/// holds only what can be dropped into it.
+/// The recessed region a column is: the trough of the depth model in
+/// `theme.dart`, holding the column's header as well as its cards.
 class _Trough extends StatelessWidget {
   final Widget child;
 
-  const _Trough({required this.child});
+  const _Trough({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -716,7 +714,7 @@ class _Trough extends StatelessWidget {
   }
 }
 
-/// The stage's colour, capping the column.
+/// The stage's colour, capping the column above its title.
 ///
 /// Promoted from the 8px dot the header used to carry: at board zoom that dot
 /// was the smallest mark on the screen, and it was the only thing telling two

@@ -153,7 +153,7 @@ class _NoteFooterLabels extends StatelessWidget {
           tag.name,
           Theme.of(context).textTheme.labelSmall,
         ) +
-        (tag.icon != null ? 36 : 22);
+        (tag.icon != null || tag.color != null ? 36 : 22);
   }
 }
 
@@ -164,26 +164,34 @@ class _FooterLabelMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final tint = PaletteEntry.hexToColor(tag.color);
-    final line = tint ?? scheme.onSurfaceVariant;
     return Tooltip(
       message: tag.name,
       child: Container(
         width: 24,
         height: 24,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: kBorderRadius,
-          color: tint?.withValues(alpha: 0.14),
-          border: Border.all(
-            color: line.withValues(alpha: tint == null ? 0.4 : 0.55),
-          ),
+        decoration: _chipDecoration(scheme),
+        child: Icon(
+          labelIconFor(tag.icon),
+          size: 13,
+          color: PaletteEntry.hexToColor(tag.color) ?? scheme.onSurfaceVariant,
         ),
-        child: Icon(labelIconFor(tag.icon), size: 13, color: line),
       ),
     );
   }
 }
+
+/// A label as a card draws it: a neutral badge, a translucent surface over
+/// whatever the card's fill is behind a quiet edge. The label's own colour
+/// goes only on its icon or a small square, so a row of chips reads calm and
+/// the colour still tells them apart.
+BoxDecoration _chipDecoration(ColorScheme scheme) => BoxDecoration(
+  borderRadius: kBorderRadius,
+  color: scheme.surface.withValues(alpha: 0.7),
+  border: Border.all(
+    color: Color.lerp(scheme.outlineVariant, scheme.onSurface, 0.06)!,
+  ),
+);
 
 class _FooterOverflowMarker extends StatelessWidget {
   const _FooterOverflowMarker();
@@ -195,10 +203,7 @@ class _FooterOverflowMarker extends StatelessWidget {
       width: 24,
       height: 24,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        borderRadius: kBorderRadius,
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
+      decoration: _chipDecoration(Theme.of(context).colorScheme),
       child: Icon(Icons.more_horiz, size: 16, color: color),
     );
   }
@@ -221,33 +226,42 @@ class _LabelChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tint = PaletteEntry.hexToColor(color);
-    final line = tint ?? scheme.onSurfaceVariant;
+    final marked = iconKey != null || tint != null;
     return Container(
       padding: EdgeInsets.only(
-        left: iconKey != null ? 7 : 10,
+        left: marked ? 7 : 10,
         right: 10,
         top: 3,
         bottom: 3,
       ),
-      decoration: BoxDecoration(
-        borderRadius: kBorderRadius,
-        color: tint?.withValues(alpha: 0.14),
-        border: Border.all(
-          color: line.withValues(alpha: tint == null ? 0.4 : 0.55),
-        ),
-      ),
+      decoration: _chipDecoration(scheme),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (iconKey != null) ...[
-            Icon(labelIconFor(iconKey), size: 13, color: line),
+            Icon(
+              labelIconFor(iconKey),
+              size: 13,
+              color: tint ?? scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: kSpaceXs),
+          ] else if (tint != null) ...[
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                color: tint,
+                borderRadius: const BorderRadius.all(Radius.circular(2)),
+              ),
+            ),
             const SizedBox(width: kSpaceXs),
           ],
           Text(
             name,
             style: Theme.of(
               context,
-            ).textTheme.labelSmall?.copyWith(color: line),
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurface),
           ),
         ],
       ),

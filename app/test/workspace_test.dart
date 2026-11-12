@@ -830,7 +830,7 @@ void main() {
       store.setActiveWorkspace(work);
       await openSettings(tester, store);
 
-      await tester.tap(find.text('Statistics'));
+      await tester.tap(find.text('Statistics').last);
       await tester.pumpAndSettle();
 
       expect(find.widgetWithText(AppBar, 'Statistics'), findsOneWidget);
@@ -952,7 +952,7 @@ void main() {
       await openSettings(tester, store);
 
       expect(find.text('0 notes · 0 labels'), findsOneWidget);
-      await tester.tap(find.text('Statistics'));
+      await tester.tap(find.text('Statistics').last);
       await tester.pumpAndSettle();
 
       expect(

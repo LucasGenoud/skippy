@@ -46,6 +46,7 @@ import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
 import '../widgets/sync_pill.dart';
+import '../widgets/view_swap.dart';
 
 /// What one build of the home screen shows, worked out once in `build` and
 /// handed to the pieces that draw it.
@@ -782,7 +783,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Stack(
                                 children: [
                                   Positioned.fill(
-                                    child: _viewBody(store, view),
+                                    child: _viewSwitcher(store, view),
                                   ),
                                   // Beside the new-note button, centred on
                                   // it; phones keep the offline banner.
@@ -928,6 +929,17 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       onShare: () => _shareSelected(store),
     );
+  }
+
+  /// [_viewBody], sliding one kind of view (grid, a board, reminders) out as
+  /// another slides in. Grid to grid is left to the grid's own switcher.
+  Widget _viewSwitcher(NotesStore store, _HomeView view) {
+    final board =
+        view.collectionView && store.activeCollection?.layout == 'board';
+    final kind = board
+        ? 'board-${store.activeWorkspaceId}-${store.activeCollection?.id}'
+        : (_selection.view == NoteView.reminders ? 'reminders' : 'grid');
+    return ViewSwap(viewKey: kind, child: _viewBody(store, view));
   }
 
   /// What fills the area beside the sidebar. The board and the reminders lay
@@ -1211,10 +1223,7 @@ class _HomeScreenState extends State<HomeScreen> {
       Padding(
         // 8px inset from the card's left edge, matching the view header.
         padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-        child: Text(
-          text.toUpperCase(),
-          style: sectionLabelStyle(Theme.of(context)),
-        ),
+        child: Text(text, style: sectionLabelStyle(Theme.of(context))),
       ),
       grid,
     );
@@ -1286,15 +1295,17 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: grid.maxWidth),
-            // Another view, collection or workspace is another grid. The old
-            // one is already laid out, so fading it out as one layer costs a
-            // repaint; retiring its cards one by one inside the new grid
-            // relaid out both on every frame of the switch.
+            // Another view, collection or workspace is another grid: the new
+            // one rises in as the old one sinks away. The old one is already
+            // laid out, so moving it as one layer costs a repaint; retiring
+            // its cards one by one inside the new grid relaid out both on
+            // every frame of the switch.
             child: AnimatedSwitcher(
               duration: reduced ? Duration.zero : Motion.base,
               reverseDuration: reduced ? Duration.zero : Motion.fast,
-              switchInCurve: Motion.standard,
+              switchInCurve: Motion.emphasized,
               switchOutCurve: Motion.standard,
+              transitionBuilder: Motion.viewSwap,
               layoutBuilder: (current, previous) => Stack(
                 alignment: Alignment.topCenter,
                 children: [...previous, ?current],

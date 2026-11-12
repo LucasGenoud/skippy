@@ -58,7 +58,7 @@ void main() {
 
     expect(store.noteById(_source)!.content, 'buy [[$_target|Groceries]] ');
     expect(find.byKey(const Key('note-link-picker')), findsNothing);
-    expect(find.byKey(const ValueKey('LINKS-$_target')), findsOneWidget);
+    expect(find.byKey(const ValueKey('Links-$_target')), findsOneWidget);
   });
 
   testWidgets('one backspace after a link removes all of it', (tester) async {
@@ -92,7 +92,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final chip = find.byKey(const ValueKey('LINKED FROM-$_source'));
+    final chip = find.byKey(const ValueKey('Linked from-$_source'));
     expect(chip, findsOneWidget);
     expect(
       find.descendant(of: chip, matching: find.text('Plan')),

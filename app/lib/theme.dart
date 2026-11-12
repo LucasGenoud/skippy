@@ -24,19 +24,28 @@ import 'package:flutter/material.dart';
 /// seed, so one color reseeds the whole Material scheme for both brightnesses.
 const Color kDefaultAccent = Color(0xFFFBBC04);
 
-/// App-wide corner radius: soft, but nowhere near the pills and circles
-/// Material defaults to. Every piece of chrome (cards, inputs, buttons, icon
-/// buttons, menus, dialogs, chips, tags) rounds to this so the look stays
-/// consistent. Change it here to retune the whole app.
-const double kRadius = 6;
+/// The corner ladder. The bigger a surface, the rounder its corner, so a
+/// control inside a card inside a dialog stays concentric:
+///
+///   4  [kRadiusXs]    checkboxes, tiny marks
+///   6  [kRadiusSm]    sidebar rows, compact list rows
+///   8  [kRadius]      controls: buttons, fields, chips, tags, tooltips,
+///                     board columns
+///   10 [kCardRadius]  note cards, menus, toasts
+///   12 [kDialogRadius] dialogs, sheets
+///
+/// Nowhere near the pills and circles Material defaults to.
+const double kRadiusXs = 4;
+const double kRadiusSm = 6;
+const double kRadius = 8;
+const double kCardRadius = 10;
+const double kMenuRadius = 10;
+const double kDialogRadius = 12;
 
-/// Menus are given a touch more rounding than controls and cards, helping the
-/// floating surface read separately from the note layout.
-const double kMenuRadius = 8;
-
-/// A checkbox's corner. Smaller than [kRadius] because the box is: at 18px a
-/// 6px corner would read as a circle, and 4px still reads as a pill.
-const BorderRadius kCheckBorderRadius = BorderRadius.all(Radius.circular(3));
+/// A checkbox's corner: at 18px anything rounder reads as a pill.
+const BorderRadius kCheckBorderRadius = BorderRadius.all(
+  Radius.circular(kRadiusXs),
+);
 
 /// Shared layout rhythm for the compact controls built outside Material
 /// components. Keeping these values together prevents individual features
@@ -95,6 +104,14 @@ const double kDialogWidth = 420;
 /// that can't read a shape from the theme.
 const Radius kRadiusCorner = Radius.circular(kRadius);
 const BorderRadius kBorderRadius = BorderRadius.all(kRadiusCorner);
+const BorderRadius kSmallBorderRadius = BorderRadius.all(
+  Radius.circular(kRadiusSm),
+);
+const Radius kCardCorner = Radius.circular(kCardRadius);
+const BorderRadius kCardBorderRadius = BorderRadius.all(kCardCorner);
+const BorderRadius kDialogBorderRadius = BorderRadius.all(
+  Radius.circular(kDialogRadius),
+);
 
 /// Inset of a tappable list row inside a dialog or sheet. Paired with
 /// [kRoundedShape], its hover and press fill is a rounded tile with room
@@ -112,22 +129,20 @@ const RoundedRectangleBorder kRoundedShape = RoundedRectangleBorder(
   borderRadius: kBorderRadius,
 );
 
-/// The quietest line in the app. Chrome seams, the top bar's underline, the
-/// sidebar and drawer edges, the separators inside them, should read as a
-/// change of surface rather than a drawn rule — but only just: at half
-/// strength these lines disappeared entirely on a laptop screen, taking the
-/// app's structure with them.
-Color hairlineColor(ColorScheme scheme) =>
-    scheme.outlineVariant.withValues(alpha: 0.8);
+/// The quietest line in the app: chrome seams, the top bar's underline, the
+/// sidebar and drawer edges, the separators inside them. One opaque step off
+/// the surface, so it reads the same over any fill behind it.
+Color hairlineColor(ColorScheme scheme) => scheme.outlineVariant;
 
-/// The small caps over a group: "PINNED" above the grid, a sidebar section, a
-/// settings section, a filter sheet's group. Callers upper-case the text.
-/// Muted rather than accented: the accent marks what is selected, and a
-/// header in it competes with the selection below it.
+/// The quiet label over a group: "Pinned" above the grid, a sidebar section, a
+/// settings section, a filter sheet's group. Sentence case in the muted text
+/// colour, not tracked small caps: the accent marks what is selected, and a
+/// loud header competes with the selection below it.
 TextStyle? sectionLabelStyle(ThemeData theme) =>
-    theme.textTheme.labelSmall?.copyWith(
-      letterSpacing: 1.2,
-      fontWeight: FontWeight.w700,
+    theme.textTheme.labelMedium?.copyWith(
+      fontSize: 12,
+      letterSpacing: 0,
+      fontWeight: FontWeight.w500,
       color: theme.colorScheme.onSurfaceVariant,
     );
 
@@ -160,10 +175,10 @@ Color excludedFilterColor(ColorScheme scheme) => Color.alphaBlend(
 /// How far a card rises off whatever it sits on.
 enum CardLift { resting, raised }
 
-/// A card's shadow: a tight contact shadow under a soft, pulled-in drop, so
-/// the edge reads crisp and the lift reads soft. The negative spread keeps the
-/// blur from haloing past the corners. Dark needs far more opacity for the
-/// same lift, since there is little light left to take away.
+/// A card's shadow: barely there at rest, where the card's edge does the work,
+/// and a soft, pulled-in drop when raised. The negative spread keeps the blur
+/// from haloing past the corners. Dark needs far more opacity for the same
+/// lift, since there is little light left to take away.
 List<BoxShadow> cardShadow(ColorScheme scheme, CardLift lift) {
   final dark = scheme.brightness == Brightness.dark;
   Color ink(double light, double inDark) =>
@@ -172,30 +187,29 @@ List<BoxShadow> cardShadow(ColorScheme scheme, CardLift lift) {
   return switch (lift) {
     CardLift.resting => [
       BoxShadow(
-        color: ink(0.08, 0.34),
+        color: ink(0.04, 0.3),
         offset: const Offset(0, 1),
-        blurRadius: 2,
-        spreadRadius: -1,
+        blurRadius: 1,
       ),
       BoxShadow(
-        color: ink(0.09, 0.32),
-        offset: const Offset(0, 3),
-        blurRadius: 8,
-        spreadRadius: -3,
+        color: ink(0.06, 0.3),
+        offset: const Offset(0, 4),
+        blurRadius: 10,
+        spreadRadius: -6,
       ),
     ],
     CardLift.raised => [
       BoxShadow(
-        color: ink(0.14, 0.48),
-        offset: const Offset(0, 6),
-        blurRadius: 16,
-        spreadRadius: -4,
+        color: ink(0.12, 0.48),
+        offset: const Offset(0, 8),
+        blurRadius: 20,
+        spreadRadius: -8,
       ),
       BoxShadow(
-        color: ink(0.08, 0.32),
+        color: ink(0.06, 0.32),
         offset: const Offset(0, 1),
-        blurRadius: 4,
-        spreadRadius: -2,
+        blurRadius: 3,
+        spreadRadius: -1,
       ),
     ],
   };
@@ -241,37 +255,24 @@ codeSyntaxColors(ColorScheme scheme) {
 }
 
 /// The fill behind a board column: the trough of the depth model at the top of
-/// this file. Derived from the canvas rather than fixed, so it keeps the
-/// accent's tint and moves with it.
-///
-/// A trough is a step *away* from the canvas in whichever direction has room,
-/// which is not the same direction in both themes. In light it goes down, into
-/// the greys. In dark there is nowhere below to go: the canvas is already near
-/// black, where every colour has almost the same luminance, and a column a
-/// shade darker than the canvas came out at 1.08:1 — less separation than the
-/// cards get, which is exactly what it looked like. So a dark column rises
-/// instead, and the cards inside it rise further, the way every dark board
-/// reads anyway.
-Color boardColumnColor(ColorScheme scheme) {
-  final canvas = HSLColor.fromColor(scheme.surfaceDim);
-  final step = scheme.brightness == Brightness.light ? -0.075 : 0.045;
-  return canvas
-      .withLightness((canvas.lightness + step).clamp(0.0, 1.0))
-      .toColor();
-}
+/// this file. A step under the canvas in light; in dark, where the canvas is
+/// already near black, a step above it, with the cards rising further. Takes
+/// the canvas's hue, so it keeps the accent's tint and moves with it.
+Color boardColumnColor(ColorScheme scheme) =>
+    _neutralLike(scheme, _Neutral.trough);
 
-/// The edge of a board column. Quieter than [hairlineColor] would be here: the
-/// fill already carries the shape, so the border only has to keep the corner
-/// crisp instead of drawing the column a second time. It continues in the same
-/// direction the trough travelled, and in dark stops short of the card fill:
-/// a rim brighter than the cards inside it turns the column into an outline
+/// The edge of a board column: one step further than the trough, and in dark
+/// still short of the card fill, so the column never reads as an outline
 /// drawn over the board.
-Color boardColumnBorderColor(ColorScheme scheme) {
-  final trough = HSLColor.fromColor(boardColumnColor(scheme));
-  final step = scheme.brightness == Brightness.light ? -0.05 : 0.028;
-  return trough
-      .withLightness((trough.lightness + step).clamp(0.0, 1.0))
-      .toColor();
+Color boardColumnBorderColor(ColorScheme scheme) =>
+    _neutralLike(scheme, _Neutral.troughBorder);
+
+/// [role] in the canvas's hue and saturation.
+Color _neutralLike(ColorScheme scheme, _Neutral role) {
+  final light = scheme.brightness == Brightness.light;
+  return HSLColor.fromColor(
+    scheme.surfaceDim,
+  ).withLightness(light ? role.light : role.dark).toColor();
 }
 
 /// How much accent a wash carries over [ColorScheme.surface]: the selected
@@ -281,26 +282,52 @@ const double _washAlphaDark = 0.30;
 
 /// How much of the accent's hue bleeds into the app's neutrals.
 ///
-/// Surfaces are not pure greys: each is the accent's *hue* at a fixed, very
-/// low saturation, so a warm accent gives the app warm paper and a cool one
-/// gives it cool paper, and every surface moves together when someone changes
-/// their accent in Settings. Saturation is pinned here rather than inherited
-/// from the seed so that a vivid accent tints the chrome no harder than a
-/// muted one does.
-const double _neutralTintLight = 0.14;
-const double _neutralTintDark = 0.08;
+/// The neutrals are a zinc-like grey scale carrying the accent's *hue* at a
+/// low, fixed saturation: amber gives stone, blue gives slate, and every
+/// surface moves together when someone changes their accent in Settings.
+/// Saturation is pinned here rather than inherited from the seed so that a
+/// vivid accent tints the chrome no harder than a muted one does.
+const double _neutralTintLight = 0.06;
+const double _neutralTintDark = 0.05;
+
+/// The lightness of each neutral role, light and dark. The canvas sits a step
+/// under white surfaces, and edges are one quiet line; the separation between
+/// a card and the canvas comes from that edge more than from the fill.
+enum _Neutral {
+  canvas(0.975, 0.045),
+  surface(1, 0.1),
+  surfaceBright(1, 0.17),
+  surfaceContainerLowest(1, 0.03),
+  surfaceContainerLow(0.982, 0.11),
+  surfaceContainer(0.962, 0.13),
+  surfaceContainerHigh(0.945, 0.15),
+  surfaceContainerHighest(0.915, 0.17),
+  trough(0.945, 0.07),
+  troughBorder(0.905, 0.095),
+  onSurface(0.06, 0.96),
+  onSurfaceVariant(0.40, 0.66),
+  outline(0.66, 0.44),
+  outlineVariant(0.9, 0.18);
+
+  final double light;
+  final double dark;
+  const _Neutral(this.light, this.dark);
+}
 
 /// Under this, a seed is a grey and `HSLColor` reports a meaningless hue for
 /// it. Tinting by that hue would turn the whole app pink.
 const double _minTintableSaturation = 0.06;
 
-/// A neutral at [lightness], carrying the accent's hue. See [_neutralTintLight].
-Color _neutral(Color seed, double lightness, {required bool light}) {
+/// [role] carrying the accent's hue. See [_neutralTintLight].
+Color _neutral(Color seed, _Neutral role, {required bool light}) {
   final hsl = HSLColor.fromColor(seed);
   final tint = hsl.saturation < _minTintableSaturation
       ? 0.0
       : (light ? _neutralTintLight : _neutralTintDark);
-  return hsl.withSaturation(tint).withLightness(lightness).toColor();
+  return hsl
+      .withSaturation(tint)
+      .withLightness(light ? role.light : role.dark)
+      .toColor();
 }
 
 /// Black or white, whichever the accent can actually carry. A yellow accent
@@ -329,18 +356,14 @@ ThemeData buildTheme(
   String? fontFamily,
 }) {
   final light = brightness == Brightness.light;
-  Color neutral(double lightness) => _neutral(seed, lightness, light: light);
+  Color neutral(_Neutral role) => _neutral(seed, role, light: light);
 
-  // The canvas: the floor of the depth model above. Everything else is placed
-  // relative to it.
-  //
-  // Separation is bought by moving what sits *on* the canvas, not by darkening
-  // the canvas itself: a light background heavy enough to make white cards pop
-  // on its own reads as dirty paper, and a dark one deep enough to do the same
-  // reads as a hole. So the light canvas stays a pale warm grey and its
-  // troughs go deep, while the dark canvas stays put and its cards rise.
-  final canvas = neutral(light ? 0.912 : 0.060);
-  final surface = light ? Colors.white : neutral(0.165);
+  // The canvas: the floor of the depth model above. A near-white grey under
+  // white cards in light, near black under raised cards in dark; the cards'
+  // edges carry the separation (see [hairlineColor]).
+  final canvas = neutral(_Neutral.canvas);
+  final surface = neutral(_Neutral.surface);
+  final onSurface = neutral(_Neutral.onSurface);
 
   // M3 derives `primary` by dropping the seed to tone 40 (tone 80 in dark) so
   // that accent-coloured *text* clears 4.5:1 on a surface. For a yellow seed
@@ -364,15 +387,19 @@ ThemeData buildTheme(
     secondaryContainer: accentWash,
     // A wash is a background, not a container in M3's sense: the text on it is
     // the app's ordinary body colour, at full strength.
-    onSecondaryContainer: seeded.onSurface,
+    onSecondaryContainer: onSurface,
     surface: surface,
+    onSurface: onSurface,
+    onSurfaceVariant: neutral(_Neutral.onSurfaceVariant),
+    outline: neutral(_Neutral.outline),
+    outlineVariant: neutral(_Neutral.outlineVariant),
     surfaceDim: canvas,
-    surfaceBright: light ? Colors.white : neutral(0.258),
-    surfaceContainerLowest: light ? Colors.white : neutral(0.045),
-    surfaceContainerLow: neutral(light ? 0.975 : 0.185),
-    surfaceContainer: neutral(light ? 0.955 : 0.210),
-    surfaceContainerHigh: neutral(light ? 0.930 : 0.238),
-    surfaceContainerHighest: neutral(light ? 0.898 : 0.258),
+    surfaceBright: neutral(_Neutral.surfaceBright),
+    surfaceContainerLowest: neutral(_Neutral.surfaceContainerLowest),
+    surfaceContainerLow: neutral(_Neutral.surfaceContainerLow),
+    surfaceContainer: neutral(_Neutral.surfaceContainer),
+    surfaceContainerHigh: neutral(_Neutral.surfaceContainerHigh),
+    surfaceContainerHighest: neutral(_Neutral.surfaceContainerHighest),
   );
   final base = ThemeData(
     useMaterial3: true,
@@ -383,9 +410,9 @@ ThemeData buildTheme(
     // No ink ripple: a press darkens the control's own shape, the way a
     // desktop app answers a click, instead of Material's spreading splash.
     splashFactory: NoSplash.splashFactory,
-    hoverColor: scheme.onSurface.withValues(alpha: 0.06),
-    highlightColor: scheme.onSurface.withValues(alpha: 0.10),
-    focusColor: scheme.onSurface.withValues(alpha: 0.10),
+    hoverColor: scheme.onSurface.withValues(alpha: light ? 0.045 : 0.06),
+    highlightColor: scheme.onSurface.withValues(alpha: light ? 0.08 : 0.10),
+    focusColor: scheme.onSurface.withValues(alpha: light ? 0.08 : 0.10),
   );
   return base.copyWith(
     // Chrome is a surface, not the canvas: the home screen's hand-rolled top
@@ -434,7 +461,7 @@ ThemeData buildTheme(
     // `base` would lose its size (the geometry is localized in later), so
     // [AppDialog] applies both and every dialog in the app goes through it.
     dialogTheme: base.dialogTheme.copyWith(
-      shape: kRoundedShape,
+      shape: const RoundedRectangleBorder(borderRadius: kDialogBorderRadius),
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
       actionsPadding: kModalActionsPadding,
@@ -454,13 +481,21 @@ ThemeData buildTheme(
       ),
     ),
     menuTheme: const MenuThemeData(
-      style: MenuStyle(shape: WidgetStatePropertyAll(kRoundedShape)),
+      style: MenuStyle(
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(kMenuRadius)),
+          ),
+        ),
+      ),
     ),
     bottomSheetTheme: base.bottomSheetTheme.copyWith(
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: kRadiusCorner),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(kDialogRadius),
+        ),
       ),
     ),
     // NOTE: no inputDecorationTheme border override on purpose. The fields
@@ -543,7 +578,7 @@ ThemeData buildTheme(
       thickness: const WidgetStatePropertyAll(6),
       radius: const Radius.circular(kRadius),
       thumbColor: WidgetStatePropertyAll(
-        scheme.onSurface.withValues(alpha: 0.18),
+        scheme.onSurface.withValues(alpha: 0.16),
       ),
     ),
     // SegmentedButton defaults to a stadium (pill) shape, square it off.
@@ -577,7 +612,7 @@ ThemeData buildTheme(
       actionTextColor: scheme.primary,
       closeIconColor: scheme.onSurfaceVariant,
       shape: RoundedRectangleBorder(
-        borderRadius: kBorderRadius,
+        borderRadius: kCardBorderRadius,
         side: BorderSide(color: scheme.outlineVariant),
       ),
     ),

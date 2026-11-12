@@ -1984,8 +1984,8 @@ class _EditorScreenState extends State<EditorScreen> {
       '${settings.reminderLabel(note.reminderAt!)}'
       '${note.reminderRepeat == null ? '' : ' · ${note.reminderRepeat!.label}'}';
 
-  /// One label chip in the editor, tinted with the label's colour and prefixed
-  /// with its icon (custom or default).
+  /// One label chip in the editor: a neutral chip led by the label's icon
+  /// (custom or default) in its colour.
   Widget _labelChip(
     BuildContext context,
     Label label,
@@ -1994,14 +1994,11 @@ class _EditorScreenState extends State<EditorScreen> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final tint = labelColor(label, scheme.onSurfaceVariant);
-    final tinted = label.color != null;
     return InputChip(
       key: ValueKey('label-${label.id}'),
       avatar: Icon(labelIcon(label), size: 16, color: tint),
       label: Text(label.name),
       visualDensity: VisualDensity.compact,
-      backgroundColor: tinted ? tint.withValues(alpha: 0.12) : null,
-      side: tinted ? BorderSide(color: tint.withValues(alpha: 0.55)) : null,
       onDeleted: trashed
           ? null
           : () => _store.toggleLabelOnNote(noteId, label.id),

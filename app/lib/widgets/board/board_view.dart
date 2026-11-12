@@ -205,7 +205,7 @@ class _BoardViewState extends State<BoardView> {
           child: ListView.builder(
             controller: _boardController,
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             // The exits follow the stage columns, then the add-column tile.
             // Both exits share one slot, stacked, so they read as a pair of
             // destinations rather than two more columns.

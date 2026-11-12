@@ -487,7 +487,7 @@ class PublicNoteCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: fill ?? scheme.surface,
-        borderRadius: kBorderRadius,
+        borderRadius: kCardBorderRadius,
         border: Border.all(color: hairlineColor(scheme)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -634,8 +634,11 @@ class _LabelChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: tint.withValues(alpha: 0.14),
+        color: scheme.surface.withValues(alpha: 0.7),
         borderRadius: kBorderRadius,
+        border: Border.all(
+          color: Color.lerp(scheme.outlineVariant, scheme.onSurface, 0.06)!,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -646,7 +649,7 @@ class _LabelChip extends StatelessWidget {
             label.name,
             style: Theme.of(
               context,
-            ).textTheme.labelSmall?.copyWith(color: tint),
+            ).textTheme.labelSmall?.copyWith(color: scheme.onSurface),
           ),
         ],
       ),
@@ -664,7 +667,7 @@ Color? _publicNoteColor(String key, Brightness brightness) {
   if (key == 'default') return null;
   for (final entry in kDefaultPalette) {
     if (entry.key == key) {
-      return brightness == Brightness.light ? entry.light : entry.dark;
+      return entry.fill(brightness);
     }
   }
   return null;

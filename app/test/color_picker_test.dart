@@ -30,7 +30,7 @@ void main() {
     );
 
     // One strip holds textures and motifs alike.
-    expect(find.text('PATTERN'), findsOneWidget);
+    expect(find.text('Pattern'), findsOneWidget);
     expect(find.text('MOTIF'), findsNothing);
     for (final pattern in NotePattern.values) {
       expect(find.byKey(ValueKey('pattern-${pattern.wire}')), findsOneWidget);
