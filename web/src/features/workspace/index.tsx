@@ -1,10 +1,20 @@
 "use client";
 
-// Placeholders: the SETTINGS agent replaces these.
-export function WorkspaceSettingsScreen({ workspaceId }: { workspaceId: string }) {
-  return <div data-placeholder="workspace-settings" data-workspace={workspaceId} />;
-}
+import { lazy, Suspense } from "react";
+
+export { WorkspaceSettingsScreen } from "./workspace-settings-screen";
+export { CollectionSettingsDialog } from "./collection-settings-dialog";
+export { DuplicateWorkspaceDialog } from "./duplicate-workspace-dialog";
+export { CreateWorkspaceDialog, RenameWorkspaceDialog } from "./workspace-dialogs";
+export { WorkspaceAiSection } from "./workspace-ai-section";
+
+// The statistics page and its charts load only when opened.
+const LazyStats = lazy(() => import("./workspace-stats-screen"));
 
 export function WorkspaceStatsScreen({ workspaceId }: { workspaceId: string }) {
-  return <div data-placeholder="workspace-stats" data-workspace={workspaceId} />;
+  return (
+    <Suspense fallback={<div className="h-dvh bg-surface" />}>
+      <LazyStats workspaceId={workspaceId} />
+    </Suspense>
+  );
 }
