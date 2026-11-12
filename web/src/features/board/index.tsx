@@ -1,6 +1,5 @@
 "use client";
 
-// Placeholder: the BOARD agent replaces this.
-export function BoardView() {
-  return <div data-placeholder="board-view" />;
-}
+export { BoardView } from "./board-view";
+export { MoveToStageDialog } from "./move-to-stage-dialog";
+export { EditStagesDialog, StageEditorDialog } from "./stage-editor";
