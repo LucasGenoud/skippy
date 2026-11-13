@@ -83,7 +83,7 @@ export const BoardCard = memo(function BoardCard({
         <div
           aria-hidden
           className={cn(
-            "pointer-events-none absolute inset-0 rounded-md border-2 border-primary bg-primary/10 transition-opacity duration-150 ease-standard",
+            "pointer-events-none absolute inset-0 rounded-lg border-2 border-primary bg-primary/10 transition-opacity duration-150 ease-standard",
             isDragging ? "opacity-100" : "opacity-0",
           )}
         />

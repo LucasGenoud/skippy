@@ -95,13 +95,13 @@ export function MetaChips({
           <motion.span key={label.id} layout {...chipMotion} className={cn(CHIP, label.icon ? "pl-2" : "pl-2.5", "pr-2")} style={labelStyle(label.color)}>
             {readOnly ? (
               <span className="inline-flex min-w-0 items-center gap-1.5">
-                <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5 shrink-0" />
+                <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5 shrink-0 text-(--label-tint)" />
                 <span className="truncate">{label.name}</span>
               </span>
             ) : (
               <NoteLabelPicker noteIds={[noteId]}>
                 <button type="button" className="inline-flex min-w-0 items-center gap-1.5 outline-none">
-                  <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5 shrink-0" />
+                  <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5 shrink-0 text-(--label-tint)" />
                   <span className="truncate">{label.name}</span>
                 </button>
               </NoteLabelPicker>

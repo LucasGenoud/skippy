@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, Infinity as Forever, Link2, Link2Off, Clock } from "lucide-react";
 
 import {
@@ -22,15 +22,16 @@ import { AnimatedFormError } from "@/components/common/form-error-banner";
 import { IconButton } from "@/components/common/icon-button";
 import { showAppSnack } from "@/components/common/snack";
 import { ApiError } from "@/lib/api/errors";
+import type { ShareLinkRequest } from "@/lib/api/client";
 import { publicShareUrl, type ShareLink } from "@/lib/models/misc";
 import { useApi, useNote, useSettings, formatDate } from "@/lib/store";
 
-// Publish, copy or revoke the public, read-only link of one note
+// Publish, copy or revoke the public, read-only link of one note or one view
 // (`public_link_dialog.dart`). Opening it publishes nothing: the link exists
 // only once asked for, so a stray tap never puts a page on the internet.
 
 const OFFLINE_MESSAGE = "Can't reach the server right now";
-const SCOPE =
+const NOTE_SCOPE =
   "Anyone with the link can read this note and open its images. They cannot edit it, and they never see who else it is shared with.";
 const MS_PER_DAY = 86_400_000;
 
@@ -42,12 +43,45 @@ const LIFETIMES = [
 ] as const;
 type Lifetime = (typeof LIFETIMES)[number]["id"];
 
+/** What a link publishes (`PublicLinkTarget`): the request, its name and what a reader can see. */
+export interface PublicLinkTarget {
+  readonly request: Omit<ShareLinkRequest, "expiresAt">;
+  readonly title: string;
+  readonly scope: string;
+}
+
+/** The existing link for [target], matched on every field that names it. */
+function matches(link: ShareLink, { request }: PublicLinkTarget): boolean {
+  return (
+    link.target === request.target &&
+    link.noteId === (request.noteId ?? null) &&
+    link.workspaceId === (request.workspaceId ?? null) &&
+    link.collectionId === (request.collectionId ?? null) &&
+    link.labelId === (request.labelId ?? null)
+  );
+}
+
 export function PublicLinkDialog({ noteId, open, onOpenChange }: { noteId: string; open: boolean; onOpenChange(open: boolean): void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>{open ? <LinkBody noteId={noteId} onClose={() => onOpenChange(false)} /> : null}</DialogContent>
+      <DialogContent>{open ? <NoteLinkBody noteId={noteId} onClose={() => onOpenChange(false)} /> : null}</DialogContent>
     </Dialog>
   );
+}
+
+/** The same dialog for a whole view: a collection's notes, its board, or a label. */
+export function ViewLinkDialog({ target, open, onOpenChange }: { target: PublicLinkTarget; open: boolean; onOpenChange(open: boolean): void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>{open ? <LinkBody target={target} onClose={() => onOpenChange(false)} /> : null}</DialogContent>
+    </Dialog>
+  );
+}
+
+function NoteLinkBody({ noteId, onClose }: { noteId: string; onClose(): void }) {
+  const title = useNote(noteId)?.title.trim() || "this note";
+  const target = useMemo<PublicLinkTarget>(() => ({ request: { target: "note", noteId }, title, scope: NOTE_SCOPE }), [noteId, title]);
+  return <LinkBody target={target} onClose={onClose} />;
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -59,9 +93,8 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function LinkBody({ noteId, onClose }: { noteId: string; onClose(): void }) {
+function LinkBody({ target, onClose }: { target: PublicLinkTarget; onClose(): void }) {
   const api = useApi();
-  const note = useNote(noteId);
   const dateFormat = useSettings((s) => s.dateFormat);
   const [link, setLink] = useState<ShareLink | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,14 +102,14 @@ function LinkBody({ noteId, onClose }: { noteId: string; onClose(): void }) {
   const [error, setError] = useState<string | null>(null);
   const [lifetime, setLifetime] = useState<Lifetime>("forever");
   const [confirming, setConfirming] = useState(false);
-  const title = note?.title.trim() || "this note";
+  const { title } = target;
 
   useEffect(() => {
     let live = true;
     api.fetchShareLinks().then(
       (links) => {
         if (live) {
-          setLink(links.find((l) => l.target === "note" && l.noteId === noteId) ?? null);
+          setLink(links.find((l) => matches(l, target)) ?? null);
           setLoading(false);
         }
       },
@@ -90,7 +123,7 @@ function LinkBody({ noteId, onClose }: { noteId: string; onClose(): void }) {
     return () => {
       live = false;
     };
-  }, [api, noteId]);
+  }, [api, target]);
 
   const url = link ? publicShareUrl(api.baseUrl, link) : "";
 
@@ -103,8 +136,7 @@ function LinkBody({ noteId, onClose }: { noteId: string; onClose(): void }) {
     try {
       const days = LIFETIMES.find((l) => l.id === lifetime)?.days ?? null;
       const created = await api.createShareLink({
-        target: "note",
-        noteId,
+        ...target.request,
         expiresAt: days === null ? null : new Date(Date.now() + days * MS_PER_DAY),
       });
       setLink(created);
@@ -145,7 +177,7 @@ function LinkBody({ noteId, onClose }: { noteId: string; onClose(): void }) {
     <>
       <DialogHeader>
         <DialogTitle>Public link</DialogTitle>
-        <DialogDescription>{SCOPE}</DialogDescription>
+        <DialogDescription>{target.scope}</DialogDescription>
       </DialogHeader>
       <div className="min-h-[68px]">
         {loading ? (

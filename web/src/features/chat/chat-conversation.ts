@@ -30,8 +30,6 @@ export interface Turn {
 
 export interface ConversationState {
   readonly turns: readonly Turn[];
-  /** The workspace the next turn answers over and files writes in; null = the open one. */
-  readonly scopeId: string | null;
 }
 
 export interface ConversationDeps {
@@ -55,7 +53,7 @@ export class ChatConversation {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: ConversationDeps) {
-    this.store = createStore<ConversationState>(() => ({ turns: [], scopeId: null }));
+    this.store = createStore<ConversationState>(() => ({ turns: [] }));
   }
 
   get state(): ConversationState {
@@ -65,10 +63,6 @@ export class ChatConversation {
   /** A reply is still arriving. */
   get busy(): boolean {
     return this.state.turns.at(-1)?.status === "streaming";
-  }
-
-  setScope(workspaceId: string | null): void {
-    this.store.setState({ scopeId: workspaceId });
   }
 
   /**

@@ -11,7 +11,7 @@ import { useTitledBar } from "./responsive";
 import { SearchField } from "./search-field";
 import { SelectionBar } from "./selection-bar";
 import { useChatAvailable } from "./shell-actions";
-import { LayoutToggle, SortMenu, ThemeToggle, UserMenu } from "./top-bar-controls";
+import { ShareViewButton, SortMenu, ThemeToggle, UserMenu } from "./top-bar-controls";
 import { viewTitle } from "./view-rules";
 
 /** The bar's own height (`HomeTopBar.barHeight`). */
@@ -88,7 +88,7 @@ function WideBar({ onMenu }: { onMenu(): void }) {
           </motion.h1>
         </AnimatePresence>
       </div>
-      <div className="ml-4 flex min-w-0 flex-[2] justify-end">
+      <div className="ml-4 flex min-w-0 flex-[2]">
         <div className="w-full max-w-[560px]">
           <SearchField variant="wide" />
         </div>
@@ -101,7 +101,7 @@ function WideBar({ onMenu }: { onMenu(): void }) {
             </motion.span>
           ) : null}
         </AnimatePresence>
-        <LayoutToggle />
+        <ShareViewButton />
         <SortMenu />
         <ThemeToggle />
         <IconButton label="Settings" icon={<Settings />} onClick={() => navigate({ name: "settings", page: null })} />

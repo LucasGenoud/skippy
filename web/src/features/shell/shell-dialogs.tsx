@@ -12,6 +12,7 @@ import { MoveToStageDialog } from "@/features/board/move-to-stage-dialog";
 // label's editor on top of itself.
 
 const LabelsDialog = lazy(() => import("./labels-dialog").then((m) => ({ default: m.LabelsDialog })));
+const CollectionsDialog = lazy(() => import("./collections-dialog").then((m) => ({ default: m.CollectionsDialog })));
 const LabelEditorDialog = lazy(() => import("./labels-dialog").then((m) => ({ default: m.LabelEditorDialog })));
 const SmartViewsDialog = lazy(() => import("./smart-view-dialogs").then((m) => ({ default: m.SmartViewsDialog })));
 const SavedViewDialog = lazy(() => import("./smart-view-dialogs").then((m) => ({ default: m.SavedViewDialog })));
@@ -27,6 +28,7 @@ const ConfirmDialog = lazy(() => import("./confirm-dialog").then((m) => ({ defau
 
 export type ShellDialog =
   | { readonly type: "labels" }
+  | { readonly type: "collections" }
   | { readonly type: "labelEditor"; readonly labelId: string | null }
   | { readonly type: "smartViews" }
   | { readonly type: "savedView"; readonly savedViewId: string | null; readonly initialQuery?: string; readonly afterSave?: "open" | "stay" }
@@ -110,6 +112,8 @@ function DialogFor({ dialog, open, onOpenChange }: { dialog: ShellDialog; open: 
   switch (dialog.type) {
     case "labels":
       return <LabelsDialog {...props} />;
+    case "collections":
+      return <CollectionsDialog {...props} />;
     case "labelEditor":
       return <LabelEditorDialog {...props} labelId={dialog.labelId} />;
     case "smartViews":

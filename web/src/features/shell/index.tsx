@@ -83,7 +83,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
             <main
               ref={scrollRoot}
               data-shell-scroll
-              className={cn("relative h-full overflow-x-hidden pb-[env(safe-area-inset-bottom)]", grid ? "overflow-y-auto" : "flex flex-col overflow-y-hidden")}
+              className={cn("relative flex h-full flex-col overflow-x-hidden pb-[env(safe-area-inset-bottom)]", grid ? "overflow-y-auto" : "overflow-y-hidden")}
             >
               <div className={cn("shrink-0", grid ? "px-4 lg:px-8" : "px-4")}>
                 <OfflineBanner />
@@ -94,7 +94,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
                   {children}
                   <ViewEmptyState />
                   {/* Clearance under the last card for the new-note button. */}
-                  <div aria-hidden className={wide ? "h-20" : "h-28"} />
+                  <div aria-hidden className={cn("shrink-0", wide ? "h-20" : "h-28")} />
                 </>
               ) : (
                 <div className="min-h-0 flex-1">{children}</div>

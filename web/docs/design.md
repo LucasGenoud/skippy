@@ -8,18 +8,26 @@ specification; this is its web form.
 
 The result must look polished and quiet, and stay simple.
 
+- Flutter decides which controls exist and where. The look may differ; the
+  set of buttons, menu rows and labels may not. No web-only chrome: no key
+  chips, no extra header buttons, no extra menu rows.
 - Build on the shadcn primitives in `components/ui` (Dialog, Popover,
   DropdownMenu, ContextMenu, Command, Tabs, Select, Switch, Checkbox,
   Calendar, Sheet, Drawer, Tooltip, Sonner). They are already restyled. Do
   not write a bespoke widget where a primitive fits.
 - Restyle through tokens and variants, never one-off CSS. No hex colours, no
   inline shadows, no custom radii, no hand-picked durations in feature code.
-- One radius: 6px (`rounded-md`) on every control, card, field, tag and
-  dialog; 8px (`rounded-lg`) on menus and popovers only. No pills, no circle
-  controls (avatars and radio buttons are the exceptions).
-- Restrained colour. Surfaces are near-neutral; the accent appears sparingly:
-  one filled primary button per surface, the checked checkbox, the selected
-  row's wash, focus rings. Section headers are muted, not accented.
+- A small radius ladder: 4px (`rounded-xs`) checkboxes and inline marks,
+  6px (`rounded-sm`) menu rows and tag-sized bits, 8px (`rounded-md`) every
+  control, field and chip, 10px (`rounded-lg`) cards, menus and popovers,
+  12px (`rounded-xl`) dialogs and board columns. No pills, no circle controls
+  (avatars and radio buttons are the exceptions).
+- One accent on a quiet zinc structure. Neutrals are a near-grey scale with
+  a faint accent hue; edges are one quiet line. The user's accent is the only
+  colour with a job, used the same way everywhere: as a fill for the one
+  primary action (primary button, FAB, checked checkbox, avatar) and as a wash
+  for what is selected (sidebar row, active toggle or chip). Group labels are
+  sentence case in the muted text colour, never tracked small caps.
 - Soft layered shadows (`shadow-card`, `shadow-raised`, `shadow-popover`,
   `shadow-dialog`), no heavy drop shadows, no ink ripples.
 - Crisp, fast hover and press: a faint veil (`hover:bg-hover`,
@@ -39,16 +47,15 @@ The UI font is `--font-app` (Inter by default); code is `font-mono`
 
 | Use | Class | Size / line |
 | --- | --- | --- |
-| Section labels, chips, tags, counts, tooltips | `text-2xs` (+ `font-medium`, or the SectionLabel style) | 11 / 16 |
-| Meta lines, descriptions, menu hints, card dates | `text-xs` | 12 / 16 |
+| Chips, tags, counts, tooltips | `text-2xs` (+ `font-medium`) | 11 / 16 |
+| Group labels (SectionLabel, menu headings), meta lines, descriptions, menu hints, card dates | `text-xs` | 12 / 16 |
 | Dialog descriptions | `text-[13px] leading-5` | 13 / 20 |
 | Body, controls, menu items, card text (default) | `text-sm` | 14 / 20 |
 | Card and dialog titles, editor body | `text-base` (+ `font-semibold` for titles) | 16 / 24 |
 | Editor title | `text-xl font-semibold` | 20 / 28 |
 | Page titles (PageHeader) | `text-2xl font-semibold tracking-tight` | 24 / 32 |
 
-Weights: 400 body, 500 labels and controls, 600 titles. 700 only in
-SectionLabel.
+Weights: 400 body, 500 labels and controls, 600 titles. No 700.
 
 ### Spacing scale
 
@@ -147,16 +154,25 @@ noteColor("blue", "dark", settings.palette); // "#2D555E", or null for plain
 
 `noteColor` falls back to the default palette for keys missing from the
 user's palette, and to null (the surface) for "default" and unknown keys.
+A palette entry still holding its stock (Keep) colour is drawn with a soft
+tint instead (`displayFill`); a colour the user picked is drawn as picked, and
+the stored settings are never rewritten. A coloured card's edge is its fill
+mixed 9-10% toward the text colour.
+
+Label chips are neutral badges (`labelStyle`): a translucent surface, the
+quiet edge and the text colour. The label's colour rides in `--label-tint`,
+used by its icon (`text-(--label-tint)`) or, with no icon, a small square.
 
 ## Radius, shadow and motion utilities
 
 | Utility | Value |
 | --- | --- |
-| `rounded-md` | 6px: everything (`--radius`) |
-| `rounded-lg` | 8px: menus, popovers, select lists |
-| `rounded-sm` | 4px: rows inside an 8px menu, tab triggers |
-| `rounded-xs` | 3px: keycaps, slim bars |
-| `rounded-check` | 3px: checkbox |
+| `rounded-xl` | 12px: dialogs, board columns |
+| `rounded-lg` | 10px: cards, menus, popovers, select lists |
+| `rounded-md` | 8px: controls, fields, chips (`--radius`) |
+| `rounded-sm` | 6px: rows inside a menu, tab triggers |
+| `rounded-xs` | 4px: keycaps, slim bars |
+| `rounded-check` | 4px: checkbox |
 | `shadow-card` | A card at rest (contact + soft drop) |
 | `shadow-raised` | A lifted card, dragged item, tooltip, toast |
 | `shadow-popover` | Menus and popovers (with `border-outline-variant`) |
@@ -258,11 +274,13 @@ caps in the muted colour.
 
 ### IconButton and Kbd
 
-`IconButton { label: string; icon: ReactNode; shortcut?: string; size?: "sm" | "default" | "lg"; active?: boolean; side?; ...button props }`.
-The label is the tooltip and the accessible name. `Kbd { children }`.
+`IconButton { label: string; icon: ReactNode; size?: "sm" | "default" | "lg"; active?: boolean; side?; ...button props }`.
+The label is the tooltip and the accessible name. `Kbd { children }` draws a
+key, and belongs only in the keyboard shortcut reference: tooltips, fields and
+menus carry no key chips, as in Flutter.
 
 ```tsx
-<IconButton label="Search" shortcut="/" icon={<Search />} onClick={focusSearch} />
+<IconButton label="Search" icon={<Search />} onClick={focusSearch} />
 <span>Press <Kbd>⌘</Kbd><Kbd>K</Kbd></span>
 ```
 

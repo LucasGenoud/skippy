@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { FileText, ListChecks, Mic, PenLine, Plus, type LucideIcon } from "lucide-react";
-import { Kbd } from "@/components/common/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { NoteKind } from "@/lib/models/note";
 import { composeLabelIdsOf, useUiController } from "@/lib/store";
@@ -23,12 +22,12 @@ import { useShellDialogs } from "./shell-dialogs";
 /** How far into the unfold each kind starts after the one below it. */
 const STAGGER_S = 0.035;
 
-/** Each kind with the key that starts it from the grid (`shortcuts.ts`), shown beside it. */
-const KINDS: readonly { kind: NoteKind | "audio-recording"; icon: LucideIcon; label: string; key?: string }[] = [
+/** The kinds the button unfolds, top to bottom. */
+const KINDS: readonly { kind: NoteKind | "audio-recording"; icon: LucideIcon; label: string }[] = [
   { kind: "audio-recording", icon: Mic, label: "Audio" },
-  { kind: "markdown", icon: FileText, label: "Markdown", key: "M" },
-  { kind: "checklist", icon: ListChecks, label: "Checklist", key: "L" },
-  { kind: "text", icon: PenLine, label: "Note", key: "N" },
+  { kind: "markdown", icon: FileText, label: "Markdown" },
+  { kind: "checklist", icon: ListChecks, label: "Checklist" },
+  { kind: "text", icon: PenLine, label: "Note" },
 ];
 
 export function HomeFabs() {
@@ -102,9 +101,6 @@ export function HomeFabs() {
                 >
                   <entry.icon aria-hidden className="size-[18px] text-on-surface-variant" />
                   {entry.label}
-                  {entry.key ? (
-                    <Kbd className="ml-1 [@media(hover:none)]:hidden">{entry.key}</Kbd>
-                  ) : null}
                 </motion.button>
               );
             })
@@ -126,10 +122,7 @@ export function HomeFabs() {
             </motion.span>
           </motion.button>
         </TooltipTrigger>
-        <TooltipContent side="left" className="flex items-center gap-2">
-          {open ? "Close" : "New note"}
-          <Kbd className="h-4 min-w-4 px-0.5">{open ? "Esc" : "N"}</Kbd>
-        </TooltipContent>
+        <TooltipContent side="left">{open ? "Close" : "New note"}</TooltipContent>
       </Tooltip>
     </div>
   );

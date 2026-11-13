@@ -62,3 +62,57 @@ export function emptyCopy(selection: ViewSelection, searching: boolean): EmptyCo
 
 /** Trash's standing notice. */
 export const TRASH_NOTICE = "Notes in Trash are deleted after 7 days";
+
+/** What "Share this view" publishes: the request, its name and what a reader can see. */
+export interface ViewLink {
+  readonly request: {
+    readonly target: "notes" | "board" | "label";
+    readonly workspaceId?: string;
+    readonly collectionId?: string | null;
+    readonly labelId?: string;
+  };
+  readonly title: string;
+  readonly scope: string;
+}
+
+export interface ViewLinkContext {
+  readonly workspace: { readonly id: string; readonly name: string; readonly owned: boolean } | null;
+  readonly collection: { readonly id: string; readonly name: string } | null;
+  readonly label: { readonly id: string; readonly name: string } | null;
+}
+
+/**
+ * The link "Share this view" would publish, or null when the view is not
+ * publishable (`_shareViewTarget`). Archive, trash, reminders and smart views
+ * stay private, and only the workspace's owner may publish its views.
+ */
+export function viewLink(selection: ViewSelection, { workspace, collection, label }: ViewLinkContext): ViewLink | null {
+  if (!workspace?.owned) {
+    return null;
+  }
+  const where = collection?.name ?? workspace.name;
+  switch (selection.view) {
+    case "notes":
+      return {
+        request: { target: "notes", workspaceId: workspace.id, collectionId: collection?.id ?? null },
+        title: where,
+        scope: `Anyone with the link can read every live note in "${where}", including notes other members wrote. Archived and trashed notes stay private.`,
+      };
+    case "board":
+      return {
+        request: { target: "board", workspaceId: workspace.id, collectionId: collection?.id ?? null },
+        title: `${where} board`,
+        scope: `Anyone with the link can read the board of "${where}": its columns and the cards in them, including cards other members wrote.`,
+      };
+    case "label":
+      return label
+        ? {
+            request: { target: "label", labelId: label.id, collectionId: collection?.id ?? null },
+            title: label.name,
+            scope: `Anyone with the link can read every live note labelled "${label.name}" in this collection, including notes other members wrote.`,
+          }
+        : null;
+    default:
+      return null;
+  }
+}

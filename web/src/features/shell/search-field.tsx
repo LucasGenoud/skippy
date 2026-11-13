@@ -5,7 +5,6 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { LoaderCircle, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { cn } from "cn";
 import { IconButton } from "@/components/common/icon-button";
-import { Kbd } from "@/components/common/kbd";
 import { semanticSearchAvailable, useSession, useSettings, useUi, useUiController } from "@/lib/store";
 import { TRANSITION, transitionFor } from "@/lib/theme/motion";
 import { querySegments } from "./search-rules";
@@ -80,7 +79,6 @@ export function SearchField({
             <IconButton
               size="sm"
               label="Clear search"
-              shortcut="Esc"
               icon={<X />}
               onClick={() => {
                 ui.clearQuery();
@@ -184,16 +182,6 @@ export function SearchField({
           className="relative h-full w-full bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant [&::-webkit-search-cancel-button]:hidden"
         />
       </div>
-      {/* On a desktop bar, the key that jumps here, while there is room for it. */}
-      {variant === "wide" ? (
-        <AnimatePresence initial={false}>
-          {!focused && !searching ? (
-            <motion.span key="hint" aria-hidden className="mr-1 inline-flex shrink-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={fade}>
-              <Kbd>/</Kbd>
-            </motion.span>
-          ) : null}
-        </AnimatePresence>
-      ) : null}
       <span className="inline-grid shrink-0 pr-1">
         <AnimatePresence initial={false} mode="popLayout">
           {showSearchControls ? (

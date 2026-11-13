@@ -28,6 +28,31 @@ export const DEFAULT_PALETTE: readonly PaletteEntry[] = [
   { key: "gray", name: "Gray", light: "#E8EAED", dark: "#3C3F43" },
 ];
 
+// The web client draws the stock palette softer than the Keep colours it is
+// stored as: pale tints in light mode, muted ones in dark. Only an entry still
+// holding its stock colour is swapped, so a colour the user picked is drawn as
+// picked, and the settings document (shared with the other clients) is never
+// rewritten.
+const SOFT_FILLS: Readonly<Record<string, { light: string; dark: string }>> = {
+  red: { light: "#FAD2CF", dark: "#3D2423" },
+  orange: { light: "#FBDDBA", dark: "#3D2C1C" },
+  yellow: { light: "#FAEAA8", dark: "#39321A" },
+  green: { light: "#D2EDC6", dark: "#213322" },
+  teal: { light: "#C2E9E2", dark: "#1A3331" },
+  blue: { light: "#CCDFF8", dark: "#1D2B3D" },
+  gray: { light: "#E5E4E1", dark: "#2A2927" },
+};
+
+/** The fill to draw for a palette entry's colour in a brightness. */
+export function displayFill(key: string, hex: string, brightness: Brightness): string {
+  const stock = DEFAULT_PALETTE.find((e) => e.key === key);
+  const soft = SOFT_FILLS[key];
+  if (!stock || !soft || stock[brightness].toUpperCase() !== hex.toUpperCase()) {
+    return hex;
+  }
+  return soft[brightness];
+}
+
 /** "#RRGGBB" normalized to upper case, or null when it is not one. */
 export function normalizeHex(hex: string | null | undefined): string | null {
   const rgb = hexToRgb(hex);
@@ -66,7 +91,7 @@ export function noteColor(
   if (!entry) {
     return null;
   }
-  return brightness === "light" ? entry.light : entry.dark;
+  return displayFill(key, brightness === "light" ? entry.light : entry.dark, brightness);
 }
 
 /** The CSS background for a note: its fill, or the surface token. */

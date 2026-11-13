@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChecklistItem } from "@/lib/models/note";
 import { bodySegments, findMatches } from "../lib/body-segments";
 import { applyMarkdownAction, headingLine, setTaskLine } from "../lib/markdown-format";
-import { morphFrom } from "../lib/morph";
+import { MORPH_REST, morphFrom } from "../lib/morph";
 import { activeTexts, checkedRows, completesList, dropBlock, prunedRows, rowKeyAction } from "../checklist/checklist-view";
 import { cycleIndex } from "../checklist/checklist-editor";
 
@@ -76,7 +76,12 @@ describe("morph", () => {
     const frame = morphFrom({ left: 10, top: 20, width: 200, height: 100 }, { left: 110, top: 70, width: 600, height: 500 });
     expect(frame?.transform).toBe("translate(-100px, -50px) scale(0.3333)");
     // 100px tall at a third of the scale is 300px of the editor: cut the other 200.
-    expect(frame?.clipPath).toBe("inset(0px 0px 200px 0px round 18px)");
+    // The card's 10px corner, in the editor's unscaled coordinates, is 30px.
+    expect(frame?.clipPath).toBe("inset(0px 0px 200px 0px round 30px)");
+  });
+
+  it("rests in the panel's own corners, so dropping the clip changes nothing", () => {
+    expect(MORPH_REST.clipPath).toBe("inset(0px 0px 0px 0px round 12px)");
   });
 
   it("refuses an empty box", () => {

@@ -17,7 +17,34 @@ const RENAMED: Record<string, keyof ThemeColors> = {
   secondary: "secondaryTone",
   onInverseSurface: "inverseOnSurface",
 };
-const SKIPPED = new Set(["scaffold"]);
+// The neutrals are this client's own zinc scale (NEUTRAL_LIGHTNESS), so only
+// the accent-derived roles still follow Flutter.
+const SKIPPED = new Set([
+  "scaffold",
+  "canvas",
+  "surface",
+  "surfaceBright",
+  "surfaceContainerLowest",
+  "surfaceContainerLow",
+  "surfaceContainer",
+  "surfaceContainerHigh",
+  "surfaceContainerHighest",
+  "trough",
+  "troughBorder",
+  "onSurface",
+  "onSurfaceVariant",
+  "outline",
+  "outlineVariant",
+  "hairline",
+  "hover",
+  "pressed",
+  "scrollbarThumb",
+  "codeFill",
+  "patternInk",
+  "onSecondaryContainer",
+  "secondaryContainer",
+  "excluded",
+]);
 
 // Flutter blends washes in floating point and rounds once at the end; this
 // port does the same, but a channel may land one unit apart at a .5 boundary.
@@ -32,7 +59,7 @@ function channelDistance(a: string, b: string): number {
   return Math.max(...ra.map((v, i) => Math.abs(v - (rb[i] ?? 0))));
 }
 
-describe("themeColors matches Flutter's buildTheme", () => {
+describe("themeColors' accent roles match Flutter's buildTheme", () => {
   for (const [key, expected] of entries) {
     const [seed = "", brightness = "light"] = key.split("/");
     it(key, () => {

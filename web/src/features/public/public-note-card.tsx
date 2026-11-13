@@ -35,7 +35,7 @@ export function PublicNoteCard({ note, api, labels, extent }: { note: Note; api:
   const content = plainNoteLinks(note.content);
 
   return (
-    <article className="relative overflow-hidden rounded-md border border-hairline shadow-card" style={{ background }}>
+    <article className="relative overflow-hidden rounded-lg border border-hairline shadow-card" style={{ background }}>
       <NotePattern pattern={note.pattern} />
       <div className="relative flex flex-col gap-1.5 px-3.5 py-3">
         {note.title.trim() !== "" ? (

@@ -66,9 +66,9 @@ describe("small parts", () => {
     expect(screen.getByText("Make a copy")).toBeTruthy()
   })
 
-  it("tints a label chip with its colour", () => {
+  it("carries a label chip's colour for its icon", () => {
     render(<LabelChip name="Work" color="#1A73E8" icon="work" />)
-    expect(screen.getByText("Work").parentElement?.style.color).toBe("rgb(26, 115, 232)")
+    expect(screen.getByText("Work").parentElement?.style.getPropertyValue("--label-tint")).toBe("#1A73E8")
   })
 })
 

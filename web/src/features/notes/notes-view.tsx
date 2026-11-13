@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { NotesSkeleton } from "@/components/common/notes-skeleton";
 import { SectionLabel } from "@/components/common/section-label";
@@ -27,7 +27,7 @@ import {
   useViewSelection,
   useVisibleNoteIds,
 } from "@/lib/store";
-import { TRANSITION } from "@/lib/theme/motion";
+import { TRANSITION, viewSwapVariants } from "@/lib/theme/motion";
 
 import { moveCardFocus } from "./card-focus";
 import { rangeSelection } from "./card-rules";
@@ -93,6 +93,7 @@ export function NotesView() {
   const searching = query.trim() !== "";
   const view = selection.view;
   const viewKey = `${view}-${selection.labelId ?? ""}-${selection.savedViewId ?? ""}-${workspaceId ?? ""}-${collection?.id ?? ""}`;
+  const swap = viewSwapVariants(useReducedMotion());
 
   // A new workspace or collection is another grid: it opens at its top. (The
   // shell handles a destination picked in the sidebar.)
@@ -182,7 +183,7 @@ export function NotesView() {
     );
   } else {
     body = (
-      <motion.div key={viewKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: TRANSITION.fast }} transition={TRANSITION.base}>
+      <motion.div key={viewKey} variants={swap} initial="enter" animate="shown" exit="leave">
         {/* The pinned section grows in and out, so the grid below glides rather than jumps. */}
         <AnimatePresence initial={false}>
           {pinned.length > 0 ? (

@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
 
-// Desktop-style buttons: a 6px rounded rectangle, no ripple. Hover and press
+// Desktop-style buttons: an 8px rounded rectangle, no ripple. Hover and press
 // lay a quiet veil of the text colour over the control's own fill. The
 // default variant is the accent at full strength (primaryContainer), the
 // app's one loud control.
@@ -17,7 +17,7 @@ const buttonVariants = cva(
         destructive:
           "bg-error text-on-error shadow-card hover:bg-error/90 active:bg-error/85 focus-visible:ring-destructive/30",
         outline:
-          "border border-outline-variant bg-surface text-on-surface hover:bg-[color-mix(in_srgb,var(--surface),var(--on-surface)_6%)] active:bg-[color-mix(in_srgb,var(--surface),var(--on-surface)_10%)]",
+          "border border-outline-variant bg-surface text-on-surface shadow-card hover:bg-[color-mix(in_srgb,var(--surface),var(--on-surface)_6%)] active:bg-[color-mix(in_srgb,var(--surface),var(--on-surface)_10%)]",
         secondary:
           "bg-secondary-container text-on-secondary-container hover:bg-[color-mix(in_srgb,var(--secondary-container),var(--on-surface)_6%)] active:bg-[color-mix(in_srgb,var(--secondary-container),var(--on-surface)_10%)]",
         ghost: "text-on-surface hover:bg-hover active:bg-pressed",

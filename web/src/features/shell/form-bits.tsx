@@ -58,7 +58,7 @@ export function GlyphBadge({
       className={cn("inline-flex shrink-0 items-center justify-center rounded-md border transition-colors duration-150 ease-standard", size === "sm" ? "size-6" : "size-7")}
       style={labelStyle(color)}
     >
-      {icon || !Fallback ? <LabelIcon iconKey={icon} className={iconClass} /> : <Fallback className={iconClass} />}
+      {icon || !Fallback ? <LabelIcon iconKey={icon} className={cn(iconClass, "text-(--label-tint)")} /> : <Fallback className={cn(iconClass, "text-(--label-tint)")} />}
     </span>
   );
 }
@@ -69,6 +69,7 @@ export function ManageRow({
   leading,
   title,
   subtitle,
+  subtitleFont = "mono",
   trailing,
   onOpen,
   dragging,
@@ -77,6 +78,8 @@ export function ManageRow({
   leading: ReactNode;
   title: string;
   subtitle?: string;
+  /** A smart view's subtitle is its query, set in code; anything else reads as text. */
+  subtitleFont?: "mono" | "sans";
   trailing?: ReactNode;
   onOpen(): void;
   dragging?: boolean;
@@ -93,7 +96,7 @@ export function ManageRow({
         {leading}
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm text-on-surface">{title}</span>
-          {subtitle ? <span className="truncate font-mono text-xs text-on-surface-variant">{subtitle}</span> : null}
+          {subtitle ? <span className={cn("truncate text-xs text-on-surface-variant", subtitleFont === "mono" && "font-mono")}>{subtitle}</span> : null}
         </span>
       </button>
       {trailing}

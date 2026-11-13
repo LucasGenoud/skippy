@@ -44,12 +44,12 @@ beforeEach(async () => {
   await session.notes.load();
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   session.dispose();
-  // Let motion's frame loop finish the frame it asked for under fake timers,
-  // or the next test's animations wait on a frame that never comes.
-  vi.runOnlyPendingTimers();
+  // Let motion's frame loop run out the animations still in flight under fake
+  // timers, or the next test's animations wait on a frame that never comes.
+  await vi.advanceTimersByTimeAsync(1000);
   vi.useRealTimers();
 });
 
@@ -92,6 +92,15 @@ describe("NoteEditor", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect("t" in session.notes.state.editingCards).toBe(false);
+  });
+
+  it("puts a new note's caret in its title once it has opened", async () => {
+    const draft = session.notes.createDraft();
+    open(draft.id);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText("Title"));
   });
 
   it("throws away an untouched draft on close", async () => {

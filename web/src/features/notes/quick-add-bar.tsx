@@ -7,7 +7,7 @@ import {
   CalendarDays,
   CheckSquare,
   CircleAlert,
-  Code,
+  Braces,
   EllipsisVertical,
   FileText,
   ImagePlus,
@@ -18,6 +18,7 @@ import {
   Trash2,
   UserPlus,
   X,
+  Text,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "cn";
@@ -53,7 +54,7 @@ const ShareDialog = lazy(() => import("@/features/editor/share-dialog").then((m)
 const CONVERT: readonly { kind: NoteKind; label: string; icon: typeof FileText }[] = [
   { kind: "text", label: "Convert to text note", icon: FileText },
   { kind: "checklist", label: "Convert to checklist", icon: CheckSquare },
-  { kind: "markdown", label: "Convert to markdown note", icon: Code },
+  { kind: "markdown", label: "Convert to markdown note", icon: Braces },
 ];
 
 interface Draft {
@@ -402,7 +403,7 @@ export function QuickAddBar({ labelIds }: { labelIds: readonly string[] }) {
                 <span className="flex-1 text-base text-on-surface-variant">Take a note…</span>
                 <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
                   <IconButton label="New checklist" icon={<CheckSquare />} onClick={() => expand("checklist")} />
-                  <IconButton label="New markdown note" icon={<Code />} onClick={() => expand("markdown")} />
+                  <IconButton label="New markdown note" icon={<Text />} onClick={() => expand("markdown")} />
                   <AnimatePresence initial={false} mode="popLayout">
                     {uploading ? (
                       <motion.span key="spin" className="inline-flex size-9 items-center justify-center" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={TRANSITION.fast}>
@@ -523,7 +524,7 @@ function MetaChips({ draft, use24h, onClearReminder, onRemoveLabel }: { draft: D
       ) : null}
       {chosen.map((label) => (
         <span key={label.id} className="inline-flex h-7 items-center gap-1.5 rounded-md border pr-1 pl-2 text-xs" style={labelStyle(label.color)}>
-          <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5" />
+          <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5 text-(--label-tint)" />
           {label.name}
           <button type="button" aria-label={`Remove ${label.name}`} onClick={() => onRemoveLabel(label.id)} className="inline-flex size-5 items-center justify-center rounded-xs transition-colors duration-150 ease-standard outline-none hover:bg-hover active:bg-pressed focus-visible:ring-[3px] focus-visible:ring-ring/50">
             <X aria-hidden className="size-3.5" />

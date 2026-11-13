@@ -1,11 +1,12 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useRef, useState, type FocusEvent } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { lazy, Suspense, useEffect, useRef, type FocusEvent } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { closeTo, useRoute, type Route } from "@/lib/router";
 import { SessionProvider, useActiveLayout, useSettings, useUi } from "@/lib/store/hooks";
 import type { Session } from "@/lib/store/session";
-import { TRANSITION, transitionFor } from "@/lib/theme/motion";
+import { viewSwapVariants } from "@/lib/theme/motion";
+import { FrozenOnExit } from "./frozen-on-exit";
 import { AppShell, ShortcutHelpHost } from "@/features/shell";
 import { NotesView } from "@/features/notes";
 import { BoardView } from "@/features/board";
@@ -57,28 +58,29 @@ function useViewKind(): ViewKind {
 }
 
 /**
- * The active view. Switching between the grid, a board and the agenda fades
- * the new one in where the old one stood (the grid's own view changes
- * cross-fade inside it); the first view of the session just appears.
+ * The active view. Switching between the grid, a board and the agenda slides
+ * the new one up into place as the old one sinks away (the grid's own view
+ * changes do the same inside it); the first view of the session just appears.
  */
 function ActiveView() {
   const kind = useViewKind();
-  const reduced = useReducedMotion();
-  const [shown, setShown] = useState({ kind, switched: false });
-  if (shown.kind !== kind) {
-    setShown({ kind, switched: true });
-  }
+  const swap = viewSwapVariants(useReducedMotion());
   const body = kind === "reminders" ? <RemindersView /> : kind === "board" ? <BoardView /> : <NotesView />;
   return (
-    <motion.div
-      key={kind}
-      className={kind === "grid" ? undefined : "h-full"}
-      initial={shown.switched ? { opacity: 0 } : false}
-      animate={{ opacity: 1 }}
-      transition={transitionFor(TRANSITION.base, reduced)}
-    >
-      {body}
-    </motion.div>
+    <div className={kind === "grid" ? "relative" : "relative h-full"}>
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.div
+          key={kind}
+          className={kind === "grid" ? undefined : "h-full"}
+          variants={swap}
+          initial="enter"
+          animate="shown"
+          exit="leave"
+        >
+          <FrozenOnExit className={kind === "grid" ? undefined : "h-full"}>{body}</FrozenOnExit>
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
 

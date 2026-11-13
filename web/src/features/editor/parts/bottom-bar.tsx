@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { useState } from "react";
 import { BellPlus, CirclePlus, Image as ImageIcon, Palette, Paperclip, Redo2, Tag, Undo2 } from "lucide-react";
 
@@ -10,13 +11,10 @@ import { BackgroundPicker } from "@/components/common/color-picker";
 import { IconButton } from "@/components/common/icon-button";
 import { MenuLabel } from "@/components/common/menu-label";
 import { ReminderPicker, type ReminderValue } from "@/components/common/reminder-picker";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { SyncPill, type SyncState } from "@/components/common/sync-pill";
-import { TRANSITION, transitionFor } from "@/lib/theme/motion";
 import type { NotePattern } from "@/lib/models/note";
 import type { Brightness } from "@/lib/theme/accent";
 import type { PaletteEntry } from "@/lib/theme/palette";
-import { isApplePlatform, useMediaQuery } from "../lib/hooks";
+import { useMediaQuery } from "../lib/hooks";
 import { NoteLabelPicker } from "../label-picker";
 
 // The editor's bottom strip (`editor_bottom_bar.dart`): what goes into the
@@ -28,8 +26,6 @@ export interface BottomBarProps {
   trashed: boolean;
   wide: boolean;
   editedStamp: string;
-  syncState: SyncState;
-  pendingChanges: number;
   color: string;
   pattern: NotePattern;
   brightness: Brightness;
@@ -47,13 +43,12 @@ export interface BottomBarProps {
 
 export function BottomBar(props: BottomBarProps) {
   const [reminderOpen, setReminderOpen] = useState(false);
-  const reduced = useReducedMotion();
   const veryNarrow = !useMediaQuery("(min-width: 360px)");
-  const mod = isApplePlatform() ? "⌘" : "Ctrl+";
   const live = !props.trashed;
   return (
     <TooltipProvider>
-      <div className="flex h-12 shrink-0 items-center gap-0.5 px-3 pb-1">
+      {/* Full screen on a phone, the bar is chrome with a seam, as the top bar is. */}
+      <div className={cn("flex h-12 shrink-0 items-center gap-0.5 px-3 pb-1", !props.wide && "border-t border-hairline")}>
         <Popover>
           <PopoverTrigger asChild>
             <IconButton label="Note color" icon={<Palette />} side="top" disabled={!live} />
@@ -113,18 +108,12 @@ export function BottomBar(props: BottomBarProps) {
             <IconButton label="Attach file" icon={<Paperclip />} side="top" disabled={!props.onAttach} onClick={() => props.onAttach?.()} />
           </>
         )}
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2">
+        {/* The whole middle band, so the stamp is not cut down to "Edit…". */}
+        <div className="flex min-w-0 flex-1 items-center justify-center px-2">
           {props.wide ? <span className="min-w-0 truncate text-xs text-on-surface-variant">{props.editedStamp}</span> : null}
-          <AnimatePresence initial={false}>
-            {props.syncState === "synced" && !props.wide ? null : (
-              <motion.span key="sync" className="inline-flex" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transitionFor(TRANSITION.fast, reduced)}>
-                <SyncPill state={props.syncState} count={props.pendingChanges} />
-              </motion.span>
-            )}
-          </AnimatePresence>
         </div>
-        <IconButton label="Undo" shortcut={`${mod}Z`} icon={<Undo2 />} side="top" disabled={!props.onUndo} onClick={() => props.onUndo?.()} />
-        <IconButton label="Redo" shortcut={`${mod}⇧Z`} icon={<Redo2 />} side="top" disabled={!props.onRedo} onClick={() => props.onRedo?.()} />
+        <IconButton label="Undo" icon={<Undo2 />} side="top" disabled={!props.onUndo} onClick={() => props.onUndo?.()} />
+        <IconButton label="Redo" icon={<Redo2 />} side="top" disabled={!props.onRedo} onClick={() => props.onRedo?.()} />
       </div>
     </TooltipProvider>
   );

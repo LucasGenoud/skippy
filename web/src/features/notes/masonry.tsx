@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +14,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { motion, useReducedMotion, type Transition } from "motion/react";
+import { animate, motion, useMotionValue, useReducedMotion, type Transition } from "motion/react";
 import { cn } from "cn";
 
 import { DURATION, EASE, TRANSITION } from "@/lib/theme/motion";
@@ -55,6 +56,8 @@ const TOUCH_DRAG_TOLERANCE = 6;
 const STAGGER_MS = 18;
 const STAGGER_CAP_MS = 200;
 const HIDDEN_SCALE = 0.95;
+/** How far an opening grid's cards rise as they fade in. */
+const ENTRANCE_RISE_PX = 8;
 const GHOST_OPACITY = 0.3;
 /** Geometry changes and reduced motion place cards outright. */
 const SNAP: Transition = { duration: 0 };
@@ -132,11 +135,12 @@ export function Masonry({
   const reduced = useReducedMotion() ?? false;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
+  // Cards mount only once the grid has read its width (before the first
+  // paint), so none is first placed for a zero-width grid and then moved.
+  const [sized, setSized] = useState(false);
   const [measured, setMeasured] = useState<ReadonlyMap<string, number>>(() => new Map());
   // Mirrors for event handlers and frame callbacks, synced after each render.
   const heightsRef = useRef<ReadonlyMap<string, number>>(measured);
-  const pendingHeights = useRef(new Map<string, number>());
-  const heightFrame = useRef<number | null>(null);
   const [band, setBand] = useState<{ top: number; bottom: number } | null>(null);
   const [settledGeometry, setSettledGeometry] = useState<string | null>(null);
   const [measureSnap, setMeasureSnap] = useState(false);
@@ -165,6 +169,7 @@ export function Masonry({
       return;
     }
     setWidth(element.getBoundingClientRect().width);
+    setSized(true);
     if (typeof ResizeObserver === "undefined") {
       return;
     }
@@ -323,57 +328,68 @@ export function Masonry({
     visibleRef.current = visible;
   }, [visible]);
 
-  const onMeasured = useCallback(
-    (id: string, size: { width: number; height: number }) => {
-      if (size.height <= 0) {
-        return;
-      }
-      knownHeights.set(id, size);
-      if (heightsRef.current.get(id) === size.height) {
-        return;
-      }
-      pendingHeights.current.set(id, size.height);
-      if (heightFrame.current !== null) {
-        return;
-      }
-      // Many cards measure in one frame; pack once for all of them.
-      heightFrame.current = requestAnimationFrame(() => {
-        heightFrame.current = null;
-        const pending = new Map(pendingHeights.current);
-        pendingHeights.current.clear();
-        const current = heightsRef.current;
-        let changed = false;
-        let firstMeasure = false;
-        for (const [key, height] of pending) {
-          firstMeasure ||= !current.has(key);
-          changed ||= current.get(key) !== height;
+  // Every card reports to one observer. Its callback runs after layout and
+  // before paint, so committing there (flushSync) means a frame drawn from
+  // guessed heights, with cards overlapping, never reaches the screen.
+  const cardIds = useRef(new WeakMap<Element, string>());
+  const observer = useRef<ResizeObserver | null>(null);
+  const onCardsResized = useCallback(
+    (entries: ResizeObserverEntry[]) => {
+      const current = heightsRef.current;
+      const changed = new Map<string, number>();
+      for (const entry of entries) {
+        const id = cardIds.current.get(entry.target);
+        const box = entry.borderBoxSize?.[0];
+        const size = { width: box ? box.inlineSize : entry.contentRect.width, height: box ? box.blockSize : entry.contentRect.height };
+        if (id === undefined || size.height <= 0) {
+          continue;
         }
-        if (!changed) {
-          return;
+        knownHeights.set(id, size);
+        if (current.get(id) !== size.height) {
+          changed.set(id, size.height);
         }
-        // A first measurement corrects a guess rather than moving a card.
-        if (firstMeasure && openingRef.current && !draggingRef.current) {
+      }
+      if (changed.size === 0) {
+        return;
+      }
+
+      // A first measurement corrects a guess rather than moving a card.
+      const firstMeasure = [...changed.keys()].some((id) => !current.has(id));
+      const snapOpening = firstMeasure && openingRef.current && !draggingRef.current;
+      const next = new Map(current);
+      for (const [id, height] of changed) {
+        next.set(id, height);
+      }
+      heightsRef.current = next;
+      flushSync(() => {
+        if (snapOpening) {
           setMeasureSnap(true);
-          requestAnimationFrame(() => requestAnimationFrame(() => setMeasureSnap(false)));
         }
-        const next = new Map(current);
-        for (const [key, height] of pending) {
-          next.set(key, height);
-        }
-        heightsRef.current = next;
         setMeasured(next);
       });
+      if (snapOpening) {
+        requestAnimationFrame(() => requestAnimationFrame(() => setMeasureSnap(false)));
+      }
     },
     [],
   );
-
-  useEffect(
-    () => () => {
-      if (heightFrame.current !== null) {
-        cancelAnimationFrame(heightFrame.current);
+  // Each card unobserves itself on unmount, so the observer needs no teardown
+  // of its own: one with nothing left to watch is collected with the grid.
+  const observeCard = useCallback(
+    (element: Element, id: string): (() => void) => {
+      if (typeof ResizeObserver === "undefined") {
+        return () => undefined;
       }
+      observer.current ??= new ResizeObserver(onCardsResized);
+      const watching = observer.current;
+      cardIds.current.set(element, id);
+      watching.observe(element);
+      return () => {
+        watching.unobserve(element);
+        cardIds.current.delete(element);
+      };
     },
-    [],
+    [onCardsResized],
   );
 
   // -- drag ----------------------------------------------------------------------
@@ -532,7 +548,7 @@ export function Masonry({
   // -- render --------------------------------------------------------------------
 
   const spring: Transition = reduced || snap ? SNAP : TRANSITION.spring;
-  const rendered = order.filter((id) => visible.has(id) && layout.slots.has(id));
+  const rendered = sized ? order.filter((id) => visible.has(id) && layout.slots.has(id)) : [];
   // Leaving cards paint first, so cards gliding into their gap pass over them; a raised card paints last.
   const raised = raisedId && rendered.includes(raisedId) ? raisedId : null;
   const tiles = raised ? [...rendered.filter((id) => id !== raised), raised] : rendered;
@@ -579,7 +595,7 @@ export function Masonry({
             dragDisabled={!dragEnabled || (draggableIds !== null && !draggableIds.has(id))}
             longPressOnly={!dragEnabled || (draggableIds !== null && !draggableIds.has(id))}
             raised={id === raised}
-            onMeasured={onMeasured}
+            observeCard={observeCard}
             onLongPress={onLongPress}
             guardClick={guardClick}
           >
@@ -623,7 +639,8 @@ interface TileProps {
   dragDisabled: boolean;
   longPressOnly: boolean;
   raised: boolean;
-  onMeasured: (id: string, size: { width: number; height: number }) => void;
+  /** Reports the card's size to the grid's observer; returns the unsubscribe. */
+  observeCard: (element: Element, id: string) => () => void;
   onLongPress: (id: string) => void;
   guardClick: () => void;
   children: ReactNode;
@@ -655,7 +672,7 @@ const Tile = memo(function Tile({
   dragDisabled,
   longPressOnly,
   raised,
-  onMeasured,
+  observeCard,
   onLongPress,
   guardClick,
   children,
@@ -664,18 +681,30 @@ const Tile = memo(function Tile({
   const measureRef = useRef<HTMLDivElement | null>(null);
   const press = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = measureRef.current;
-    if (!element || typeof ResizeObserver === "undefined") {
+    return element ? observeCard(element, id) : undefined;
+  }, [id, observeCard]);
+
+  // The card's place. A snap (opening, resize, column change) jumps the values
+  // and writes them before the next paint; motion's own render would land a
+  // frame later and show the cards in their old places for that frame. Any
+  // other move glides, keeping its speed when retargeted mid-flight.
+  const placeRef = useRef<HTMLDivElement | null>(null);
+  const x = useMotionValue(slot.x);
+  const y = useMotionValue(slot.y);
+  useLayoutEffect(() => {
+    if (transition === SNAP) {
+      x.jump(slot.x);
+      y.jump(slot.y);
+      if (placeRef.current) {
+        placeRef.current.style.transform = `translateX(${slot.x}px) translateY(${slot.y}px)`;
+      }
       return;
     }
-    const observer = new ResizeObserver(([entry]) => {
-      const box = entry?.borderBoxSize?.[0];
-      onMeasured(id, { width: box ? box.inlineSize : (entry?.contentRect.width ?? 0), height: box ? box.blockSize : (entry?.contentRect.height ?? 0) });
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [id, onMeasured]);
+    animate(x, slot.x, transition);
+    animate(y, slot.y, transition);
+  }, [x, y, slot.x, slot.y, transition]);
 
   const entering = (arriving || staggerIndex !== null) && !reduced;
   const delay = staggerIndex !== null ? Math.min(staggerIndex * STAGGER_MS, STAGGER_CAP_MS) / 1000 : 0;
@@ -688,19 +717,20 @@ const Tile = memo(function Tile({
   };
 
   return (
-    <motion.div
-      className="absolute top-0 left-0"
-      style={{ width: slot.width, zIndex: raised ? 2 : 1 }}
-      initial={entering ? { x: slot.x, y: slot.y + (staggerIndex !== null ? 8 : 0), opacity: 0, scale: arriving ? HIDDEN_SCALE : 1 } : false}
-      animate={{ x: slot.x, y: slot.y, opacity: ghost ? GHOST_OPACITY : 1, scale: 1 }}
-      transition={{
-        x: transition,
-        y: entering && staggerIndex !== null ? { ...TRANSITION.base, delay } : transition,
-        opacity: { ...(ghost ? TRANSITION.fast : TRANSITION.base), delay: staggerIndex !== null ? delay : 0 },
-        scale: TRANSITION.base,
-      }}
-    >
-      <div ref={measureRef}>
+    // The outer layer only places the card, so a corrected height snaps or
+    // glides with the grid; the inner one plays the entrance (fade, rise, pop)
+    // and never drags the card's position along with it.
+    <motion.div ref={placeRef} className="absolute top-0 left-0" style={{ width: slot.width, zIndex: raised ? 2 : 1, x, y }}>
+      <motion.div
+        ref={measureRef}
+        initial={entering ? { y: staggerIndex !== null ? ENTRANCE_RISE_PX : 0, opacity: 0, scale: arriving ? HIDDEN_SCALE : 1 } : false}
+        animate={{ y: 0, opacity: ghost ? GHOST_OPACITY : 1, scale: 1 }}
+        transition={{
+          y: { ...TRANSITION.base, delay },
+          opacity: { ...(ghost ? TRANSITION.fast : TRANSITION.base), delay: staggerIndex !== null ? delay : 0 },
+          scale: TRANSITION.base,
+        }}
+      >
         <div
           ref={setNodeRef}
           {...(dragDisabled ? {} : listeners)}
@@ -741,7 +771,7 @@ const Tile = memo(function Tile({
         >
           {children}
         </div>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }, tilePropsEqual);

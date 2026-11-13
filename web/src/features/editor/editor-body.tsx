@@ -9,7 +9,6 @@ import { Reveal } from "@/components/common/reveal";
 import { showAppSnack } from "@/components/common/snack";
 import type { ReminderValue } from "@/components/common/reminder-picker";
 import { REPEAT_LABELS } from "@/components/common/reminder-format";
-import type { SyncState } from "@/components/common/sync-pill";
 import { AbortedError } from "@/lib/api/errors";
 import { audioClip, makeNote, isTranscribing, transcriptFailed, type ChecklistItem, type Label, type Note, type NoteKind, type NotePattern, type NoteRewriteTask } from "@/lib/models/note";
 import { navigate } from "@/lib/router";
@@ -29,7 +28,6 @@ import {
   useNotesSelector,
   useSettings,
   useSettingsController,
-  useSyncStatus,
 } from "@/lib/store";
 import { DURATION, TRANSITION, transitionFor } from "@/lib/theme/motion";
 import { newId } from "@/lib/util/id";
@@ -112,8 +110,6 @@ export function EditorBody({
   const can = useNoteAvailability(noteId);
   const rewriting = useIsRewriting(noteId);
   const isDraft = useIsDraft(noteId);
-  const syncStatus = useSyncStatus();
-  const pendingChanges = useNotesSelector((s) => s.pendingChanges);
   const use24h = useSettings((s) => s.use24hTime);
   const palette = useSettings((s) => s.palette);
   const brightness = useBrightness();
@@ -664,7 +660,6 @@ export function EditorBody({
   const reminderText = note.reminderAt
     ? `${reminderLabel(note.reminderAt, settingsStore.state)}${note.reminderRepeat ? ` · ${REPEAT_LABELS[note.reminderRepeat]}` : ""}`
     : "";
-  const syncState: SyncState = syncStatus === "failed" ? "error" : syncStatus;
   const formatBar = kind === "markdown" && bodyFocused && !preview && !finding && !trashed;
   const findQueryLive = finding ? findQuery : "";
 
@@ -812,10 +807,8 @@ export function EditorBody({
         noteId={noteId}
         wide={wide}
         onClose={onClose}
-        kind={kind}
         trashed={trashed}
         pinned={note.pinned}
-        archived={note.archived}
         rewriting={rewriting}
         finding={finding}
         findQuery={findQuery}
@@ -836,7 +829,6 @@ export function EditorBody({
         onRestore={restore}
         onDeleteForever={deleteForever}
         onConvert={can.canEdit ? convert : null}
-        rewriteTasks={can.rewriteTasks}
         onRewrite={can.canRewrite ? (task) => void rewrite(task) : null}
       />
 
@@ -950,8 +942,6 @@ export function EditorBody({
           trashed={trashed}
           wide={wide}
           editedStamp={`Edited ${editedLabel(note.updatedAt, settingsStore.state)}`}
-          syncState={syncState}
-          pendingChanges={pendingChanges}
           color={note.color}
           pattern={note.pattern}
           brightness={brightness}

@@ -134,7 +134,7 @@ export function FileDropOverlay({ visible }: { visible: boolean }) {
           transition={transitionFor(TRANSITION.fast, reduced)}
         >
           <motion.div
-            className="flex items-center gap-3 rounded-md border border-outline-variant bg-surface-container-high px-6 py-4 shadow-dialog"
+            className="flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-high px-6 py-4 shadow-dialog"
             initial={{ scale: 0.96 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0.96 }}

@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Archive, ArrowRight, Bell, Bookmark, Folder, FolderPlus, MessagesSquare, Pencil, Plus, Settings, Sparkles, Tag, Trash2, Library, type LucideIcon } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { Archive, Bell, Bookmark, Folder, Pencil, Trash2, type LucideIcon } from "lucide-react";
 import { cn } from "cn";
 import { SectionLabel } from "@/components/common/section-label";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { navigate } from "@/lib/router";
 import {
   isWorkspaceWide,
   useActiveCollection,
-  useActiveWorkspace,
   useCollections,
   useLabels,
   useNotesController,
@@ -22,15 +20,14 @@ import {
 } from "@/lib/store";
 import { NOTE_DROP_EVENT, type NoteDropDetail } from "@/features/notes/masonry";
 import { labelColor, labelIconFor } from "@/lib/theme/label-style";
-import { DURATION, prefersReducedMotion } from "@/lib/theme/motion";
-import { useChatAvailable, useOpenDestination } from "./shell-actions";
+import { DURATION, TRANSITION, prefersReducedMotion, transitionFor } from "@/lib/theme/motion";
+import { useOpenDestination } from "./shell-actions";
 import { useShellDialogs } from "./shell-dialogs";
-import { SortableRows } from "./sortable-rows";
 import { WorkspaceMenu } from "./workspace-menu";
 
 /** Docked widths, open and as an icon rail (`AppSidebar`). */
-export const SIDEBAR_OPEN_PX = 264;
-export const SIDEBAR_RAIL_PX = 64;
+export const SIDEBAR_OPEN_PX = 268;
+export const SIDEBAR_RAIL_PX = 72;
 
 export type SidebarPlacement = "docked" | "drawer";
 
@@ -41,7 +38,6 @@ export type SidebarPlacement = "docked" | "drawer";
  */
 export function SidebarContent({ compact, placement, onNavigate }: { compact: boolean; placement: SidebarPlacement; onNavigate?: () => void }) {
   const destination = useUi((s) => s.destination);
-  const workspace = useActiveWorkspace();
   const done = (): void => onNavigate?.();
   // A dialog or page opened from the phone drawer waits for the drawer to
   // finish closing, so the two surfaces never animate through each other.
@@ -55,18 +51,17 @@ export function SidebarContent({ compact, placement, onNavigate }: { compact: bo
   };
 
   return (
-    <nav aria-label="Main" className="flex flex-col gap-1 py-3">
+    <nav aria-label="Main" className="flex flex-col py-3">
       <div className="px-2 pb-3">
         <WorkspaceMenu compact={compact} beforeAction={placement === "drawer" ? after : undefined} />
       </div>
       <Collections compact={compact} destination={destination} done={done} after={after} />
-      <Separator className="mx-4 my-2 w-auto bg-hairline" />
+      <Separator className="mx-4 my-4 w-auto bg-hairline" />
       <Labels compact={compact} destination={destination} done={done} after={after} />
-      <Separator className="mx-4 my-2 w-auto bg-hairline" />
+      <Separator className="mx-4 my-4 w-auto bg-hairline" />
       <SmartViews compact={compact} destination={destination} done={done} after={after} />
-      <Separator className="mx-4 my-2 w-auto bg-hairline" />
+      <Separator className="mx-4 my-4 w-auto bg-hairline" />
       <LibraryRows compact={compact} destination={destination} done={done} after={after} />
-      {placement === "drawer" && workspace ? <DrawerLinks after={after} /> : null}
     </nav>
   );
 }
@@ -86,67 +81,44 @@ function Collections({ compact, destination, done, after }: SectionProps) {
   const ui = useUiController();
   const dialogs = useShellDialogs();
   const open = useOpenDestination();
-  const workspaceId = notes.activeWorkspaceId;
 
   return (
     <section>
-      <SectionHeader icon={Folder} label="Collections" compact={compact} />
-      <SortableRows items={collections} idOf={(c) => c.id} onMove={(id, index) => notes.moveCollection(id, index)} keyboard="disabled">
-        {(c, handle) => (
-          <SidebarRow
-            icon={labelIconFor(c.icon)}
-            fallbackIcon={Folder}
-            hasCustomIcon={c.icon !== null}
-            iconColor={c.color}
-            label={c.name}
-            compact={compact}
-            selected={active?.id === c.id && !isWorkspaceWide(destination)}
-            dragProps={handle.handleProps}
-            dragging={handle.dragging}
-            onNoteDrop={(ids) => {
-              for (const id of ids) {
-                if (notes.noteById(id)?.workspaceId === c.workspaceId) {
-                  notes.restoreToCollection(id, c.id);
-                }
-              }
-              ui.clearSelection();
-            }}
-            onClick={() => {
-              open("notes", c.id);
-              done();
-            }}
-            onEdit={
-              workspaceId === null
-                ? undefined
-                : () => {
-                    after(() => dialogs.open({ type: "collection", workspaceId, collectionId: c.id }));
-                  }
-            }
-            editLabel="Collection settings"
-            menu={
-              workspaceId === null
-                ? undefined
-                : [
-                    { label: "Open", icon: ArrowRight, onSelect: () => open("notes", c.id) },
-                    { label: "Collection settings…", icon: Pencil, onSelect: () => dialogs.open({ type: "collection", workspaceId, collectionId: c.id }) },
-                    "separator",
-                    { label: "New collection…", icon: FolderPlus, onSelect: () => dialogs.open({ type: "collection", workspaceId }) },
-                  ]
-            }
-          />
-        )}
-      </SortableRows>
-      {workspaceId !== null ? (
+      <SectionHeader label="Collections" compact={compact} />
+      {collections.map((c) => (
         <SidebarRow
-          icon={Plus}
-          label="New collection"
+          key={c.id}
+          icon={labelIconFor(c.icon)}
+          fallbackIcon={Folder}
+          hasCustomIcon={c.icon !== null}
+          iconColor={c.color}
+          label={c.name}
           compact={compact}
-          tone="action"
+          selected={active?.id === c.id && !isWorkspaceWide(destination)}
+          washed={active?.id === c.id && !isWorkspaceWide(destination) && typeof destination === "string"}
+          onNoteDrop={(ids) => {
+            for (const id of ids) {
+              if (notes.noteById(id)?.workspaceId === c.workspaceId) {
+                notes.restoreToCollection(id, c.id);
+              }
+            }
+            ui.clearSelection();
+          }}
           onClick={() => {
-            after(() => dialogs.open({ type: "collection", workspaceId }));
+            open("notes", c.id);
+            done();
           }}
         />
-      ) : null}
+      ))}
+      <SidebarRow
+        icon={Pencil}
+        label="Manage collections"
+        compact={compact}
+        tone="action"
+        onClick={() => {
+          after(() => dialogs.open({ type: "collections" }));
+        }}
+      />
     </section>
   );
 }
@@ -160,7 +132,7 @@ function Labels({ compact, destination, done, after }: SectionProps) {
 
   return (
     <section>
-      <SectionHeader icon={Tag} label="Labels" compact={compact} />
+      <SectionHeader label="Labels" compact={compact} />
       {labels.map((label) => (
         <SidebarRow
           key={label.id}
@@ -182,29 +154,6 @@ function Labels({ compact, destination, done, after }: SectionProps) {
             open(current === label.id ? "notes" : { label: label.id });
             done();
           }}
-          onEdit={() => {
-            after(() => dialogs.open({ type: "labelEditor", labelId: label.id }));
-          }}
-          editLabel="Edit label"
-          menu={[
-            { label: current === label.id ? "Back to all notes" : "Show notes", icon: ArrowRight, onSelect: () => open(current === label.id ? "notes" : { label: label.id }) },
-            { label: "Edit label…", icon: Pencil, onSelect: () => dialogs.open({ type: "labelEditor", labelId: label.id }) },
-            "separator",
-            {
-              label: "Delete label…",
-              icon: Trash2,
-              tone: "destructive",
-              onSelect: () =>
-                dialogs.open({
-                  type: "confirm",
-                  title: `Delete "${label.name}"?`,
-                  description: "It comes off every note that has it. The notes themselves stay.",
-                  confirmLabel: "Delete label",
-                  tone: "destructive",
-                  onConfirm: () => notes.deleteLabel(label.id),
-                }),
-            },
-          ]}
         />
       ))}
       <SidebarRow
@@ -228,7 +177,7 @@ function SmartViews({ compact, destination, done, after }: SectionProps) {
 
   return (
     <section>
-      <SectionHeader icon={Sparkles} label="Smart views" compact={compact} />
+      <SectionHeader label="Smart views" compact={compact} />
       {views.map((view) => (
         <SidebarRow
           key={view.id}
@@ -242,14 +191,6 @@ function SmartViews({ compact, destination, done, after }: SectionProps) {
             open(current === view.id ? "notes" : { smartView: view.id });
             done();
           }}
-          onEdit={() => {
-            after(() => dialogs.open({ type: "savedView", savedViewId: view.id }));
-          }}
-          editLabel="Edit smart view"
-          menu={[
-            { label: current === view.id ? "Back to all notes" : "Open", icon: ArrowRight, onSelect: () => open(current === view.id ? "notes" : { smartView: view.id }) },
-            { label: "Edit smart view…", icon: Pencil, onSelect: () => dialogs.open({ type: "savedView", savedViewId: view.id }) },
-          ]}
         />
       ))}
       <SidebarRow
@@ -291,7 +232,7 @@ function LibraryRows({ compact, destination, done }: SectionProps) {
   };
   return (
     <section>
-      <SectionHeader icon={Library} label="Library" compact={compact} />
+      <SectionHeader label="Library" compact={compact} />
       {LIBRARY.map((entry) => (
         <SidebarRow
           key={entry.destination}
@@ -311,48 +252,17 @@ function LibraryRows({ compact, destination, done }: SectionProps) {
   );
 }
 
-/** On a phone the top bar has no room for these, so the drawer carries them. */
-function DrawerLinks({ after }: { after: (show: () => void) => void }) {
-  const chat = useChatAvailable();
+function SectionHeader({ label, compact }: { label: string; compact: boolean }) {
   return (
-    <section>
-      <Separator className="mx-4 my-2 w-auto bg-hairline" />
-      {chat ? (
-        <SidebarRow
-          icon={MessagesSquare}
-          label="Chat with your notes"
-          compact={false}
-          selected={false}
-          onClick={() => {
-            after(() => navigate({ name: "chat" }));
-          }}
-        />
-      ) : null}
-      <SidebarRow
-        icon={Settings}
-        label="Settings"
-        compact={false}
-        selected={false}
-        onClick={() => {
-          after(() => navigate({ name: "settings", page: null }));
-        }}
-      />
-    </section>
-  );
-}
-
-function SectionHeader({ icon: Icon, label, compact }: { icon: LucideIcon; label: string; compact: boolean }) {
-  return (
-    <div aria-hidden={compact || undefined} className={cn("flex h-7 items-center gap-2 px-5 transition-opacity duration-240 ease-standard", compact ? "opacity-0" : "opacity-100")}>
-      <Icon aria-hidden className="size-3.5 shrink-0 text-on-surface-variant" />
+    <div aria-hidden={compact || undefined} className={cn("flex h-7 items-center px-7 transition-opacity duration-240 ease-standard", compact ? "opacity-0" : "opacity-100")}>
       <SectionLabel className="truncate px-0">{label}</SectionLabel>
     </div>
   );
 }
 
 /**
- * One sidebar entry. The selection is an accent wash plus a short accent bar
- * that grows from the row's middle; both fade, nothing snaps. A rail shows
+ * One sidebar entry. The selection is an accent wash that fades in, nothing
+ * snaps. A rail shows
  * only the icon, with the name in a tooltip.
  */
 function SidebarRow({
@@ -363,15 +273,11 @@ function SidebarRow({
   label,
   compact,
   selected = false,
+  washed = selected,
   tone = "default",
   onClick,
-  onEdit,
-  editLabel,
-  dragProps,
-  dragging = false,
   onNoteDrop,
   dropTone = "default",
-  menu,
 }: {
   icon: LucideIcon;
   /** Shown when the entity has no icon of its own. */
@@ -381,21 +287,22 @@ function SidebarRow({
   label: string;
   compact: boolean;
   selected?: boolean;
+  /**
+   * Whether the sliding selection wash sits under this row. A collection stays
+   * selected while a label or smart view filters it, but the wash goes to the
+   * more specific row: there is one wash, so it marks one row.
+   */
+  washed?: boolean;
   /** "action" rows (create, manage) read quieter than destinations. */
   tone?: "default" | "action";
   onClick(): void;
-  onEdit?: () => void;
-  editLabel?: string;
-  dragProps?: Record<string, unknown>;
-  dragging?: boolean;
   /** Makes the row a target for cards dragged out of the grid. */
   onNoteDrop?: (noteIds: readonly string[]) => void;
   /** Trash highlights a hovered drop in the error colour. */
   dropTone?: "default" | "danger";
-  /** What a right-click on the row offers (desktop). */
-  menu?: readonly RowMenuEntry[];
 }) {
   const dropRef = useNoteDropTarget(onNoteDrop);
+  const reduced = useReducedMotion();
   const Glyph = hasCustomIcon || !fallbackIcon ? Icon : fallbackIcon;
   const tint = labelColor(iconColor);
   const row: ReactNode = (
@@ -403,85 +310,55 @@ function SidebarRow({
       ref={dropRef}
       data-note-drop={onNoteDrop ? "" : undefined}
       className={cn(
-        "group/row relative mx-2 flex h-9 items-center rounded-md transition-[background-color,box-shadow] duration-150 ease-standard",
-        selected ? "bg-secondary-container" : "hover:bg-hover",
-        dragging && "bg-surface shadow-raised",
+        // 34px rows for a pointer, a 44px target for a finger (`_SidebarItem`).
+        "group/row relative mx-3 mb-0.5 flex h-8.5 items-center rounded-sm transition-[background-color,box-shadow] duration-150 ease-standard [@media(hover:none)_and_(pointer:coarse)]:h-11",
+        !washed && "hover:bg-hover",
         dropTone === "danger"
           ? "data-[drop-hover]:bg-error-container data-[drop-hover]:ring-2 data-[drop-hover]:ring-error"
           : "data-[drop-hover]:bg-secondary-container data-[drop-hover]:ring-2 data-[drop-hover]:ring-primary",
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "pointer-events-none absolute top-1/2 left-0 h-5 w-[3px] -translate-y-1/2 rounded-xs bg-primary transition-[transform,opacity] duration-150 ease-standard",
-          selected ? "scale-y-100 opacity-100" : "scale-y-0 opacity-0",
-        )}
-      />
+      {/* One wash for the whole sidebar: it slides from the old row to the new one. */}
+      {washed ? (
+        <motion.span
+          aria-hidden
+          layoutId="sidebar-selection"
+          data-sidebar-selection=""
+          className="absolute inset-0 rounded-sm bg-secondary-container"
+          transition={transitionFor(TRANSITION.base, reduced)}
+        />
+      ) : null}
       <button
         type="button"
         onClick={onClick}
         aria-current={selected ? "page" : undefined}
         aria-label={compact ? label : undefined}
-        {...dragProps}
         className={cn(
-          "flex h-full min-w-0 flex-1 items-center gap-3 rounded-md pl-3.5 text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          tone === "action" ? "text-on-surface-variant/80" : selected ? "font-semibold text-on-secondary-container" : "font-medium text-on-surface",
-          dragProps && "touch-none",
+          "relative flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          tone === "action" ? "text-on-surface-variant/80" : selected ? "font-medium text-on-secondary-container" : "text-on-surface",
         )}
       >
-        <Glyph
-          aria-hidden
-          className={cn("size-[18px] shrink-0", tint ? undefined : selected ? "text-on-secondary-container" : "text-on-surface-variant")}
-          style={tint ? { color: tint } : undefined}
-        />
+        {/* The icon keeps a 48px column, the collapsed rail's width, open or not. */}
+        <span className="flex w-12 shrink-0 justify-center">
+          <Glyph
+            aria-hidden
+            className={cn("size-4.5", tint ? undefined : selected ? "text-on-secondary-container" : "text-on-surface-variant")}
+            style={tint ? { color: tint } : undefined}
+          />
+        </span>
         <span className={cn("truncate pr-2 transition-opacity duration-150 ease-standard", compact ? "opacity-0" : "opacity-100")}>{label}</span>
       </button>
-      {onEdit && !compact ? (
-        <button
-          type="button"
-          aria-label={`${editLabel ?? "Edit"}: ${label}`}
-          onClick={onEdit}
-          className="mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-on-surface-variant opacity-0 transition-opacity duration-150 ease-standard outline-none group-hover/row:opacity-100 hover:bg-hover focus-visible:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 [@media(hover:none)]:hidden"
-        >
-          <Pencil className="size-3.5" />
-        </button>
-      ) : null}
     </div>
   );
 
-  const withMenu = menu ? <RowContextMenu entries={menu}>{row}</RowContextMenu> : row;
   if (!compact) {
-    return withMenu;
+    return row;
   }
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{withMenu}</TooltipTrigger>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
-  );
-}
-
-type RowMenuEntry = { label: string; icon: LucideIcon; onSelect(): void; tone?: "default" | "destructive" } | "separator";
-
-/** A row's right-click menu: the same actions its click and pencil reach, plus the occasional one. */
-function RowContextMenu({ entries, children }: { entries: readonly RowMenuEntry[]; children: ReactNode }) {
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
-        {entries.map((entry, i) =>
-          entry === "separator" ? (
-            <ContextMenuSeparator key={`separator-${i}`} />
-          ) : (
-            <ContextMenuItem key={entry.label} variant={entry.tone ?? "default"} onSelect={entry.onSelect}>
-              <entry.icon aria-hidden />
-              {entry.label}
-            </ContextMenuItem>
-          ),
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
   );
 }
 

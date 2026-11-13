@@ -702,7 +702,9 @@ function PagedBoard({
         style={{ paddingInline: `${((1 - PAGE_FRACTION) / 2) * 100}%` }}
       >
         {columns.map((column) => (
-          <div key={column.key} className="h-full shrink-0 snap-center px-1 pb-3" style={{ width: `${PAGE_FRACTION * 100}%` }}>
+          // The pager's padding already leaves the neighbours their edges, so a
+          // page is the whole padded box: PAGE_FRACTION of the screen.
+          <div key={column.key} className="h-full w-full shrink-0 snap-center px-1 pb-3">
             {renderColumn(column)}
           </div>
         ))}

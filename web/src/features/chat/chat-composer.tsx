@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 import { ArrowUp, Square } from "lucide-react";
+import { cn } from "cn";
 import { CrossFade } from "@/components/common/reveal";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 // reply streams, so the follow-up can be typed meanwhile; only sending waits.
 
 /** Four lines of 20px plus the field's padding. */
-const MAX_HEIGHT_PX = 4 * 20 + 18;
+const MAX_HEIGHT_PX = 4 * 20 + 28;
 
 export type ComposerKey = "send" | "stop" | "none";
 
@@ -87,7 +88,7 @@ export function ChatComposer({
         aria-label="Message"
         placeholder="Ask about your notes…"
         autoCapitalize="sentences"
-        className="max-h-[98px] min-h-10 resize-none overflow-y-auto bg-surface-container-low py-2.5 leading-5"
+        className="max-h-[108px] min-h-12 resize-none overflow-y-auto bg-surface-container-low px-4.5 py-3.5 leading-5"
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
       />
@@ -99,13 +100,13 @@ export function ChatComposer({
             variant={busy ? "outline" : "default"}
             aria-label={busy ? "Stop" : "Send"}
             disabled={busy ? false : !canSend}
-            className={busy ? undefined : "text-on-primary-container"}
+            className={cn("size-12", !busy && "text-on-primary-container")}
             onClick={busy ? onStop : onSend}
           >
             <CrossFade stateKey={busy}>{busy ? <Square className="size-4 fill-current" /> : <ArrowUp className="size-5" />}</CrossFade>
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="top">{busy ? "Stop (Esc)" : "Send (Enter)"}</TooltipContent>
+        <TooltipContent side="top">{busy ? "Stop" : "Send"}</TooltipContent>
       </Tooltip>
     </div>
   );

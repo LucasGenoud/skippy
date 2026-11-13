@@ -13,21 +13,21 @@
  */
 
 :root {
-  --canvas: #ECEAE5;
+  --canvas: #F9F9F8;
   --surface: #FFFFFF;
   --surface-bright: #FFFFFF;
   --surface-container-lowest: #FFFFFF;
-  --surface-container-low: #FAF9F8;
-  --surface-container: #F5F4F2;
-  --surface-container-high: #F0EEEB;
-  --surface-container-highest: #E9E7E1;
-  --trough: #DCD8CF;
-  --trough-border: #D1CCC0;
-  --on-surface: #1F1B13;
-  --on-surface-variant: #4D4639;
-  --outline: #7F7667;
-  --outline-variant: #D0C5B4;
-  --hairline: #D0C5B4CC;
+  --surface-container-low: #FBFBFA;
+  --surface-container: #F6F6F5;
+  --surface-container-high: #F2F1F0;
+  --surface-container-highest: #EBEAE8;
+  --trough: #F2F1F0;
+  --trough-border: #E8E7E5;
+  --on-surface: #10100E;
+  --on-surface-variant: #6C6960;
+  --outline: #AEABA3;
+  --outline-variant: #E7E6E4;
+  --hairline: #E7E6E4;
   --primary: #785A0B;
   --on-primary: #FFFFFF;
   --primary-container: #FBBC04;
@@ -35,7 +35,7 @@
   --secondary-tone: #6B5C3F;
   --tertiary: #4B6546;
   --secondary-container: #FEE8AA;
-  --on-secondary-container: #1F1B13;
+  --on-secondary-container: #10100E;
   --error: #BA1A1A;
   --on-error: #FFFFFF;
   --error-container: #FFDAD6;
@@ -43,14 +43,14 @@
   --inverse-surface: #353027;
   --inverse-on-surface: #FAEFE2;
   --excluded: #E8B1B1;
-  --code-fill: #1F1B130F;
-  --pattern-ink: #1F1B1317;
-  --hover: #1F1B130F;
-  --pressed: #1F1B131A;
-  --scrollbar-thumb: #1F1B132E;
-  --elevation-resting: 0 1px 3.3px -1px #0D101A14, 0 3px 10.2px -3px #0D101A17;
-  --elevation-raised: 0 6px 19.5px -4px #0D101A24, 0 1px 5.6px -2px #0D101A14;
-  --elevation-dialog: 0 6px 19.5px -4px #0D101A24, 0 1px 5.6px -2px #0D101A14, 0 20px 47.2px -12px #0D101A2E;
+  --code-fill: #10100E0F;
+  --pattern-ink: #10100E17;
+  --hover: #10100E0B;
+  --pressed: #10100E14;
+  --scrollbar-thumb: #10100E29;
+  --elevation-resting: 0 1px 2.2px 0px #0D101A0A, 0 4px 12.5px -6px #0D101A0F;
+  --elevation-raised: 0 8px 24.1px -8px #0D101A1F, 0 1px 4.5px -1px #0D101A0F;
+  --elevation-dialog: 0 8px 24.1px -8px #0D101A1F, 0 1px 4.5px -1px #0D101A0F, 0 20px 47.2px -12px #0D101A2E;
   --code-keyword: #8E3FB5;
   --code-string: #2F7D32;
   --code-number: #B35A00;
@@ -63,44 +63,44 @@
 }
 
 .dark {
-  --canvas: #11100E;
-  --surface: #2D2C27;
-  --surface-bright: #47443D;
-  --surface-container-lowest: #0C0C0B;
-  --surface-container-low: #33312B;
-  --surface-container: #3A3831;
-  --surface-container-high: #423F38;
-  --surface-container-highest: #47443D;
-  --trough: #1E1C18;
-  --trough-border: #26231E;
-  --on-surface: #EBE1D4;
-  --on-surface-variant: #D0C5B4;
-  --outline: #998F80;
-  --outline-variant: #4D4639;
-  --hairline: #4D4639CC;
+  --canvas: #0C0C0B;
+  --surface: #1B1A18;
+  --surface-bright: #2E2C29;
+  --surface-container-lowest: #080807;
+  --surface-container-low: #1D1D1B;
+  --surface-container: #23221F;
+  --surface-container-high: #282724;
+  --surface-container-highest: #2E2C29;
+  --trough: #131211;
+  --trough-border: #191917;
+  --on-surface: #F5F5F4;
+  --on-surface-variant: #ADAAA4;
+  --outline: #76736B;
+  --outline-variant: #302F2C;
+  --hairline: #302F2C;
   --primary: #EAC16C;
   --on-primary: #402D00;
   --primary-container: #FBBC04;
   --on-primary-container: #1B1A16;
   --secondary-tone: #D8C4A0;
   --tertiary: #B1CFA9;
-  --secondary-container: #6B571C;
-  --on-secondary-container: #EBE1D4;
+  --secondary-container: #5E4B12;
+  --on-secondary-container: #F5F5F4;
   --error: #FFB4AB;
   --on-error: #690005;
   --error-container: #93000A;
   --on-error-container: #FFDAD6;
   --inverse-surface: #EBE1D4;
   --inverse-on-surface: #353027;
-  --excluded: #6C554F;
-  --code-fill: #EBE1D417;
-  --pattern-ink: #EBE1D41F;
-  --hover: #EBE1D40F;
-  --pressed: #EBE1D41A;
-  --scrollbar-thumb: #EBE1D42E;
-  --elevation-resting: 0 1px 3.3px -1px #0D101A57, 0 3px 10.2px -3px #0D101A52;
-  --elevation-raised: 0 6px 19.5px -4px #0D101A7A, 0 1px 5.6px -2px #0D101A52;
-  --elevation-dialog: 0 6px 19.5px -4px #0D101A7A, 0 1px 5.6px -2px #0D101A52, 0 20px 47.2px -12px #0D101A80;
+  --excluded: #5F4844;
+  --code-fill: #F5F5F417;
+  --pattern-ink: #F5F5F41F;
+  --hover: #F5F5F40F;
+  --pressed: #F5F5F41A;
+  --scrollbar-thumb: #F5F5F429;
+  --elevation-resting: 0 1px 2.2px 0px #0D101A4D, 0 4px 12.5px -6px #0D101A4D;
+  --elevation-raised: 0 8px 24.1px -8px #0D101A7A, 0 1px 4.5px -1px #0D101A52;
+  --elevation-dialog: 0 8px 24.1px -8px #0D101A7A, 0 1px 4.5px -1px #0D101A52, 0 20px 47.2px -12px #0D101A80;
   --code-keyword: #D7A2F0;
   --code-string: #9CD69A;
   --code-number: #F2B572;
@@ -114,9 +114,10 @@
 
 /* Accent-independent tokens, and the shadcn names mapped onto the system. */
 :root {
-  --radius: 6px;
-  --radius-menu: 8px;
-  --check-radius: 3px;
+  --radius: 8px;
+  --radius-menu: 10px;
+  --radius-dialog: 12px;
+  --check-radius: 4px;
 
   --motion-fast: 150ms;
   --motion-base: 240ms;
@@ -235,11 +236,11 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --radius-xs: 3px;
-  --radius-sm: 4px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
   --radius-md: var(--radius);
   --radius-lg: var(--radius-menu);
-  --radius-xl: var(--radius-menu);
+  --radius-xl: var(--radius-dialog);
   --radius-check: var(--check-radius);
 
   --shadow-card: var(--elevation-resting);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Archive, Bell, Bookmark, CloudOff, Kanban, LoaderCircle, PenLine, SearchX, StickyNote, Tag, Trash2, type LucideIcon } from "lucide-react";
+import { Archive, Bell, Bookmark, CloudOff, Kanban, LoaderCircle, SearchX, StickyNote, Tag, Trash2, type LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { CrossFade } from "@/components/common/reveal";
@@ -32,14 +32,13 @@ export type GridFrame = "grid" | "other";
 /**
  * The block a destination opens with (`_ViewHeader`). Wide, the top bar
  * names the view, so the block keeps only what the bar cannot say: Trash's
- * notice and "Empty trash", a smart view's search and its edit button.
+ * notice and "Empty trash".
  */
 export function ViewHeader() {
   const selection = useViewSelection();
   const titled = useTitledBar();
   const views = useSavedViews();
   const label = useNotesSelector((s) => (selection.labelId ? (s.labels.find((l) => l.id === selection.labelId)?.name ?? null) : null), Object.is, [selection.labelId]);
-  const dialogs = useShellDialogs();
   const reduced = useReducedMotion();
 
   let header: { key: string; title?: string; subtitle?: string; trailing?: React.ReactNode } | null = null;
@@ -55,19 +54,7 @@ export function ViewHeader() {
       break;
     case "smart": {
       const view = views.find((v) => v.id === selection.savedViewId);
-      if (view) {
-        header = {
-          key: `smart-${view.id}`,
-          title: titled ? undefined : view.name,
-          subtitle: view.query,
-          trailing: (
-            <Button variant="ghost" size="sm" onClick={() => dialogs.open({ type: "savedView", savedViewId: view.id })}>
-              <PenLine />
-              Edit
-            </Button>
-          ),
-        };
-      }
+      header = titled || !view ? null : { key: `smart-${view.id}`, title: view.name };
       break;
     }
     default:
@@ -83,7 +70,6 @@ export function ViewHeader() {
           animate={{ opacity: 1, height: "auto" }}
           exit={{ opacity: 0, height: 0 }}
           transition={transitionFor(TRANSITION.base, reduced)}
-          className={selection.view === "smart" ? "[&_header>div>span]:font-mono" : undefined}
         >
           <PageHeader title={header.title} subtitle={header.subtitle} trailing={header.trailing} />
         </motion.div>
@@ -220,7 +206,8 @@ export function ViewEmptyState() {
   return (
     <AnimatePresence initial={false} mode="popLayout">
       {empty ? (
-        <motion.div key="empty" exit={{ opacity: 0 }} transition={transitionFor(TRANSITION.fast, reduced)}>
+        // Fills what the scroll area has left, so the empty state sits centred in the view.
+        <motion.div key="empty" className="flex flex-1 flex-col" exit={{ opacity: 0 }} transition={transitionFor(TRANSITION.fast, reduced)}>
           <EmptyState
             icon={EMPTY_ICONS[copy.icon]}
             message={copy.message}

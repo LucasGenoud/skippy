@@ -2,21 +2,22 @@
 
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import {
-  CheckSquare,
-  Code,
+  Archive,
+  ArchiveRestore,
+  Braces,
   Columns3,
   Copy,
   CopyPlus,
-  Download,
   EllipsisVertical,
-  FileText,
   Folder,
   FolderInput,
-  Globe,
   History,
   Kanban,
+  ListChecks,
+  Repeat,
   RotateCcw,
-  Tag,
+  Search,
+  Text,
   Trash2,
   UserPlus,
   WandSparkles,
@@ -60,15 +61,12 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { NoteLabelPicker } from "@/features/editor/label-picker";
-import { isNoteEmpty, type NoteKind } from "@/lib/models/note";
+import { isNoteEmpty, type NoteKind, type NoteRewriteTask } from "@/lib/models/note";
 import { closeTo, navigate } from "@/lib/router";
 import { useIsRewriting, useNote, useNoteAvailability, useNotesController, useStagesForNote, useWorkspace, useWorkspaces } from "@/lib/store";
 import { LabelIcon } from "@/lib/theme/label-style";
-import { exportNotes, exportFormatSpec, type ExportFormat } from "@/lib/util/note-export";
 
 import { copyNoteText, duplicateNote, rewriteWithAi, trashNote } from "./note-actions";
-import { downloadFile } from "./platform";
 
 // Everything you do *to* a note, flat and split by intent (`note_card/actions.dart`
 // menu, `editor/note_actions_button.dart`, `note_actions.dart`, gated by
@@ -76,19 +74,16 @@ import { downloadFile } from "./platform";
 // (AI rewrites, conversions, card width, destinations) are one submenu each.
 
 const ShareDialog = lazy(() => import("@/features/editor/share-dialog").then((m) => ({ default: m.ShareDialog })));
-const PublicLinkDialog = lazy(() => import("@/features/editor/public-link-dialog").then((m) => ({ default: m.PublicLinkDialog })));
 
-const KIND_TARGETS: readonly { kind: NoteKind; label: string; icon: typeof FileText }[] = [
-  { kind: "text", label: "Text", icon: FileText },
-  { kind: "checklist", label: "Checklist", icon: CheckSquare },
-  { kind: "markdown", label: "Markdown", icon: Code },
+const KIND_TARGETS: readonly { kind: NoteKind; label: string; icon: typeof Text }[] = [
+  { kind: "text", label: "Text", icon: Text },
+  { kind: "checklist", label: "Checklist", icon: ListChecks },
+  { kind: "markdown", label: "Markdown", icon: Braces },
 ];
 
 const GRID_SPANS = [1, 2, 3] as const;
 
-const DOWNLOAD_FORMATS: readonly ExportFormat[] = ["markdown", "text", "json"];
-
-type Dialog = "share" | "publicLink" | "deleteForever" | null;
+type Dialog = "share" | "deleteForever" | null;
 
 /**
  * The menu's rows are the same whether they drop down from the "more" button
@@ -136,6 +131,14 @@ export interface NoteActionsMenuProps {
   onClose?(): void;
   /** Editor: converts the open draft itself (it holds the text being typed). */
   onConvert?(kind: NoteKind): void;
+  /** Editor: rewrites the open draft; the card rewrites the stored note. */
+  onRewrite?(task: NoteRewriteTask): void;
+  /** Editor: opens find-in-note. */
+  onFind?(): void;
+  /** Editor: archives or unarchives and closes, as the editor does it. */
+  onArchive?(): void;
+  /** Editor: shares the open draft. */
+  onShare?(): void;
 }
 
 export function NoteActionsMenu(props: NoteActionsMenuProps) {
@@ -178,7 +181,7 @@ export function NoteContextMenu({
   );
 }
 
-function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert, variant }: NoteActionsMenuProps & { variant: "dropdown" | "context" }) {
+function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert, onRewrite, onFind, onArchive, onShare, variant }: NoteActionsMenuProps & { variant: "dropdown" | "context" }) {
   const notes = useNotesController();
   const note = useNote(noteId);
   const can = useNoteAvailability(noteId);
@@ -187,7 +190,6 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
   const workspaces = useWorkspaces();
   const stages = useStagesForNote(noteId);
   const [dialog, setDialog] = useState<Dialog>(null);
-  const labelAnchor = useRef<HTMLButtonElement | null>(null);
   // An action that opens something else once the menu has finished closing.
   const afterClose = useRef<(() => void) | null>(null);
 
@@ -236,13 +238,10 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
   };
 
   const convert = (kind: NoteKind): void => (onConvert ? onConvert(kind) : notes.convertKind(note.id, kind));
-
-  const download = (format: ExportFormat): void => {
-    const spec = exportFormatSpec(format);
-    const content = exportNotes([note], format, { labels: notes.labelsInWorkspace(note.workspaceId), workspaces });
-    const base = (note.title.trim() || "note").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 60) || "note";
-    downloadFile(`${base}.${spec.extension}`, content, spec.mime);
-  };
+  const rewrite = (task: NoteRewriteTask): void => (onRewrite ? onRewrite(task) : void rewriteWithAi(notes, note.id, task));
+  const rewriteTasks = can.canRewrite && (!editor || onRewrite) ? can.rewriteTasks : [];
+  // The editor's list explains each row (`NoteActionsButton`); the card's is a short, plain menu.
+  const hint = (text: string): string | undefined => (editor ? text : undefined);
 
   const collections = workspace?.collections ?? [];
   const collectionLive = collections.some((c) => c.id === note.collectionId);
@@ -316,96 +315,103 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
             </>
           ) : (
             <>
-              {can.canRewrite && !editor ? (
+              {rewriteTasks.length > 0 || (editor && convertTargets.length > 0) || (editor && can.canSetGridSpan) ? (
                 <>
-                  <M.Sub>
-                    <M.SubTrigger disabled={rewriting}>
-                      <WandSparkles />
-                      <MenuLabel label="AI edit" hint={rewriting ? "Working…" : "Rewrite with AI"} />
-                    </M.SubTrigger>
-                    <M.SubContent>
-                      {can.rewriteTasks.map((task) => (
-                        <M.Item key={task.id} disabled={rewriting} onSelect={() => void rewriteWithAi(notes, note.id, task)}>
-                          <WandSparkles />
-                          <span className="truncate">{task.name}</span>
-                        </M.Item>
-                      ))}
-                    </M.SubContent>
-                  </M.Sub>
+                  {rewriteTasks.length > 0 ? (
+                    <M.Sub>
+                      <M.SubTrigger disabled={rewriting}>
+                        <WandSparkles />
+                        <MenuLabel label={editor ? "Rewrite with AI" : "AI edit"} hint={rewriting ? "Working…" : undefined} />
+                      </M.SubTrigger>
+                      <M.SubContent>
+                        {rewriteTasks.map((task) => (
+                          <M.Item key={task.id} disabled={rewriting} onSelect={() => rewrite(task)}>
+                            <WandSparkles />
+                            <span className="truncate">{task.name}</span>
+                          </M.Item>
+                        ))}
+                      </M.SubContent>
+                    </M.Sub>
+                  ) : null}
+                  {editor && convertTargets.length > 0 ? (
+                    <M.Sub>
+                      <M.SubTrigger>
+                        <Repeat />
+                        <MenuLabel label="Turn into" />
+                      </M.SubTrigger>
+                      <M.SubContent>
+                        {convertTargets.map(({ kind, label, icon: Icon }) => (
+                          <M.Item key={kind} onSelect={() => convert(kind)}>
+                            <Icon />
+                            {label}
+                          </M.Item>
+                        ))}
+                      </M.SubContent>
+                    </M.Sub>
+                  ) : null}
+                  {editor && can.canSetGridSpan ? (
+                    <M.Sub>
+                      <M.SubTrigger>
+                        <Columns3 />
+                        <MenuLabel label="Card width" hint={note.gridSpan === 1 ? "Standard" : `${note.gridSpan} columns`} />
+                      </M.SubTrigger>
+                      <M.SubContent>
+                        <M.RadioGroup value={String(note.gridSpan)} onValueChange={(value) => notes.setGridSpan(note.id, Number(value))}>
+                          {GRID_SPANS.map((span) => (
+                            <M.RadioItem key={span} value={String(span)}>
+                              {span === 1 ? "Standard" : `${span} columns`}
+                            </M.RadioItem>
+                          ))}
+                        </M.RadioGroup>
+                      </M.SubContent>
+                    </M.Sub>
+                  ) : null}
                   <M.Separator />
                 </>
               ) : null}
 
-
-              {can.canEdit ? (
-                <M.Item onSelect={() => queue(() => labelAnchor.current?.click())}>
-                  <Tag />
-                  <MenuLabel label="Labels" hint="Add or remove" />
+              {editor && onFind ? (
+                <M.Item onSelect={() => queue(onFind)}>
+                  <Search />
+                  <MenuLabel label="Find in note" hint="Highlight matches" />
+                </M.Item>
+              ) : null}
+              {editor ? (
+                <M.Item disabled={!can.canCopy} onSelect={() => void copyNoteText(note)}>
+                  <Copy />
+                  <MenuLabel label="Copy to clipboard" hint="As plain text" />
+                </M.Item>
+              ) : null}
+              {editor && onArchive ? (
+                <M.Item onSelect={onArchive}>
+                  {note.archived ? <ArchiveRestore /> : <Archive />}
+                  <MenuLabel label={note.archived ? "Unarchive" : "Archive"} hint={note.archived ? "Back to your notes" : "Out of the way, kept"} />
                 </M.Item>
               ) : null}
               {can.canEdit ? (
-                <M.Item onSelect={() => queue(share)}>
+                <M.Item onSelect={() => queue(onShare ?? share)}>
                   <UserPlus />
-                  <MenuLabel label="Collaborators" hint="Share with people" />
+                  <MenuLabel label={editor ? "Collaborators" : "Share"} hint={hint("Share with people")} />
                 </M.Item>
               ) : null}
-              {can.canEdit && !isNoteEmpty(note) ? (
-                <M.Item onSelect={() => queue(() => setDialog("publicLink"))}>
-                  <Globe />
-                  <MenuLabel label="Public link" hint="Anyone with the link" />
-                </M.Item>
-              ) : null}
-              <M.Item disabled={!can.canCopy} onSelect={() => void copyNoteText(note)}>
-                <Copy />
-                <MenuLabel label="Copy to clipboard" hint="As plain text" />
-              </M.Item>
-              <M.Item disabled={!can.canDuplicate} onSelect={() => duplicateNote(notes, note.id)}>
-                <CopyPlus />
-                <MenuLabel label="Duplicate" hint="Make a copy" />
-              </M.Item>
-
-              {can.canEdit && !editor && convertTargets.length > 0 ? (
-                <M.Sub>
-                  <M.SubTrigger>
-                    <FileText />
-                    <MenuLabel label="Turn into" hint="Another kind of note" />
-                  </M.SubTrigger>
-                  <M.SubContent>
-                    {convertTargets.map(({ kind, label, icon: Icon }) => (
-                      <M.Item key={kind} onSelect={() => convert(kind)}>
-                        <Icon />
-                        {label}
-                      </M.Item>
-                    ))}
-                  </M.SubContent>
-                </M.Sub>
-              ) : null}
-
-              {can.canSetGridSpan ? (
-                <M.Sub>
-                  <M.SubTrigger>
-                    <Columns3 />
-                    <MenuLabel label="Card width" hint={note.gridSpan === 1 ? "Standard" : `${note.gridSpan} columns`} />
-                  </M.SubTrigger>
-                  <M.SubContent>
-                    <M.RadioGroup value={String(note.gridSpan)} onValueChange={(value) => notes.setGridSpan(note.id, Number(value))}>
-                      {GRID_SPANS.map((span) => (
-                        <M.RadioItem key={span} value={String(span)}>
-                          {span === 1 ? "Standard" : `${span} columns`}
-                        </M.RadioItem>
-                      ))}
-                    </M.RadioGroup>
-                  </M.SubContent>
-                </M.Sub>
-              ) : null}
-
-              {can.canMoveToStage || can.canMoveToCollection || can.canMoveToWorkspace ? <M.Separator /> : null}
+              {editor ? null : (
+                <>
+                  <M.Item disabled={!can.canCopy} onSelect={() => void copyNoteText(note)}>
+                    <Copy />
+                    <MenuLabel label="Copy to clipboard" />
+                  </M.Item>
+                  <M.Item disabled={!can.canDuplicate} onSelect={() => duplicateNote(notes, note.id)}>
+                    <CopyPlus />
+                    <MenuLabel label="Duplicate" />
+                  </M.Item>
+                </>
+              )}
 
               {can.canMoveToStage ? (
                 <M.Sub>
                   <M.SubTrigger>
                     <Kanban />
-                    <MenuLabel label="Move to column" hint="Another column on this board" />
+                    <MenuLabel label="Move to column" hint={hint("Another column on this board")} />
                   </M.SubTrigger>
                   <M.SubContent>
                     <M.RadioGroup value={note.stageId ?? ""} onValueChange={(value) => notes.setNoteStage(note.id, value === "" ? null : value)}>
@@ -424,7 +430,7 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
                 <M.Sub>
                   <M.SubTrigger>
                     <Folder />
-                    <MenuLabel label="Move to collection" hint="Within this workspace" />
+                    <MenuLabel label="Move to collection" hint={hint("Within this workspace")} />
                   </M.SubTrigger>
                   <M.SubContent>
                     <M.RadioGroup
@@ -449,7 +455,7 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
                 <M.Sub>
                   <M.SubTrigger>
                     <FolderInput />
-                    <MenuLabel label="Move to workspace" hint="To another workspace" />
+                    <MenuLabel label="Move to workspace" hint={hint("To another workspace")} />
                   </M.SubTrigger>
                   <M.SubContent>
                     <M.RadioGroup value={note.workspaceId} onValueChange={moveToWorkspace}>
@@ -463,32 +469,27 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
                 </M.Sub>
               ) : null}
 
-              <M.Separator />
-
-              {can.canShowHistory ? (
+              {editor && can.canShowHistory ? (
                 <M.Item onSelect={() => navigate({ name: "history", noteId: note.id })}>
                   <History />
                   <MenuLabel label="Version history" hint="Restore an earlier copy" />
                 </M.Item>
               ) : null}
-              {!isNoteEmpty(note) ? (
-                <M.Sub>
-                  <M.SubTrigger>
-                    <Download />
-                    <MenuLabel label="Download" hint="As a file" />
-                  </M.SubTrigger>
-                  <M.SubContent>
-                    {DOWNLOAD_FORMATS.map((format) => (
-                      <M.Item key={format} onSelect={() => download(format)}>
-                        {exportFormatSpec(format).label}
-                      </M.Item>
-                    ))}
-                  </M.SubContent>
-                </M.Sub>
+              {editor ? (
+                <M.Item disabled={!can.canDuplicate} onSelect={() => duplicateNote(notes, note.id)}>
+                  <CopyPlus />
+                  <MenuLabel label="Duplicate" hint="Make a copy" />
+                </M.Item>
               ) : null}
+
+              {editor ? <M.Separator /> : null}
               <M.Item variant={can.canTrash ? "destructive" : "default"} disabled={!can.canTrash} onSelect={trash}>
                 <Trash2 />
-                <MenuLabel label={can.canTrash ? "Move to Trash" : "Only the owner can delete"} hint={can.canTrash ? "Undo for a moment" : undefined} tone={can.canTrash ? "destructive" : "default"} />
+                <MenuLabel
+                  label={can.canTrash ? (editor ? "Delete" : "Move to Trash") : "Only the owner can delete"}
+                  hint={can.canTrash ? hint("Move to trash") : undefined}
+                  tone={can.canTrash ? "destructive" : "default"}
+                />
               </M.Item>
             </>
           )}
@@ -510,16 +511,8 @@ function NoteMenu({ noteId, surface, children, onOpenChange, onClose, onConvert,
         </ContextMenuContent>
       )}
 
-      {/* The labels picker opens from the menu's place once the menu has closed. */}
-      {can.canEdit && !note.trashed ? (
-        <NoteLabelPicker noteIds={[note.id]}>
-          <button ref={labelAnchor} type="button" tabIndex={-1} aria-hidden className="pointer-events-none absolute size-0 opacity-0" onClick={(e) => e.stopPropagation()} />
-        </NoteLabelPicker>
-      ) : null}
-
       <Suspense fallback={null}>
         {dialog === "share" ? <ShareDialog noteId={note.id} open onOpenChange={(open) => !open && setDialog(null)} /> : null}
-        {dialog === "publicLink" ? <PublicLinkDialog noteId={note.id} open onOpenChange={(open) => !open && setDialog(null)} /> : null}
       </Suspense>
 
       <AlertDialog open={dialog === "deleteForever"} onOpenChange={(open) => !open && setDialog(null)}>

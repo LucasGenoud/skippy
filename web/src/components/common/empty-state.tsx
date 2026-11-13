@@ -34,7 +34,7 @@ export function EmptyState({
 }) {
   const reduced = useReducedMotion()
   return (
-    <div className="flex h-full min-h-60 items-center justify-center p-6">
+    <div className="flex h-full min-h-60 flex-1 items-center justify-center p-6">
       <motion.div
         key={message}
         className="flex max-w-sm flex-col items-center text-center"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { animate, useReducedMotion } from "motion/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { cn } from "cn";
@@ -99,6 +99,13 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
   const wide = useMediaQuery(WIDE_QUERY);
   const reduced = useReducedMotion();
   const panel = useRef<HTMLDivElement>(null);
+  // The dialog's portal mounts its content a render late, so the opening waits
+  // for the panel itself rather than running once against a missing node.
+  const [panelNode, setPanelNode] = useState<HTMLDivElement | null>(null);
+  const attachPanel = useCallback((node: HTMLDivElement | null) => {
+    panel.current = node;
+    setPanelNode(node);
+  }, []);
   const face = useRef<HTMLDivElement>(null);
   const scrim = useRef<HTMLDivElement>(null);
   const body = useRef<EditorBodyHandle>(null);
@@ -165,7 +172,7 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
     });
     // The morph belongs to the opening only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exists]);
+  }, [exists, panelNode]);
 
   const closeMorph = async (): Promise<void> => {
     const el = panel.current;
@@ -236,7 +243,7 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
         <DialogPrimitive.Overlay ref={scrim} className="fixed inset-0 z-50 bg-[#0D101A]/45" />
         <div className={cn("pointer-events-none fixed inset-0 z-50 flex", wide ? "items-center justify-center p-4" : "")}>
           <DialogPrimitive.Content
-            ref={panel}
+            ref={attachPanel}
             aria-describedby={undefined}
             // Focus the panel, not its first button: that would pop the Close tooltip on open.
             // A new note's body takes focus itself once the open animation ends.
@@ -267,7 +274,7 @@ export function NoteEditor({ noteId, onClose }: { noteId: string; onClose(): voi
               "relative flex flex-col overflow-hidden text-on-surface outline-none transition-[background-color] duration-240 ease-standard",
               // A closing editor is on its way out: clicks reach nothing in it.
               closing ? "pointer-events-none" : "pointer-events-auto",
-              wide ? "max-h-[85dvh] w-full max-w-[600px] rounded-md shadow-dialog" : "h-dvh w-full",
+              wide ? "max-h-[85dvh] w-full max-w-[600px] rounded-xl shadow-dialog" : "h-dvh w-full",
             )}
           >
             <DialogPrimitive.Title className="sr-only">{note.title.trim() || "Note"}</DialogPrimitive.Title>

@@ -113,6 +113,17 @@ it("opens a label from the sidebar and toggles back to the notes", () => {
   expect(session.ui.state.destination).toBe("notes");
 });
 
+it("draws one selection wash, under the row that is selected", () => {
+  renderShell();
+  const washes = () => document.querySelectorAll("[data-sidebar-selection]");
+  fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+  expect(washes()).toHaveLength(1);
+  expect(washes()[0]?.parentElement?.contains(screen.getByRole("button", { name: "Archive" }))).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Work" }));
+  expect(washes()).toHaveLength(1);
+  expect(washes()[0]?.parentElement?.contains(screen.getByRole("button", { name: "Work" }))).toBe(true);
+});
+
 it("shows the archive's empty state with a way back", () => {
   renderShell();
   fireEvent.click(screen.getByRole("button", { name: "Archive" }));
@@ -153,15 +164,9 @@ it("opens the shortcut reference from outside the shell through a host", async (
   expect(await screen.findByText("Keyboard shortcuts")).toBeTruthy();
 });
 
-it("offers a label's actions on right-click, deleting only after a confirm", async () => {
+it("manages collections from the sidebar's Manage collections row", async () => {
   renderShell();
-  const row = screen.getByRole("button", { name: "Work" }).parentElement as HTMLElement;
-  fireEvent.contextMenu(row);
-  expect(await screen.findByRole("menuitem", { name: "Edit label…" })).toBeTruthy();
-
-  fireEvent.click(screen.getByRole("menuitem", { name: "Delete label…" }));
-  const confirm = await screen.findByRole("button", { name: "Delete label" });
-  expect(session.notes.state.labels.map((l) => l.id)).toEqual(["l1"]);
-  fireEvent.click(confirm);
-  await waitFor(() => expect(session.notes.state.labels).toEqual([]));
+  fireEvent.click(screen.getByRole("button", { name: "Manage collections" }));
+  expect(await screen.findByRole("heading", { name: "Manage collections" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Create new collection" })).toBeTruthy();
 });

@@ -25,7 +25,7 @@ export function AuthFrame({ children, footer }: { children: ReactNode; footer?: 
       >
         <AppLogo size={LOGO_SIZE} className="mx-auto" />
         <h1 className="mt-5 text-center text-2xl font-semibold tracking-tight text-on-surface">Skippy</h1>
-        <div className="mt-6 sm:rounded-md sm:border sm:border-outline-variant sm:bg-surface sm:p-6 sm:shadow-card">{children}</div>
+        <div className="mt-6 sm:rounded-xl sm:border sm:border-outline-variant sm:bg-surface sm:p-6 sm:shadow-card">{children}</div>
         {footer ? <div className="mt-4 flex justify-center">{footer}</div> : null}
       </motion.div>
     </main>

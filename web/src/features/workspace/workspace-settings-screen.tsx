@@ -26,7 +26,7 @@ export function WorkspacePage({ title, subtitle, children }: { title: string; su
   return (
     <div className="flex h-dvh flex-col bg-surface text-on-surface">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-hairline px-2">
-        <IconButton label="Back" shortcut="Esc" data-page-back icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
+        <IconButton label="Back" data-page-back icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
         <div className="flex min-w-0 flex-col">
           <h1 className="truncate text-base leading-5 font-semibold">{title}</h1>
           {subtitle ? <span className="truncate text-xs text-on-surface-variant">{subtitle}</span> : null}

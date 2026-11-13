@@ -19,6 +19,7 @@ import { noteDisplayTitle } from "@/lib/state/display-title";
 import { REMINDER_SNOOZES, occurrenceKey, occurrenceTitle, snoozeAfter, type ReminderOccurrence } from "@/lib/state/reminder-agenda";
 import { formatClock, reminderLabel, resolveNoteColor, useNote, useNotesController, useSettings } from "@/lib/store";
 import { DURATION, TRANSITION, transitionFor } from "@/lib/theme/motion";
+import { displayFill } from "@/lib/theme/palette";
 
 import { completeReminderItem, removeReminder, rescheduleReminder } from "./reminder-editing";
 
@@ -38,7 +39,7 @@ export const REMINDER_DRAG_TYPE = "reminder";
 /** A rounded surface holding a run of rows; rows that leave fold away. */
 export function ReminderGroup({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-md border border-hairline bg-surface shadow-card">
+    <div className="overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
       <AnimatePresence initial={false}>{children}</AnimatePresence>
     </div>
   );
@@ -81,7 +82,8 @@ function Meta({ icon: Icon, children }: { icon: typeof Clock; children: ReactNod
 function NoteBadge({ noteId }: { noteId: string }) {
   const note = useNote(noteId);
   const brightness = useBrightness();
-  const fill = useSettings((s) => (note ? resolveNoteColor(s, note.color, brightness) : null));
+  const stored = useSettings((s) => (note ? resolveNoteColor(s, note.color, brightness) : null));
+  const fill = note && stored ? displayFill(note.color, stored, brightness) : stored;
   return (
     <span className="grid size-8 place-items-center rounded-md border border-hairline bg-surface-container-highest text-on-surface-variant" style={fill ? { background: fill } : undefined}>
       <AlarmClock className="size-4" />

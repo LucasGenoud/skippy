@@ -95,21 +95,20 @@ export function labelColor(hex: string | null | undefined): string | null {
   return hexToRgb(hex) ? (hex as string).toUpperCase() : null;
 }
 
-// A tinted chip: the colour at 14% behind, 55% on the edge, full on the text.
-// An untinted one draws only its edge, in the muted text colour at 40%.
-const TINT_FILL_ALPHA = 0.14;
-const TINT_EDGE_ALPHA = 0.55;
-const PLAIN_EDGE = "color-mix(in srgb, var(--on-surface-variant) 40%, transparent)";
+// A neutral badge: a translucent surface over whatever the card's fill is, the
+// quiet edge, and the text colour. The label's own colour rides in
+// `--label-tint` for its icon or dot (`text-(--label-tint)`), so a row of
+// chips reads calm and the colour still tells them apart.
+const CHIP_FILL = "color-mix(in srgb, var(--surface) 70%, transparent)";
+const CHIP_EDGE = "color-mix(in srgb, var(--outline-variant), var(--on-surface) 6%)";
 
 /** Inline colours for a label chip or marker of the given hex (or none). */
 export function labelStyle(hex: string | null | undefined): CSSProperties {
   const rgb = hexToRgb(hex);
-  if (!rgb) {
-    return { color: "var(--on-surface-variant)", borderColor: PLAIN_EDGE };
-  }
   return {
-    color: rgbaHex(rgb, 1).slice(0, 7),
-    backgroundColor: rgbaHex(rgb, TINT_FILL_ALPHA),
-    borderColor: rgbaHex(rgb, TINT_EDGE_ALPHA),
-  };
+    color: "var(--on-surface)",
+    backgroundColor: CHIP_FILL,
+    borderColor: CHIP_EDGE,
+    "--label-tint": rgb ? rgbaHex(rgb, 1).slice(0, 7) : "var(--on-surface-variant)",
+  } as CSSProperties;
 }

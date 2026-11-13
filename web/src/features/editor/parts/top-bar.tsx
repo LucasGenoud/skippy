@@ -1,38 +1,9 @@
-"use client";
-
-import { useEffect, useRef, type ReactNode } from "react";
-import {
-  Archive,
-  ArchiveRestore,
-  ArrowLeft,
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  ListChecks,
-  MoreVertical,
-  NotebookText,
-  Pencil,
-  RotateCcw,
-  Search,
-  SquareCode,
-  Trash2,
-  UserPlus,
-  WandSparkles,
-  X,
-} from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowLeft, ChevronDown, ChevronUp, Eye, MoreVertical, Pencil, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { cn } from "cn";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IconButton } from "@/components/common/icon-button";
-import { MenuLabel } from "@/components/common/menu-label";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { CrossFade } from "@/components/common/reveal";
 import { TRANSITION, transitionFor } from "@/lib/theme/motion";
@@ -40,27 +11,19 @@ import type { NoteKind, NoteRewriteTask } from "@/lib/models/note";
 import { NoteActionsMenu } from "@/features/notes";
 import { PinIcon } from "@/features/notes/pin-icon";
 import { Spinner } from "@/features/notes/link-summary-indicator";
-import { isApplePlatform } from "../lib/hooks";
 
 // The editor's top bar (`_buildAppBar` in editor_screen.dart). Find-in-note
 // swaps every action for its own field; a trashed note offers restore and
-// delete; a live one pin, archive, collaborators, the editing tools, and the
-// note's own menu. The bar's two halves cross-fade when the mode changes.
-
-const KIND_LABELS: Record<Exclude<NoteKind, "audio">, { label: string; icon: ReactNode }> = {
-  text: { label: "Text", icon: <NotebookText /> },
-  checklist: { label: "Checklist", icon: <ListChecks /> },
-  markdown: { label: "Markdown", icon: <SquareCode /> },
-};
+// delete; a live one pin and the note's actions, which hold find, archive,
+// sharing, conversion and rewrites. The bar's two halves cross-fade when the
+// mode changes.
 
 export interface TopBarProps {
   noteId: string;
   wide: boolean;
   onClose(): void;
-  kind: NoteKind;
   trashed: boolean;
   pinned: boolean;
-  archived: boolean;
   rewriting: boolean;
   finding: boolean;
   findQuery: string;
@@ -78,7 +41,6 @@ export interface TopBarProps {
   onRestore(): void;
   onDeleteForever(): void;
   onConvert: ((kind: NoteKind) => void) | null;
-  rewriteTasks: readonly NoteRewriteTask[];
   onRewrite: ((task: NoteRewriteTask) => void) | null;
 }
 
@@ -114,49 +76,6 @@ function FindField(props: TopBarProps) {
       <IconButton size="sm" label="Next match" icon={<ChevronDown />} disabled={props.matchCount === 0} onClick={() => props.onFindStep(1)} />
       <IconButton size="sm" label="Close search" icon={<X />} onClick={props.onCloseFind} />
     </div>
-  );
-}
-
-function ToolsMenu(props: TopBarProps) {
-  const targets = (["text", "checklist", "markdown"] as const).filter((k) => k !== props.kind);
-  const rewrite = props.onRewrite && props.rewriteTasks.length > 0 && props.kind !== "audio";
-  const mod = isApplePlatform() ? "⌘" : "Ctrl+";
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <IconButton label="Editing tools" icon={props.rewriting ? <Spinner className="size-4" /> : <WandSparkles />} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem onSelect={props.onOpenFind}>
-          <Search />
-          <MenuLabel label="Find in note" hint={`${mod}F`} />
-        </DropdownMenuItem>
-        {props.onConvert ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Turn into</DropdownMenuLabel>
-            {targets.map((kind) => (
-              <DropdownMenuItem key={kind} onSelect={() => props.onConvert?.(kind)}>
-                {KIND_LABELS[kind].icon}
-                <MenuLabel label={KIND_LABELS[kind].label} />
-              </DropdownMenuItem>
-            ))}
-          </>
-        ) : null}
-        {rewrite ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Rewrite with AI</DropdownMenuLabel>
-            {props.rewriteTasks.map((task) => (
-              <DropdownMenuItem key={task.id} disabled={props.rewriting} onSelect={() => props.onRewrite?.(task)}>
-                <WandSparkles />
-                <MenuLabel label={task.name} />
-              </DropdownMenuItem>
-            ))}
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -197,17 +116,18 @@ export function TopBar(props: TopBarProps) {
                   <IconButton label="Delete forever" icon={<Trash2 />} onClick={props.onDeleteForever} />
                 </>
               ) : (
-                <>
-                  <IconButton label={props.pinned ? "Unpin" : "Pin"} icon={<PinIcon pinned={props.pinned} />} active={props.pinned} onClick={props.onTogglePin} />
-                  {props.onArchive ? (
-                    <IconButton label={props.archived ? "Unarchive" : "Archive"} icon={props.archived ? <ArchiveRestore /> : <Archive />} onClick={props.onArchive} />
-                  ) : null}
-                  {props.onShare ? <IconButton label="Collaborators" icon={<UserPlus />} onClick={props.onShare} /> : null}
-                  <ToolsMenu {...props} />
-                </>
+                <IconButton label={props.pinned ? "Unpin" : "Pin"} icon={<PinIcon pinned={props.pinned} />} active={props.pinned} onClick={props.onTogglePin} />
               )}
-              <NoteActionsMenu noteId={props.noteId} surface="editor">
-                <IconButton label="Note actions" icon={<MoreVertical />} />
+              <NoteActionsMenu
+                noteId={props.noteId}
+                surface="editor"
+                onFind={props.onOpenFind}
+                onArchive={props.onArchive ?? undefined}
+                onShare={props.onShare ?? undefined}
+                onConvert={props.onConvert ?? undefined}
+                onRewrite={props.onRewrite ?? undefined}
+              >
+                <IconButton label="Note actions" icon={props.rewriting ? <Spinner className="size-4" /> : <MoreVertical />} />
               </NoteActionsMenu>
             </motion.div>
           )}

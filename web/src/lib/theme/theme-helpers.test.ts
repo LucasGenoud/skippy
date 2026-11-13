@@ -4,16 +4,22 @@ import { applyTheme, DEFAULT_ACCENT } from "./accent";
 import { appFont, loadFont } from "./fonts";
 import { labelIconFor, labelStyle, DEFAULT_LABEL_ICON, LABEL_ICONS } from "./label-style";
 import { cssEase, EASE, transitionFor, TRANSITION } from "./motion";
-import { DEFAULT_PALETTE, noteBackground, noteColor, paletteEntryFromJson } from "./palette";
+import { DEFAULT_PALETTE, displayFill, noteBackground, noteColor, paletteEntryFromJson } from "./palette";
 import { NOTE_PATTERNS, notePatternFromWire, patternStyle, motifGlyph, isMotif } from "./patterns";
 
 describe("palette", () => {
   it("resolves a key per brightness, with legacy keys from the defaults", () => {
-    expect(noteColor("red", "light")).toBe("#F28B82");
-    expect(noteColor("red", "dark")).toBe("#5C2B29");
+    expect(noteColor("red", "light")).toBe("#FAD2CF");
+    expect(noteColor("red", "dark")).toBe("#3D2423");
     const custom = [{ key: "mint", name: "Mint", light: "#AAFFCC", dark: "#113322" }];
     expect(noteColor("mint", "dark", custom)).toBe("#113322");
-    expect(noteColor("blue", "light", custom)).toBe("#AECBFA");
+    expect(noteColor("blue", "light", custom)).toBe("#CCDFF8");
+  });
+
+  it("softens only a stock colour, never one the user picked", () => {
+    const picked = [{ key: "red", name: "Red", light: "#FF0000", dark: "#550000" }];
+    expect(noteColor("red", "light", picked)).toBe("#FF0000");
+    expect(displayFill("red", "#f28b82", "light")).toBe("#FAD2CF");
   });
 
   it("draws default and unknown keys on the surface", () => {
@@ -35,14 +41,12 @@ describe("palette", () => {
 });
 
 describe("label style", () => {
-  it("tints a coloured chip and falls back to the muted text colour", () => {
-    expect(labelStyle("#1a73e8")).toEqual({
-      color: "#1A73E8",
-      backgroundColor: "#1A73E824",
-      borderColor: "#1A73E88C",
-    });
-    expect(labelStyle(null).color).toBe("var(--on-surface-variant)");
-    expect(labelStyle("bad").backgroundColor).toBeUndefined();
+  it("keeps the chip neutral and carries the colour for its icon", () => {
+    const tinted = labelStyle("#1a73e8") as Record<string, string>;
+    expect(tinted.color).toBe("var(--on-surface)");
+    expect(tinted["--label-tint"]).toBe("#1A73E8");
+    expect((labelStyle(null) as Record<string, string>)["--label-tint"]).toBe("var(--on-surface-variant)");
+    expect((labelStyle("bad") as Record<string, string>)["--label-tint"]).toBe("var(--on-surface-variant)");
   });
 
   it("maps every curated key and defaults the rest", () => {

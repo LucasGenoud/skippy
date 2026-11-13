@@ -198,8 +198,7 @@ The client is desktop-browser first; phones keep working.
   column. Works across the pinned and other sections and across board
   columns. Enter opens, Space selects (unchanged).
 - A focused card answers P (pin), E (archive) and Delete/Backspace (trash,
-  owner only); focus moves to a neighbour when the card leaves. The pin and
-  archive tooltips show their key.
+  owner only); focus moves to a neighbour when the card leaves.
 - Every hoverable control in these features has a pressed state.
 - The page shows the grabbing cursor while a grid card is carried; mouse
   drags start after 4px, so a click still opens.

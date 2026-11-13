@@ -24,7 +24,7 @@ function notesEqual(a: readonly Note[], b: readonly Note[]): boolean {
 function LabelGlyph({ label }: { label: Label }) {
   return (
     <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border" style={labelStyle(label.color)}>
-      <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5" />
+      <LabelIcon iconKey={label.icon} aria-hidden className="size-3.5 text-(--label-tint)" />
     </span>
   );
 }

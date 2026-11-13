@@ -95,7 +95,7 @@ function VersionCard({
   restoring: boolean;
 }) {
   return (
-    <article className="flex flex-col gap-2 rounded-md bg-surface p-4 shadow-card">
+    <article className="flex flex-col gap-2 rounded-lg bg-surface p-4 shadow-card">
       <header className="flex items-center gap-2">
         <p className="min-w-0 flex-1 truncate text-sm font-medium text-on-surface">
           {stamp}

@@ -5,7 +5,6 @@ import { Check, Folder } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "cn";
 
-import { Kbd } from "@/components/common/kbd";
 import { LabelChip, LabelMarker, LabelOverflowMarker } from "@/components/common/label-chip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { generalCollectionId } from "@/lib/models/workspace";
@@ -203,10 +202,11 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
   const style = {
     "--note-fill-l": fillLight ?? "var(--surface)",
     "--note-fill-d": fillDark ?? "var(--surface)",
-    "--note-edge-l": fillLight && fillDark ? `color-mix(in srgb, ${fillLight}, ${fillDark} 35%)` : "var(--outline-variant)",
-    "--note-edge-d": fillLight && fillDark ? `color-mix(in srgb, ${fillDark}, ${fillLight} 35%)` : "var(--outline-variant)",
-    "--note-edge-hover-l": fillLight && fillDark ? `color-mix(in srgb, ${fillLight}, ${fillDark} 55%)` : "var(--outline-variant)",
-    "--note-edge-hover-d": fillLight && fillDark ? `color-mix(in srgb, ${fillDark}, ${fillLight} 55%)` : "var(--outline-variant)",
+    // A coloured card's edge is its own fill a step toward the text colour.
+    "--note-edge-l": fillLight ? `color-mix(in srgb, ${fillLight}, var(--on-surface) 9%)` : "var(--outline-variant)",
+    "--note-edge-d": fillDark ? `color-mix(in srgb, ${fillDark}, var(--on-surface) 10%)` : "var(--outline-variant)",
+    "--note-edge-hover-l": `color-mix(in srgb, ${fillLight ?? "var(--outline-variant)"}, var(--on-surface) 16%)`,
+    "--note-edge-hover-d": `color-mix(in srgb, ${fillDark ?? "var(--outline-variant)"}, var(--on-surface) 16%)`,
   } as CSSProperties;
 
   return (
@@ -251,7 +251,7 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
             }}
             style={style}
             className={cn(
-              "relative cursor-pointer overflow-hidden rounded-md border text-on-surface outline-none select-none [-webkit-touch-callout:none]",
+              "relative cursor-pointer overflow-hidden rounded-lg border text-on-surface outline-none select-none [-webkit-touch-callout:none]",
               "bg-(--note-fill-l) dark:bg-(--note-fill-d)",
               "transition-[box-shadow,border-color,background-color] duration-150 ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/50",
               selected
@@ -294,10 +294,7 @@ export const NoteCard = memo(function NoteCard({ noteId, variant, dragHandleProp
                         <PinIcon pinned={note.pinned} />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>
-                      {note.pinned ? "Unpin note" : "Pin note"}
-                      <Kbd className="ml-1.5">P</Kbd>
-                    </TooltipContent>
+                    <TooltipContent>{note.pinned ? "Unpin note" : "Pin note"}</TooltipContent>
                   </Tooltip>
                 ) : null}
               </motion.div>

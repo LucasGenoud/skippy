@@ -7,8 +7,11 @@
 //                                           dialogs, menus, toasts
 //   trough  (--trough, boardColumnColor)    recesses into it: board columns
 //
-// Neutrals are the accent's HSL hue at a fixed low saturation, so a warm accent
-// gives warm paper and changing the accent retints every surface. The accent
+// Neutrals are a zinc-like grey scale carrying the accent's HSL hue at a low
+// saturation, so amber gives stone, blue gives slate, and changing the accent
+// retints every surface. Their lightness steps are this client's own (the
+// Flutter port used Material's tonal palettes); the accent roles below still
+// come from those palettes. The accent
 // has two roles: `primary` (Material's tone 40/80 of it, readable as text and
 // icons on a surface) and `primaryContainer` (the accent itself, as a fill),
 // with `onPrimaryContainer` picked for legibility on it.
@@ -52,8 +55,28 @@ const WASH_ALPHA = { light: 0.34, dark: 0.3 } as const;
 
 // Saturation of the neutrals, and the seed saturation under which the HSL hue
 // is noise (a grey seed would otherwise tint the app pink).
-const NEUTRAL_TINT = { light: 0.14, dark: 0.08 } as const;
+const NEUTRAL_TINT = { light: 0.06, dark: 0.05 } as const;
 const MIN_TINTABLE_SATURATION = 0.06;
+
+// Lightness of each neutral role, [light, dark]: a zinc scale, where the
+// canvas sits a step under white surfaces and edges are one quiet line.
+const NEUTRAL_LIGHTNESS = {
+  canvas: [0.975, 0.045],
+  surface: [1, 0.1],
+  surfaceBright: [1, 0.17],
+  surfaceContainerLowest: [1, 0.03],
+  surfaceContainerLow: [0.982, 0.11],
+  surfaceContainer: [0.962, 0.13],
+  surfaceContainerHigh: [0.945, 0.15],
+  surfaceContainerHighest: [0.915, 0.17],
+  trough: [0.945, 0.07],
+  troughBorder: [0.905, 0.095],
+  onSurface: [0.06, 0.96],
+  onSurfaceVariant: [0.4, 0.66],
+  outline: [0.66, 0.44],
+  outlineVariant: [0.9, 0.18],
+} as const;
+type NeutralRole = keyof typeof NEUTRAL_LIGHTNESS;
 
 // White wins unless ink is clearly the more legible text on the accent.
 const INK_PREFERENCE = 1.2;
@@ -71,10 +94,6 @@ const ROLE_TONES: Readonly<Record<string, readonly [PaletteName, number, number]
   onPrimary: ["primary", 100, 20],
   secondaryTone: ["secondary", 40, 80],
   tertiary: ["tertiary", 40, 80],
-  onSurface: ["neutral", 10, 90],
-  onSurfaceVariant: ["neutralVariant", 30, 80],
-  outline: ["neutralVariant", 50, 60],
-  outlineVariant: ["neutralVariant", 80, 30],
   error: ["error", 40, 80],
   onError: ["error", 100, 20],
   errorContainer: ["error", 90, 30],
@@ -166,36 +185,31 @@ export function themeColors(accentHex: string, brightness: Brightness): ThemeCol
   const light = brightness === "light";
   const seedHsl = rgbToHsl(seed);
   const tint = seedHsl.s < MIN_TINTABLE_SATURATION ? 0 : NEUTRAL_TINT[brightness];
-  const neutral = (lightness: number): Rgb => withLightness({ h: seedHsl.h, s: tint, l: lightness }, lightness);
+  const neutral = (name: NeutralRole): Rgb =>
+    withLightness({ h: seedHsl.h, s: tint, l: 0 }, NEUTRAL_LIGHTNESS[name][light ? 0 : 1]);
 
-  const canvas = neutral(light ? 0.912 : 0.06);
-  const surface = light ? WHITE : neutral(0.165);
-  const canvasHsl = rgbToHsl(canvas);
-  const trough = withLightness(canvasHsl, canvasHsl.l + (light ? -0.075 : 0.045));
-  const troughHsl = rgbToHsl(trough);
-  const troughBorder = withLightness(troughHsl, troughHsl.l + (light ? -0.05 : 0.028));
-
+  const surface = neutral("surface");
   const roles = schemeRoles(seed, brightness);
   const role = (name: string): Rgb => roles[name] ?? WHITE;
-  const onSurface = role("onSurface");
+  const onSurface = neutral("onSurface");
   const washAlpha = WASH_ALPHA[brightness];
 
   const colors: ThemeColors = {
-    canvas: rgbToHex(canvas),
+    canvas: rgbToHex(neutral("canvas")),
     surface: rgbToHex(surface),
-    surfaceBright: rgbToHex(light ? WHITE : neutral(0.258)),
-    surfaceContainerLowest: rgbToHex(light ? WHITE : neutral(0.045)),
-    surfaceContainerLow: rgbToHex(neutral(light ? 0.975 : 0.185)),
-    surfaceContainer: rgbToHex(neutral(light ? 0.955 : 0.21)),
-    surfaceContainerHigh: rgbToHex(neutral(light ? 0.93 : 0.238)),
-    surfaceContainerHighest: rgbToHex(neutral(light ? 0.898 : 0.258)),
-    trough: rgbToHex(trough),
-    troughBorder: rgbToHex(troughBorder),
+    surfaceBright: rgbToHex(neutral("surfaceBright")),
+    surfaceContainerLowest: rgbToHex(neutral("surfaceContainerLowest")),
+    surfaceContainerLow: rgbToHex(neutral("surfaceContainerLow")),
+    surfaceContainer: rgbToHex(neutral("surfaceContainer")),
+    surfaceContainerHigh: rgbToHex(neutral("surfaceContainerHigh")),
+    surfaceContainerHighest: rgbToHex(neutral("surfaceContainerHighest")),
+    trough: rgbToHex(neutral("trough")),
+    troughBorder: rgbToHex(neutral("troughBorder")),
     onSurface: rgbToHex(onSurface),
-    onSurfaceVariant: rgbToHex(role("onSurfaceVariant")),
-    outline: rgbToHex(role("outline")),
-    outlineVariant: rgbToHex(role("outlineVariant")),
-    hairline: rgbaHex(role("outlineVariant"), 0.8),
+    onSurfaceVariant: rgbToHex(neutral("onSurfaceVariant")),
+    outline: rgbToHex(neutral("outline")),
+    outlineVariant: rgbToHex(neutral("outlineVariant")),
+    hairline: rgbToHex(neutral("outlineVariant")),
     primary: rgbToHex(role("primary")),
     onPrimary: rgbToHex(role("onPrimary")),
     primaryContainer: rgbToHex(seed),
@@ -213,9 +227,9 @@ export function themeColors(accentHex: string, brightness: Brightness): ThemeCol
     excluded: rgbToHex(alphaBlend(role("error"), washAlpha, surface)),
     codeFill: rgbaHex(onSurface, light ? 0.06 : 0.09),
     patternInk: rgbaHex(onSurface, light ? 0.09 : 0.12),
-    hover: rgbaHex(onSurface, 0.06),
-    pressed: rgbaHex(onSurface, 0.1),
-    scrollbarThumb: rgbaHex(onSurface, 0.18),
+    hover: rgbaHex(onSurface, light ? 0.045 : 0.06),
+    pressed: rgbaHex(onSurface, light ? 0.08 : 0.1),
+    scrollbarThumb: rgbaHex(onSurface, 0.16),
   };
   colorCache.set(key, colors);
   return colors;
@@ -245,13 +259,14 @@ function shadowCss(layers: readonly ShadowLayer[], brightness: Brightness): stri
     .join(", ");
 }
 
+// Barely there at rest (the card's edge does the work), a soft lift on hover.
 const RESTING: readonly ShadowLayer[] = [
-  { y: 1, blur: 2, spread: -1, alpha: { light: 0.08, dark: 0.34 } },
-  { y: 3, blur: 8, spread: -3, alpha: { light: 0.09, dark: 0.32 } },
+  { y: 1, blur: 1, spread: 0, alpha: { light: 0.04, dark: 0.3 } },
+  { y: 4, blur: 10, spread: -6, alpha: { light: 0.06, dark: 0.3 } },
 ];
 const RAISED: readonly ShadowLayer[] = [
-  { y: 6, blur: 16, spread: -4, alpha: { light: 0.14, dark: 0.48 } },
-  { y: 1, blur: 4, spread: -2, alpha: { light: 0.08, dark: 0.32 } },
+  { y: 8, blur: 20, spread: -8, alpha: { light: 0.12, dark: 0.48 } },
+  { y: 1, blur: 3, spread: -1, alpha: { light: 0.06, dark: 0.32 } },
 ];
 // Dialogs float over a scrim, so they take the raised pair plus a long drop.
 const DIALOG: readonly ShadowLayer[] = [
@@ -337,7 +352,13 @@ export function fadeTheme(change: () => void): void {
     change();
     return;
   }
-  start(change);
+  // A skipped transition (a hidden tab, one already running) rejects all three;
+  // the change itself has still been applied, so there is nothing to handle.
+  const transition = start(change);
+  const ignore = (): void => undefined;
+  transition.ready.catch(ignore);
+  transition.finished.catch(ignore);
+  transition.updateCallbackDone.catch(ignore);
 }
 
 const STYLE_ID = "skippy-theme";

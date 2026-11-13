@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowUpDown, CircleAlert, CloudCheck, CloudOff, Keyboard, LayoutGrid, LogOut, Monitor, Moon, RefreshCw, Rows3, Settings, Sun, type LucideIcon } from "lucide-react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
+import { ArrowUpDown, CircleAlert, CloudCheck, CloudOff, LogOut, Monitor, Moon, RefreshCw, Settings, Share, Sun, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { cn } from "cn";
 import { IconButton } from "@/components/common/icon-button";
-import { Kbd } from "@/components/common/kbd";
 import { MenuLabel } from "@/components/common/menu-label";
 import {
   DropdownMenu,
@@ -14,7 +14,6 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,10 +22,13 @@ import { SORT_MODES, type SortMode } from "@/lib/state/note-collection";
 import {
   useActiveCollection,
   useActiveLayout,
+  useActiveWorkspace,
   useActiveSort,
   useAuth,
   useAuthController,
+  useLabel,
   useNotesSelector,
+  useSession,
   useSettings,
   useSettingsController,
   useUiController,
@@ -34,10 +36,13 @@ import {
   type ThemeMode,
 } from "@/lib/store";
 import { TRANSITION, transitionFor } from "@/lib/theme/motion";
-import { usePlatformName } from "./responsive";
+import { isWorkspaceOwnedBy } from "@/lib/models/workspace";
+import type { PublicLinkTarget } from "@/features/editor/public-link-dialog";
 import { useShellDialogs } from "./shell-dialogs";
-import { modifierName } from "./shortcuts";
 import { syncMenuLabel } from "./sync-rules";
+import { viewLink } from "./view-rules";
+
+const ViewLinkDialog = lazy(() => import("@/features/editor/public-link-dialog").then((m) => ({ default: m.ViewLinkDialog })));
 
 const SORT_LABELS: Record<SortMode, string> = {
   custom: "Custom order",
@@ -100,7 +105,7 @@ function SortItems({ sort, onPick }: { collectionId: string; sort: SortMode; onP
   return (
     <DropdownMenuRadioGroup value={sort} onValueChange={(v) => onPick(v as SortMode)}>
       {SORT_MODES.map((mode) => (
-        <DropdownMenuRadioItem key={mode} value={mode} onSelect={(e) => e.preventDefault()}>
+        <DropdownMenuRadioItem key={mode} value={mode}>
           {SORT_LABELS[mode]}
         </DropdownMenuRadioItem>
       ))}
@@ -131,48 +136,57 @@ export function useToggleGridLayout(): (() => void) | null {
   };
 }
 
-export function LayoutToggle() {
-  const toggle = useToggleGridLayout();
-  const mod = modifierName(usePlatformName());
-  const { layout } = useGridControls();
+/** The link "Share this view" would publish for the open view, or null when it is private. */
+function useViewLink(): PublicLinkTarget | null {
+  const selection = useViewSelection();
+  const workspace = useActiveWorkspace();
+  const collection = useActiveCollection();
+  const label = useLabel(selection.labelId);
+  const { userId } = useSession();
+  return viewLink(selection, {
+    workspace: workspace ? { id: workspace.id, name: workspace.name, owned: isWorkspaceOwnedBy(workspace, userId) } : null,
+    collection: collection ? { id: collection.id, name: collection.name } : null,
+    label: label ? { id: label.id, name: label.name } : null,
+  });
+}
+
+/**
+ * Opens the public-link dialog for the open view. The target is taken when
+ * the dialog opens, so it stays put while the dialog is up.
+ */
+function useShareView(): { share: (() => void) | null; dialog: ReactNode } {
+  const link = useViewLink();
+  const [target, setTarget] = useState<PublicLinkTarget | null>(null);
+  const dialog = target ? (
+    <Suspense fallback={null}>
+      <ViewLinkDialog target={target} open onOpenChange={(open) => !open && setTarget(null)} />
+    </Suspense>
+  ) : null;
+  return { share: link ? () => setTarget(link) : null, dialog };
+}
+
+/** "Share this view" (`HomeTopBar`): publishes the open collection, board or label. */
+export function ShareViewButton() {
+  const { share, dialog } = useShareView();
   const reduced = useReducedMotion();
-  const list = layout === "list";
-  // A board or the agenda has no grid to switch: the button bows out rather than vanishing.
   return (
-    <AnimatePresence initial={false}>
-      {toggle ? (
-        <motion.span
-          key="layout"
-          className="inline-flex"
-          initial={{ opacity: 0, scale: 0.6 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.6 }}
-          transition={transitionFor(TRANSITION.fast, reduced)}
-        >
-          <IconButton
-            label={list ? "Show as grid" : "Show as list"}
-            shortcut={`${mod} G`}
-            onClick={toggle}
-            icon={
-              <span className="inline-grid">
-                <AnimatePresence initial={false}>
-                  <motion.span
-                    key={list ? "grid" : "list"}
-                    className="[grid-area:1/1]"
-                    initial={{ opacity: 0, scale: 0.6 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.6 }}
-                    transition={transitionFor(TRANSITION.fast, reduced)}
-                  >
-                    {list ? <LayoutGrid className="size-5" /> : <Rows3 className="size-5" />}
-                  </motion.span>
-                </AnimatePresence>
-              </span>
-            }
-          />
-        </motion.span>
-      ) : null}
-    </AnimatePresence>
+    <>
+        <AnimatePresence initial={false}>
+          {share ? (
+            <motion.span
+              key="share-view"
+              className="inline-flex"
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.6 }}
+              transition={transitionFor(TRANSITION.fast, reduced)}
+            >
+              <IconButton label="Share this view" icon={<Share />} onClick={share} />
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
+        {dialog}
+    </>
   );
 }
 
@@ -208,7 +222,7 @@ export function ThemeToggle() {
 
 /**
  * The avatar and its menu: who is signed in, how sync stands, settings and
- * sign-out. On a phone it also holds sort, layout and theme, which the bar
+ * sign-out. On a phone it also holds share, sort and theme, which the bar
  * has no room for (`_UserAvatarMenu`).
  */
 export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
@@ -220,8 +234,8 @@ export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
   const ui = useUiController();
   const sort = useActiveSort();
   const dialogs = useShellDialogs();
-  const toggleLayout = useToggleGridLayout();
-  const { collectionId, layout } = useGridControls();
+  const { share, dialog } = useShareView();
+  const { collectionId } = useGridControls();
   const status = useNotesSelector((s) => s.syncStatus);
   const pending = useNotesSelector((s) => s.pendingChanges);
   const issues = useNotesSelector((s) => s.syncIssues.length);
@@ -233,6 +247,7 @@ export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
   const theme = THEME[mode];
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`${name === "" ? "Account" : name}, ${syncLabel}`}
@@ -260,16 +275,13 @@ export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
         </DropdownMenuItem>
         {variant === "compact" ? (
           <>
-            {toggleLayout ? (
-              <DropdownMenuItem onSelect={toggleLayout}>
-                {layout === "list" ? <LayoutGrid /> : <Rows3 />}
-                <MenuLabel label={layout === "list" ? "Show as grid" : "Show as list"} />
+            {share ? (
+              <DropdownMenuItem onSelect={share}>
+                <Share />
+                <MenuLabel label="Share this view" hint="As a public link" />
               </DropdownMenuItem>
             ) : null}
-            <DropdownMenuItem onSelect={(e) => {
-              e.preventDefault();
-              settings.cycleThemeMode();
-            }}>
+            <DropdownMenuItem onSelect={() => settings.cycleThemeMode()}>
               <theme.icon />
               <MenuLabel label={`Theme: ${theme.label}`} />
             </DropdownMenuItem>
@@ -281,15 +293,7 @@ export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
               </>
             ) : null}
           </>
-        ) : (
-          <DropdownMenuItem onSelect={() => dialogs.open({ type: "shortcuts" })}>
-            <Keyboard />
-            <MenuLabel label="Keyboard shortcuts" />
-            <DropdownMenuShortcut>
-              <Kbd>?</Kbd>
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
-        )}
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={() => auth.signOut()}>
           <LogOut />
@@ -297,6 +301,8 @@ export function UserMenu({ variant }: { variant: "wide" | "compact" }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    {dialog}
+    </>
   );
 }
 

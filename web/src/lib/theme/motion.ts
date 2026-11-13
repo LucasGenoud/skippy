@@ -104,6 +104,32 @@ export function pageVariants(reduced: boolean | null): Variants {
   return reduced ? STILL_PAGE : PAGE;
 }
 
+/** How far a view's notes travel when another view replaces them. */
+const VIEW_SHIFT_PX = 28;
+
+/**
+ * One set of notes replacing another (a view, collection or workspace switch,
+ * or the grid, a board and the agenda trading places): the new set rises into
+ * place from below while the old one sinks away, both fading. Use as `motion`
+ * variants with `initial="enter"`, `animate="shown"` and `exit="leave"`.
+ */
+const VIEW_SWAP = {
+  enter: { opacity: 0, y: VIEW_SHIFT_PX },
+  shown: { opacity: 1, y: 0, transition: TRANSITION.base },
+  leave: { opacity: 0, y: VIEW_SHIFT_PX, transition: TRANSITION.fast },
+} as const satisfies Variants;
+
+const STILL_VIEW = {
+  enter: { opacity: 0, y: 0 },
+  shown: { opacity: 1, y: 0, transition: NO_MOTION },
+  leave: { opacity: 0, y: 0, transition: NO_MOTION },
+} as const satisfies Variants;
+
+/** [VIEW_SWAP] or, under reduced motion, a view that appears and leaves at once. */
+export function viewSwapVariants(reduced: boolean | null): Variants {
+  return reduced ? STILL_VIEW : VIEW_SWAP;
+}
+
 /**
  * The longest an exit may hold its slot before it is removed regardless: a
  * safety net for an overlay whose exit never reports back.

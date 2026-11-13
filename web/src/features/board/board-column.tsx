@@ -153,7 +153,7 @@ function Trough(props: BoardColumnProps) {
   const stageId = column.key === UNASSIGNED_KEY ? null : column.key;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-trough-border bg-trough">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-trough-border bg-trough">
       <StageRule column={column} />
       <div className="px-2 pt-2">
         {/* Quiet grey, not the accent: every column has one. */}
@@ -206,14 +206,14 @@ function SelectionIcon({ selection }: { selection: ColumnSelection }) {
 }
 
 function ColumnHeader(props: BoardColumnProps) {
-  const { column, selection, onToggleSelection, selectionMode, handle } = props;
+  const { column, selection, onToggleSelection, handle } = props;
   const title = columnTitleOf(column);
   const stage = column.stage;
   const hasMenu = stage !== null || onToggleSelection !== null;
   const all = selection === "all";
 
   return (
-    <div className="group/header flex h-11 shrink-0 items-center gap-1 pb-1">
+    <div className="flex h-11 shrink-0 items-center gap-1 pb-1">
       {props.onToggleCollapsed ? <IconButton label={`Collapse ${title}`} size="sm" icon={<ChevronsLeft />} onClick={props.onToggleCollapsed} /> : null}
       <h2
         ref={handle?.ref as Ref<HTMLHeadingElement> | undefined}
@@ -228,11 +228,7 @@ function ColumnHeader(props: BoardColumnProps) {
           size="sm"
           icon={<SelectionIcon selection={selection} />}
           onClick={onToggleSelection}
-          className={cn(
-            "transition-opacity duration-150 ease-standard focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
-            selectionMode || selection !== "none" ? "opacity-100" : "opacity-0 group-hover/header:opacity-100",
-            all && "text-primary",
-          )}
+          className={cn(all && "text-primary")}
         />
       ) : null}
       <span className="ml-1 inline-flex min-w-10 justify-center rounded-md border border-trough-border bg-surface px-1.5 py-0.5 text-2xs text-on-surface-variant">
@@ -254,7 +250,7 @@ function ColumnHeader(props: BoardColumnProps) {
               <>
                 <DropdownMenuItem onSelect={() => props.onEditStage(stage.id)}>
                   <Pencil />
-                  <MenuLabel label="Edit column" hint="Name and colour" />
+                  <MenuLabel label="Rename column" />
                 </DropdownMenuItem>
                 <DropdownMenuItem variant="destructive" onSelect={() => props.onDeleteStage(stage.id)}>
                   <Trash2 />
@@ -280,7 +276,7 @@ function CollapsedRail({ column, onExpand }: { column: ColumnIds; onExpand?: () 
           type="button"
           onClick={onExpand}
           aria-label={`Expand ${title}`}
-          className="flex h-full w-full flex-col overflow-hidden rounded-md border border-trough-border bg-trough text-on-surface-variant outline-none transition-colors duration-150 ease-standard hover:text-on-surface focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-trough-border bg-trough text-on-surface-variant outline-none transition-colors duration-150 ease-standard hover:text-on-surface focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <StageRule column={column} />
           <span className="flex flex-1 flex-col items-center justify-center gap-2 py-4">

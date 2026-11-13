@@ -263,7 +263,7 @@ function Bar({ variant, visible, board }: { variant: "wide" | "compact"; visible
   return (
     <div className="flex h-full min-w-0 flex-1 items-center gap-1">
       <DropIn index={0} count={all.length + 1}>
-        <IconButton label="Cancel selection" shortcut="Esc" icon={<X />} onClick={done} />
+        <IconButton label="Cancel selection" icon={<X />} onClick={done} />
       </DropIn>
       <motion.span
         className="min-w-0 flex-1 truncate pl-1 text-base font-semibold text-on-surface"

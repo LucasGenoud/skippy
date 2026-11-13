@@ -162,9 +162,9 @@ The app is desktop-browser first; phone layouts keep working. In scope:
 
 | Area | Change |
 | --- | --- |
-| Shortcut discoverability | The wide search field shows its `/` key while idle; Clear search shows `Esc`; the grid/list toggle shows the real chord (`Cmd G` / `Ctrl G`, it said `G`); the avatar menu shows `?` as a `Kbd`; the new-note button has a tooltip (`N`, or `Esc` while open) and each unfolded kind shows its key (`N`, `L`, `M`), hidden on touch-only screens. |
-| Escape on pages | Settings, workspace settings and statistics, and chat go back on Escape, through each page's own Back button (a phone settings page returns to its index), unless a text field, dialog or menu has the key. Back tooltips show `Esc`; the shortcut reference lists it. |
-| Right-click | Collection, label and smart-view rows in the sidebar have context menus: open, edit, and for collections "New collection…", for labels "Delete label…" behind a confirm. |
+| Shortcut discoverability | Removed later: key chips in fields, tooltips and menus have no Flutter counterpart. The shortcuts still work, and the reference lists them (`?`, or Settings, About). |
+| Escape on pages | Settings, workspace settings and statistics, and chat go back on Escape, through each page's own Back button (a phone settings page returns to its index), unless a text field, dialog or menu has the key. The shortcut reference lists it. |
+| Right-click | Removed later with the sidebar's hover pencils: collections, labels and smart views are managed from their "Manage" rows, as in Flutter. |
 | Keyboard | Up/Down walk the unfolded new-note menu; focus returns to the opening control when a page closes. |
 | Hover and tooltips | The sync pill has a hover state and a tooltip. Every icon-only control in scope has a tooltip naming it. |
 | Not added | `Cmd ,` for settings: the browser takes it on macOS before the page sees it. |

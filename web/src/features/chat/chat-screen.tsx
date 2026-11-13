@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, MessageSquarePlus, MessagesSquare, Settings } from "lucide-react";
+import { ArrowLeft, MessageSquarePlus, MessagesSquare, Settings } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { IconButton } from "@/components/common/icon-button";
-import { MenuLabel } from "@/components/common/menu-label";
 import { Reveal } from "@/components/common/reveal";
 import { showAppSnack } from "@/components/common/snack";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { aiAllows, isWorkspaceOwnedBy } from "@/lib/models/workspace";
+import { isWorkspaceOwnedBy } from "@/lib/models/workspace";
 import { closeTo, navigate } from "@/lib/router";
-import { useAiIn, useAuth, useNotesController, useSession, useSettings, useUi, useWorkspaces } from "@/lib/store/hooks";
+import { useAiIn, useAuth, useSession, useSettings, useUi, useWorkspaces } from "@/lib/store/hooks";
 import { useStoreSelector } from "@/lib/store/use-store";
 import { TRANSITION, transitionFor } from "@/lib/theme/motion";
 import { chatAvailability, unavailableMessage, type ChatAvailability } from "./chat-availability";
@@ -28,11 +26,9 @@ import { ChatConversation, conversationFor, type ConversationState } from "./cha
 const RISE_PX = 12;
 
 const selectTurns = (s: ConversationState) => s.turns;
-const selectScope = (s: ConversationState) => s.scopeId;
 
 export function ChatScreen() {
   const session = useSession();
-  const notes = useNotesController();
   const [conversation] = useState(() =>
     conversationFor(
       session,
@@ -45,13 +41,11 @@ export function ChatScreen() {
     ),
   );
   const turns = useStoreSelector(conversation.store, selectTurns);
-  const chosenScope = useStoreSelector(conversation.store, selectScope);
-  const activeWorkspaceId = useUi((s) => s.activeWorkspaceId);
+  // The chat answers over the workspace being looked at, and files writes there.
+  const scopeId = useUi((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaces();
   const userId = useAuth((s) => s.user?.id ?? null);
 
-  // Answer over the workspace being looked at unless another was picked here.
-  const scopeId = chosenScope !== null && workspaces.some((w) => w.id === chosenScope) ? chosenScope : activeWorkspaceId;
   const scope = workspaces.find((w) => w.id === scopeId) ?? null;
   const ai = useAiIn(scopeId);
   const settingsLoaded = useSettings((s) => s.loaded);
@@ -88,18 +82,8 @@ export function ChatScreen() {
   return (
     <div className="flex h-dvh flex-col bg-canvas">
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-hairline bg-surface px-2 sm:px-3">
-        <IconButton label="Back" shortcut="Esc" data-page-back icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          <h1 className="truncate pl-1 text-base font-semibold text-on-surface">Chat with your notes</h1>
-          {workspaces.length > 1 ? (
-            <ScopePicker
-              scopeId={scopeId}
-              disabled={busy}
-              onPick={(id) => conversation.setScope(id)}
-              aiFor={(id) => aiAllows(notes.aiIn(id), "chat")}
-            />
-          ) : null}
-        </div>
+        <IconButton label="Back" data-page-back icon={<ArrowLeft />} onClick={() => closeTo({ name: "home" })} />
+        <h1 className="min-w-0 flex-1 truncate pl-1 text-base font-semibold text-on-surface">Chat with your notes</h1>
         <IconButton label="New conversation" icon={<MessageSquarePlus />} disabled={turns.length === 0} onClick={startOver} />
       </header>
 
@@ -121,7 +105,7 @@ export function ChatScreen() {
                   <Unavailable availability={availability} role={role} workspaceId={scopeId} />
                 ) : (
                   <p className="mt-4 max-w-sm text-sm text-on-surface-variant">
-                    Ask about your notes; answers cite the notes they came from. You can also ask to create, edit, or organize them.
+                    Ask about your notes, answers cite the notes they came from. You can also ask to create, edit, or organize them.
                   </p>
                 )}
               </motion.div>
@@ -180,30 +164,5 @@ function Unavailable({ availability, role, workspaceId }: { availability: ChatAv
         </Button>
       ) : null}
     </>
-  );
-}
-
-/** Which workspace the chat answers over and files its writes in. */
-function ScopePicker({ scopeId, disabled, onPick, aiFor }: { scopeId: string | null; disabled: boolean; onPick(id: string): void; aiFor(id: string): boolean }) {
-  const workspaces = useWorkspaces();
-  const current = workspaces.find((w) => w.id === scopeId);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={disabled} className="min-w-0 font-normal text-on-surface-variant">
-          <span className="truncate">in {current?.name ?? "this workspace"}</span>
-          <ChevronDown aria-hidden className="size-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuLabel>Answer from</DropdownMenuLabel>
-        {workspaces.map((w) => (
-          <DropdownMenuItem key={w.id} onSelect={() => onPick(w.id)}>
-            <Check aria-hidden className={w.id === scopeId ? "text-primary" : "invisible"} />
-            <MenuLabel label={w.name} hint={aiFor(w.id) ? undefined : "Chat is off"} />
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

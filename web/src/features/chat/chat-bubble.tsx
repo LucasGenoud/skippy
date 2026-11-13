@@ -53,10 +53,10 @@ export const ChatBubble = memo(function ChatBubble({ turn, onUndo }: { turn: Tur
         className={cn(
           "max-w-[min(560px,100%)] rounded-md px-3.5 py-2.5 text-sm break-words",
           isUser
-            ? "bg-secondary-container whitespace-pre-wrap text-on-secondary-container"
+            ? "bg-primary-container whitespace-pre-wrap text-on-primary-container"
             : failedEmpty
               ? "bg-error-container text-on-error-container"
-              : "bg-surface-container-high text-on-surface",
+              : "bg-surface-container-highest text-on-surface",
         )}
       >
         {failedEmpty ? (

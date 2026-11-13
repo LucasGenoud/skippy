@@ -170,7 +170,7 @@ function ModeTab({ value, label, icon }: { value: Mode; label: string; icon: Rea
 
 /** The surface the month sits on. */
 function CalendarCard({ children }: { children: ReactNode }) {
-  return <div className="rounded-md border border-hairline bg-surface p-2 shadow-card">{children}</div>;
+  return <div className="rounded-lg border border-hairline bg-surface p-2 shadow-card">{children}</div>;
 }
 
 /** Cross-fades the view's panes (agenda, a picked day, the month) in one slot. */

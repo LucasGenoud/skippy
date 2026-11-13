@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/errors";
 import type { Workspace } from "@/lib/models";
 import { closeTo } from "@/lib/router";
-import { useNotesController } from "@/lib/store";
+import { useAuth, useNotesController } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/features/settings/kit/rows";
 import { RevocableList } from "@/features/settings/sharing/revocable-list";
@@ -19,7 +19,8 @@ export function initialOf(name: string): string {
   return first ? first.toUpperCase() : "?";
 }
 
-function Person({ name, role, tone, action }: { name: string; role: string; tone: "owner" | "member"; action?: React.ReactNode }) {
+/** One person on the roster; [initialFrom] is whose initial the avatar shows when [name] is a label like "You". */
+function Person({ name, initialFrom = name, role, tone, action }: { name: string; initialFrom?: string; role: string; tone: "owner" | "member"; action?: React.ReactNode }) {
   return (
     <div className="flex min-h-14 items-center gap-4 rounded-md px-3 py-2">
       <span
@@ -29,7 +30,7 @@ function Person({ name, role, tone, action }: { name: string; role: string; tone
           tone === "owner" ? "bg-primary-container text-on-primary-container" : "bg-secondary-container text-on-secondary-container",
         )}
       >
-        {initialOf(name)}
+        {initialOf(initialFrom)}
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm text-on-surface">{name}</span>
@@ -44,6 +45,7 @@ function Person({ name, role, tone, action }: { name: string; role: string; tone
 export function PeopleSection({ workspace, isOwner }: { workspace: Workspace; isOwner: boolean }) {
   const notes = useNotesController();
   const me = notes.currentUserId;
+  const myName = useAuth((s) => s.user?.name ?? "");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +77,7 @@ export function PeopleSection({ workspace, isOwner }: { workspace: Workspace; is
 
   return (
     <>
-      <Person name={isOwner ? "You" : workspace.owner?.name || "Owner"} role="Owner" tone="owner" />
+      <Person name={isOwner ? "You" : workspace.owner?.name || "Owner"} initialFrom={isOwner ? myName : undefined} role="Owner" tone="owner" />
       <RevocableList items={workspace.members} keyOf={(m) => m.id}>
         {(member) => {
           const self = member.id === me;
