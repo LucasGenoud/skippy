@@ -101,25 +101,52 @@ class Motion {
     );
   }
 
-  /// How far a view's notes travel when another view replaces them.
-  static const double viewSlide = 28;
+  /// How far a view's notes rise when they replace another view's.
+  static const double viewSlide = 12;
+
+  /// Share of its entrance an incoming view waits before showing, so it
+  /// arrives as the outgoing one is nearly gone.
+  static const double _viewEnterDelay = 0.35;
 
   /// An [AnimatedSwitcher.transitionBuilder] for one set of notes replacing
-  /// another: the new set rises into place from below while the old one sinks
-  /// away, both fading. The outgoing child runs this same builder in reverse,
-  /// which is what sends it down rather than up.
+  /// another, a fade through: the old set fades out where it is, and the new
+  /// one fades in a beat later as it rises into place. Sliding the old set
+  /// down while the new one rose dragged two grids through each other.
+  ///
+  /// The outgoing child runs this same builder with the animation reversed,
+  /// which is how it is told apart.
   static Widget viewSwap(Widget child, Animation<double> animation) =>
-      FadeTransition(
-        opacity: animation,
-        child: AnimatedBuilder(
-          animation: animation,
-          child: child,
-          builder: (context, child) => Transform.translate(
-            offset: Offset(0, (1 - animation.value) * viewSlide),
-            child: child,
-          ),
-        ),
+      AnimatedBuilder(
+        animation: animation,
+        child: child,
+        builder: (context, child) {
+          final value = animation.value;
+          final leaving =
+              animation.status == AnimationStatus.reverse ||
+              animation.status == AnimationStatus.dismissed;
+          if (leaving) {
+            return Opacity(opacity: value, child: child);
+          }
+
+          return viewEnter(value, child!);
+        },
       );
+
+  /// A view [t] of the way into place: hidden for the first beat, then
+  /// fading in as it finishes rising from [viewSlide] below.
+  static Widget viewEnter(double t, Widget child) {
+    final shown = ((t - _viewEnterDelay) / (1 - _viewEnterDelay)).clamp(
+      0.0,
+      1.0,
+    );
+    return Opacity(
+      opacity: shown,
+      child: Transform.translate(
+        offset: Offset(0, (1 - t) * viewSlide),
+        child: child,
+      ),
+    );
+  }
 
   /// True when the OS "reduce motion" accessibility setting is on. Callers skip
   /// or shorten decorative animation so the app stays comfortable to use.

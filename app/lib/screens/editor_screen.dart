@@ -38,6 +38,9 @@ import '../widgets/editor/add_to_home_screen_help.dart';
 import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/editor_morph.dart';
+import '../widgets/editor/editor_resize.dart';
+
+export '../widgets/editor/editor_morph.dart' show MorphSource;
 import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/editor/note_actions_button.dart';
 import '../widgets/note_actions.dart';
@@ -126,6 +129,9 @@ bool wantsModalEditor(BuildContext context) =>
 /// Width the wide-layout modal grows to.
 const double _modalMaxWidth = 600;
 
+/// Widest the note's own fields get, centred in a wider editor.
+const double _editorContentWidth = 680;
+
 /// Only a gesture that begins within this left-hand edge can dismiss the
 /// fullscreen editor. Keeping the recognizer out of the arena elsewhere
 /// preserves horizontal interactions inside the note.
@@ -137,26 +143,16 @@ const double _edgeDismissFlingVelocity = 700;
 /// away. Far enough that a scroll back to the top never does it by accident.
 const double _pullToHideKeyboard = 48;
 
-/// Global-coordinate bounds of the widget that [context] belongs to, the box a
-/// container morph should grow out of. Pass the result to [openNoteEditor] as
-/// `sourceRect`; null (no render box yet, or none at all) simply falls back to
-/// the plain fade-scale entrance.
-Rect? morphSourceRect(BuildContext context) {
-  final box = context.findRenderObject();
-  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
-  return box.localToGlobal(Offset.zero) & box.size;
-}
-
 /// Open the editor for the current layout: a centered modal over a dimmed
 /// barrier on wide screens, or the given fullscreen container-transform
 /// ([openFullscreen], from an enclosing OpenContainer) on narrow ones.
 /// Dismissing the modal, barrier tap, Escape, or the close button,
 /// finalizes the note exactly like popping the fullscreen editor.
 ///
-/// With [sourceRect] the modal morphs out of that box and shrinks back into it
-/// on close, so a card on a desktop grid expands into the editor the same way
-/// it does on a phone (see [morphSourceRect]); without one it fades in from
-/// the middle of the screen.
+/// With [source] the modal grows out of it and shrinks back into it on close,
+/// so a card on a desktop grid opens into the editor the way it does on a
+/// phone (see [EditorMorph]); without one it fades in from the middle of the
+/// screen.
 Future<void> openNoteEditor(
   BuildContext context, {
   required VoidCallback openFullscreen,
@@ -165,7 +161,7 @@ Future<void> openNoteEditor(
   Set<String> labelIds = const {},
   String? stageId,
   bool openedFromBoard = false,
-  Rect? sourceRect,
+  MorphSource? source,
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
   // composer). Without this the enclosing FocusScope remembers that field
@@ -177,6 +173,10 @@ Future<void> openNoteEditor(
     return Future<void>.value();
   }
   final expansion = ValueNotifier(_lastExpanded);
+  // The editor stands in for its source until it has shrunk back into it.
+  if (source != null && !Motion.reduced(context)) {
+    source.onHidden?.call(true);
+  }
   final route = showGeneralDialog<void>(
     context: context,
     // Named so a widget or notification tap can tell this note is already
@@ -191,32 +191,35 @@ Future<void> openNoteEditor(
     // The morph wraps the dialog itself in the page, where its laid-out size
     // is known, so the route adds no transition of its own for it.
     transitionBuilder: (context, animation, secondaryAnimation, child) =>
-        sourceRect == null || Motion.reduced(context)
+        source == null || Motion.reduced(context)
         ? FadeScaleTransition(animation: animation, child: child)
         : child,
     pageBuilder: (context, animation, secondaryAnimation) {
-      final Widget dialog = ClipRRect(
-        borderRadius: kBorderRadius,
-        child: EditorScreen(
-          noteId: noteId,
-          kind: kind,
-          modal: true,
-          labelIds: labelIds,
-          stageId: stageId,
-          openedFromBoard: openedFromBoard,
-        ),
-      );
+      final morphs = source != null && !Motion.reduced(context);
       return _EditorExpansion(
         notifier: expansion,
         child: _AboveKeyboard(
           expansion: expansion,
-          child: sourceRect == null || Motion.reduced(context)
-              ? dialog
-              : EditorMorph(
-                  animation: animation,
-                  source: sourceRect,
-                  child: dialog,
-                ),
+          morph: (radius, child) => morphs
+              ? Builder(
+                  builder: (context) => EditorMorph(
+                    animation: animation,
+                    source: source,
+                    color: _morphColor(context, noteId),
+                    endRadius: radius,
+                    contentWidth: _editorContentWidth,
+                    child: child,
+                  ),
+                )
+              : child,
+          child: EditorScreen(
+            noteId: noteId,
+            kind: kind,
+            modal: true,
+            labelIds: labelIds,
+            stageId: stageId,
+            openedFromBoard: openedFromBoard,
+          ),
         ),
       );
     },
@@ -225,6 +228,20 @@ Future<void> openNoteEditor(
     _lastExpanded = expansion.value;
     expansion.dispose();
   });
+}
+
+/// The editor's background for [noteId], which the open/close morph's
+/// surface shares so the two meet without a seam.
+Color _morphColor(BuildContext context, String? noteId) {
+  final theme = Theme.of(context);
+  final color = context.select<NotesStore, String?>(
+    (store) => noteId == null ? null : store.noteById(noteId)?.color,
+  );
+  final fill = context.select<SettingsStore, Color?>(
+    (settings) =>
+        color == null ? null : settings.resolveColor(color, theme.brightness),
+  );
+  return fill ?? theme.colorScheme.surface;
 }
 
 /// Whether the last modal editor was left filling the window, so the next
@@ -241,7 +258,8 @@ class _EditorExpansion extends InheritedNotifier<ValueNotifier<bool>> {
 }
 
 /// Centres the modal editor in the space the keyboard leaves, so the line
-/// being written never ends up underneath it.
+/// being written never ends up underneath it, and moves it between floating
+/// and filling the window.
 ///
 /// Reads the keyboard inset here rather than in the route's page builder: the
 /// inset changes on every frame of the keyboard's slide, and only this box
@@ -250,25 +268,32 @@ class _AboveKeyboard extends StatefulWidget {
   /// Share of the free height the dialog may take.
   static const double _heightShare = 0.85;
 
-  /// Gap kept around the dialog when it fills the window.
-  static const double _expandedMargin = kSpaceLg;
-
   final ValueNotifier<bool> expansion;
+
+  /// Wraps the clipped editor in the open/close morph, given the corner
+  /// radius the editor has right now.
+  final Widget Function(double radius, Widget child) morph;
+
   final Widget child;
 
-  const _AboveKeyboard({required this.expansion, required this.child});
+  const _AboveKeyboard({
+    required this.expansion,
+    required this.morph,
+    required this.child,
+  });
 
   @override
   State<_AboveKeyboard> createState() => _AboveKeyboardState();
 }
 
-class _AboveKeyboardState extends State<_AboveKeyboard> {
-  static const _instant = Duration(milliseconds: 1);
-
-  /// True only while a toggle resizes the dialog. Otherwise the dialog
-  /// follows its content at once, as it grows with the note being typed.
-  bool _resizing = false;
-  Timer? _settle;
+class _AboveKeyboardState extends State<_AboveKeyboard>
+    with SingleTickerProviderStateMixin {
+  /// 0 just after a toggle, 1 at rest.
+  late final AnimationController _resize = AnimationController(
+    vsync: this,
+    duration: Motion.slow,
+    value: 1,
+  );
 
   @override
   void initState() {
@@ -278,53 +303,57 @@ class _AboveKeyboardState extends State<_AboveKeyboard> {
 
   @override
   void dispose() {
-    _settle?.cancel();
     widget.expansion.removeListener(_toggled);
+    _resize.dispose();
     super.dispose();
   }
 
   void _toggled() {
-    _settle?.cancel();
-    setState(() => _resizing = true);
-    _settle = Timer(Motion.slow, () {
-      if (mounted) {
-        setState(() => _resizing = false);
-      }
-    });
+    if (Motion.reduced(context)) {
+      _resize.value = 1;
+    } else {
+      _resize.forward(from: 0);
+    }
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final expanded = widget.expansion.value;
-    final reduced = Motion.reduced(context);
     return Padding(
       padding: EdgeInsets.only(bottom: keyboard),
       child: LayoutBuilder(
         builder: (context, constraints) => Center(
-          child: ConstrainedBox(
-            constraints: expanded
-                ? BoxConstraints(
-                    maxWidth:
-                        constraints.maxWidth -
-                        2 * _AboveKeyboard._expandedMargin,
-                    maxHeight:
-                        constraints.maxHeight -
-                        2 * _AboveKeyboard._expandedMargin,
-                  )
-                : BoxConstraints(
-                    maxWidth: _modalMaxWidth,
-                    maxHeight:
-                        constraints.maxHeight * _AboveKeyboard._heightShare,
+          child: AnimatedBuilder(
+            animation: _resize,
+            child: widget.child,
+            builder: (context, child) {
+              final t = Motion.emphasized.transform(_resize.value);
+              // Floating corners round off as the editor reaches the edges.
+              final radius = kDialogRadius * (expanded ? 1 - t : t);
+              return EditorResizeBox(
+                expanded: expanded,
+                progress: t,
+                child: ConstrainedBox(
+                  constraints: expanded
+                      ? BoxConstraints.loose(constraints.biggest)
+                      : BoxConstraints(
+                          maxWidth: _modalMaxWidth,
+                          maxHeight:
+                              constraints.maxHeight *
+                              _AboveKeyboard._heightShare,
+                        ),
+                  child: widget.morph(
+                    radius,
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(radius),
+                      child: child,
+                    ),
                   ),
-            child: AnimatedSize(
-              // Never zero: a zero-length resize completes inside layout,
-              // which re-dirties the box mid-layout.
-              duration: _resizing && !reduced ? Motion.slow : _instant,
-              curve: Motion.emphasized,
-              alignment: Alignment.center,
-              child: widget.child,
-            ),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -1327,7 +1356,9 @@ class _EditorScreenState extends State<EditorScreen> {
                       alignment: Alignment.topCenter,
                       heightFactor: _hugsContent ? 1.0 : null,
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 680),
+                        constraints: const BoxConstraints(
+                          maxWidth: _editorContentWidth,
+                        ),
                         child: Column(
                           // Modal: shrink to the note's content (the dialog grows
                           // with the note) instead of filling the screen.

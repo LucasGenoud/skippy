@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../theme.dart';
 import '../app_icon_button.dart';
 import '../form_dialog.dart';
 
@@ -37,12 +38,15 @@ class EditorBottomBar extends StatelessWidget {
   /// Space below the row of buttons.
   static const double _bottomPadding = 8;
 
+  /// Space between the divider above and the buttons' hover shapes.
+  static const double _topPadding = kSpaceXs;
+
   /// An empty box as tall as the bar, to hold its place before it is built.
   static Widget placeholder(BuildContext context) {
     final buttons = Theme.of(context).visualDensity.effectiveConstraints(
       const BoxConstraints(minHeight: kMinInteractiveDimension),
     );
-    return SizedBox(height: buttons.minHeight + _bottomPadding);
+    return SizedBox(height: buttons.minHeight + _topPadding + _bottomPadding);
   }
 
   @override
@@ -97,7 +101,12 @@ class EditorBottomBar extends StatelessWidget {
         );
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, _bottomPadding),
+          padding: const EdgeInsets.fromLTRB(
+            12,
+            _topPadding,
+            12,
+            _bottomPadding,
+          ),
           child: Row(
             children: [
               action(

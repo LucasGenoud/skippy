@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/notes_store.dart';
+import 'package:skippy/util/motion.dart';
 
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
@@ -66,6 +67,50 @@ void main() {
       final screen = tester.view.physicalSize.height / 2;
       expect(dialog.bottom, lessThanOrEqualTo(screen - keyboard));
       expect(dialog.top, greaterThanOrEqualTo(0));
+      await flushTimers(tester);
+    });
+
+    testWidgets('fills the window in full screen and shrinks back', (
+      tester,
+    ) async {
+      tablet(tester);
+      api.notes['n1'] = serverNote('n1', title: 'T', content: 'Short body');
+      await store.load();
+      await tester.pumpWidget(
+        harness(
+          store,
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => openNoteEditor(
+                context,
+                noteId: 'n1',
+                openFullscreen: () {},
+                source: MorphSource(context),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final floating = tester.getRect(find.byType(EditorScreen));
+
+      await tester.tap(find.byIcon(Icons.open_in_full));
+      await tester.pumpAndSettle();
+      final window = Offset.zero & const Size(1024, 768);
+      expect(tester.getRect(find.byType(EditorScreen)), window);
+
+      // Halfway back it is between the two sizes, not already floating.
+      await tester.tap(find.byIcon(Icons.close_fullscreen));
+      await tester.pump();
+      await tester.pump(Motion.slow ~/ 2);
+      final halfway = tester.getRect(find.byType(EditorScreen));
+      expect(halfway.width, greaterThan(floating.width));
+      expect(halfway.width, lessThan(window.width));
+
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(EditorScreen)), floating);
       await flushTimers(tester);
     });
   });

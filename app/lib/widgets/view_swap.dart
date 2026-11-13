@@ -5,8 +5,9 @@ import 'package:flutter/widgets.dart';
 
 import '../util/motion.dart';
 
-/// Swaps one view of notes for another: when [viewKey] changes, the new view
-/// rises into place from below while the old one sinks away, both fading.
+/// Swaps one view of notes for another: when [viewKey] changes, the old view
+/// fades out where it is and the new one fades in a beat later, rising into
+/// place (see [Motion.viewSwap]).
 ///
 /// The old view leaves as a picture of its last frame rather than as live
 /// widgets. A view reads the store's active collection and workspace, which
@@ -14,7 +15,7 @@ import '../util/motion.dart';
 /// spend its exit redrawing itself as the collection it is being replaced by.
 ///
 ///   frame n    [ board A ]                      live
-///   switch     [ picture of A ]  sinks, fades   frozen
+///   switch     [ picture of A ]  fades          frozen
 ///              [ grid B ]        rises, fades   live
 class ViewSwap extends StatefulWidget {
   final Object viewKey;
@@ -93,7 +94,8 @@ class _ViewSwapState extends State<ViewSwap> {
                 duration: Motion.fast,
                 curve: Motion.standard,
                 onEnd: () => _left(leaving),
-                builder: (context, t, child) => _placed(t, child!),
+                builder: (context, t, child) =>
+                    Opacity(opacity: t, child: child),
                 child: RawImage(image: leaving, fit: BoxFit.fill),
               ),
             ),
@@ -105,7 +107,7 @@ class _ViewSwapState extends State<ViewSwap> {
               tween: Tween(begin: _swaps == 0 || reduced ? 1 : 0, end: 1),
               duration: Motion.base,
               curve: Motion.emphasized,
-              builder: (context, t, child) => _placed(t, child!),
+              builder: (context, t, child) => Motion.viewEnter(t, child!),
               child: widget.child,
             ),
           ),
@@ -113,13 +115,4 @@ class _ViewSwapState extends State<ViewSwap> {
       ),
     );
   }
-
-  /// A view [t] of the way into place: below it and faded until 1.
-  Widget _placed(double t, Widget child) => Opacity(
-    opacity: t,
-    child: Transform.translate(
-      offset: Offset(0, (1 - t) * Motion.viewSlide),
-      child: child,
-    ),
-  );
 }

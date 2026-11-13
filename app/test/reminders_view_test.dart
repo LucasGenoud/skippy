@@ -192,7 +192,6 @@ void main() {
     await tester.pump();
     final opening = tester.getRect(find.byType(EditorScreen));
     expect(opening.topLeft, offsetMoreOrLessEquals(row.topLeft, epsilon: 1));
-    expect(opening.width, moreOrLessEquals(row.width, epsilon: 1));
 
     await tester.pumpAndSettle();
     Navigator.of(tester.element(find.byType(EditorScreen))).pop();
@@ -200,7 +199,6 @@ void main() {
     await tester.pump(Motion.slow - const Duration(milliseconds: 10));
     final closing = tester.getRect(find.byType(EditorScreen));
     expect(closing.topLeft, offsetMoreOrLessEquals(row.topLeft, epsilon: 1));
-    expect(closing.width, moreOrLessEquals(row.width, epsilon: 1));
 
     await tester.pumpAndSettle();
     await flushTimers(tester);

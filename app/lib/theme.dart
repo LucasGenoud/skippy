@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'util/page_slide.dart';
+
 // Note colors live in SettingsStore (user-customizable palette); this file
 // only builds the app-wide themes.
 //
@@ -409,6 +411,7 @@ ThemeData buildTheme(
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
+    pageTransitionsTheme: PageSlideTransitionsBuilder.theme,
     // Null keeps the platform's own UI font.
     fontFamily: fontFamily,
     scaffoldBackgroundColor: canvas,

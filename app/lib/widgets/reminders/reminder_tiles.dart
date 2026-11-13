@@ -308,7 +308,11 @@ class _OpensNote extends StatelessWidget {
           context,
           noteId: note.id,
           openFullscreen: open,
-          sourceRect: morphSourceRect(context),
+          source: MorphSource(
+            context,
+            radius: 0,
+            face: (_) => Material(color: scheme.surface, child: builder(() {})),
+          ),
         ),
       ),
     );

@@ -99,6 +99,9 @@ class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
   bool _menuOpen = false;
   bool _reminderPickerOpen = false;
+
+  /// The desktop editor is standing in for this card while it is open.
+  bool _lent = false;
   Note? _bodyNote;
   String? _bodyQuery;
   bool? _bodyActionsSlot;
@@ -149,6 +152,55 @@ class _NoteTileState extends State<NoteTile> {
     return _body!;
   }
 
+  void _lend(bool lent) {
+    if (!mounted || _lent == lent) {
+      return;
+    }
+    setState(() => _lent = lent);
+  }
+
+  /// The card at rest, drawn by the editor's open/close morph over its
+  /// growing surface. Reads the note from the store, so a closing morph shows
+  /// the note as it was left.
+  Widget _face(BuildContext context) {
+    final note =
+        context.select<NotesStore, Note?>(
+          (store) => store.noteById(widget.note.id),
+        ) ??
+        widget.note;
+    final theme = Theme.of(context);
+    final fill = context.select<SettingsStore, Color?>(
+      (s) => s.resolveColor(note.color, theme.brightness),
+    );
+    final actionsSlot = !note.trashed && !isTouchPrimaryPlatform;
+    return Material(
+      color: fill ?? theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: kCardBorderRadius),
+      clipBehavior: Clip.antiAlias,
+      child: NotePatternBackground(
+        pattern: note.pattern,
+        child: Stack(
+          children: [
+            _NoteCardContent(
+              note: note,
+              query: widget.query,
+              reserveActions: actionsSlot,
+              showLabelsInBody: !actionsSlot,
+            ),
+            if (actionsSlot && note.labelIds.isNotEmpty)
+              _NoteFooterLabels(
+                note: note,
+                visible: true,
+                bottomInset:
+                    _NoteCardContent._linkPreviewUrls(note).length *
+                    (kLinkPreviewStripHeight + 1),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _editReminder() async {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
@@ -197,7 +249,7 @@ class _NoteTileState extends State<NoteTile> {
         openNoteEditor(
           context,
           noteId: copy.id,
-          sourceRect: morphSourceRect(context),
+          source: MorphSource(context),
           openFullscreen: () => Navigator.of(
             context,
           ).push(NoteZoomRoute(builder: (_) => EditorScreen(noteId: copy.id))),
@@ -297,7 +349,7 @@ class _NoteTileState extends State<NoteTile> {
           openFullscreen: open,
           noteId: note.id,
           openedFromBoard: widget.openedFromBoard,
-          sourceRect: morphSourceRect(context),
+          source: MorphSource(context, face: _face, onHidden: _lend),
         );
       },
       onLongPress:
@@ -444,6 +496,10 @@ class _NoteTileState extends State<NoteTile> {
       ),
     );
 
+    // Kept in place while lent, so the grid holds its slot for the note to
+    // shrink back into.
+    final shown = Visibility.maintain(visible: !_lent, child: tile);
+
     return SwipeToArchive(
       // A mouse drag on a card lifts it for a reorder from the first pixel
       // (see AnimatedMasonry), so the swipe would eat that gesture. Selecting
@@ -460,7 +516,7 @@ class _NoteTileState extends State<NoteTile> {
         note.id,
         raised: active,
       ).dispatch(context),
-      child: tile,
+      child: shown,
     );
   }
 }

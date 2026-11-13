@@ -129,6 +129,11 @@ class HomeTopBar extends StatelessWidget {
   static const double barHeight = 60;
   static const double _pillHeight = 36;
 
+  /// A button's hover shape inside the desktop pill, and the gap that leaves
+  /// around it: (36 - 28) / 2.
+  static const double _pillButtonSize = 28;
+  static const double _pillButtonInset = (_pillHeight - _pillButtonSize) / 2;
+
   /// The wide bar's search field: room for a query and several filter terms.
   static const double _searchWidth = 560;
 
@@ -179,6 +184,10 @@ class HomeTopBar extends StatelessWidget {
 
   /// Below this the bar collapses into a single search pill.
   static const double _wideBarMinWidth = 650;
+
+  /// Gap between the phone pill's edge and the buttons at its ends, the same
+  /// as above and below them: (50px pill - 40px button pad) / 2.
+  static const double _narrowPillInset = 5;
 
   static const _selectingKey = ValueKey('selecting');
   static const _browsingKey = ValueKey('browsing');
@@ -233,48 +242,62 @@ class HomeTopBar extends StatelessWidget {
               child: _SearchPill(
                 focusNode: focusNode,
                 height: _pillHeight,
-                child: Row(
-                  children: [
-                    const SizedBox(width: kSpaceMd),
-                    Icon(
-                      Icons.search,
-                      color: scheme.onSurfaceVariant,
-                      size: 18,
-                    ),
-                    const SizedBox(width: kSpaceSm),
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        onChanged: onQuery,
-                        textInputAction: TextInputAction.search,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        decoration: InputDecoration(
-                          hintText: 'Search',
-                          hintStyle: TextStyle(color: scheme.onSurfaceVariant),
-                          border: InputBorder.none,
-                          isCollapsed: true,
+                // The pill's buttons hover smaller than a toolbar's, keeping
+                // their shape off its edges.
+                child: IconButtonTheme(
+                  data: IconButtonThemeData(
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(_pillButtonSize),
+                      minimumSize: const Size.square(_pillButtonSize),
+                      padding: EdgeInsets.zero,
+                    ).merge(IconButtonTheme.of(context).style),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: kSpaceMd),
+                      Icon(
+                        Icons.search,
+                        color: scheme.onSurfaceVariant,
+                        size: 18,
+                      ),
+                      const SizedBox(width: kSpaceSm),
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          onChanged: onQuery,
+                          textInputAction: TextInputAction.search,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          decoration: InputDecoration(
+                            hintText: 'Search',
+                            hintStyle: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            border: InputBorder.none,
+                            isCollapsed: true,
+                          ),
                         ),
                       ),
-                    ),
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: controller,
-                      builder: (context, value, _) => _fadeScale(
-                        child: value.text.isEmpty
-                            ? const SizedBox.shrink()
-                            : AppIconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                tooltip: 'Clear search',
-                                onPressed: () {
-                                  controller.clear();
-                                  onQuery('');
-                                },
-                              ),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: controller,
+                        builder: (context, value, _) => _fadeScale(
+                          child: value.text.isEmpty
+                              ? const SizedBox.shrink()
+                              : AppIconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    controller.clear();
+                                    onQuery('');
+                                  },
+                                ),
+                        ),
                       ),
-                    ),
-                    _filtersControl(),
-                    if (semanticAvailable) _semanticControl(scheme),
-                  ],
+                      _filtersControl(),
+                      if (semanticAvailable) _semanticControl(scheme),
+                      const SizedBox(width: _pillButtonInset),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -400,6 +423,7 @@ class HomeTopBar extends StatelessWidget {
         focusNode: focusNode,
         child: Row(
           children: [
+            const SizedBox(width: _narrowPillInset),
             AppIconButton(
               icon: const Icon(Icons.menu),
               tooltip: 'Main menu',
@@ -446,7 +470,7 @@ class HomeTopBar extends StatelessWidget {
                         ),
                       _filtersControl(),
                       if (semanticAvailable) _semanticControl(scheme),
-                      const SizedBox(width: kSpaceXs),
+                      const SizedBox(width: _narrowPillInset),
                     ],
                   );
                 } else {
@@ -461,7 +485,7 @@ class HomeTopBar extends StatelessWidget {
                           onPressed: () => ChatScreen.open(context),
                         ),
                       _UserAvatarMenu(onShareView: onShareView),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: _narrowPillInset),
                     ],
                   );
                 }
