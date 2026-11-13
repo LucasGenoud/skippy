@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import 'form_dialog.dart';
+import 'menu_label.dart';
 
 /// The workspace switcher that heads the drawer and the sidebar: the open
 /// workspace's name, and a menu to switch, create, or manage.
@@ -98,19 +99,14 @@ class WorkspaceMenu extends StatelessWidget {
               const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'create',
-                child: ListTile(
-                  leading: Icon(Icons.add),
-                  title: Text('New workspace'),
-                  contentPadding: EdgeInsets.zero,
-                ),
+                child: MenuRow(icon: Icons.add, label: 'New workspace'),
               ),
               PopupMenuItem(
                 value: 'manage',
                 enabled: active != null,
-                child: const ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Workspace settings'),
-                  contentPadding: EdgeInsets.zero,
+                child: const MenuRow(
+                  icon: Icons.settings_outlined,
+                  label: 'Workspace settings',
                 ),
               ),
             ],

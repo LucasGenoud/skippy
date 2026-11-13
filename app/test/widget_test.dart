@@ -2127,7 +2127,9 @@ void main() {
 
       // The picker is a native screen. A field left focused across it comes
       // back with the keyboard up, and it then survives the editor closing.
-      await tester.tap(find.widgetWithIcon(AppIconButton, Icons.image_outlined));
+      await tester.tap(
+        find.widgetWithIcon(AppIconButton, Icons.image_outlined),
+      );
       await tester.pump();
       expect(tester.testTextInput.isVisible, isFalse);
 
@@ -4675,6 +4677,59 @@ void main() {
         tester.widget<EditorScreen>(find.byType(EditorScreen)).kind,
         NoteKind.markdown,
       );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+
+    testWidgets('n and the composer start the default note kind', (
+      tester,
+    ) async {
+      final settings = SettingsStore(api: store.api)
+        ..setDefaultNoteKind(NoteKind.checklist);
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await store.load();
+      await tester.pumpWidget(homeApp(store, settings: settings));
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EditorScreen>(find.byType(EditorScreen)).kind,
+        NoteKind.checklist,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      // The bar opens as a checklist and offers a text note instead.
+      expect(find.byTooltip('New checklist'), findsNothing);
+      expect(find.byTooltip('New note'), findsWidgets);
+      await tester.tap(find.text('Take a note…'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AnimatedChecklist), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('the note dialog fills the window and back', (tester) async {
+      await pumpHome(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pumpAndSettle();
+      double width() => tester.getSize(find.byType(EditorScreen)).width;
+      final floating = width();
+
+      await tester.tap(find.byIcon(Icons.open_in_full));
+      await tester.pumpAndSettle();
+      expect(width(), greaterThan(floating));
+      expect(
+        tester.getSize(find.byType(EditorScreen)).height,
+        greaterThan(700),
+      );
+
+      await tester.tap(find.byIcon(Icons.close_fullscreen));
+      await tester.pumpAndSettle();
+      expect(width(), floating);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       await flushTimers(tester);

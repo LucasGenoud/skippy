@@ -92,16 +92,16 @@ class PaletteEntry {
   }
 }
 
-/// How the stock palette is drawn: pale tints in light, muted ones in dark,
+/// How the stock palette is drawn: mid-depth tints in light, muted ones in dark,
 /// instead of the saturated Keep colours it is stored as.
 const Map<String, ({Color light, Color dark})> _kSoftFills = {
-  'red': (light: Color(0xFFFAD2CF), dark: Color(0xFF3D2423)),
-  'orange': (light: Color(0xFFFBDDBA), dark: Color(0xFF3D2C1C)),
-  'yellow': (light: Color(0xFFFAEAA8), dark: Color(0xFF39321A)),
-  'green': (light: Color(0xFFD2EDC6), dark: Color(0xFF213322)),
-  'teal': (light: Color(0xFFC2E9E2), dark: Color(0xFF1A3331)),
-  'blue': (light: Color(0xFFCCDFF8), dark: Color(0xFF1D2B3D)),
-  'gray': (light: Color(0xFFE5E4E1), dark: Color(0xFF2A2927)),
+  'red': (light: Color(0xFFF4B9B3), dark: Color(0xFF3D2423)),
+  'orange': (light: Color(0xFFF7C994), dark: Color(0xFF3D2C1C)),
+  'yellow': (light: Color(0xFFF2DA7E), dark: Color(0xFF39321A)),
+  'green': (light: Color(0xFFBBDFAA), dark: Color(0xFF213322)),
+  'teal': (light: Color(0xFFA5DACF), dark: Color(0xFF1A3331)),
+  'blue': (light: Color(0xFFB0CBF0), dark: Color(0xFF1D2B3D)),
+  'gray': (light: Color(0xFFD6D4D0), dark: Color(0xFF2A2927)),
 };
 
 /// The default 8 colors, the palette users start from and can reset to.
@@ -229,6 +229,10 @@ class SettingsStore extends ChangeNotifier {
   bool defaultListMode = false;
   GridDensity gridDensity = GridDensity.comfortable;
   GridWidth gridWidth = GridWidth.medium;
+
+  /// The kind a new note starts as from the desktop composer and the `n`
+  /// shortcut. Audio is never a default: it needs a recording first.
+  NoteKind defaultNoteKind = NoteKind.text;
 
   /// Personal board exits, keyed by collection id. They change how this user
   /// sees the board, not the workspace's shared stage taxonomy.
@@ -450,6 +454,10 @@ class SettingsStore extends ChangeNotifier {
         GridDensity.comfortable;
     gridWidth =
         GridWidth.values.asNameMap()[json['grid_width']] ?? GridWidth.medium;
+    final kind = NoteKind.values.asNameMap()[json['default_note_kind']];
+    defaultNoteKind = kind == null || kind == NoteKind.audio
+        ? NoteKind.text
+        : kind;
     final rawBoardExits = json['board_exit_columns'];
     boardExitColumns = rawBoardExits is Map
         ? {
@@ -555,6 +563,7 @@ class SettingsStore extends ChangeNotifier {
     'default_view': defaultListMode ? 'list' : 'grid',
     'grid_density': gridDensity.name,
     'grid_width': gridWidth.name,
+    'default_note_kind': defaultNoteKind.name,
     'board_exit_columns': {
       for (final entry in boardExitColumns.entries)
         entry.key: entry.value.toList(),
@@ -644,6 +653,8 @@ class SettingsStore extends ChangeNotifier {
   void setDefaultListMode(bool value) => _mutate(() => defaultListMode = value);
   void setGridDensity(GridDensity value) => _mutate(() => gridDensity = value);
   void setGridWidth(GridWidth value) => _mutate(() => gridWidth = value);
+  void setDefaultNoteKind(NoteKind kind) =>
+      _mutate(() => defaultNoteKind = kind);
   Set<String> boardExitsFor(String? collectionId) =>
       boardExitColumns[collectionId] ?? const {};
 

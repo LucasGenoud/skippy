@@ -45,7 +45,6 @@ import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
-import '../widgets/sync_pill.dart';
 import '../widgets/view_swap.dart';
 
 /// What one build of the home screen shows, worked out once in `build` and
@@ -389,7 +388,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Keyboard shortcut callbacks. The bindings are [_homeShortcuts];
   // widgets/shortcut_help.dart and the README document the full set.
-  void _newNote(NoteKind kind) {
+  /// [kind] null is the user's default kind.
+  void _newNote([NoteKind? requested]) {
+    final kind = requested ?? context.read<SettingsStore>().defaultNoteKind;
     if (context.read<NotesStore>().activeCollection == null) {
       CollectionSettings.show(context);
       return;
@@ -785,17 +786,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Positioned.fill(
                                     child: _viewSwitcher(store, view),
                                   ),
-                                  // Beside the new-note button, centred on
-                                  // it; phones keep the offline banner.
-                                  if (ScreenWidth.isAtLeast(
-                                    context,
-                                    kWideBreakpoint,
-                                  ))
-                                    const Positioned(
-                                      right: 16 + 56 + kSpaceMd,
-                                      bottom: 16 + 14,
-                                      child: SyncPill(),
-                                    ),
                                   if (store.activeCollection != null)
                                     Positioned(
                                       right: 16,
@@ -1191,7 +1181,7 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: icon,
           message: message,
           actionLabel: 'Create note',
-          onAction: () => _newNote(NoteKind.text),
+          onAction: _newNote,
           showBrandMark: _selection.view == NoteView.notes,
         );
     }
@@ -1476,8 +1466,8 @@ class _OfflineBannerState extends State<_OfflineBanner> {
 // shortcut. Chords and Escape (whileTyping: true) stay live during typing; the
 // quick-add bar consumes its own Escape before it ever bubbles up here.
 const _homeShortcuts = <ShortcutActivator, Intent>{
-  CharacterActivator('c'): _NewNoteIntent(NoteKind.text),
-  CharacterActivator('n'): _NewNoteIntent(NoteKind.text),
+  CharacterActivator('c'): _NewNoteIntent(),
+  CharacterActivator('n'): _NewNoteIntent(),
   CharacterActivator('l'): _NewNoteIntent(NoteKind.checklist),
   CharacterActivator('m'): _NewNoteIntent(NoteKind.markdown),
   CharacterActivator('/'): _FocusSearchIntent(),
@@ -1504,9 +1494,10 @@ abstract class _HomeIntent extends Intent {
 }
 
 class _NewNoteIntent extends _HomeIntent {
-  const _NewNoteIntent(this.kind);
+  const _NewNoteIntent([this.kind]);
 
-  final NoteKind kind;
+  /// Null starts the user's default kind.
+  final NoteKind? kind;
 }
 
 class _FocusSearchIntent extends _HomeIntent {

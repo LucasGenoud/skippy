@@ -40,6 +40,11 @@ const double kRadiusSm = 6;
 const double kRadius = 8;
 const double kCardRadius = 10;
 const double kMenuRadius = 10;
+
+/// A menu row's height and the gap above the first row and below the last.
+const double kMenuRowHeight = 40;
+const double kMenuInset = 4;
+const double _menuElevation = 6;
 const double kDialogRadius = 12;
 
 /// A checkbox's corner: at 18px anything rounder reads as a pill.
@@ -414,6 +419,12 @@ ThemeData buildTheme(
     highlightColor: scheme.onSurface.withValues(alpha: light ? 0.08 : 0.10),
     focusColor: scheme.onSurface.withValues(alpha: light ? 0.08 : 0.10),
   );
+  final menuShadow = _shadowInk.withValues(alpha: light ? 0.16 : 0.5);
+  final menuShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(kMenuRadius),
+    side: BorderSide(color: scheme.outlineVariant),
+  );
+  final menuText = base.textTheme.bodyMedium?.copyWith(color: scheme.onSurface);
   return base.copyWith(
     // Chrome is a surface, not the canvas: the home screen's hand-rolled top
     // bar has always painted itself `surface`, and every other screen's app
@@ -469,24 +480,54 @@ ThemeData buildTheme(
     // Popup menus borrow the compact, outlined floating-surface treatment used
     // by the motion preview: enough separation from the canvas without a
     // heavy Material dialog feel.
+    //
+    // Popup menus and anchored menus (with their submenus) are two Flutter
+    // widgets for one thing on screen, so both get the same surface, row
+    // text and icon size.
     popupMenuTheme: base.popupMenuTheme.copyWith(
       color: scheme.surface,
-      elevation: 6,
+      elevation: _menuElevation,
       surfaceTintColor: Colors.transparent,
-      shadowColor: _shadowInk.withValues(alpha: light ? 0.16 : 0.5),
-      menuPadding: const EdgeInsets.symmetric(vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(kMenuRadius),
-        side: BorderSide(color: scheme.outlineVariant),
+      shadowColor: menuShadow,
+      menuPadding: const EdgeInsets.symmetric(vertical: kMenuInset),
+      shape: menuShape,
+      labelTextStyle: WidgetStatePropertyAll(menuText),
+      iconColor: scheme.onSurfaceVariant,
+      iconSize: kCompactIconSize,
+    ),
+    menuTheme: MenuThemeData(
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(scheme.surface),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        elevation: const WidgetStatePropertyAll(_menuElevation),
+        shadowColor: WidgetStatePropertyAll(menuShadow),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(vertical: kMenuInset),
+        ),
+        shape: WidgetStatePropertyAll(menuShape),
+      ),
+      submenuIcon: WidgetStatePropertyAll(
+        Icon(
+          Icons.chevron_right,
+          size: kCompactIconSize,
+          color: scheme.onSurfaceVariant,
+        ),
       ),
     ),
-    menuTheme: const MenuThemeData(
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(kMenuRadius)),
-          ),
+    menuButtonTheme: MenuButtonThemeData(
+      style: ButtonStyle(
+        minimumSize: const WidgetStatePropertyAll(Size(160, kMenuRowHeight)),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: kSpaceMd),
         ),
+        iconSize: const WidgetStatePropertyAll(kCompactIconSize),
+        iconColor: WidgetStatePropertyAll(scheme.onSurfaceVariant),
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.disabled)
+              ? scheme.onSurface.withValues(alpha: 0.38)
+              : scheme.onSurface,
+        ),
+        textStyle: WidgetStatePropertyAll(menuText),
       ),
     ),
     bottomSheetTheme: base.bottomSheetTheme.copyWith(

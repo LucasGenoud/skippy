@@ -48,6 +48,21 @@ import 'state_cross_fade.dart';
 /// created on save, so an abandoned composer never leaves a phantom note in
 /// the grid, and, because a draft is created with these already set, they
 /// ride along on the create request instead of trailing behind it.
+/// The kinds the collapsed bar offers a button for, in order.
+const _kBarKinds = [
+  (icon: Icons.edit_outlined, tooltip: 'New note', kind: NoteKind.text),
+  (
+    icon: Icons.check_box_outlined,
+    tooltip: 'New checklist',
+    kind: NoteKind.checklist,
+  ),
+  (
+    icon: Icons.notes_outlined,
+    tooltip: 'New markdown note',
+    kind: NoteKind.markdown,
+  ),
+];
+
 class QuickAddBar extends StatefulWidget {
   /// Labels the composed note starts with, set when a label view is open, so
   /// what you write there stays there.
@@ -559,6 +574,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   Widget _buildBar(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final defaultKind = context.select<SettingsStore, NoteKind>(
+      (s) => s.defaultNoteKind,
+    );
 
     Widget kindButton(IconData icon, String tooltip, NoteKind kind) =>
         IconButton(
@@ -576,7 +594,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       cursor: SystemMouseCursors.text,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _expand(NoteKind.text),
+        onTap: () => _expand(defaultKind),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
           child: Row(
@@ -591,16 +609,10 @@ class _QuickAddBarState extends State<QuickAddBar> {
                   ),
                 ),
               ),
-              kindButton(
-                Icons.check_box_outlined,
-                'New checklist',
-                NoteKind.checklist,
-              ),
-              kindButton(
-                Icons.notes_outlined,
-                'New markdown note',
-                NoteKind.markdown,
-              ),
+              // The two kinds the bar itself does not start as.
+              for (final kind in _kBarKinds)
+                if (kind.kind != defaultKind)
+                  kindButton(kind.icon, kind.tooltip, kind.kind),
               // The spinner takes the image button's slot while the picture
               // uploads, fading across rather than swapping.
               StateCrossFade(

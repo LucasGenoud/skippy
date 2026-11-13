@@ -176,7 +176,8 @@ Future<void> openNoteEditor(
     openFullscreen();
     return Future<void>.value();
   }
-  return showGeneralDialog<void>(
+  final expansion = ValueNotifier(_lastExpanded);
+  final route = showGeneralDialog<void>(
     context: context,
     // Named so a widget or notification tap can tell this note is already
     // open and raise it instead of stacking a second editor over it.
@@ -205,17 +206,38 @@ Future<void> openNoteEditor(
           openedFromBoard: openedFromBoard,
         ),
       );
-      return _AboveKeyboard(
-        child: sourceRect == null || Motion.reduced(context)
-            ? dialog
-            : EditorMorph(
-                animation: animation,
-                source: sourceRect,
-                child: dialog,
-              ),
+      return _EditorExpansion(
+        notifier: expansion,
+        child: _AboveKeyboard(
+          expansion: expansion,
+          child: sourceRect == null || Motion.reduced(context)
+              ? dialog
+              : EditorMorph(
+                  animation: animation,
+                  source: sourceRect,
+                  child: dialog,
+                ),
+        ),
       );
     },
   );
+  return route.whenComplete(() {
+    _lastExpanded = expansion.value;
+    expansion.dispose();
+  });
+}
+
+/// Whether the last modal editor was left filling the window, so the next
+/// note opens the way the user last chose. Kept for the session only.
+bool _lastExpanded = false;
+
+/// Whether the modal editor fills the window instead of floating at
+/// [_modalMaxWidth]. Toggled from the editor's top bar.
+class _EditorExpansion extends InheritedNotifier<ValueNotifier<bool>> {
+  const _EditorExpansion({required super.notifier, required super.child});
+
+  static ValueNotifier<bool>? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_EditorExpansion>()?.notifier;
 }
 
 /// Centres the modal editor in the space the keyboard leaves, so the line
@@ -224,27 +246,85 @@ Future<void> openNoteEditor(
 /// Reads the keyboard inset here rather than in the route's page builder: the
 /// inset changes on every frame of the keyboard's slide, and only this box
 /// needs to follow it, not the editor inside.
-class _AboveKeyboard extends StatelessWidget {
+class _AboveKeyboard extends StatefulWidget {
   /// Share of the free height the dialog may take.
   static const double _heightShare = 0.85;
 
+  /// Gap kept around the dialog when it fills the window.
+  static const double _expandedMargin = kSpaceLg;
+
+  final ValueNotifier<bool> expansion;
   final Widget child;
 
-  const _AboveKeyboard({required this.child});
+  const _AboveKeyboard({required this.expansion, required this.child});
+
+  @override
+  State<_AboveKeyboard> createState() => _AboveKeyboardState();
+}
+
+class _AboveKeyboardState extends State<_AboveKeyboard> {
+  static const _instant = Duration(milliseconds: 1);
+
+  /// True only while a toggle resizes the dialog. Otherwise the dialog
+  /// follows its content at once, as it grows with the note being typed.
+  bool _resizing = false;
+  Timer? _settle;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.expansion.addListener(_toggled);
+  }
+
+  @override
+  void dispose() {
+    _settle?.cancel();
+    widget.expansion.removeListener(_toggled);
+    super.dispose();
+  }
+
+  void _toggled() {
+    _settle?.cancel();
+    setState(() => _resizing = true);
+    _settle = Timer(Motion.slow, () {
+      if (mounted) {
+        setState(() => _resizing = false);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final expanded = widget.expansion.value;
+    final reduced = Motion.reduced(context);
     return Padding(
       padding: EdgeInsets.only(bottom: keyboard),
       child: LayoutBuilder(
         builder: (context, constraints) => Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: _modalMaxWidth,
-              maxHeight: constraints.maxHeight * _heightShare,
+            constraints: expanded
+                ? BoxConstraints(
+                    maxWidth:
+                        constraints.maxWidth -
+                        2 * _AboveKeyboard._expandedMargin,
+                    maxHeight:
+                        constraints.maxHeight -
+                        2 * _AboveKeyboard._expandedMargin,
+                  )
+                : BoxConstraints(
+                    maxWidth: _modalMaxWidth,
+                    maxHeight:
+                        constraints.maxHeight * _AboveKeyboard._heightShare,
+                  ),
+            child: AnimatedSize(
+              // Never zero: a zero-length resize completes inside layout,
+              // which re-dirties the box mid-layout.
+              duration: _resizing && !reduced ? Motion.slow : _instant,
+              curve: Motion.emphasized,
+              alignment: Alignment.center,
+              child: widget.child,
             ),
-            child: child,
           ),
         ),
       ),
@@ -1101,6 +1181,8 @@ class _EditorScreenState extends State<EditorScreen> {
                           },
                         ),
                       ],
+                      if (_EditorExpansion.of(context) case final expansion?)
+                        _expandButton(expansion),
                       // Everything else you do *to* the note. The bottom bar keeps what
                       // goes *into* it, so neither menu has to nest.
                       NoteActionsButton(
@@ -1225,18 +1307,18 @@ class _EditorScreenState extends State<EditorScreen> {
                     // usual fill (the column is max-size there anyway).
                     child: Align(
                       alignment: Alignment.topCenter,
-                      heightFactor: widget.modal ? 1.0 : null,
+                      heightFactor: _hugsContent ? 1.0 : null,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 680),
                         child: Column(
                           // Modal: shrink to the note's content (the dialog grows
                           // with the note) instead of filling the screen.
-                          mainAxisSize: widget.modal
+                          mainAxisSize: _hugsContent
                               ? MainAxisSize.min
                               : MainAxisSize.max,
                           children: [
                             Flexible(
-                              fit: widget.modal ? FlexFit.loose : FlexFit.tight,
+                              fit: _hugsContent ? FlexFit.loose : FlexFit.tight,
                               child: _noteFields(
                                 note,
                                 settings,
@@ -1368,7 +1450,7 @@ class _EditorScreenState extends State<EditorScreen> {
     required String query,
   }) {
     return ListView(
-      shrinkWrap: widget.modal,
+      shrinkWrap: _hugsContent,
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       children: [
         _titleField(trashed: trashed),
@@ -1580,14 +1662,21 @@ class _EditorScreenState extends State<EditorScreen> {
     return Material(
       type: MaterialType.transparency,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: _hugsContent ? MainAxisSize.min : MainAxisSize.max,
         children: [
           _buildAppBar(note),
-          Flexible(child: body),
+          Flexible(
+            fit: _hugsContent ? FlexFit.loose : FlexFit.tight,
+            child: body,
+          ),
         ],
       ),
     );
   }
+
+  /// A modal editor sizes itself to the note unless it fills the window.
+  bool get _hugsContent =>
+      widget.modal && !(_EditorExpansion.of(context)?.value ?? false);
 
   /// The zoom route carrying this editor, when it can follow the finger.
   NoteZoomRoute? get _zoomRoute => switch (ModalRoute.of(context)) {
@@ -1741,6 +1830,20 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   /// Switches a markdown note between its rendered and source forms.
+  /// Grows the modal to fill the window, or back to its floating size.
+  Widget _expandButton(ValueNotifier<bool> expansion) => StateCrossFade(
+    state: expansion.value,
+    alignment: AlignmentDirectional.center,
+    child: AppIconButton(
+      icon: Icon(
+        expansion.value ? Icons.close_fullscreen : Icons.open_in_full,
+        size: 20,
+      ),
+      tooltip: expansion.value ? 'Exit full screen' : 'Full screen',
+      onPressed: () => expansion.value = !expansion.value,
+    ),
+  );
+
   Widget _markdownModeButton() => StateCrossFade(
     state: _previewMarkdown,
     alignment: AlignmentDirectional.center,

@@ -521,48 +521,36 @@ class HomeTopBar extends StatelessWidget {
             if (selection.canMoveToStage)
               const PopupMenuItem(
                 value: _SelectionAction.stage,
-                child: ListTile(
-                  leading: Icon(Icons.view_kanban_outlined),
-                  title: Text('Move to column'),
-                  contentPadding: EdgeInsets.zero,
+                child: MenuRow(
+                  icon: Icons.view_kanban_outlined,
+                  label: 'Move to column',
                 ),
               ),
             const PopupMenuItem(
               value: _SelectionAction.label,
-              child: ListTile(
-                leading: Icon(Icons.label_outline),
-                title: Text('Add label'),
-                contentPadding: EdgeInsets.zero,
-              ),
+              child: MenuRow(icon: Icons.label_outline, label: 'Add label'),
             ),
             const PopupMenuItem(
               value: _SelectionAction.share,
-              child: ListTile(
-                leading: Icon(Icons.person_add_alt_outlined),
-                title: Text('Share'),
-                contentPadding: EdgeInsets.zero,
+              child: MenuRow(
+                icon: Icons.person_add_alt_outlined,
+                label: 'Share',
               ),
             ),
             const PopupMenuItem(
               value: _SelectionAction.color,
-              child: ListTile(
-                leading: Icon(Icons.palette_outlined),
-                title: Text('Change color'),
-                contentPadding: EdgeInsets.zero,
+              child: MenuRow(
+                icon: Icons.palette_outlined,
+                label: 'Change color',
               ),
             ),
             PopupMenuItem(
               value: _SelectionAction.pin,
-              child: ListTile(
-                leading: Icon(
-                  selection.pinSelected
-                      ? Icons.push_pin_outlined
-                      : Icons.push_pin,
-                ),
-                title: Text(
-                  selection.pinSelected ? 'Pin notes' : 'Unpin notes',
-                ),
-                contentPadding: EdgeInsets.zero,
+              child: MenuRow(
+                icon: selection.pinSelected
+                    ? Icons.push_pin_outlined
+                    : Icons.push_pin,
+                label: selection.pinSelected ? 'Pin notes' : 'Unpin notes',
               ),
             ),
           ],
@@ -1239,10 +1227,12 @@ class _SortButton extends StatelessWidget {
       onSelected: store.setSortMode,
       itemBuilder: (context) => [
         for (final (mode, label) in _sortModes)
-          CheckedPopupMenuItem(
+          PopupMenuItem(
             value: mode,
-            checked: store.sortMode == mode,
-            child: Text(label),
+            child: MenuRow(
+              icon: store.sortMode == mode ? Icons.check : null,
+              label: label,
+            ),
           ),
       ],
     );

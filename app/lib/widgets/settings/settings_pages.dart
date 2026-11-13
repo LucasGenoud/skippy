@@ -24,6 +24,8 @@ import 'palette_section.dart';
 import 'public_links_section.dart';
 import 'saved_locations_section.dart';
 import '../../theme.dart';
+import '../../models/note.dart';
+import '../../util/platform.dart';
 
 /// The account's settings, grouped by what someone comes looking for rather
 /// than by what backs them. Workspace settings (members, collections, which
@@ -143,6 +145,23 @@ class SettingsPageBody extends StatelessWidget {
       const Divider(height: 32),
       const SectionHeader('Notes grid'),
       const GridLayoutSection(),
+      // Phones pick a kind from the new-note button every time.
+      if (!isTouchPrimaryPlatform)
+        ListTile(
+          leading: const Icon(Icons.note_add_outlined),
+          title: const Text('New notes start as'),
+          subtitle: const Text('The composer and the N shortcut'),
+          trailing: SegmentedButton<NoteKind>(
+            segments: const [
+              ButtonSegment(value: NoteKind.text, label: Text('Text')),
+              ButtonSegment(value: NoteKind.checklist, label: Text('List')),
+              ButtonSegment(value: NoteKind.markdown, label: Text('Markdown')),
+            ],
+            selected: {settings.defaultNoteKind},
+            onSelectionChanged: (s) => settings.setDefaultNoteKind(s.first),
+            showSelectedIcon: false,
+          ),
+        ),
       const Divider(height: 32),
       const SectionHeader('Note colors'),
       const _Hint(

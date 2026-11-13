@@ -21,6 +21,7 @@ class MenuLabel extends StatelessWidget {
     final theme = Theme.of(context);
     final hint = this.hint;
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Flexible(
           // Short of room, the label keeps the larger share.
@@ -46,6 +47,48 @@ class MenuLabel extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// One popup-menu row: a 20px icon, then its label. The same shape as an
+/// anchored menu's [MenuItemButton], so every menu in the app reads alike.
+/// A null [icon] keeps the slot, so labels line up beside rows that have one.
+class MenuRow extends StatelessWidget {
+  final IconData? icon;
+  final String label;
+  final String? hint;
+
+  /// Tints icon and label, used to flag a destructive entry.
+  final Color? color;
+
+  const MenuRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.hint,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: kCompactIconSize,
+          child: icon == null
+              ? null
+              : Icon(
+                  icon,
+                  size: kCompactIconSize,
+                  color:
+                      color ?? Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+        ),
+        const SizedBox(width: kSpaceMd),
+        Flexible(child: MenuLabel(label, hint: hint, color: color)),
       ],
     );
   }
