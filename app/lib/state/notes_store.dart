@@ -582,10 +582,29 @@ class NotesStore extends ChangeNotifier {
   }
 
   Note? noteById(String id) {
-    for (final n in _notes) {
-      if (n.id == id) return n;
+    final i = _indexOfNote(id);
+    return i == -1 ? null : _notes[i];
+  }
+
+  /// Where each note was last found in [_notes]. Never trusted blindly: an
+  /// entry counts only while that slot still holds the id, so the many places
+  /// that insert, sort and remove need not maintain it.
+  final Map<String, int> _noteSlots = {};
+
+  /// Index of note [id] in [_notes], or -1.
+  int _indexOfNote(String id) {
+    final slot = _noteSlots[id];
+    if (slot != null && slot < _notes.length && _notes[slot].id == id) {
+      return slot;
     }
-    return null;
+
+    final found = _notes.indexWhere((n) => n.id == id);
+    if (found == -1) {
+      _noteSlots.remove(id);
+    } else {
+      _noteSlots[id] = found;
+    }
+    return found;
   }
 
   /// Current title of a linked note; null when it is not reachable here, so
@@ -1373,7 +1392,7 @@ class NotesStore extends ChangeNotifier {
   }
 
   void _replace(Note updated) {
-    final i = _notes.indexWhere((n) => n.id == updated.id);
+    final i = _indexOfNote(updated.id);
     if (i == -1) return;
     _notes[i] = updated;
     _notifyThrottle?.cancel();
@@ -1386,7 +1405,7 @@ class NotesStore extends ChangeNotifier {
   /// State mutates now; listeners hear about it within ~200ms. Keeps every
   /// keystroke from rebuilding the whole grid behind the editor.
   void _replaceThrottled(Note updated) {
-    final i = _notes.indexWhere((n) => n.id == updated.id);
+    final i = _indexOfNote(updated.id);
     if (i == -1) return;
     _notes[i] = updated;
     _notifyThrottle ??= Timer(const Duration(milliseconds: 200), () {

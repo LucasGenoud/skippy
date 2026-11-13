@@ -1213,7 +1213,9 @@ class _SortButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
+    // select, not watch: only the sort mode shows here, not every note edit.
+    final sortMode = context.select<NotesStore, SortMode>((s) => s.sortMode);
+    final store = context.read<NotesStore>();
     final scheme = Theme.of(context).colorScheme;
     return PopupMenuButton<SortMode>(
       popUpAnimationStyle: Motion.menuFor(context),
@@ -1223,14 +1225,14 @@ class _SortButton extends StatelessWidget {
       // as a different colour in the top bar.
       iconColor: scheme.onSurfaceVariant,
       tooltip: 'Sort by',
-      initialValue: store.sortMode,
+      initialValue: sortMode,
       onSelected: store.setSortMode,
       itemBuilder: (context) => [
         for (final (mode, label) in _sortModes)
           PopupMenuItem(
             value: mode,
             child: MenuRow(
-              icon: store.sortMode == mode ? Icons.check : null,
+              icon: sortMode == mode ? Icons.check : null,
               label: label,
             ),
           ),

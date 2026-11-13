@@ -381,6 +381,22 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Note? get _note => _noteId == null ? null : _store.noteById(_noteId!);
 
+  // Backlinks scan every note's text, so they are kept until the store
+  // changes instead of being recomputed on each keystroke's rebuild.
+  String? _backlinksNoteId;
+  List<Note>? _backlinks;
+
+  void _dropBacklinks() => _backlinks = null;
+
+  List<Note> _backlinksTo(String id) {
+    if (_backlinks case final cached? when _backlinksNoteId == id) {
+      return cached;
+    }
+
+    _backlinksNoteId = id;
+    return _backlinks = _store.backlinks(id);
+  }
+
   /// Typing while the AI rewrites the note would be lost when the rewrite
   /// lands, so the fields hold still until it does.
   bool get _rewriting => _noteId != null && _store.isRewritingNote(_noteId!);
@@ -389,6 +405,7 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     _store = context.read<NotesStore>();
+    _store.addListener(_dropBacklinks);
     _settings = context.read<SettingsStore>();
     _noteId = widget.noteId;
     if (_noteId != null) _store.beginEditing(_noteId!);
@@ -444,6 +461,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _store.removeListener(_dropBacklinks);
     _finalize();
     _composerFocusRequests.dispose();
     _titleController.dispose();
@@ -1958,7 +1976,7 @@ class _EditorScreenState extends State<EditorScreen> {
           },
     ];
     final incoming = [
-      for (final source in _store.backlinks(note.id))
+      for (final source in _backlinksTo(note.id))
         LinkedNoteRef(
           id: source.id,
           title: noteLinkTitle(source),

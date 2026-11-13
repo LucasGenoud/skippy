@@ -161,7 +161,18 @@ class _AppSidebarState extends State<AppSidebar> {
     final onSelect = widget.onSelect;
     final selectedNoteIds = widget.selectedNoteIds;
     final onSelectionFiled = widget.onSelectionFiled;
-    final store = context.watch<NotesStore>();
+    // select, not watch: the sidebar shows the workspace's structure, so it
+    // rebuilds when that changes rather than on every note edit.
+    context.select<NotesStore, List<Object?>>(
+      (s) => [
+        s.activeWorkspaceId,
+        s.activeCollection,
+        s.collections,
+        s.labels,
+        s.savedViews,
+      ],
+    );
+    final store = context.read<NotesStore>();
     final scheme = Theme.of(context).colorScheme;
     final activeCollection = store.activeCollection;
     final baseSelection = activeCollection?.layout == 'board'
