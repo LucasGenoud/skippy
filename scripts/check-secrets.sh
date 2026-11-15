@@ -37,7 +37,7 @@ check_content_ci() {
   fi
 }
 
-check_paths '(^|/)(\.env($|\.)|credentials[^/]*\.json$|secrets?[^/]*\.(json|ya?ml)$|service-account[^/]*\.json$|google-services\.json$|GoogleService-Info\.plist$|.*\.(pem|key|p12|pfx|jks|keystore|mobileprovision|provisionprofile|bak|backup|dump)$|.*\.(db|sqlite|sqlite3)(-.*)?$)'
+check_paths '(^|/)(\.env($|\.)|credentials[^/]*\.json$|secrets?[^/]*\.(json|ya?ml)$|service-account[^/]*\.json$|google-services\.json$|GoogleService-Info\.plist$|key\.properties$|app/android/signing/.*|.*\.(pem|key|p8|p12|pfx|cer|jks|keystore|mobileprovision|provisionprofile|bak|backup|dump)$|.*\.(db|sqlite|sqlite3)(-.*)?$)'
 
 check_content 'BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY'
 check_aws_content() {
