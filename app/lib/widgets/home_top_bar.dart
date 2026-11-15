@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
 import 'animated_presence.dart';
+import 'app_logo.dart';
 import 'menu_label.dart';
 import 'pin_icon.dart';
 import 'package:provider/provider.dart';
@@ -182,6 +183,9 @@ class HomeTopBar extends StatelessWidget {
   static bool showsTitle(BuildContext context) =>
       ScreenWidth.isAtLeast(context, _wideBarMinWidth);
 
+  /// The brand mark beside the view's name on the wide bar.
+  static const double _logoSize = 28;
+
   /// Below this the bar collapses into a single search pill.
   static const double _wideBarMinWidth = 650;
 
@@ -211,6 +215,8 @@ class HomeTopBar extends StatelessWidget {
             onPressed: onToggleSidebar,
           ),
           const SizedBox(width: kSpaceSm),
+          const AppLogo(size: _logoSize),
+          const SizedBox(width: kSpaceMd),
           // The view's name, cross-faded as you move between views.
           Expanded(
             child: AnimatedSwitcher(
