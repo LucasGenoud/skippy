@@ -33,17 +33,25 @@ void main() {
   });
 
   group('the depth model reads', () {
-    // The bug this pins: white cards on an F8F9FA canvas differed by 1.04:1,
-    // so the app looked like one flat sheet on anything but a good display.
+    // The bug this pins: white cards on an F8F9FA canvas differed by 1.04:1
+    // and had nothing else to set them apart, so the app looked like one flat
+    // sheet. The zinc look keeps the fills close on purpose, so the edge every
+    // card draws (`outlineVariant`) is what has to read.
     test('cards separate from the canvas in both brightnesses', () {
       for (final entry in seeds.entries) {
         for (final brightness in Brightness.values) {
           final theme = buildTheme(brightness, seed: entry.value);
           final scheme = theme.colorScheme;
+          final where = '${entry.key} / ${brightness.name}';
           expect(
             contrast(scheme.surface, theme.scaffoldBackgroundColor),
+            greaterThan(1.02),
+            reason: 'fill, $where',
+          );
+          expect(
+            contrast(scheme.outlineVariant, theme.scaffoldBackgroundColor),
             greaterThan(1.1),
-            reason: '${entry.key} / ${brightness.name}',
+            reason: 'edge, $where',
           );
           // The canvas is `surfaceDim`; widgets that need the floor read it
           // from the scheme rather than from the Scaffold.
@@ -52,28 +60,35 @@ void main() {
       }
     });
 
-    // A board column has to read from across the room as a region cards are
-    // dropped into. Which *way* it steps off the canvas is a detail of the
-    // theme, since near black there is no room to go darker; that it steps far
-    // enough, and that cards still lift out of it, is the rule.
+    // A board column has to read as a region cards are dropped into. Which
+    // *way* it steps off the canvas is a detail of the theme, since near black
+    // there is no room to go darker; that its edge reads against the canvas,
+    // and the cards' edges against it, is the rule.
     test('troughs step clear of the canvas, and cards clear of them', () {
       for (final entry in seeds.entries) {
         for (final brightness in Brightness.values) {
           final theme = buildTheme(brightness, seed: entry.value);
           final scheme = theme.colorScheme;
           final trough = boardColumnColor(scheme);
+          final border = boardColumnBorderColor(scheme);
           final where = '${entry.key} / ${brightness.name}';
           expect(
             contrast(trough, scheme.surfaceDim),
-            greaterThan(1.1),
+            greaterThan(1.02),
             reason: 'column vs canvas, $where',
           );
+          // A touch under the card edge's 1.1: the column's fill steps off the
+          // canvas in the same direction, so the two together carry it.
           expect(
-            contrast(scheme.surface, trough),
-            greaterThan(1.1),
-            reason: 'card vs column, $where',
+            contrast(border, scheme.surfaceDim),
+            greaterThan(1.08),
+            reason: 'column edge vs canvas, $where',
           );
-          final border = boardColumnBorderColor(scheme);
+          expect(
+            contrast(scheme.outlineVariant, trough),
+            greaterThan(1.1),
+            reason: 'card edge vs column, $where',
+          );
           // A border that collapsed to pure black, and later one brighter than
           // the cards inside the column, were both earlier attempts at this.
           expect(border, isNot(const Color(0xFF000000)), reason: where);

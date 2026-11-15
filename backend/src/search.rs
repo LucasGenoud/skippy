@@ -443,6 +443,60 @@ impl SqliteVectorIndex {
 }
 
 // ---------------------------------------------------------------------------
+// Embedded text
+
+/// Bumped when the text notes are embedded from changes shape, so startup
+/// re-embeds every note rather than ranking old vectors against new ones.
+const EMBED_TEXT_VERSION: u32 = 2;
+
+/// Identifies what produced the stored vectors; see
+/// [`SqliteVectorIndex::connect`].
+pub fn index_signature(embedder: &dyn TextEmbedder) -> String {
+    format!(
+        "{}:{}:text-v{EMBED_TEXT_VERSION}",
+        embedder.model_name(),
+        embedder.dims()
+    )
+}
+
+/// `text` with each link replaced by the words in it. A raw URL embeds as
+/// subword noise ("dQw4w9WgXcQ", "utm_source"), and a vector built from noise
+/// sits close to every query, so a note holding a link ranked high for
+/// anything.
+fn readable_links(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for (span, url) in crate::unfurl::url_spans(text) {
+        // The "www." candidate inside an "https://www." link.
+        if span.start < copied {
+            continue;
+        }
+
+        out.push_str(&text[copied..span.start]);
+        out.push_str(&readable_url(&url));
+        copied = span.end;
+    }
+    out.push_str(&text[copied..]);
+    out
+}
+
+/// "https://www.github.com/rust-lang/rust/issues/1?ref=x" reads as
+/// "github.com rust lang rust issues". The query, the fragment, file
+/// extensions and any word holding a digit (ids, dates, hashes) are dropped.
+fn readable_url(url: &reqwest::Url) -> String {
+    let host = url.host_str().unwrap_or_default();
+    let mut words = vec![host.strip_prefix("www.").unwrap_or(host)];
+    for segment in url.path_segments().into_iter().flatten() {
+        let stem = segment.rsplit_once('.').map_or(segment, |(stem, _)| stem);
+        words.extend(
+            stem.split(['-', '_', '+', '~', '.'])
+                .filter(|word| !word.is_empty() && word.chars().all(char::is_alphabetic)),
+        );
+    }
+    words.join(" ")
+}
+
+// ---------------------------------------------------------------------------
 // Service
 
 /// Ceiling on embeds in flight at once. Indexing is fire-and-forget, one task
@@ -499,6 +553,11 @@ impl SearchService {
         format!("{own}\n{recognized}").trim().to_string()
     }
 
+    /// What the embedder sees for a note: its text with links read as words.
+    fn embed_text(record: &NoteRecord, ocr_texts: &[String]) -> String {
+        readable_links(&Self::note_text_with_ocr(record, ocr_texts))
+    }
+
     async fn embed_one(&self, text: String) -> anyhow::Result<Vec<f32>> {
         let _slot = self.embed_slots.acquire().await?;
         let mut vectors = self.embedder.embed(vec![text]).await?;
@@ -514,7 +573,7 @@ impl SearchService {
         record: &NoteRecord,
         ocr_texts: &[String],
     ) -> anyhow::Result<()> {
-        let text = Self::note_text_with_ocr(record, ocr_texts);
+        let text = Self::embed_text(record, ocr_texts);
         if text.is_empty() {
             return self.index.remove(&record.id).await;
         }
@@ -562,6 +621,23 @@ impl SearchService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn links_embed_as_their_readable_words() {
+        assert_eq!(
+            readable_links("later https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=Xy12 ok"),
+            "later youtube.com watch ok"
+        );
+        assert_eq!(
+            readable_links("[bug](https://github.com/rust-lang/rust/issues/12345#top)"),
+            "[bug](github.com rust lang rust issues)"
+        );
+        assert_eq!(
+            readable_links("www.example.com/2024/05/best-pasta_recipe-3f9a8b.html"),
+            "example.com best pasta recipe"
+        );
+        assert_eq!(readable_links("no links here"), "no links here");
+    }
 
     #[test]
     fn embeddings_are_read_back_in_input_order() {

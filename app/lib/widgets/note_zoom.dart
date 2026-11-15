@@ -66,6 +66,9 @@ class NoteZoomRoute extends ModalRoute<void> {
   Offset? _settleFrom;
   CurvedAnimation? _curved;
   final GlobalKey _pageKey = GlobalKey();
+  Widget? _face;
+  Size? _faceSize;
+  NoteZoom? _faceCard;
 
   @override
   Color? get barrierColor => null;
@@ -174,8 +177,12 @@ class NoteZoomRoute extends ModalRoute<void> {
     _held.value = Offset(math.max(0, next.dx), next.dy);
   }
 
-  /// Closes the note from where it is held, or settles it back.
-  Future<void> endDrag({required bool dismiss}) async {
+  /// Closes the note from where it is held, or settles it back. [velocity] is
+  /// the finger's at release, in pixels per second, which a settle carries on.
+  Future<void> endDrag({
+    required bool dismiss,
+    Offset velocity = Offset.zero,
+  }) async {
     final held = _held.value;
     if (held == null) {
       return;
@@ -189,16 +196,24 @@ class NoteZoomRoute extends ModalRoute<void> {
         return;
       }
     }
-    _springBack(_held.value ?? held);
+    _springBack(_held.value ?? held, velocity);
   }
 
-  void _springBack(Offset from) {
-    final settle = _settle ??=
-        AnimationController(vsync: navigator!, duration: Motion.base)
-          ..addListener(_onSettle)
-          ..addStatusListener(_onSettleStatus);
+  /// Runs progress 0 → 1 along the line from [from] to rest. Only the part of
+  /// [velocity] along that line carries over: held = from · (1 − p), so
+  /// dp/dt = −(velocity · from) / |from|².
+  void _springBack(Offset from, Offset velocity) {
+    final settle = _settle ??= AnimationController.unbounded(vsync: navigator!)
+      ..addListener(_onSettle)
+      ..addStatusListener(_onSettleStatus);
     _settleFrom = from;
-    settle.forward(from: 0);
+    final length = from.distanceSquared;
+    final speed = length == 0
+        ? 0.0
+        : -(velocity.dx * from.dx + velocity.dy * from.dy) / length;
+    settle
+      ..value = 0
+      ..animateWith(Motion.springTo(0, 1, velocity: speed));
   }
 
   void _onSettle() {
@@ -206,11 +221,7 @@ class NoteZoomRoute extends ModalRoute<void> {
     if (from == null) {
       return;
     }
-    _held.value = Offset.lerp(
-      from,
-      Offset.zero,
-      Motion.emphasized.transform(_settle!.value),
-    );
+    _held.value = Offset.lerp(from, Offset.zero, _settle!.value);
   }
 
   void _onSettleStatus(AnimationStatus status) {
@@ -328,17 +339,7 @@ class NoteZoomRoute extends ModalRoute<void> {
             right: 0,
             child: Opacity(
               opacity: faceOpacity,
-              child: FittedBox(
-                fit: BoxFit.fitWidth,
-                alignment: Alignment.topLeft,
-                child: SizedBox.fromSize(
-                  size: origin!.size,
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: source.widget.closedBuilder(context, () {}),
-                  ),
-                ),
-              ),
+              child: _faceOf(context, source, origin!.size),
             ),
           )
         : const SizedBox.shrink();
@@ -394,6 +395,31 @@ class NoteZoomRoute extends ModalRoute<void> {
           ),
         ),
       ],
+    );
+  }
+
+  /// The card's face as it flies, built once per card and size: the same
+  /// widget every frame lets the card skip rebuilding, and the boundary lets
+  /// it skip repainting while only its opacity and transform change. A note
+  /// edited while open rebuilds its card, so the close shows the new face.
+  Widget _faceOf(BuildContext context, _NoteZoomState source, Size size) {
+    if (_face != null && _faceSize == size && _faceCard == source.widget) {
+      return _face!;
+    }
+    _faceSize = size;
+    _faceCard = source.widget;
+    return _face = RepaintBoundary(
+      child: FittedBox(
+        fit: BoxFit.fitWidth,
+        alignment: Alignment.topLeft,
+        child: SizedBox.fromSize(
+          size: size,
+          child: Material(
+            type: MaterialType.transparency,
+            child: source.widget.closedBuilder(context, () {}),
+          ),
+        ),
+      ),
     );
   }
 

@@ -951,6 +951,7 @@ mod tests {
             content: content.into(),
             items,
             color: "default".into(),
+            pattern: crate::models::NO_PATTERN.into(),
             pinned: false,
             archived: false,
             trashed: false,

@@ -10,6 +10,7 @@ import 'package:skippy/state/settings_store.dart';
 
 import 'fake_api.dart';
 import 'widget_test.dart' show homeApp;
+import 'finders.dart';
 
 const _team = 'w-team';
 
@@ -170,11 +171,11 @@ void main() {
     await settings.load();
     await tester.pumpWidget(homeApp(store, settings: settings));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Chat with your notes'), findsOneWidget);
+    expect(findAction('Chat with your notes'), findsOneWidget);
 
     store.setActiveWorkspace(_team);
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Chat with your notes'), findsNothing);
+    expect(findAction('Chat with your notes'), findsNothing);
   });
 
   test('a note from a workspace this user is not in gets no AI', () async {

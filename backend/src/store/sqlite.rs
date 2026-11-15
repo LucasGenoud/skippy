@@ -835,9 +835,9 @@ impl SqliteRepository {
             "INSERT OR IGNORE INTO notes
              (id, workspace_id, created_by, kind, title, content, items, color, pinned, archived,
               trashed, position, grid_span, reminder_at, reminder_repeat, reminder_fired_at, created_at, updated_at, trashed_at,
-              stage_id, stage_position, collection_id, transcript_status)
+              stage_id, stage_position, collection_id, transcript_status, pattern)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                     CASE WHEN ? THEN ? ELSE NULL END, ?, ?, ?, ?)",
+                     CASE WHEN ? THEN ? ELSE NULL END, ?, ?, ?, ?, ?)",
         )
         .bind(&note.id)
         .bind(&note.workspace_id)
@@ -863,6 +863,7 @@ impl SqliteRepository {
         .bind(note.stage_position)
         .bind(&note.collection_id)
         .bind(&note.transcript_status)
+        .bind(&note.pattern)
         .execute(&self.pool)
         .await?;
         if result.rows_affected() == 0 {
@@ -891,7 +892,7 @@ impl SqliteRepository {
         .await?;
         let result = sqlx::query(
             "UPDATE notes SET workspace_id = ?, kind = ?, title = ?, content = ?, items = ?,
-             color = ?, pinned = ?, archived = ?, position = ?, grid_span = ?, reminder_at = ?,
+             color = ?, pattern = ?, pinned = ?, archived = ?, position = ?, grid_span = ?, reminder_at = ?,
              reminder_repeat = ?, reminder_fired_at = ?, updated_at = ?, last_editor_id = ?,
              stage_id = ?, stage_position = ?, collection_id = ?,
              trashed_at = CASE
@@ -908,6 +909,7 @@ impl SqliteRepository {
         .bind(&note.content)
         .bind(serde_json::to_string(&note.items)?)
         .bind(&note.color)
+        .bind(&note.pattern)
         .bind(note.pinned as i64)
         .bind(note.archived as i64)
         .bind(note.position)

@@ -149,9 +149,9 @@ class NoteLinksSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (outgoing.isNotEmpty) group('LINKS', Icons.north_east, outgoing),
+        if (outgoing.isNotEmpty) group('Links', Icons.north_east, outgoing),
         if (incoming.isNotEmpty)
-          group('LINKED FROM', Icons.south_west, incoming),
+          group('Linked from', Icons.south_west, incoming),
       ],
     );
   }

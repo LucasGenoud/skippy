@@ -652,6 +652,7 @@ class ApiClient extends _ApiTransport implements Api {
       'content': note.content,
       'items': Note.itemsToJson(note.items),
       'color': note.color,
+      'pattern': note.pattern.wire,
       'pinned': note.pinned,
       'position': note.position,
       'grid_span': note.gridSpan,

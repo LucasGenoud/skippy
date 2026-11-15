@@ -256,6 +256,7 @@ mod tests {
                 },
             ],
             color: "default".into(),
+            pattern: crate::models::NO_PATTERN.into(),
             pinned: false,
             archived: false,
             trashed: false,

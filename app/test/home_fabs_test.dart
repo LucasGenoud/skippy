@@ -10,6 +10,7 @@ import 'package:skippy/widgets/home_fabs.dart';
 import 'package:skippy/widgets/screen_width.dart';
 
 import 'fake_api.dart';
+import 'finders.dart';
 
 const _kinds = ['Note', 'Checklist', 'Markdown', 'Audio'];
 
@@ -62,18 +63,18 @@ void main() {
     await pumpFabs(tester);
     expectMenu(false);
 
-    await tester.tap(find.byTooltip('New note'));
+    await tester.tap(findAction('New note'));
     await tester.pumpAndSettle();
     expectMenu(true);
 
-    await tester.tap(find.byTooltip('Close'));
+    await tester.tap(findAction('Close'));
     await tester.pumpAndSettle();
     expectMenu(false);
   });
 
   testWidgets('tapping anywhere else folds the menu', (tester) async {
     await pumpFabs(tester);
-    await tester.tap(find.byTooltip('New note'));
+    await tester.tap(findAction('New note'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('grid'));
@@ -85,7 +86,7 @@ void main() {
     tester,
   ) async {
     await pumpFabs(tester);
-    await tester.tap(find.byTooltip('New note'));
+    await tester.tap(findAction('New note'));
     await tester.pumpAndSettle();
 
     await tester.tap(shown('Checklist'));

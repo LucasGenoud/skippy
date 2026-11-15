@@ -24,6 +24,7 @@ import '../util/label_style.dart';
 import '../util/linkify.dart';
 import '../util/motion.dart';
 import '../util/note_routes.dart';
+import '../util/platform.dart';
 import '../util/snack.dart';
 import '../util/widget_payload.dart';
 import 'history_screen.dart';
@@ -37,6 +38,9 @@ import '../widgets/editor/add_to_home_screen_help.dart';
 import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/editor_morph.dart';
+import '../widgets/editor/editor_resize.dart';
+
+export '../widgets/editor/editor_morph.dart' show MorphSource;
 import '../widgets/editor/highlighted_text_field.dart';
 import '../widgets/editor/note_actions_button.dart';
 import '../widgets/note_actions.dart';
@@ -45,6 +49,8 @@ import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
 import '../widgets/link_summary_indicator.dart';
+import '../widgets/app_icon_button.dart';
+import '../widgets/deferred_build.dart';
 import '../widgets/markdown_toolbar.dart';
 import '../widgets/note_zoom.dart';
 import '../widgets/paste_files.dart';
@@ -55,6 +61,8 @@ import '../widgets/screen_width.dart';
 import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
 import '../widgets/state_cross_fade.dart';
+import '../widgets/note_markdown.dart';
+import '../widgets/note_pattern.dart';
 
 /// Full-screen note editor. Everything autosaves as you type (the store
 /// debounces the network write); empty notes are discarded on close, exactly
@@ -121,6 +129,9 @@ bool wantsModalEditor(BuildContext context) =>
 /// Width the wide-layout modal grows to.
 const double _modalMaxWidth = 600;
 
+/// Widest the note's own fields get, centred in a wider editor.
+const double _editorContentWidth = 680;
+
 /// Only a gesture that begins within this left-hand edge can dismiss the
 /// fullscreen editor. Keeping the recognizer out of the arena elsewhere
 /// preserves horizontal interactions inside the note.
@@ -128,15 +139,9 @@ const double _edgeDismissWidth = 24;
 const double _edgeDismissDistance = 72;
 const double _edgeDismissFlingVelocity = 700;
 
-/// Global-coordinate bounds of the widget that [context] belongs to, the box a
-/// container morph should grow out of. Pass the result to [openNoteEditor] as
-/// `sourceRect`; null (no render box yet, or none at all) simply falls back to
-/// the plain fade-scale entrance.
-Rect? morphSourceRect(BuildContext context) {
-  final box = context.findRenderObject();
-  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
-  return box.localToGlobal(Offset.zero) & box.size;
-}
+/// How far the note has to be pulled down past its top to put the keyboard
+/// away. Far enough that a scroll back to the top never does it by accident.
+const double _pullToHideKeyboard = 48;
 
 /// Open the editor for the current layout: a centered modal over a dimmed
 /// barrier on wide screens, or the given fullscreen container-transform
@@ -144,10 +149,10 @@ Rect? morphSourceRect(BuildContext context) {
 /// Dismissing the modal, barrier tap, Escape, or the close button,
 /// finalizes the note exactly like popping the fullscreen editor.
 ///
-/// With [sourceRect] the modal morphs out of that box and shrinks back into it
-/// on close, so a card on a desktop grid expands into the editor the same way
-/// it does on a phone (see [morphSourceRect]); without one it fades in from
-/// the middle of the screen.
+/// With [source] the modal grows out of it and shrinks back into it on close,
+/// so a card on a desktop grid opens into the editor the way it does on a
+/// phone (see [EditorMorph]); without one it fades in from the middle of the
+/// screen.
 Future<void> openNoteEditor(
   BuildContext context, {
   required VoidCallback openFullscreen,
@@ -156,7 +161,7 @@ Future<void> openNoteEditor(
   Set<String> labelIds = const {},
   String? stageId,
   bool openedFromBoard = false,
-  Rect? sourceRect,
+  MorphSource? source,
 }) {
   // Drop focus from whatever field held it (search bar, quick-add, chat
   // composer). Without this the enclosing FocusScope remembers that field
@@ -167,7 +172,12 @@ Future<void> openNoteEditor(
     openFullscreen();
     return Future<void>.value();
   }
-  return showGeneralDialog<void>(
+  final expansion = ValueNotifier(_lastExpanded);
+  // The editor stands in for its source until it has shrunk back into it.
+  if (source != null && !Motion.reduced(context)) {
+    source.onHidden?.call(true);
+  }
+  final route = showGeneralDialog<void>(
     context: context,
     // Named so a widget or notification tap can tell this note is already
     // open and raise it instead of stacking a second editor over it.
@@ -181,38 +191,174 @@ Future<void> openNoteEditor(
     // The morph wraps the dialog itself in the page, where its laid-out size
     // is known, so the route adds no transition of its own for it.
     transitionBuilder: (context, animation, secondaryAnimation, child) =>
-        sourceRect == null || Motion.reduced(context)
+        source == null || Motion.reduced(context)
         ? FadeScaleTransition(animation: animation, child: child)
         : child,
     pageBuilder: (context, animation, secondaryAnimation) {
-      final Widget dialog = ClipRRect(
-        borderRadius: kBorderRadius,
-        child: EditorScreen(
-          noteId: noteId,
-          kind: kind,
-          modal: true,
-          labelIds: labelIds,
-          stageId: stageId,
-          openedFromBoard: openedFromBoard,
-        ),
-      );
-      return Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: _modalMaxWidth,
-            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      final morphs = source != null && !Motion.reduced(context);
+      return _EditorExpansion(
+        notifier: expansion,
+        child: _AboveKeyboard(
+          expansion: expansion,
+          morph: (radius, child) => morphs
+              ? Builder(
+                  builder: (context) => EditorMorph(
+                    animation: animation,
+                    source: source,
+                    color: _morphColor(context, noteId),
+                    endRadius: radius,
+                    contentWidth: _editorContentWidth,
+                    child: child,
+                  ),
+                )
+              : child,
+          child: EditorScreen(
+            noteId: noteId,
+            kind: kind,
+            modal: true,
+            labelIds: labelIds,
+            stageId: stageId,
+            openedFromBoard: openedFromBoard,
           ),
-          child: sourceRect == null || Motion.reduced(context)
-              ? dialog
-              : EditorMorph(
-                  animation: animation,
-                  source: sourceRect,
-                  child: dialog,
-                ),
         ),
       );
     },
   );
+  return route.whenComplete(() {
+    _lastExpanded = expansion.value;
+    expansion.dispose();
+  });
+}
+
+/// The editor's background for [noteId], which the open/close morph's
+/// surface shares so the two meet without a seam.
+Color _morphColor(BuildContext context, String? noteId) {
+  final theme = Theme.of(context);
+  final color = context.select<NotesStore, String?>(
+    (store) => noteId == null ? null : store.noteById(noteId)?.color,
+  );
+  final fill = context.select<SettingsStore, Color?>(
+    (settings) =>
+        color == null ? null : settings.resolveColor(color, theme.brightness),
+  );
+  return fill ?? theme.colorScheme.surface;
+}
+
+/// Whether the last modal editor was left filling the window, so the next
+/// note opens the way the user last chose. Kept for the session only.
+bool _lastExpanded = false;
+
+/// Whether the modal editor fills the window instead of floating at
+/// [_modalMaxWidth]. Toggled from the editor's top bar.
+class _EditorExpansion extends InheritedNotifier<ValueNotifier<bool>> {
+  const _EditorExpansion({required super.notifier, required super.child});
+
+  static ValueNotifier<bool>? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_EditorExpansion>()?.notifier;
+}
+
+/// Centres the modal editor in the space the keyboard leaves, so the line
+/// being written never ends up underneath it, and moves it between floating
+/// and filling the window.
+///
+/// Reads the keyboard inset here rather than in the route's page builder: the
+/// inset changes on every frame of the keyboard's slide, and only this box
+/// needs to follow it, not the editor inside.
+class _AboveKeyboard extends StatefulWidget {
+  /// Share of the free height the dialog may take.
+  static const double _heightShare = 0.85;
+
+  final ValueNotifier<bool> expansion;
+
+  /// Wraps the clipped editor in the open/close morph, given the corner
+  /// radius the editor has right now.
+  final Widget Function(double radius, Widget child) morph;
+
+  final Widget child;
+
+  const _AboveKeyboard({
+    required this.expansion,
+    required this.morph,
+    required this.child,
+  });
+
+  @override
+  State<_AboveKeyboard> createState() => _AboveKeyboardState();
+}
+
+class _AboveKeyboardState extends State<_AboveKeyboard>
+    with SingleTickerProviderStateMixin {
+  /// 0 just after a toggle, 1 at rest.
+  late final AnimationController _resize = AnimationController(
+    vsync: this,
+    duration: Motion.slow,
+    value: 1,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    widget.expansion.addListener(_toggled);
+  }
+
+  @override
+  void dispose() {
+    widget.expansion.removeListener(_toggled);
+    _resize.dispose();
+    super.dispose();
+  }
+
+  void _toggled() {
+    if (Motion.reduced(context)) {
+      _resize.value = 1;
+    } else {
+      _resize.forward(from: 0);
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final expanded = widget.expansion.value;
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Center(
+          child: AnimatedBuilder(
+            animation: _resize,
+            child: widget.child,
+            builder: (context, child) {
+              final t = Motion.emphasized.transform(_resize.value);
+              // Floating corners round off as the editor reaches the edges.
+              final radius = kDialogRadius * (expanded ? 1 - t : t);
+              return EditorResizeBox(
+                expanded: expanded,
+                progress: t,
+                child: ConstrainedBox(
+                  constraints: expanded
+                      ? BoxConstraints.loose(constraints.biggest)
+                      : BoxConstraints(
+                          maxWidth: _modalMaxWidth,
+                          maxHeight:
+                              constraints.maxHeight *
+                              _AboveKeyboard._heightShare,
+                        ),
+                  child: widget.morph(
+                    radius,
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(radius),
+                      child: child,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EditorScreenState extends State<EditorScreen> {
@@ -250,12 +396,35 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset _edgeSwipeOrigin = Offset.zero;
   bool _edgeSwipeDismissed = false;
 
+  // Marks where the note's content ends, so a tap below it can be told apart.
+  final _contentEndKey = GlobalKey();
+  // Bumped to hand the caret to the checklist's new-item row.
+  final _composerFocusRequests = ValueNotifier<int>(0);
+  double _pulledPastTop = 0;
+  bool _pullHidKeyboard = false;
+
   // Undo/redo session history (see EditorHistory for the grouping rules).
   // Replaced outright when the editor switches notes (duplicate).
   late EditorHistory _history;
   bool _restoring = false;
 
   Note? get _note => _noteId == null ? null : _store.noteById(_noteId!);
+
+  // Backlinks scan every note's text, so they are kept until the store
+  // changes instead of being recomputed on each keystroke's rebuild.
+  String? _backlinksNoteId;
+  List<Note>? _backlinks;
+
+  void _dropBacklinks() => _backlinks = null;
+
+  List<Note> _backlinksTo(String id) {
+    if (_backlinks case final cached? when _backlinksNoteId == id) {
+      return cached;
+    }
+
+    _backlinksNoteId = id;
+    return _backlinks = _store.backlinks(id);
+  }
 
   /// Typing while the AI rewrites the note would be lost when the rewrite
   /// lands, so the fields hold still until it does.
@@ -265,6 +434,7 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     _store = context.read<NotesStore>();
+    _store.addListener(_dropBacklinks);
     _settings = context.read<SettingsStore>();
     _noteId = widget.noteId;
     if (_noteId != null) _store.beginEditing(_noteId!);
@@ -285,23 +455,23 @@ class _EditorScreenState extends State<EditorScreen> {
     _formatBarFocus.addListener(_syncFormatBar);
     _findController.addListener(() => setState(() {}));
     _history = EditorHistory(_currentSnapshot());
-    // A brand-new text/markdown note wants the body focused for immediate
-    // typing. But focusing on mount makes iOS raise the keyboard while the open
-    // transition (container morph / fade-scale modal) is still animating,
-    // the two animations fight and the layout resizes mid-open, which stutters.
-    // Wait for the route to finish opening, then focus.
-    if (widget.noteId == null && widget.kind != NoteKind.checklist) {
+    // A brand-new note opens on its title, whatever its kind. But focusing on
+    // mount makes iOS raise the keyboard while the open transition (container
+    // morph / fade-scale modal) is still animating, the two animations fight
+    // and the layout resizes mid-open, which stutters. Wait for the route to
+    // finish opening, then focus.
+    if (widget.noteId == null) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _focusBodyAfterOpen(),
+        (_) => _focusTitleAfterOpen(),
       );
     }
   }
 
-  void _focusBodyAfterOpen() {
+  void _focusTitleAfterOpen() {
     if (!mounted) return;
     final animation = ModalRoute.of(context)?.animation;
     if (animation == null || animation.isCompleted) {
-      _contentFocus.requestFocus();
+      _titleFocus.requestFocus();
       return;
     }
     void onStatus(AnimationStatus status) {
@@ -311,7 +481,7 @@ class _EditorScreenState extends State<EditorScreen> {
       }
       animation.removeStatusListener(onStatus);
       if (mounted && status == AnimationStatus.completed) {
-        _contentFocus.requestFocus();
+        _titleFocus.requestFocus();
       }
     }
 
@@ -320,7 +490,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _store.removeListener(_dropBacklinks);
     _finalize();
+    _composerFocusRequests.dispose();
     _titleController.dispose();
     _contentController.dispose();
     _findController.dispose();
@@ -387,6 +559,16 @@ class _EditorScreenState extends State<EditorScreen> {
       if (title.trim().isEmpty && content.trim().isEmpty) return;
       _ensureNote();
     }
+
+    // The controllers also notify when only the caret or selection moves;
+    // that is not an edit, and saving it would stamp the note as changed.
+    final note = _note;
+    if (note != null &&
+        note.title == title &&
+        (_kind == NoteKind.checklist || note.content == content)) {
+      return;
+    }
+
     _store.updateNoteContent(
       _noteId!,
       title: title,
@@ -571,6 +753,11 @@ class _EditorScreenState extends State<EditorScreen> {
   void _setColor(String color) {
     _ensureNote();
     _store.setColor(_noteId!, color);
+  }
+
+  void _setPattern(NotePattern pattern) {
+    _ensureNote();
+    _store.setPattern(_noteId!, pattern);
   }
 
   Future<void> _editLabels() async {
@@ -984,123 +1171,111 @@ class _EditorScreenState extends State<EditorScreen> {
             : const SizedBox.shrink(key: ValueKey('no-find-field')),
         alignment: AlignmentDirectional.centerStart,
       ),
+      // The editor fades in from a third of the way through its morph, so
+      // these buttons are built a frame late instead of in the one that
+      // starts it.
       actions: [
-        _barCrossFade(
-          _finding
-              ? IconButton(
-                  key: const ValueKey('find-close'),
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Close search',
-                  onPressed: _closeFind,
-                )
-              : Row(
-                  key: const ValueKey('note-actions'),
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSize(
-                      duration: Motion.reduced(context)
-                          ? Duration.zero
-                          : Motion.fast,
-                      curve: Motion.standard,
-                      child: _kind == NoteKind.markdown && !trashed
-                          ? _markdownModeButton()
-                          : const SizedBox.shrink(),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: 'Find in note',
-                      onPressed: _openFind,
-                    ),
-                    if (!trashed) ...[
-                      IconButton(
-                        icon: PinIcon(pinned: pinned),
-                        tooltip: pinned ? 'Unpin' : 'Pin',
-                        onPressed: _togglePin,
+        DeferredBuild(
+          child: _barCrossFade(
+            _finding
+                ? AppIconButton(
+                    key: const ValueKey('find-close'),
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close search',
+                    onPressed: _closeFind,
+                  )
+                : Row(
+                    key: const ValueKey('note-actions'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedSize(
+                        duration: Motion.reduced(context)
+                            ? Duration.zero
+                            : Motion.fast,
+                        curve: Motion.standard,
+                        child: _kind == NoteKind.markdown && !trashed
+                            ? _markdownModeButton()
+                            : const SizedBox.shrink(),
                       ),
-                    ] else ...[
-                      IconButton(
-                        icon: const Icon(Icons.restore_from_trash_outlined),
-                        tooltip: 'Restore',
-                        onPressed: () async {
-                          await CollectionPicker.restore(context, note!.id);
-                          if (mounted) {
+                      if (!trashed) ...[
+                        AppIconButton(
+                          icon: PinIcon(pinned: pinned),
+                          tooltip: pinned ? 'Unpin' : 'Pin',
+                          onPressed: _togglePin,
+                        ),
+                      ] else ...[
+                        AppIconButton(
+                          icon: const Icon(Icons.restore_from_trash_outlined),
+                          tooltip: 'Restore',
+                          onPressed: () async {
+                            await CollectionPicker.restore(context, note!.id);
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                        ),
+                        AppIconButton(
+                          icon: const Icon(Icons.delete_forever_outlined),
+                          tooltip: 'Delete forever',
+                          onPressed: () {
+                            _store.deleteForever(note!.id);
                             Navigator.of(context).pop();
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_forever_outlined),
-                        tooltip: 'Delete forever',
-                        onPressed: () {
-                          _store.deleteForever(note!.id);
-                          Navigator.of(context).pop();
-                          showAppSnack(
-                            'Note deleted forever',
-                            icon: Icons.delete_forever_outlined,
-                            kind: SnackKind.danger,
-                          );
-                        },
+                            showAppSnack(
+                              'Note deleted forever',
+                              icon: Icons.delete_forever_outlined,
+                              kind: SnackKind.danger,
+                            );
+                          },
+                        ),
+                      ],
+                      if (_EditorExpansion.of(context) case final expansion?)
+                        _expandButton(expansion),
+                      // Everything else you do *to* the note. The bottom bar keeps what
+                      // goes *into* it, so neither menu has to nest.
+                      NoteActionsButton(
+                        isOwner: can.isOwner,
+                        kind: _kind,
+                        onFind: _openFind,
+                        onCopy: can.canCopy ? _copyNoteToClipboard : null,
+                        onArchive: !trashed && can.canArchive
+                            ? _archiveAndClose
+                            : null,
+                        archived: note?.archived ?? false,
+                        onShare: can.canEdit ? _openShare : null,
+                        onDelete: can.canTrash ? _deleteAndClose : null,
+                        onDuplicate: can.canDuplicate ? _duplicateNote : null,
+                        onMoveToCollection: can.canMoveToCollection
+                            ? _moveToCollection
+                            : null,
+                        onMoveToWorkspace: can.canMoveToWorkspace
+                            ? () => MoveToWorkspaceSheet.show(context, _noteId!)
+                            : null,
+                        onMoveToStage:
+                            widget.openedFromBoard && can.canMoveToStage
+                            ? () => MoveToStageSheet.show(context, _noteId!)
+                            : null,
+                        onHistory: can.canShowHistory
+                            ? () => NoteHistoryScreen.open(context, _noteId!)
+                            : null,
+                        // A trashed note must not be pinnable: the widget would
+                        // outlive the note itself.
+                        onAddToHomeScreen: HomeWidgets.supported && can.canEdit
+                            ? _addToHomeScreen
+                            : null,
+                        onConvert: can.canEdit ? _convertKind : null,
+                        onRewrite: can.canRewrite ? _rewriteWithAi : null,
+                        rewriteTasks: can.rewriteTasks,
+                        rewriting:
+                            note != null && _store.isRewritingNote(note.id),
+                        gridSpan: note?.gridSpan ?? 1,
+                        onGridSpan: can.canSetGridSpan
+                            ? (span) => _store.setGridSpan(_noteId!, span)
+                            : null,
                       ),
                     ],
-                    // Promoted out of the menu below: the two note actions used often
-                    // enough to earn a permanent target, kept adjacent to it so the
-                    // whole group still reads as "things you do to this note".
-                    IconButton(
-                      icon: const Icon(Icons.content_copy_outlined),
-                      tooltip: 'Copy to clipboard',
-                      onPressed: can.canCopy ? _copyNoteToClipboard : null,
-                    ),
-                    if (!trashed)
-                      IconButton(
-                        icon: Icon(
-                          (note?.archived ?? false)
-                              ? Icons.unarchive_outlined
-                              : Icons.archive_outlined,
-                        ),
-                        tooltip: (note?.archived ?? false)
-                            ? 'Unarchive'
-                            : 'Archive',
-                        onPressed: can.canArchive ? _archiveAndClose : null,
-                      ),
-                    // Everything else you do *to* the note. The bottom bar keeps what
-                    // goes *into* it, so neither menu has to nest.
-                    NoteActionsButton(
-                      isOwner: can.isOwner,
-                      kind: _kind,
-                      onShare: can.canEdit ? _openShare : null,
-                      onDelete: can.canTrash ? _deleteAndClose : null,
-                      onDuplicate: can.canDuplicate ? _duplicateNote : null,
-                      onMoveToCollection: can.canMoveToCollection
-                          ? _moveToCollection
-                          : null,
-                      onMoveToWorkspace: can.canMoveToWorkspace
-                          ? () => MoveToWorkspaceSheet.show(context, _noteId!)
-                          : null,
-                      onMoveToStage:
-                          widget.openedFromBoard && can.canMoveToStage
-                          ? () => MoveToStageSheet.show(context, _noteId!)
-                          : null,
-                      onHistory: can.canShowHistory
-                          ? () => NoteHistoryScreen.open(context, _noteId!)
-                          : null,
-                      // A trashed note must not be pinnable: the widget would
-                      // outlive the note itself.
-                      onAddToHomeScreen: HomeWidgets.supported && can.canEdit
-                          ? _addToHomeScreen
-                          : null,
-                      onConvert: can.canEdit ? _convertKind : null,
-                      onRewrite: can.canRewrite ? _rewriteWithAi : null,
-                      rewriteTasks: can.rewriteTasks,
-                      rewriting:
-                          note != null && _store.isRewritingNote(note.id),
-                      gridSpan: note?.gridSpan ?? 1,
-                      onGridSpan: can.canSetGridSpan
-                          ? (span) => _store.setGridSpan(_noteId!, span)
-                          : null,
-                    ),
-                  ],
-                ),
-          alignment: AlignmentDirectional.centerEnd,
+                  ),
+            alignment: AlignmentDirectional.centerEnd,
+          ),
         ),
         const SizedBox(width: kSpaceXs),
       ],
@@ -1167,38 +1342,43 @@ class _EditorScreenState extends State<EditorScreen> {
             duration: Motion.base,
             curve: Motion.standard,
             color: bg,
-            child: CallbackShortcuts(
-              bindings: _historyShortcuts,
-              child: _editorShell(
-                note: note,
-                body: SafeArea(
-                  // heightFactor 1 makes the modal hug its content instead of
-                  // stretching to the dialog's max height; fullscreen keeps the
-                  // usual fill (the column is max-size there anyway).
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    heightFactor: widget.modal ? 1.0 : null,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 680),
-                      child: Column(
-                        // Modal: shrink to the note's content (the dialog grows
-                        // with the note) instead of filling the screen.
-                        mainAxisSize: widget.modal
-                            ? MainAxisSize.min
-                            : MainAxisSize.max,
-                        children: [
-                          Flexible(
-                            fit: widget.modal ? FlexFit.loose : FlexFit.tight,
-                            child: _noteFields(
-                              note,
-                              settings,
-                              labels,
-                              trashed: trashed,
-                              query: query,
+            child: NotePatternBackground(
+              pattern: note?.pattern ?? NotePattern.none,
+              child: CallbackShortcuts(
+                bindings: _historyShortcuts,
+                child: _editorShell(
+                  note: note,
+                  body: SafeArea(
+                    // heightFactor 1 makes the modal hug its content instead of
+                    // stretching to the dialog's max height; fullscreen keeps the
+                    // usual fill (the column is max-size there anyway).
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      heightFactor: _hugsContent ? 1.0 : null,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: _editorContentWidth,
+                        ),
+                        child: Column(
+                          // Modal: shrink to the note's content (the dialog grows
+                          // with the note) instead of filling the screen.
+                          mainAxisSize: _hugsContent
+                              ? MainAxisSize.min
+                              : MainAxisSize.max,
+                          children: [
+                            Flexible(
+                              fit: _hugsContent ? FlexFit.loose : FlexFit.tight,
+                              child: _noteFields(
+                                note,
+                                settings,
+                                labels,
+                                trashed: trashed,
+                                query: query,
+                              ),
                             ),
-                          ),
-                          ..._composeBars(note, settings, trashed: trashed),
-                        ],
+                            ..._composeBars(note, settings, trashed: trashed),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1234,51 +1414,135 @@ class _EditorScreenState extends State<EditorScreen> {
       onTap: trashed
           ? () => showAppSnack("Can't edit in Trash, restore the note first")
           : null,
-      child: ListView(
-        shrinkWrap: widget.modal,
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        children: [
-          _titleField(trashed: trashed),
-          // Turning a note into a checklist (or back) cross-fades the body.
-          // Text and markdown share one field, so they are one state.
-          StateCrossFade(
-            state: _kind == NoteKind.markdown ? NoteKind.text : _kind,
-            child: _contentEditor(trashed: trashed, query: query),
-          ),
-          AnimatedReveal(
-            child: (note?.summarizingLinks ?? false)
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: LinkSummaryIndicator(
-                      onCancel: () => _store.cancelLinkSummaries(note!.id),
-                    ),
-                  )
-                : null,
-          ),
-          // Images sit directly under the text; other files follow as
-          // download tiles.
-          AnimatedPresence(
-            layout: (children) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
-            ),
-            children: _buildAttachments(note),
-          ),
-          AnimatedReveal(
-            child:
-                note != null &&
-                    (note.reminderAt != null ||
-                        settings.locationReminderForNote(note.id) != null ||
-                        labels.isNotEmpty)
-                ? _metaChips(note, settings, labels)
-                : null,
-          ),
-          AnimatedReveal(child: _linksSection(note)),
-          // Rich preview cards for any links in the note, kept as the very
-          // last thing so they always sit below everything else.
-          AnimatedReveal(child: _linkPreviews(note)),
-        ],
+      onTapUp: trashed ? null : _onTapBelowContent,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _hideKeyboardOnPull,
+        child: _noteList(
+          note,
+          settings,
+          labels,
+          trashed: trashed,
+          query: query,
+        ),
       ),
+    );
+  }
+
+  /// A tap in the empty space under the note carries on writing at its end,
+  /// the way a sheet of paper would.
+  void _onTapBelowContent(TapUpDetails details) {
+    final end = _contentEndKey.currentContext?.findRenderObject();
+    if (end is! RenderBox || !end.attached || _rewriting) {
+      return;
+    }
+    if (details.globalPosition.dy <= end.localToGlobal(Offset.zero).dy) {
+      return;
+    }
+
+    switch (_kind) {
+      case NoteKind.checklist:
+        _composerFocusRequests.value++;
+      case NoteKind.text || NoteKind.markdown when !_previewMarkdown:
+        _contentFocus.requestFocus();
+        _contentController.selection = TextSelection.collapsed(
+          offset: _contentController.text.length,
+        );
+      default:
+        break;
+    }
+  }
+
+  /// Pulling the note down past its top puts the keyboard away: there is
+  /// nothing above the title to scroll to, so the gesture means nothing else.
+  /// iOS reports it as a bounce below zero, Android as overscroll.
+  bool _hideKeyboardOnPull(ScrollNotification notification) {
+    if (notification.depth != 0) {
+      return false;
+    }
+    if (notification is ScrollStartNotification) {
+      _pulledPastTop = 0;
+      _pullHidKeyboard = false;
+      return false;
+    }
+
+    final dragging = switch (notification) {
+      ScrollUpdateNotification(:final dragDetails) => dragDetails != null,
+      OverscrollNotification(:final dragDetails) => dragDetails != null,
+      _ => false,
+    };
+    if (!dragging || _pullHidKeyboard) {
+      return false;
+    }
+
+    final metrics = notification.metrics;
+    if (notification is OverscrollNotification && notification.overscroll < 0) {
+      _pulledPastTop -= notification.overscroll;
+    } else if (metrics.pixels < metrics.minScrollExtent) {
+      _pulledPastTop = metrics.minScrollExtent - metrics.pixels;
+    }
+    if (_pulledPastTop < _pullToHideKeyboard) {
+      return false;
+    }
+
+    _pullHidKeyboard = true;
+    if (isTouchPrimaryPlatform && isEditingText()) {
+      dismissKeyboard();
+    }
+    return false;
+  }
+
+  Widget _noteList(
+    Note? note,
+    SettingsStore settings,
+    List<Label> labels, {
+    required bool trashed,
+    required String query,
+  }) {
+    return ListView(
+      shrinkWrap: _hugsContent,
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+      children: [
+        _titleField(trashed: trashed),
+        // Turning a note into a checklist (or back) cross-fades the body.
+        // Text and markdown share one field, so they are one state.
+        StateCrossFade(
+          state: _kind == NoteKind.markdown ? NoteKind.text : _kind,
+          child: _contentEditor(trashed: trashed, query: query),
+        ),
+        AnimatedReveal(
+          child: (note?.summarizingLinks ?? false)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: LinkSummaryIndicator(
+                    onCancel: () => _store.cancelLinkSummaries(note!.id),
+                  ),
+                )
+              : null,
+        ),
+        // Images sit directly under the text; other files follow as
+        // download tiles.
+        AnimatedPresence(
+          layout: (children) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+          children: _buildAttachments(note),
+        ),
+        AnimatedReveal(
+          child:
+              note != null &&
+                  (note.reminderAt != null ||
+                      settings.locationReminderForNote(note.id) != null ||
+                      labels.isNotEmpty)
+              ? _metaChips(note, settings, labels)
+              : null,
+        ),
+        AnimatedReveal(child: _linksSection(note)),
+        // Rich preview cards for any links in the note, kept as the very
+        // last thing so they always sit below everything else.
+        AnimatedReveal(child: _linkPreviews(note)),
+        SizedBox(key: _contentEndKey),
+      ],
     );
   }
 
@@ -1294,6 +1558,13 @@ class _EditorScreenState extends State<EditorScreen> {
       // platform would do anyway.
       textCapitalization: TextCapitalization.sentences,
       textInputAction: TextInputAction.next,
+      // Enter moves on to the body. A checklist has no single body field, so
+      // `next` traversal carries the caret to its new-item row instead.
+      onSubmitted: (_) {
+        if (_kind != NoteKind.checklist) {
+          _contentFocus.requestFocus();
+        }
+      },
       contentInsertionConfiguration: PasteFileArea.insertionOf(context),
       style: Theme.of(
         context,
@@ -1370,27 +1641,34 @@ class _EditorScreenState extends State<EditorScreen> {
               ? null
               : Border(top: BorderSide(color: hairlineColor(scheme))),
         ),
-        child: EditorBottomBar(
-          trashed: trashed,
-          editedStamp: note == null
-              ? ''
-              : 'Edited ${settings.editedLabel(note.updatedAt)}',
-          onPalette: trashed
-              ? null
-              : () => ColorPickerSheet.show(
-                  context,
-                  selected: () => _note?.color ?? 'default',
-                  onSelect: _setColor,
-                ),
-          // Labelling is available from the first moment, like colour and
-          // pin: filing a note is often the first thing you do, and the draft
-          // materializes on demand.
-          onLabels: trashed ? null : _editLabels,
-          onReminder: trashed ? null : _editReminder,
-          onImage: trashed || _uploading ? null : _pickImage,
-          onAttach: trashed || _uploading ? null : _pickFile,
-          onUndo: trashed || !_history.canUndo ? null : _undo,
-          onRedo: trashed || !_history.canRedo ? null : _redo,
+        // A frame after the app bar's buttons, for the same reason.
+        child: DeferredBuild(
+          frames: 2,
+          placeholder: EditorBottomBar.placeholder(context),
+          child: EditorBottomBar(
+            trashed: trashed,
+            editedStamp: note == null
+                ? ''
+                : 'Edited ${settings.editedLabel(note.updatedAt)}',
+            onPalette: trashed
+                ? null
+                : () => ColorPickerSheet.show(
+                    context,
+                    selected: () => _note?.color ?? 'default',
+                    onSelect: _setColor,
+                    selectedPattern: () => _note?.pattern ?? NotePattern.none,
+                    onSelectPattern: _setPattern,
+                  ),
+            // Labelling is available from the first moment, like colour and
+            // pin: filing a note is often the first thing you do, and the draft
+            // materializes on demand.
+            onLabels: trashed ? null : _editLabels,
+            onReminder: trashed ? null : _editReminder,
+            onImage: trashed || _uploading ? null : _pickImage,
+            onAttach: trashed || _uploading ? null : _pickFile,
+            onUndo: trashed || !_history.canUndo ? null : _undo,
+            onRedo: trashed || !_history.canRedo ? null : _redo,
+          ),
         ),
       ),
     ];
@@ -1433,14 +1711,21 @@ class _EditorScreenState extends State<EditorScreen> {
     return Material(
       type: MaterialType.transparency,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: _hugsContent ? MainAxisSize.min : MainAxisSize.max,
         children: [
           _buildAppBar(note),
-          Flexible(child: body),
+          Flexible(
+            fit: _hugsContent ? FlexFit.loose : FlexFit.tight,
+            child: body,
+          ),
         ],
       ),
     );
   }
+
+  /// A modal editor sizes itself to the note unless it fills the window.
+  bool get _hugsContent =>
+      widget.modal && !(_EditorExpansion.of(context)?.value ?? false);
 
   /// The zoom route carrying this editor, when it can follow the finger.
   NoteZoomRoute? get _zoomRoute => switch (ModalRoute.of(context)) {
@@ -1478,6 +1763,7 @@ class _EditorScreenState extends State<EditorScreen> {
       final far = _edgeSwipeDistance >= _edgeDismissDistance;
       zoom.endDrag(
         dismiss: velocity >= _edgeDismissFlingVelocity || (far && !flungBack),
+        velocity: details.velocity.pixelsPerSecond,
       );
       _resetEdgeSwipe();
       return;
@@ -1515,9 +1801,7 @@ class _EditorScreenState extends State<EditorScreen> {
       return AnimatedChecklist(
         items: _items,
         readOnly: trashed || _rewriting,
-        autofocusNew:
-            (widget.noteId == null && widget.kind == NoteKind.checklist) ||
-            (widget.addChecklistItem && !trashed),
+        autofocusNew: widget.addChecklistItem && !trashed,
         highlightQuery: query,
         // Suggestions come from THIS note's checked history only, never
         // from other notes.
@@ -1533,6 +1817,7 @@ class _EditorScreenState extends State<EditorScreen> {
         reminders: _note?.itemReminders ?? const {},
         onSetReminder: trashed ? null : _editItemReminder,
         onIndentItem: trashed ? null : _indentItem,
+        focusComposer: _composerFocusRequests,
       );
     }
     if (_kind == NoteKind.markdown) {
@@ -1561,6 +1846,8 @@ class _EditorScreenState extends State<EditorScreen> {
                 titleFor: _store.linkTitleFor,
               ),
         selectable: true,
+        styleSheet: noteMarkdownStyle(Theme.of(context)),
+        builders: noteMarkdownBuilders(CodeBlockMode.interactive),
         // A tap on preview text returns to its markdown source. Drag and
         // long-press gestures remain owned by the selectable text.
         onTapText: trashed ? null : _editMarkdownFromPreview,
@@ -1592,10 +1879,24 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   /// Switches a markdown note between its rendered and source forms.
+  /// Grows the modal to fill the window, or back to its floating size.
+  Widget _expandButton(ValueNotifier<bool> expansion) => StateCrossFade(
+    state: expansion.value,
+    alignment: AlignmentDirectional.center,
+    child: AppIconButton(
+      icon: Icon(
+        expansion.value ? Icons.close_fullscreen : Icons.open_in_full,
+        size: 20,
+      ),
+      tooltip: expansion.value ? 'Exit full screen' : 'Full screen',
+      onPressed: () => expansion.value = !expansion.value,
+    ),
+  );
+
   Widget _markdownModeButton() => StateCrossFade(
     state: _previewMarkdown,
     alignment: AlignmentDirectional.center,
-    child: IconButton(
+    child: AppIconButton(
       icon: Icon(
         _previewMarkdown ? Icons.edit_outlined : Icons.visibility_outlined,
       ),
@@ -1706,7 +2007,7 @@ class _EditorScreenState extends State<EditorScreen> {
           },
     ];
     final incoming = [
-      for (final source in _store.backlinks(note.id))
+      for (final source in _backlinksTo(note.id))
         LinkedNoteRef(
           id: source.id,
           title: noteLinkTitle(source),
@@ -1835,8 +2136,8 @@ class _EditorScreenState extends State<EditorScreen> {
       '${settings.reminderLabel(note.reminderAt!)}'
       '${note.reminderRepeat == null ? '' : ' · ${note.reminderRepeat!.label}'}';
 
-  /// One label chip in the editor, tinted with the label's colour and prefixed
-  /// with its icon (custom or default).
+  /// One label chip in the editor: a neutral chip led by the label's icon
+  /// (custom or default) in its colour.
   Widget _labelChip(
     BuildContext context,
     Label label,
@@ -1845,14 +2146,11 @@ class _EditorScreenState extends State<EditorScreen> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final tint = labelColor(label, scheme.onSurfaceVariant);
-    final tinted = label.color != null;
     return InputChip(
       key: ValueKey('label-${label.id}'),
       avatar: Icon(labelIcon(label), size: 16, color: tint),
       label: Text(label.name),
       visualDensity: VisualDensity.compact,
-      backgroundColor: tinted ? tint.withValues(alpha: 0.12) : null,
-      side: tinted ? BorderSide(color: tint.withValues(alpha: 0.55)) : null,
       onDeleted: trashed
           ? null
           : () => _store.toggleLabelOnNote(noteId, label.id),

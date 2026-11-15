@@ -181,6 +181,36 @@ void main() {
       expect(midway, lessThan(end));
     });
 
+    testWidgets('a glide retargeted midway keeps its speed', (tester) async {
+      notes = [serverNote('n0', title: 'Old')];
+      await tester.pumpWidget(grid());
+      await tester.pumpAndSettle();
+      double top() => tester.getTopLeft(find.text('Old')).dy;
+      // Short enough that a step is speed, not the new run's acceleration.
+      const sample = Duration(milliseconds: 2);
+
+      notes = [serverNote('n1', title: 'A'), ...notes];
+      await tester.pumpWidget(grid());
+      await tester.pump();
+      await tester.pump(Motion.base ~/ 3);
+      final before = top();
+      await tester.pump(sample);
+      final stepBefore = top() - before;
+
+      // A second card arrives above while the first glide is under way.
+      notes = [serverNote('n2', title: 'B'), ...notes];
+      final from = top();
+      await tester.pumpWidget(grid());
+      await tester.pump(sample);
+      final stepAfter = top() - from;
+      await tester.pumpAndSettle();
+
+      // Restarting a tween from rest, or with its curve's opening speed,
+      // jumps the speed; a spring carries the current one into the new run.
+      expect(stepBefore, greaterThan(0));
+      expect(stepAfter / stepBefore, inInclusiveRange(0.6, 1.6));
+    });
+
     testWidgets(
       'a grid reopened from known heights still glides to make room',
       (tester) async {

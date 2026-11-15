@@ -309,6 +309,7 @@ class BulkImporter {
       content: remapNoteLinks(backupNote.content, noteIds),
       items: restoredItems,
       color: backupNote.color,
+      pattern: backupNote.pattern,
       pinned: backupNote.pinned,
       archived: backupNote.archived,
       trashed: backupNote.trashed,

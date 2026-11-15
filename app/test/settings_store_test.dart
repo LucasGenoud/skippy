@@ -61,6 +61,7 @@ void main() {
     settings.setDefaultListMode(true);
     settings.setGridDensity(GridDensity.compact);
     settings.setGridWidth(GridWidth.full);
+    settings.setDefaultNoteKind(NoteKind.checklist);
     settings.setBoardExitColumn('w-default-general', 'archive', true);
     settings.addPaletteColor(
       'Lava',
@@ -76,6 +77,7 @@ void main() {
     expect(api.settings['default_view'], 'list');
     expect(api.settings['grid_density'], 'compact');
     expect(api.settings['grid_width'], 'full');
+    expect(api.settings['default_note_kind'], 'checklist');
     expect(api.settings['board_exit_columns'], {
       'w-default-general': ['archive'],
     });
@@ -94,6 +96,7 @@ void main() {
     expect(other.defaultListMode, isTrue);
     expect(other.gridDensity, GridDensity.compact);
     expect(other.gridWidth, GridWidth.full);
+    expect(other.defaultNoteKind, NoteKind.checklist);
     expect(other.boardExitsFor('w-default-general'), {'archive'});
     expect(other.palette.last.name, 'Lava');
     expect(other.palette.last.light, const Color(0xFFFF5722));

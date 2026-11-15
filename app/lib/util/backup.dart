@@ -143,6 +143,7 @@ class BackupNote {
   final String content;
   final List<BackupChecklistItem> items;
   final String color;
+  final NotePattern pattern;
   final bool pinned;
   final bool archived;
   final bool trashed;
@@ -171,6 +172,7 @@ class BackupNote {
     required this.content,
     required this.items,
     required this.color,
+    this.pattern = NotePattern.none,
     required this.pinned,
     required this.archived,
     this.trashed = false,
@@ -292,6 +294,7 @@ Future<Uint8List> createBackupArchive({
             {'id': item.id, 'text': item.text, 'done': item.done},
         ],
         'color': note.color,
+        'pattern': note.pattern.wire,
         'pinned': note.pinned,
         'archived': note.archived,
         'trashed': note.trashed,
@@ -655,6 +658,10 @@ BackupWorkspace _parseWorkspaceContents(
               ),
         ],
         color: _string(note['color'], max: 64, fallback: 'default'),
+        // Absent from backups made before patterns existed.
+        pattern: NotePattern.fromWire(
+          _optionalString(note['pattern'], max: 32),
+        ),
         pinned: note['pinned'] == true,
         archived: note['archived'] == true,
         trashed: note['trashed'] == true,

@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS notes (
     content TEXT NOT NULL DEFAULT '',
     items TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(items)),
     color TEXT NOT NULL DEFAULT 'default',
+    pattern TEXT NOT NULL DEFAULT 'none',
     pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
     trashed INTEGER NOT NULL DEFAULT 0 CHECK (trashed IN (0, 1)),
@@ -289,6 +290,7 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::raw_sql(SCHEMA).execute(pool).await?;
     migrate_collections(pool).await?;
     migrate_grid_span(pool).await?;
+    migrate_note_pattern(pool).await?;
     migrate_workspace_ai(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS workspace_copies (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE) STRICT").execute(pool).await?;
     import_personal_views(pool).await?;
@@ -303,6 +305,17 @@ async fn migrate_grid_span(pool: &SqlitePool) -> anyhow::Result<()> {
         )
         .execute(&mut *tx)
         .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn migrate_note_pattern(pool: &SqlitePool) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    if !table_has_column(&mut tx, "notes", "pattern").await? {
+        sqlx::query("ALTER TABLE notes ADD COLUMN pattern TEXT NOT NULL DEFAULT 'none'")
+            .execute(&mut *tx)
+            .await?;
     }
     tx.commit().await?;
     Ok(())

@@ -17,6 +17,7 @@ pub(super) fn note_from_row(row: &SqliteRow) -> NoteRecord {
         content: row.get("content"),
         items: serde_json::from_str(&items_json).unwrap_or_default(),
         color: row.get("color"),
+        pattern: row.get("pattern"),
         pinned: row.get::<i64, _>("pinned") != 0,
         archived: row.get::<i64, _>("archived") != 0,
         trashed: row.get::<i64, _>("trashed") != 0,

@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
 import '../models/note.dart';
+import 'note_pattern.dart';
 import '../models/saved_location.dart';
 import '../state/note_conversion.dart';
 import '../state/notes_store.dart';
@@ -47,6 +48,21 @@ import 'state_cross_fade.dart';
 /// created on save, so an abandoned composer never leaves a phantom note in
 /// the grid, and, because a draft is created with these already set, they
 /// ride along on the create request instead of trailing behind it.
+/// The kinds the collapsed bar offers a button for, in order.
+const _kBarKinds = [
+  (icon: Icons.edit_outlined, tooltip: 'New note', kind: NoteKind.text),
+  (
+    icon: Icons.check_box_outlined,
+    tooltip: 'New checklist',
+    kind: NoteKind.checklist,
+  ),
+  (
+    icon: Icons.notes_outlined,
+    tooltip: 'New markdown note',
+    kind: NoteKind.markdown,
+  ),
+];
+
 class QuickAddBar extends StatefulWidget {
   /// Labels the composed note starts with, set when a label view is open, so
   /// what you write there stays there.
@@ -67,6 +83,10 @@ class _QuickAddBarState extends State<QuickAddBar> {
   final _contentFocus = FocusNode();
 
   bool _expanded = false;
+
+  /// Whether a checklist body takes the caret as it appears: yes when the
+  /// draft is converted into one, no when it opens on its title.
+  bool _checklistTakesFocus = false;
   NoteKind _kind = NoteKind.text;
 
   /// Local draft items while composing a checklist inline; committed to a real
@@ -77,6 +97,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
   // The note's own properties, composed locally and applied when the note is
   // created. Reset with the rest of the composer.
   String _color = 'default';
+  NotePattern _pattern = NotePattern.none;
   Set<String> _labelIds = {};
   DateTime? _reminderAt;
   ReminderRepeat? _reminderRepeat;
@@ -128,17 +149,17 @@ class _QuickAddBarState extends State<QuickAddBar> {
     setState(() {
       _expanded = true;
       _kind = kind;
+      _checklistTakesFocus = false;
       // A note composed in a label view is filed there from the start; the
       // chips show it, and it can be unfiled like any other label.
       _labelIds = {...widget.labelIds};
     });
-    // The checklist grabs focus itself (its new-item row); text/markdown need
-    // the content field focused once it exists.
-    if (kind != NoteKind.checklist) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _expanded) _contentFocus.requestFocus();
-      });
-    }
+    // A new note starts on its title, whatever its kind.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _expanded) {
+        _titleFocus.requestFocus();
+      }
+    });
   }
 
   /// Whether there is anything worth turning into a note. A reminder counts on
@@ -164,6 +185,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
     // PATCHed, so everything set here rides along on the create request that
     // the content update below triggers.
     if (_color != 'default') store.setColor(note.id, _color);
+    if (_pattern != NotePattern.none) {
+      store.setPattern(note.id, _pattern);
+    }
     if (_reminderAt != null) {
       store.setReminder(note.id, _reminderAt, _reminderRepeat);
     }
@@ -240,6 +264,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       _kind = NoteKind.text;
       _expanded = false;
       _color = 'default';
+      _pattern = NotePattern.none;
       _labelIds = {};
       _reminderAt = null;
       _reminderRepeat = null;
@@ -300,6 +325,8 @@ class _QuickAddBarState extends State<QuickAddBar> {
       context,
       selected: () => _color,
       onSelect: (color) => setState(() => _color = color),
+      selectedPattern: () => _pattern,
+      onSelectPattern: (pattern) => setState(() => _pattern = pattern),
     ),
   );
 
@@ -449,6 +476,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
     setState(() {
       _kind = target;
       _items = converted.items;
+      _checklistTakesFocus = true;
     });
     if (target != NoteKind.checklist) _contentFocus.requestFocus();
   }
@@ -500,36 +528,42 @@ class _QuickAddBarState extends State<QuickAddBar> {
               borderRadius: kBorderRadius,
               side: BorderSide(color: scheme.outlineVariant),
             ),
-            child: AnimatedSize(
-              // Ease the open/close on the Material-3 emphasized bezier so the
-              // bar unfurls into the composer rather than snapping linearly.
-              // A zero reverse duration trips an AnimatedSize layout assertion,
-              // so one millisecond is used: visually instant, framework-safe.
-              duration: Motion.base,
-              reverseDuration: const Duration(milliseconds: 1),
-              curve: Motion.emphasized,
-              alignment: Alignment.topCenter,
-              // Cross-fade bar <-> composer while the size animates, so the
-              // expansion reads as one motion instead of a hard content swap.
-              child: AnimatedSwitcher(
-                duration: Motion.base,
-                reverseDuration: Duration.zero,
-                switchInCurve: Motion.emphasized,
-                switchOutCurve: Curves.easeIn,
-                layoutBuilder: (currentChild, previousChildren) => Stack(
-                  clipBehavior: Clip.none,
+            child: ClipRRect(
+              borderRadius: kBorderRadius,
+              child: NotePatternBackground(
+                pattern: _pattern,
+                child: AnimatedSize(
+                  // Ease the open/close on the Material-3 emphasized bezier so the
+                  // bar unfurls into the composer rather than snapping linearly.
+                  // A zero reverse duration trips an AnimatedSize layout assertion,
+                  // so one millisecond is used: visually instant, framework-safe.
+                  duration: Motion.base,
+                  reverseDuration: const Duration(milliseconds: 1),
+                  curve: Motion.emphasized,
                   alignment: Alignment.topCenter,
-                  children: [...previousChildren, ?currentChild],
+                  // Cross-fade bar <-> composer while the size animates, so the
+                  // expansion reads as one motion instead of a hard content swap.
+                  child: AnimatedSwitcher(
+                    duration: Motion.base,
+                    reverseDuration: Duration.zero,
+                    switchInCurve: Motion.emphasized,
+                    switchOutCurve: Curves.easeIn,
+                    layoutBuilder: (currentChild, previousChildren) => Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.topCenter,
+                      children: [...previousChildren, ?currentChild],
+                    ),
+                    child: _expanded
+                        ? KeyedSubtree(
+                            key: const ValueKey('composer'),
+                            child: _buildComposer(context),
+                          )
+                        : KeyedSubtree(
+                            key: const ValueKey('bar'),
+                            child: _buildBar(context),
+                          ),
+                  ),
                 ),
-                child: _expanded
-                    ? KeyedSubtree(
-                        key: const ValueKey('composer'),
-                        child: _buildComposer(context),
-                      )
-                    : KeyedSubtree(
-                        key: const ValueKey('bar'),
-                        child: _buildBar(context),
-                      ),
               ),
             ),
           ),
@@ -540,6 +574,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   Widget _buildBar(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final defaultKind = context.select<SettingsStore, NoteKind>(
+      (s) => s.defaultNoteKind,
+    );
 
     Widget kindButton(IconData icon, String tooltip, NoteKind kind) =>
         IconButton(
@@ -557,7 +594,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       cursor: SystemMouseCursors.text,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _expand(NoteKind.text),
+        onTap: () => _expand(defaultKind),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
           child: Row(
@@ -572,16 +609,10 @@ class _QuickAddBarState extends State<QuickAddBar> {
                   ),
                 ),
               ),
-              kindButton(
-                Icons.check_box_outlined,
-                'New checklist',
-                NoteKind.checklist,
-              ),
-              kindButton(
-                Icons.notes_outlined,
-                'New markdown note',
-                NoteKind.markdown,
-              ),
+              // The two kinds the bar itself does not start as.
+              for (final kind in _kBarKinds)
+                if (kind.kind != defaultKind)
+                  kindButton(kind.icon, kind.tooltip, kind.kind),
               // The spinner takes the image button's slot while the picture
               // uploads, fading across rather than swapping.
               StateCrossFade(
@@ -690,7 +721,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
         padding: const EdgeInsets.only(top: 4),
         child: AnimatedChecklist(
           items: _items,
-          autofocusNew: true,
+          autofocusNew: _checklistTakesFocus,
           // A quick-add note has no id yet, so there is no per-note history to
           // draw suggestions from.
           suggestionsFor: (_, _) => const [],

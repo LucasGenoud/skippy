@@ -222,10 +222,10 @@ class _NoteCardContent extends StatelessWidget {
               images: images,
               store: store,
               borderRadius: BorderRadius.vertical(
-                top: hasTextBlock ? Radius.zero : kRadiusCorner,
+                top: hasTextBlock ? Radius.zero : kCardCorner,
                 bottom: hasFooter || hasLinkPreviews || reserveActions
                     ? Radius.zero
-                    : kRadiusCorner,
+                    : kCardCorner,
               ),
             ),
           ),
@@ -310,7 +310,7 @@ class _NoteCardContent extends StatelessWidget {
             outlined: false,
             borderRadius: i < linkPreviewUrls.length - 1
                 ? BorderRadius.zero
-                : const BorderRadius.vertical(bottom: kRadiusCorner),
+                : const BorderRadius.vertical(bottom: kCardCorner),
           ),
       ],
     );
@@ -337,6 +337,12 @@ class _NoteCardContent extends StatelessWidget {
   }
 }
 
+/// Markdown a title can carry: a heading, emphasis or code marks, a link.
+final RegExp _titleMarkdown = RegExp(
+  r'(^#{1,6}\s|[*_`~]|\[[^\]]+\]\([^)]+\))',
+  multiLine: true,
+);
+
 class _CardTitle extends StatelessWidget {
   final String title;
   final String query;
@@ -350,10 +356,7 @@ class _CardTitle extends StatelessWidget {
       fontWeight: FontWeight.w600,
       height: 1.3,
     );
-    if (!RegExp(
-      r'(^#{1,6}\s|[*_`~]|\[[^\]]+\]\([^)]+\))',
-      multiLine: true,
-    ).hasMatch(title)) {
+    if (!_titleMarkdown.hasMatch(title)) {
       return Text.rich(
         TextSpan(
           children: highlightSpans(
@@ -429,9 +432,11 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
       _builtTheme = theme;
       _built = MarkdownBody(
         data: widget.content,
-        styleSheet: MarkdownStyleSheet.fromTheme(
+        styleSheet: noteMarkdownStyle(
           theme,
-        ).copyWith(p: theme.textTheme.bodyMedium?.copyWith(height: 1.45)),
+          body: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+        ),
+        builders: noteMarkdownBuilders(CodeBlockMode.preview),
       );
     }
     return _built!;

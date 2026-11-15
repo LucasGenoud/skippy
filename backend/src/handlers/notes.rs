@@ -282,6 +282,7 @@ pub async fn create_note_for_user(
             items
         },
         color: body.color.unwrap_or_else(|| "default".to_string()),
+        pattern: body.pattern.unwrap_or_else(|| NO_PATTERN.to_string()),
         pinned: body.pinned.unwrap_or(false),
         archived: body.archived.unwrap_or(false),
         trashed: body.trashed.unwrap_or(false),

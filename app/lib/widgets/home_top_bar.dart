@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
 import 'animated_presence.dart';
+import 'app_logo.dart';
 import 'menu_label.dart';
 import 'pin_icon.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,7 @@ import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 import 'screen_width.dart';
+import 'app_icon_button.dart';
 
 /// The top bar displays the active setting, matching Settings → Appearance.
 /// Tapping still cycles to the next choice.
@@ -128,9 +130,13 @@ class HomeTopBar extends StatelessWidget {
   static const double barHeight = 60;
   static const double _pillHeight = 36;
 
-  /// The wide bar's search field: enough for a query and its filter terms,
-  /// not a centrepiece.
-  static const double _searchWidth = 320;
+  /// A button's hover shape inside the desktop pill, and the gap that leaves
+  /// around it: (36 - 28) / 2.
+  static const double _pillButtonSize = 28;
+  static const double _pillButtonInset = (_pillHeight - _pillButtonSize) / 2;
+
+  /// The wide bar's search field: room for a query and several filter terms.
+  static const double _searchWidth = 560;
 
   /// Notes chat needs the server's retrieval, and the open workspace to allow
   /// chat with a provider from its owner.
@@ -177,8 +183,15 @@ class HomeTopBar extends StatelessWidget {
   static bool showsTitle(BuildContext context) =>
       ScreenWidth.isAtLeast(context, _wideBarMinWidth);
 
+  /// The brand mark beside the view's name on the wide bar.
+  static const double _logoSize = 28;
+
   /// Below this the bar collapses into a single search pill.
   static const double _wideBarMinWidth = 650;
+
+  /// Gap between the phone pill's edge and the buttons at its ends, the same
+  /// as above and below them: (50px pill - 40px button pad) / 2.
+  static const double _narrowPillInset = 5;
 
   static const _selectingKey = ValueKey('selecting');
   static const _browsingKey = ValueKey('browsing');
@@ -196,12 +209,14 @@ class HomeTopBar extends StatelessWidget {
       color: scheme.surface,
       child: Row(
         children: [
-          IconButton(
+          AppIconButton(
             icon: const Icon(Icons.menu),
             tooltip: 'Main menu',
             onPressed: onToggleSidebar,
           ),
           const SizedBox(width: kSpaceSm),
+          const AppLogo(size: _logoSize),
+          const SizedBox(width: kSpaceMd),
           // The view's name, cross-faded as you move between views.
           Expanded(
             child: AnimatedSwitcher(
@@ -225,54 +240,70 @@ class HomeTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: kSpaceLg),
+          // Twice the title's share, so the field grows with the window.
           Flexible(
+            flex: 2,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: _searchWidth),
               child: _SearchPill(
                 focusNode: focusNode,
                 height: _pillHeight,
-                child: Row(
-                  children: [
-                    const SizedBox(width: kSpaceMd),
-                    Icon(
-                      Icons.search,
-                      color: scheme.onSurfaceVariant,
-                      size: 18,
-                    ),
-                    const SizedBox(width: kSpaceSm),
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        onChanged: onQuery,
-                        textInputAction: TextInputAction.search,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        decoration: InputDecoration(
-                          hintText: 'Search',
-                          hintStyle: TextStyle(color: scheme.onSurfaceVariant),
-                          border: InputBorder.none,
-                          isCollapsed: true,
+                // The pill's buttons hover smaller than a toolbar's, keeping
+                // their shape off its edges.
+                child: IconButtonTheme(
+                  data: IconButtonThemeData(
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(_pillButtonSize),
+                      minimumSize: const Size.square(_pillButtonSize),
+                      padding: EdgeInsets.zero,
+                    ).merge(IconButtonTheme.of(context).style),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: kSpaceMd),
+                      Icon(
+                        Icons.search,
+                        color: scheme.onSurfaceVariant,
+                        size: 18,
+                      ),
+                      const SizedBox(width: kSpaceSm),
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          onChanged: onQuery,
+                          textInputAction: TextInputAction.search,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          decoration: InputDecoration(
+                            hintText: 'Search',
+                            hintStyle: TextStyle(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            border: InputBorder.none,
+                            isCollapsed: true,
+                          ),
                         ),
                       ),
-                    ),
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: controller,
-                      builder: (context, value, _) => _fadeScale(
-                        child: value.text.isEmpty
-                            ? const SizedBox.shrink()
-                            : IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                tooltip: 'Clear search',
-                                onPressed: () {
-                                  controller.clear();
-                                  onQuery('');
-                                },
-                              ),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: controller,
+                        builder: (context, value, _) => _fadeScale(
+                          child: value.text.isEmpty
+                              ? const SizedBox.shrink()
+                              : AppIconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    controller.clear();
+                                    onQuery('');
+                                  },
+                                ),
+                        ),
                       ),
-                    ),
-                    _filtersControl(),
-                    if (semanticAvailable) _semanticControl(scheme),
-                  ],
+                      _filtersControl(),
+                      if (semanticAvailable) _semanticControl(scheme),
+                      const SizedBox(width: _pillButtonInset),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -290,14 +321,14 @@ class HomeTopBar extends StatelessWidget {
                     Row(mainAxisSize: MainAxisSize.min, children: children),
                 children: [
                   if (_chatAvailable(context))
-                    IconButton(
+                    AppIconButton(
                       key: const ValueKey('chat'),
                       icon: const Icon(Icons.forum_outlined),
                       tooltip: 'Chat with your notes',
                       onPressed: () => ChatScreen.open(context),
                     ),
                   if (onShareView != null)
-                    IconButton(
+                    AppIconButton(
                       key: const ValueKey('share-view'),
                       icon: const Icon(Icons.ios_share),
                       tooltip: 'Share this view',
@@ -306,7 +337,7 @@ class HomeTopBar extends StatelessWidget {
                 ],
               ),
               const _SortButton(),
-              IconButton(
+              AppIconButton(
                 // The sun/moon rotates in as the theme flips, a nod to the
                 // day/night metaphor without slowing the switch down.
                 icon: AnimatedSwitcher(
@@ -328,7 +359,7 @@ class HomeTopBar extends StatelessWidget {
                 tooltip: 'Theme: ${themeAction.label}, tap to change',
                 onPressed: settings.cycleThemeMode,
               ),
-              IconButton(
+              AppIconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: 'Settings',
                 onPressed: () =>
@@ -345,7 +376,7 @@ class HomeTopBar extends StatelessWidget {
   }
 
   /// The in-pill filter control: opens the cheat sheet of search operators.
-  Widget _filtersControl() => IconButton(
+  Widget _filtersControl() => AppIconButton(
     icon: const Icon(Icons.tune, size: 20),
     tooltip: 'Search filters',
     onPressed: onOpenFilters,
@@ -365,7 +396,7 @@ class HomeTopBar extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          : IconButton(
+          : AppIconButton(
               key: const ValueKey('toggle'),
               icon: Icon(
                 Icons.auto_awesome,
@@ -398,7 +429,8 @@ class HomeTopBar extends StatelessWidget {
         focusNode: focusNode,
         child: Row(
           children: [
-            IconButton(
+            const SizedBox(width: _narrowPillInset),
+            AppIconButton(
               icon: const Icon(Icons.menu),
               tooltip: 'Main menu',
               onPressed: onToggleSidebar,
@@ -434,7 +466,7 @@ class HomeTopBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (searching)
-                        IconButton(
+                        AppIconButton(
                           icon: const Icon(Icons.close, size: 20),
                           tooltip: 'Clear search',
                           onPressed: () {
@@ -444,7 +476,7 @@ class HomeTopBar extends StatelessWidget {
                         ),
                       _filtersControl(),
                       if (semanticAvailable) _semanticControl(scheme),
-                      const SizedBox(width: kSpaceXs),
+                      const SizedBox(width: _narrowPillInset),
                     ],
                   );
                 } else {
@@ -453,13 +485,13 @@ class HomeTopBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (chatAvailable)
-                        IconButton(
+                        AppIconButton(
                           icon: const Icon(Icons.forum_outlined),
                           tooltip: 'Chat with your notes',
                           onPressed: () => ChatScreen.open(context),
                         ),
                       _UserAvatarMenu(onShareView: onShareView),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: _narrowPillInset),
                     ],
                   );
                 }
@@ -482,7 +514,7 @@ class HomeTopBar extends StatelessWidget {
         ? 'Select notes'
         : '${selection.count} selected';
     final controls = <Widget>[
-      IconButton(
+      AppIconButton(
         icon: _fadeScale(
           child: Icon(
             selection.allSelected ? Icons.deselect_outlined : Icons.select_all,
@@ -519,48 +551,36 @@ class HomeTopBar extends StatelessWidget {
             if (selection.canMoveToStage)
               const PopupMenuItem(
                 value: _SelectionAction.stage,
-                child: ListTile(
-                  leading: Icon(Icons.view_kanban_outlined),
-                  title: Text('Move to column'),
-                  contentPadding: EdgeInsets.zero,
+                child: MenuRow(
+                  icon: Icons.view_kanban_outlined,
+                  label: 'Move to column',
                 ),
               ),
             const PopupMenuItem(
               value: _SelectionAction.label,
-              child: ListTile(
-                leading: Icon(Icons.label_outline),
-                title: Text('Add label'),
-                contentPadding: EdgeInsets.zero,
-              ),
+              child: MenuRow(icon: Icons.label_outline, label: 'Add label'),
             ),
             const PopupMenuItem(
               value: _SelectionAction.share,
-              child: ListTile(
-                leading: Icon(Icons.person_add_alt_outlined),
-                title: Text('Share'),
-                contentPadding: EdgeInsets.zero,
+              child: MenuRow(
+                icon: Icons.person_add_alt_outlined,
+                label: 'Share',
               ),
             ),
             const PopupMenuItem(
               value: _SelectionAction.color,
-              child: ListTile(
-                leading: Icon(Icons.palette_outlined),
-                title: Text('Change color'),
-                contentPadding: EdgeInsets.zero,
+              child: MenuRow(
+                icon: Icons.palette_outlined,
+                label: 'Change color',
               ),
             ),
             PopupMenuItem(
               value: _SelectionAction.pin,
-              child: ListTile(
-                leading: Icon(
-                  selection.pinSelected
-                      ? Icons.push_pin_outlined
-                      : Icons.push_pin,
-                ),
-                title: Text(
-                  selection.pinSelected ? 'Pin notes' : 'Unpin notes',
-                ),
-                contentPadding: EdgeInsets.zero,
+              child: MenuRow(
+                icon: selection.pinSelected
+                    ? Icons.push_pin_outlined
+                    : Icons.push_pin,
+                label: selection.pinSelected ? 'Pin notes' : 'Unpin notes',
               ),
             ),
           ],
@@ -572,27 +592,27 @@ class HomeTopBar extends StatelessWidget {
         )
       else ...[
         if (selection.canMoveToStage)
-          IconButton(
+          AppIconButton(
             icon: const Icon(Icons.view_kanban_outlined),
             tooltip: 'Move selected notes to a column',
             onPressed: selection.count == 0 ? null : selection.onMoveToStage,
           ),
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.label_outline),
           tooltip: 'Add label to selected notes',
           onPressed: selection.count == 0 ? null : selection.onAddLabel,
         ),
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.person_add_alt_outlined),
           tooltip: 'Share selected notes',
           onPressed: selection.count == 0 ? null : selection.onShare,
         ),
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.palette_outlined),
           tooltip: 'Change selected note colors',
           onPressed: selection.count == 0 ? null : selection.onSetColor,
         ),
-        IconButton(
+        AppIconButton(
           icon: PinIcon(pinned: !selection.pinSelected),
           tooltip: selection.pinSelected
               ? 'Pin selected notes'
@@ -601,7 +621,7 @@ class HomeTopBar extends StatelessWidget {
         ),
       ],
       if (selection.canArchive)
-        IconButton(
+        AppIconButton(
           icon: _fadeScale(
             child: Icon(
               selection.archiveSelected
@@ -616,13 +636,13 @@ class HomeTopBar extends StatelessWidget {
           onPressed: selection.count == 0 ? null : selection.onArchive,
         ),
       if (selection.canRestore)
-        IconButton(
+        AppIconButton(
           icon: const Icon(Icons.restore_outlined),
           tooltip: 'Restore selected notes',
           onPressed: selection.count == 0 ? null : selection.onRestore,
         ),
       if (selection.canTrash)
-        IconButton(
+        AppIconButton(
           icon: Icon(Icons.delete_outline, color: scheme.error),
           tooltip: 'Move selected notes to Trash',
           onPressed: selection.count == 0 ? null : selection.onTrash,
@@ -699,7 +719,7 @@ class _SelectionBar extends StatelessWidget {
         children: [
           dropIn(
             0,
-            IconButton(
+            AppIconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Cancel selection',
               onPressed: onCancel,
@@ -1223,7 +1243,9 @@ class _SortButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<NotesStore>();
+    // select, not watch: only the sort mode shows here, not every note edit.
+    final sortMode = context.select<NotesStore, SortMode>((s) => s.sortMode);
+    final store = context.read<NotesStore>();
     final scheme = Theme.of(context).colorScheme;
     return PopupMenuButton<SortMode>(
       popUpAnimationStyle: Motion.menuFor(context),
@@ -1233,14 +1255,16 @@ class _SortButton extends StatelessWidget {
       // as a different colour in the top bar.
       iconColor: scheme.onSurfaceVariant,
       tooltip: 'Sort by',
-      initialValue: store.sortMode,
+      initialValue: sortMode,
       onSelected: store.setSortMode,
       itemBuilder: (context) => [
         for (final (mode, label) in _sortModes)
-          CheckedPopupMenuItem(
+          PopupMenuItem(
             value: mode,
-            checked: store.sortMode == mode,
-            child: Text(label),
+            child: MenuRow(
+              icon: sortMode == mode ? Icons.check : null,
+              label: label,
+            ),
           ),
       ],
     );

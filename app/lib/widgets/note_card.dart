@@ -40,10 +40,18 @@ import 'screen_width.dart';
 import 'swipe_to_archive.dart';
 import 'transcribing_indicator.dart';
 import 'workspace_menu.dart';
+import 'note_markdown.dart';
+import 'note_pattern.dart';
 
 part 'note_card/actions.dart';
 part 'note_card/content.dart';
 part 'note_card/labels.dart';
+
+/// How far a card's edge leans from its fill toward the text colour: a
+/// coloured card at rest in light and dark, and any card under the pointer.
+const double _edgeInkLight = 0.09;
+const double _edgeInkDark = 0.10;
+const double _edgeInkHover = 0.16;
 
 /// A note in the grid. Narrow layouts use [NoteZoom] to morph into the
 /// fullscreen editor; wide layouts open their own modal from the card.
@@ -91,6 +99,9 @@ class _NoteTileState extends State<NoteTile> {
   bool _hovered = false;
   bool _menuOpen = false;
   bool _reminderPickerOpen = false;
+
+  /// The desktop editor is standing in for this card while it is open.
+  bool _lent = false;
   Note? _bodyNote;
   String? _bodyQuery;
   bool? _bodyActionsSlot;
@@ -141,6 +152,55 @@ class _NoteTileState extends State<NoteTile> {
     return _body!;
   }
 
+  void _lend(bool lent) {
+    if (!mounted || _lent == lent) {
+      return;
+    }
+    setState(() => _lent = lent);
+  }
+
+  /// The card at rest, drawn by the editor's open/close morph over its
+  /// growing surface. Reads the note from the store, so a closing morph shows
+  /// the note as it was left.
+  Widget _face(BuildContext context) {
+    final note =
+        context.select<NotesStore, Note?>(
+          (store) => store.noteById(widget.note.id),
+        ) ??
+        widget.note;
+    final theme = Theme.of(context);
+    final fill = context.select<SettingsStore, Color?>(
+      (s) => s.resolveColor(note.color, theme.brightness),
+    );
+    final actionsSlot = !note.trashed && !isTouchPrimaryPlatform;
+    return Material(
+      color: fill ?? theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: kCardBorderRadius),
+      clipBehavior: Clip.antiAlias,
+      child: NotePatternBackground(
+        pattern: note.pattern,
+        child: Stack(
+          children: [
+            _NoteCardContent(
+              note: note,
+              query: widget.query,
+              reserveActions: actionsSlot,
+              showLabelsInBody: !actionsSlot,
+            ),
+            if (actionsSlot && note.labelIds.isNotEmpty)
+              _NoteFooterLabels(
+                note: note,
+                visible: true,
+                bottomInset:
+                    _NoteCardContent._linkPreviewUrls(note).length *
+                    (kLinkPreviewStripHeight + 1),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _editReminder() async {
     if (_reminderPickerOpen) return;
     _reminderPickerOpen = true;
@@ -189,7 +249,7 @@ class _NoteTileState extends State<NoteTile> {
         openNoteEditor(
           context,
           noteId: copy.id,
-          sourceRect: morphSourceRect(context),
+          source: MorphSource(context),
           openFullscreen: () => Navigator.of(
             context,
           ).push(NoteZoomRoute(builder: (_) => EditorScreen(noteId: copy.id))),
@@ -217,26 +277,16 @@ class _NoteTileState extends State<NoteTile> {
     final isRewriting = context.select<NotesStore, bool>(
       (store) => store.isRewritingNote(note.id),
     );
-    // A coloured card used to go borderless at rest, losing the crisp edge
-    // plain cards keep, worst on pale fills, which dissolve into the canvas.
-    // The border is the same palette entry from the *opposite* theme (the dark
-    // shade in light mode, the light one in dark mode), so it is always the
-    // card's own hue at contrasting depth, and it honours a custom palette for
-    // free. Lerped most of the way back toward the fill: at full strength it
-    // reads as an outline drawn around the card rather than the card's edge.
-    final counterFill = context.select<SettingsStore, Color?>(
-      (s) => s.resolveColor(
-        note.color,
-        brightness == Brightness.light ? Brightness.dark : Brightness.light,
-      ),
-    );
-    final borderColor = fill == null
-        ? scheme.outlineVariant
-        : Color.lerp(
-            fill,
-            counterFill ?? scheme.outlineVariant,
-            _hovered ? 0.55 : 0.35,
-          )!;
+    // Every card draws its edge: the separation from the canvas is the edge's
+    // job, not the fill's. A coloured card's edge is its own fill a step toward
+    // the text colour, so it reads as the card's edge rather than an outline
+    // drawn around it, on any palette.
+    final light = brightness == Brightness.light;
+    final edgeBase = fill ?? scheme.outlineVariant;
+    final edgeInk = _hovered
+        ? _edgeInkHover
+        : (fill == null ? 0.0 : (light ? _edgeInkLight : _edgeInkDark));
+    final borderColor = Color.lerp(edgeBase, scheme.onSurface, edgeInk)!;
     // Two separate things: the footer slot the card always reserves (so its
     // height never depends on hover or selection), and whether the action
     // icons in that slot are live. Selection mode only silences the icons,
@@ -281,14 +331,14 @@ class _NoteTileState extends State<NoteTile> {
         : null;
 
     final cardShape = RoundedRectangleBorder(
-      borderRadius: kBorderRadius,
+      borderRadius: kCardBorderRadius,
       side: BorderSide(
         color: widget.selected ? scheme.primary : borderColor,
         width: widget.selected ? 2 : 1,
       ),
     );
     Widget closedCard(VoidCallback open) => InkWell(
-      borderRadius: kBorderRadius,
+      borderRadius: kCardBorderRadius,
       onTap: () {
         if (_selectionModeNow) {
           widget.onSelectionChanged?.call(!widget.selected);
@@ -299,7 +349,7 @@ class _NoteTileState extends State<NoteTile> {
           openFullscreen: open,
           noteId: note.id,
           openedFromBoard: widget.openedFromBoard,
-          sourceRect: morphSourceRect(context),
+          source: MorphSource(context, face: _face, onHidden: _lend),
         );
       },
       onLongPress:
@@ -364,13 +414,16 @@ class _NoteTileState extends State<NoteTile> {
             color: fill ?? scheme.surface,
             shape: cardShape,
             clipBehavior: Clip.antiAlias,
-            child: closedCard(
-              () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  settings: RouteSettings(name: noteRouteName(note.id)),
-                  builder: (_) => EditorScreen(
-                    noteId: note.id,
-                    openedFromBoard: widget.openedFromBoard,
+            child: NotePatternBackground(
+              pattern: note.pattern,
+              child: closedCard(
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    settings: RouteSettings(name: noteRouteName(note.id)),
+                    builder: (_) => EditorScreen(
+                      noteId: note.id,
+                      openedFromBoard: widget.openedFromBoard,
+                    ),
                   ),
                 ),
               ),
@@ -381,7 +434,10 @@ class _NoteTileState extends State<NoteTile> {
             closedColor: fill ?? scheme.surface,
             openColor: fill ?? scheme.surface,
             closedShape: cardShape,
-            closedBuilder: (context, open) => closedCard(open),
+            closedBuilder: (context, open) => NotePatternBackground(
+              pattern: note.pattern,
+              child: closedCard(open),
+            ),
             openBuilder: (context) => EditorScreen(
               noteId: note.id,
               openedFromBoard: widget.openedFromBoard,
@@ -393,7 +449,7 @@ class _NoteTileState extends State<NoteTile> {
       duration: Motion.fast,
       curve: Motion.standard,
       decoration: BoxDecoration(
-        borderRadius: kBorderRadius,
+        borderRadius: kCardBorderRadius,
         boxShadow: cardShadow(
           scheme,
           _hovered ? CardLift.raised : CardLift.resting,
@@ -440,6 +496,10 @@ class _NoteTileState extends State<NoteTile> {
       ),
     );
 
+    // Kept in place while lent, so the grid holds its slot for the note to
+    // shrink back into.
+    final shown = Visibility.maintain(visible: !_lent, child: tile);
+
     return SwipeToArchive(
       // A mouse drag on a card lifts it for a reorder from the first pixel
       // (see AnimatedMasonry), so the swipe would eat that gesture. Selecting
@@ -456,7 +516,7 @@ class _NoteTileState extends State<NoteTile> {
         note.id,
         raised: active,
       ).dispatch(context),
-      child: tile,
+      child: shown,
     );
   }
 }

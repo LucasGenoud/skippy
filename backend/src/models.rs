@@ -252,6 +252,9 @@ pub const KIND_CHECKLIST: &str = "checklist";
 pub const KIND_MARKDOWN: &str = "markdown";
 pub const KIND_AUDIO: &str = "audio";
 
+/// A note drawn on a plain background.
+pub const NO_PATTERN: &str = "none";
+
 /// Transcription lifecycle for an audio note. Non-audio notes are always
 /// `none`. The server owns every transition (client never patches it).
 pub const TRANSCRIPT_NONE: &str = "none";
@@ -378,6 +381,9 @@ pub struct NoteRecord {
     pub content: String,
     pub items: Vec<ChecklistItem>,
     pub color: String,
+    /// Background pattern drawn under the note (`none`, `dots`, `grid`, ...).
+    /// Purely presentational, like `color`: the server never interprets it.
+    pub pattern: String,
     pub pinned: bool,
     pub archived: bool,
     pub trashed: bool,
@@ -441,6 +447,7 @@ pub struct NoteFields {
     pub content: String,
     pub items: Vec<ChecklistItem>,
     pub color: String,
+    pub pattern: String,
     pub pinned: bool,
     pub archived: bool,
     pub trashed: bool,
@@ -466,6 +473,7 @@ impl NoteRecord {
             content: self.content.clone(),
             items: self.items.clone(),
             color: self.color.clone(),
+            pattern: self.pattern.clone(),
             pinned: self.pinned,
             archived: self.archived,
             trashed: self.trashed,
@@ -686,6 +694,7 @@ pub struct PublicNote {
     pub content: String,
     pub items: Vec<ChecklistItem>,
     pub color: String,
+    pub pattern: String,
     pub pinned: bool,
     pub position: f64,
     pub grid_span: i64,
@@ -752,6 +761,8 @@ pub struct CreateNote {
     #[serde(default)]
     pub color: Option<String>,
     #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
     pub pinned: Option<bool>,
     #[serde(default)]
     pub archived: Option<bool>,
@@ -805,6 +816,7 @@ pub struct UpdateNote {
     pub content: Option<String>,
     pub items: Option<Vec<ChecklistItem>>,
     pub color: Option<String>,
+    pub pattern: Option<String>,
     pub pinned: Option<bool>,
     pub archived: Option<bool>,
     pub trashed: Option<bool>,
@@ -841,6 +853,7 @@ impl UpdateNote {
             content,
             items,
             color,
+            pattern,
             pinned,
             archived,
             trashed,
@@ -872,6 +885,9 @@ impl UpdateNote {
         }
         if let Some(v) = color {
             record.color = v;
+        }
+        if let Some(v) = pattern {
+            record.pattern = v;
         }
         if let Some(v) = pinned {
             record.pinned = v;

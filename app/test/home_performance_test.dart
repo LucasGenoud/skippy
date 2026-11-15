@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:skippy/models/collection.dart';
+import 'package:skippy/models/note.dart';
 import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
+import 'package:skippy/util/motion.dart';
+import 'package:skippy/widgets/app_drawer.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_card.dart';
 
@@ -253,9 +256,18 @@ void main() {
       addTearDown(tester.view.reset);
     }
 
+    // Where each card sits within its own grid. The whole grid slides in when
+    // the view changes, on purpose; what must not move is a card inside it.
     Map<String, Rect> cardRects(WidgetTester tester, String prefix) => {
       for (var i = 0; i < 6; i++)
-        '$prefix $i': tester.getRect(find.text('$prefix $i')),
+        '$prefix $i': () {
+          final card = find.text('$prefix $i');
+          final grid = find.ancestor(
+            of: card,
+            matching: find.byType(AnimatedMasonry),
+          );
+          return tester.getRect(card).shift(-tester.getTopLeft(grid));
+        }(),
     };
 
     testWidgets('a collection shown before reopens where its cards settled', (
@@ -324,7 +336,10 @@ void main() {
       );
       await tester.pumpWidget(homeApp(store));
       await tester.pumpAndSettle();
-      int mounted() => find.textContaining('Idea ').evaluate().length;
+      // Counted whether or not they show yet: the grid's height grows from the
+      // empty collection's, so its first frame can be all below its extent.
+      final ideaCards = find.textContaining('Idea ', skipOffstage: false);
+      int mounted() => ideaCards.evaluate().length;
 
       store.selectCollection(ideas);
       await tester.pump();
@@ -333,7 +348,7 @@ void main() {
       final screen =
           tester.view.physicalSize.height / tester.view.devicePixelRatio;
       final tops = [
-        for (final card in find.textContaining('Idea ').evaluate())
+        for (final card in ideaCards.evaluate())
           (card.renderObject! as RenderBox).localToGlobal(Offset.zero).dy,
       ];
       // Measured from the grid's own top: before it has a place on screen,
@@ -356,21 +371,182 @@ void main() {
 
       store.selectCollection(ideas);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 60));
+      // The new grid waits a beat before it shows.
+      await tester.pump(const Duration(milliseconds: 120));
       double opacityOf(String text) => tester
-          .widgetList<FadeTransition>(
-            find.ancestor(
-              of: find.text(text),
-              matching: find.byType(FadeTransition),
-            ),
+          .widgetList<Opacity>(
+            find.ancestor(of: find.text(text), matching: find.byType(Opacity)),
           )
-          .fold(1.0, (value, fade) => value * fade.opacity.value);
+          .fold(1.0, (value, fade) => value * fade.opacity);
       expect(opacityOf('General 0'), inExclusiveRange(0, 1));
       expect(opacityOf('Idea 0'), inExclusiveRange(0, 1));
 
       await tester.pumpAndSettle();
       expect(find.text('General 0'), findsNothing);
       expect(opacityOf('Idea 0'), 1);
+      await flushTimers(tester);
+    });
+  });
+
+  group('on a desktop', () {
+    void desktopWindow(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    bool shown(WidgetTester tester, String title) => tester
+        .widget<Visibility>(
+          find
+              .ancestor(of: find.text(title), matching: find.byType(Visibility))
+              .first,
+        )
+        .visible;
+
+    testWidgets('a card hides while its note is open and returns after', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final api = FakeApi()
+        ..notes['n1'] = serverNote('n1', title: 'Open me', content: 'Body');
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      addTearDown(store.dispose);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      final card = find.descendant(
+        of: find.byType(AnimatedMasonry),
+        matching: find.text('Open me'),
+      );
+
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsOneWidget);
+      expect(shown(tester, 'Body'), isFalse);
+
+      // Still lent while the editor shrinks back into it.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.pump(Motion.slow ~/ 2);
+      expect(shown(tester, 'Body'), isFalse);
+
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsNothing);
+      expect(shown(tester, 'Body'), isTrue);
+      await flushTimers(tester);
+    });
+
+    testWidgets('the last card fades out before the empty state shows', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final api = FakeApi()..notes['n1'] = serverNote('n1', title: 'Last one');
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      addTearDown(store.dispose);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      store.setArchived('n1', true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('Last one'), findsOneWidget);
+
+      await tester.pumpAndSettle();
+      expect(find.text('Last one'), findsNothing);
+      expect(find.text('Notes you add appear here'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a pinned card flies up from Others into Pinned', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final api = FakeApi();
+      for (var i = 0; i < 4; i++) {
+        api.notes['n$i'] = serverNote(
+          'n$i',
+          title: 'Card $i',
+          position: i * 1.0,
+        );
+      }
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      addTearDown(store.dispose);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      final card = find.text('Card 3');
+      final before = tester.getTopLeft(card);
+
+      store.togglePin('n3');
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+
+      // One card, fully shown, on its way.
+      expect(card, findsOneWidget);
+      final during = tester.getTopLeft(card);
+      final opacity = tester
+          .widgetList<FadeTransition>(
+            find.ancestor(of: card, matching: find.byType(FadeTransition)),
+          )
+          .fold(1.0, (value, fade) => value * fade.opacity.value);
+      expect(opacity, 1);
+
+      await tester.pumpAndSettle();
+      final after = tester.getTopLeft(card);
+      expect(during, isNot(after));
+      expect(during, isNot(before));
+      await flushTimers(tester);
+    });
+
+    testWidgets('a card shown by both labels glides between them', (
+      tester,
+    ) async {
+      desktopWindow(tester);
+      final api = FakeApi()
+        ..labels['l1'] = const Label(
+          id: 'l1',
+          name: 'Errands',
+          workspaceId: 'w-default',
+        );
+      api.notes['a'] = serverNote('a', title: 'Unlabelled', position: 0);
+      api.notes['b'] = serverNote(
+        'b',
+        title: 'Shared',
+        position: 1,
+        labelIds: const {'l1'},
+      );
+      final store = NotesStore(api: api, currentUserId: 'u-me');
+      addTearDown(store.dispose);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+      final shared = find.descendant(
+        of: find.byType(AnimatedMasonry),
+        matching: find.text('Shared'),
+      );
+      final before = tester.getTopLeft(shared);
+      final card = find.ancestor(of: shared, matching: find.byType(NoteTile));
+      final element = tester.element(card);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppSidebar),
+          matching: find.text('Errands'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      // The same card, not rebuilt, part of the way to its new slot.
+      expect(tester.element(card), same(element));
+      final during = tester.getTopLeft(shared);
+      await tester.pumpAndSettle();
+      final after = tester.getTopLeft(shared);
+      expect(after.dx, lessThan(before.dx));
+      expect(during.dx, lessThan(before.dx));
+      expect(during.dx, greaterThan(after.dx));
       await flushTimers(tester);
     });
   });

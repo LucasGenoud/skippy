@@ -18,6 +18,7 @@ import 'package:skippy/widgets/workspace_menu.dart';
 
 import 'fake_api.dart';
 import 'widget_test.dart' show homeApp;
+import 'finders.dart';
 
 Note noteIn(
   String workspaceId,
@@ -702,7 +703,7 @@ void main() {
           null,
         ),
       );
-      await tester.tap(find.byTooltip('Copy workspace name'));
+      await tester.tap(findAction('Copy workspace name'));
       await tester.pump();
       expect(copied, 'Work');
 
@@ -829,7 +830,7 @@ void main() {
       store.setActiveWorkspace(work);
       await openSettings(tester, store);
 
-      await tester.tap(find.text('Statistics'));
+      await tester.tap(find.text('Statistics').last);
       await tester.pumpAndSettle();
 
       expect(find.widgetWithText(AppBar, 'Statistics'), findsOneWidget);
@@ -951,7 +952,7 @@ void main() {
       await openSettings(tester, store);
 
       expect(find.text('0 notes · 0 labels'), findsOneWidget);
-      await tester.tap(find.text('Statistics'));
+      await tester.tap(find.text('Statistics').last);
       await tester.pumpAndSettle();
 
       expect(

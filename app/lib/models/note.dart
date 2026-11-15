@@ -17,6 +17,42 @@ enum NoteKind {
   };
 }
 
+/// The texture drawn under a note, chosen beside its colour. The wire values
+/// are shared with the backend, which stores them without interpreting them.
+enum NotePattern {
+  none('Plain'),
+  dots('Dots'),
+  grid('Grid'),
+  lines('Lines'),
+  diagonal('Diagonal'),
+  checks('Checks'),
+  airplanes('Airplanes'),
+  cars('Cars'),
+  notes('Notes'),
+  ideas('Ideas'),
+  hearts('Hearts'),
+  stars('Stars'),
+  coffee('Coffee'),
+  leaves('Leaves'),
+  weather('Weather'),
+  music('Music'),
+  paws('Paws'),
+  space('Space'),
+  sea('Sea'),
+  food('Food');
+
+  final String label;
+  const NotePattern(this.label);
+
+  String get wire => name;
+
+  /// An unknown value, from a newer client, draws plain rather than failing.
+  static NotePattern fromWire(String? value) => NotePattern.values.firstWhere(
+    (pattern) => pattern.wire == value,
+    orElse: () => NotePattern.none,
+  );
+}
+
 /// Optional cadence for a note reminder. The wire values are shared with the
 /// backend; null on [Note.reminderRepeat] means a one-shot reminder.
 enum ReminderRepeat {
@@ -266,6 +302,7 @@ class Note {
   final String content;
   final List<ChecklistItem> items;
   final String color;
+  final NotePattern pattern;
   final bool pinned;
   final bool archived;
   final bool trashed;
@@ -312,6 +349,7 @@ class Note {
     this.content = '',
     this.items = const [],
     this.color = 'default',
+    this.pattern = NotePattern.none,
     this.pinned = false,
     this.archived = false,
     this.trashed = false,
@@ -378,6 +416,7 @@ class Note {
     String? content,
     List<ChecklistItem>? items,
     String? color,
+    NotePattern? pattern,
     bool? pinned,
     bool? archived,
     bool? trashed,
@@ -404,6 +443,7 @@ class Note {
       content: content ?? this.content,
       items: items ?? this.items,
       color: color ?? this.color,
+      pattern: pattern ?? this.pattern,
       pinned: pinned ?? this.pinned,
       archived: archived ?? this.archived,
       trashed: trashed ?? this.trashed,
@@ -441,6 +481,7 @@ class Note {
           .map((j) => ChecklistItem.fromJson(j as Map<String, dynamic>))
           .toList(),
       color: json['color'] as String? ?? 'default',
+      pattern: NotePattern.fromWire(json['pattern'] as String?),
       pinned: json['pinned'] as bool? ?? false,
       archived: json['archived'] as bool? ?? false,
       trashed: json['trashed'] as bool? ?? false,
@@ -494,6 +535,7 @@ class Note {
     'content': content,
     'items': itemsToJson(items),
     'color': color,
+    'pattern': pattern.wire,
     'pinned': pinned,
     'archived': archived,
     'trashed': trashed,

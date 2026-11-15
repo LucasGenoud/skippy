@@ -92,6 +92,9 @@ class _NoteActions extends StatelessWidget {
               context,
               selected: () => store.noteById(note.id)?.color ?? 'default',
               onSelect: (color) => store.setColor(note.id, color),
+              selectedPattern: () =>
+                  store.noteById(note.id)?.pattern ?? NotePattern.none,
+              onSelectPattern: (pattern) => store.setPattern(note.id, pattern),
             ),
           ),
           _button(

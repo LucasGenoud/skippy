@@ -172,7 +172,7 @@ void main() {
     expect(find.text('me@example.test'), findsOneWidget);
     expect(find.text('Change your sign-in password'), findsOneWidget);
     expect(find.text('Delete account'), findsOneWidget);
-    expect(find.text('DANGER ZONE'), findsOneWidget);
+    expect(find.text('Danger zone'), findsOneWidget);
     // Deleting the account sits with the account, last.
     expect(
       tester.getTopLeft(find.text('Delete account')).dy,

@@ -18,6 +18,7 @@ import '../util/motion.dart';
 import '../util/platform.dart';
 import '../util/search_query.dart';
 import '../util/snack.dart';
+import '../widgets/animated_presence.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/board/board_view.dart';
 import '../widgets/board/move_to_stage_sheet.dart';
@@ -45,7 +46,7 @@ import '../widgets/share_dialog.dart';
 import '../widgets/shortcut_help.dart';
 import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
-import '../widgets/sync_pill.dart';
+import '../widgets/view_swap.dart';
 
 /// What one build of the home screen shows, worked out once in `build` and
 /// handed to the pieces that draw it.
@@ -71,6 +72,9 @@ class HomeScreen extends StatefulWidget {
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
+
+/// Stands in for no animation where a zero duration is not allowed.
+const Duration _instantResize = Duration(milliseconds: 1);
 
 class _HomeScreenState extends State<HomeScreen> {
   ViewSelection _selection = ViewSelection.notes;
@@ -119,6 +123,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Card heights every grid this screen builds starts from, so going back
   /// to a collection or view lays its cards out where they settled before.
   final _cardHeights = MasonryHeights();
+
+  /// Lets a pinned or unpinned card fly between the two sections.
+  final _cardHandoff = MasonryHandoff();
 
   void _toggleSidebar() {
     if (!ScreenWidth.isAtLeast(context, kWideBreakpoint)) {
@@ -304,6 +311,15 @@ class _HomeScreenState extends State<HomeScreen> {
         store.setColor(note.id, color);
       }
     },
+    selectedPattern: () {
+      final patterns = {for (final note in _selectedNotes(store)) note.pattern};
+      return patterns.length == 1 ? patterns.single : NotePattern.none;
+    },
+    onSelectPattern: (pattern) {
+      for (final note in _selectedNotes(store)) {
+        store.setPattern(note.id, pattern);
+      }
+    },
   );
 
   void _setPinnedForSelected(NotesStore store, bool pinned) {
@@ -379,7 +395,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Keyboard shortcut callbacks. The bindings are [_homeShortcuts];
   // widgets/shortcut_help.dart and the README document the full set.
-  void _newNote(NoteKind kind) {
+  /// [kind] null is the user's default kind.
+  void _newNote([NoteKind? requested]) {
+    final kind = requested ?? context.read<SettingsStore>().defaultNoteKind;
     if (context.read<NotesStore>().activeCollection == null) {
       CollectionSettings.show(context);
       return;
@@ -773,19 +791,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Stack(
                                 children: [
                                   Positioned.fill(
-                                    child: _viewBody(store, view),
+                                    child: _viewSwitcher(store, view),
                                   ),
-                                  // Beside the new-note button, centred on
-                                  // it; phones keep the offline banner.
-                                  if (ScreenWidth.isAtLeast(
-                                    context,
-                                    kWideBreakpoint,
-                                  ))
-                                    const Positioned(
-                                      right: 16 + 56 + kSpaceMd,
-                                      bottom: 16 + 14,
-                                      child: SyncPill(),
-                                    ),
                                   if (store.activeCollection != null)
                                     Positioned(
                                       right: 16,
@@ -921,6 +928,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// [_viewBody], sliding one kind of view (grid, a board, reminders) out as
+  /// another slides in. Grid to grid is left to the grid's own switcher.
+  Widget _viewSwitcher(NotesStore store, _HomeView view) {
+    final board =
+        view.collectionView && store.activeCollection?.layout == 'board';
+    final kind = board
+        ? 'board-${store.activeWorkspaceId}-${store.activeCollection?.id}'
+        : (_selection.view == NoteView.reminders ? 'reminders' : 'grid');
+    return ViewSwap(viewKey: kind, child: _viewBody(store, view));
+  }
+
   /// What fills the area beside the sidebar. The board and the reminders lay
   /// their notes out their own way; every other view is the grid.
   Widget _viewBody(NotesStore store, _HomeView view) {
@@ -964,6 +982,9 @@ class _HomeScreenState extends State<HomeScreen> {
           elevation: 2,
           child: CustomScrollView(
             controller: _scrollController,
+            // Scrolling search results puts the keyboard away so they can be
+            // read; it covers half of them otherwise.
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             // Phones keep pull-to-refresh available even when the list is
             // short. On desktop, forcing that physics makes a fully visible
             // grid move despite having nowhere to scroll.
@@ -1092,29 +1113,42 @@ class _HomeScreenState extends State<HomeScreen> {
       ];
     }
 
+    // Every section is built even when it is empty: a card leaving the last
+    // place it showed fades out like any other, the labels fold away, and the
+    // empty state fades in once the grid is clear.
     final sections = view.sections;
-    if (sections.isEmpty) {
-      return [
-        SliverFillRemaining(hasScrollBody: false, child: _emptyState(view)),
-      ];
-    }
-
+    final pinned = sections.pinned.isNotEmpty;
     return [
-      if (sections.pinned.isNotEmpty) ...[
-        _sectionLabel('Pinned', grid),
-        _grid(store, sections.pinned, grid, view, section: 'pinned'),
-        if (sections.others.isNotEmpty) _sectionLabel('Others', grid),
-      ],
+      _sectionLabel('Pinned', grid, shown: pinned),
+      _grid(store, sections.pinned, grid, view, section: 'pinned'),
+      _sectionLabel(
+        'Others',
+        grid,
+        shown: pinned && sections.others.isNotEmpty,
+      ),
       _grid(store, sections.others, grid, view, section: 'others'),
-      // Fill unused space without extending it.
+      // Fills unused space without extending it, or holds the empty state.
       SliverFillRemaining(
         hasScrollBody: false,
-        child: SizedBox(height: bottomGap),
+        child: AnimatedSwitcher(
+          duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+          reverseDuration: Motion.reduced(context)
+              ? Duration.zero
+              : Motion.fast,
+          switchInCurve: Motion.emphasized,
+          switchOutCurve: Motion.standard,
+          transitionBuilder: Motion.viewSwap,
+          child: sections.isEmpty
+              ? KeyedSubtree(
+                  key: const ValueKey('empty'),
+                  child: _emptyState(view),
+                )
+              : SizedBox(key: const ValueKey('gap'), height: bottomGap),
+        ),
       ),
     ];
   }
 
-  /// What an empty view says, and the one step it offers out of it.
   Widget _emptyState(_HomeView view) {
     if (view.searching) {
       return const EmptyState(
@@ -1167,7 +1201,7 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: icon,
           message: message,
           actionLabel: 'Create note',
-          onAction: () => _newNote(NoteKind.text),
+          onAction: _newNote,
           showBrandMark: _selection.view == NoteView.notes,
         );
     }
@@ -1194,15 +1228,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _sectionLabel(String text, _GridMetrics grid) {
+  /// A section's heading, which folds in and out with its section.
+  Widget _sectionLabel(String text, _GridMetrics grid, {required bool shown}) {
     return _alignedToGrid(
-      Padding(
-        // 8px inset from the card's left edge, matching the view header.
-        padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-        child: Text(
-          text.toUpperCase(),
-          style: sectionLabelStyle(Theme.of(context)),
+      AnimatedPresence(
+        layout: (children) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
         ),
+        children: [
+          if (shown)
+            Padding(
+              key: ValueKey(text),
+              // 8px inset from the card's left edge, matching the view header.
+              padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+              child: Text(text, style: sectionLabelStyle(Theme.of(context))),
+            ),
+        ],
       ),
       grid,
     );
@@ -1230,40 +1272,13 @@ class _HomeScreenState extends State<HomeScreen> {
       swipeToArchive: true,
     );
 
-    // Lists without custom order can build only nearby cards. Masonry keeps
-    // selected-card drags available even when reordering is disabled.
+    // A list is the grid at one column: it builds only the cards near the
+    // screen, and they glide, arrive and leave the same way.
     final customOrder =
         store.sortMode == SortMode.custom &&
         _query.trim().isEmpty &&
         (_selection.view == NoteView.notes ||
             _selection.view == NoteView.archive);
-    if (_listMode && !customOrder) {
-      return SliverPadding(
-        key: ValueKey('grid-$section'),
-        padding: EdgeInsets.symmetric(horizontal: grid.pad),
-        sliver: SliverList.builder(
-          key: ValueKey((section, _selection)),
-          itemCount: notes.length,
-          findChildIndexCallback: (key) {
-            final index = notes.indexWhere((note) => ValueKey(note.id) == key);
-            return index < 0 ? null : index;
-          },
-          itemBuilder: (context, index) => Padding(
-            key: ValueKey(notes[index].id),
-            padding: EdgeInsets.only(bottom: index == notes.length - 1 ? 0 : 8),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: grid.maxWidth),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: tile(notes[index]),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
     final reduced = Motion.reduced(context);
     return SliverPadding(
       // Keyed so the grid keeps its place, and its cross-fade, when the
@@ -1274,56 +1289,69 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: grid.maxWidth),
-            // Another view, collection or workspace is another grid. The old
-            // one is already laid out, so fading it out as one layer costs a
-            // repaint; retiring its cards one by one inside the new grid
-            // relaid out both on every frame of the switch.
-            child: AnimatedSwitcher(
-              duration: reduced ? Duration.zero : Motion.base,
-              reverseDuration: reduced ? Duration.zero : Motion.fast,
-              switchInCurve: Motion.standard,
-              switchOutCurve: Motion.standard,
-              layoutBuilder: (current, previous) => Stack(
-                alignment: Alignment.topCenter,
-                children: [...previous, ?current],
-              ),
-              child: AnimatedMasonry(
-                // Reset layout when switching views so unrelated cards do not
-                // glide from the previous view's positions.
-                key: ValueKey(
-                  '$section-${_selection.view}-${_selection.labelId}-'
-                  '${store.activeWorkspaceId}-${store.activeCollection?.id}',
+            // Another collection or workspace is another grid: the old one
+            // fades out as one layer and the new one fades in after it.
+            // Another label or view of the same notes is the same grid, so
+            // the cards both show glide to their new slots while the rest
+            // leave and arrive (see AnimatedMasonry).
+            //
+            // The grid's height follows its cards rather than jumping, so the
+            // section below slides when a card arrives, leaves or grows.
+            child: AnimatedSize(
+              // Never zero: a zero-length resize completes inside layout,
+              // which re-dirties the box mid-layout.
+              duration: reduced ? _instantResize : Motion.base,
+              curve: Motion.emphasized,
+              alignment: Alignment.topCenter,
+              clipBehavior: Clip.none,
+              child: AnimatedSwitcher(
+                duration: reduced ? Duration.zero : Motion.base,
+                reverseDuration: reduced ? Duration.zero : Motion.fast,
+                switchInCurve: Motion.emphasized,
+                switchOutCurve: Motion.standard,
+                transitionBuilder: Motion.viewSwap,
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.topCenter,
+                  children: [...previous, ?current],
                 ),
-                heights: _cardHeights,
-                notes: notes,
-                columns: grid.columns,
-                spacing: 8,
-                dragEnabled: view.dragEnabled,
-                draggableIds: _selectionMode ? _selectedNoteIds : null,
-                reorderGroupIds: customOrder ? _selectedNoteIds : const {},
-                dragFeedbackLabel: _selectionMode && _selectedNoteIds.length > 1
-                    ? 'Move ${_selectedNoteIds.length} cards'
-                    : null,
-                scrollController: _scrollController,
-                // A sidebar drop owns the gesture; crossing grid tiles on the
-                // way there must not also persist an incidental reorder.
-                onReorder: (reorder) {
-                  if (reorder.acceptedByTarget || !customOrder) {
-                    return MasonryReorderDecision.restore;
-                  }
-                  store.reorder(reorder.orderedIds);
-                  return MasonryReorderDecision.keep;
-                },
-                onStationaryLongPress: (id) =>
-                    _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
-                // Desktop card chrome observes the mode; its body only changes
-                // when that card's own selection changes.
-                itemBuildKey: (note) => Object.hash(
-                  query,
-                  isTouchPrimaryPlatform ? _selectionMode : null,
-                  _selectedNoteIds.contains(note.id),
+                child: AnimatedMasonry(
+                  key: ValueKey(
+                    '$section-${store.activeWorkspaceId}-'
+                    '${store.activeCollection?.id}',
+                  ),
+                  heights: _cardHeights,
+                  handoff: _cardHandoff,
+                  notes: notes,
+                  columns: grid.columns,
+                  spacing: 8,
+                  dragEnabled: view.dragEnabled,
+                  draggableIds: _selectionMode ? _selectedNoteIds : null,
+                  reorderGroupIds: customOrder ? _selectedNoteIds : const {},
+                  dragFeedbackLabel:
+                      _selectionMode && _selectedNoteIds.length > 1
+                      ? 'Move ${_selectedNoteIds.length} cards'
+                      : null,
+                  scrollController: _scrollController,
+                  // A sidebar drop owns the gesture; crossing grid tiles on the
+                  // way there must not also persist an incidental reorder.
+                  onReorder: (reorder) {
+                    if (reorder.acceptedByTarget || !customOrder) {
+                      return MasonryReorderDecision.restore;
+                    }
+                    store.reorder(reorder.orderedIds);
+                    return MasonryReorderDecision.keep;
+                  },
+                  onStationaryLongPress: (id) =>
+                      _toggleNoteSelection(id, !_selectedNoteIds.contains(id)),
+                  // Desktop card chrome observes the mode; its body only changes
+                  // when that card's own selection changes.
+                  itemBuildKey: (note) => Object.hash(
+                    query,
+                    isTouchPrimaryPlatform ? _selectionMode : null,
+                    _selectedNoteIds.contains(note.id),
+                  ),
+                  itemBuilder: (context, note) => tile(note),
                 ),
-                itemBuilder: (context, note) => tile(note),
               ),
             ),
           ),
@@ -1453,8 +1481,8 @@ class _OfflineBannerState extends State<_OfflineBanner> {
 // shortcut. Chords and Escape (whileTyping: true) stay live during typing; the
 // quick-add bar consumes its own Escape before it ever bubbles up here.
 const _homeShortcuts = <ShortcutActivator, Intent>{
-  CharacterActivator('c'): _NewNoteIntent(NoteKind.text),
-  CharacterActivator('n'): _NewNoteIntent(NoteKind.text),
+  CharacterActivator('c'): _NewNoteIntent(),
+  CharacterActivator('n'): _NewNoteIntent(),
   CharacterActivator('l'): _NewNoteIntent(NoteKind.checklist),
   CharacterActivator('m'): _NewNoteIntent(NoteKind.markdown),
   CharacterActivator('/'): _FocusSearchIntent(),
@@ -1481,9 +1509,10 @@ abstract class _HomeIntent extends Intent {
 }
 
 class _NewNoteIntent extends _HomeIntent {
-  const _NewNoteIntent(this.kind);
+  const _NewNoteIntent([this.kind]);
 
-  final NoteKind kind;
+  /// Null starts the user's default kind.
+  final NoteKind? kind;
 }
 
 class _FocusSearchIntent extends _HomeIntent {

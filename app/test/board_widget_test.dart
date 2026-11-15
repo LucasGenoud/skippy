@@ -19,6 +19,7 @@ import 'package:skippy/widgets/note_card.dart';
 import 'fake_api.dart';
 import 'notes_store_test.dart' show serverNote;
 import 'widget_test.dart' show homeApp;
+import 'finders.dart';
 
 /// [theme] is only worth passing for tests that judge colour, everything else
 /// reads the same under Material's default.
@@ -232,10 +233,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(find.byTooltip('Collapse Unassigned')).dx,
+      tester.getTopLeft(findAction('Collapse Unassigned')).dx,
       lessThan(tester.getTopLeft(find.text('Unassigned')).dx),
     );
-    await tester.tap(find.byTooltip('Collapse Unassigned'));
+    await tester.tap(findAction('Collapse Unassigned'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(
@@ -244,7 +245,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('card one'), findsNothing);
-    expect(find.byTooltip('Expand Unassigned'), findsOneWidget);
+    expect(findAction('Expand Unassigned'), findsOneWidget);
     expect(find.byIcon(Icons.keyboard_double_arrow_right), findsOneWidget);
     expect(find.text('Expand'), findsOneWidget);
     expect(
@@ -252,7 +253,7 @@ void main() {
       lessThan(100),
     );
 
-    await tester.tap(find.byTooltip('Expand Unassigned'));
+    await tester.tap(findAction('Expand Unassigned'));
     await tester.pumpAndSettle();
     expect(find.text('card one'), findsOneWidget);
     await flushTimers(tester);
@@ -905,7 +906,7 @@ void main() {
             : store.noteById('a')!.archived && store.noteById('b')!.archived;
         expect(moved, isTrue);
         expect(find.text('2 selected'), findsNothing);
-        expect(find.byTooltip('Cancel selection'), findsNothing);
+        expect(findAction('Cancel selection'), findsNothing);
         await flushTimers(tester);
       });
     }
@@ -928,9 +929,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // An empty column has nothing to select, so it offers nothing.
-      expect(find.byTooltip('Select all in Doing'), findsNothing);
+      expect(findAction('Select all in Doing'), findsNothing);
 
-      await tester.tap(find.byTooltip('Select all in Todo'));
+      await tester.tap(findAction('Select all in Todo'));
       await tester.pumpAndSettle();
       expect(selected, {'a', 'b'});
       await flushTimers(tester);
@@ -954,17 +955,17 @@ void main() {
       await tester.pumpWidget(selectableBoard(selected));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Todo options'));
+      await tester.tap(findAction('Todo options'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Select all cards'));
       await tester.pumpAndSettle();
       expect(selected, {'a', 'b'});
 
       // In selection mode the header toggles the column in place.
-      await tester.tap(find.byTooltip('Select all in Unassigned'));
+      await tester.tap(findAction('Select all in Unassigned'));
       await tester.pumpAndSettle();
       expect(selected, {'a', 'b', 'c'});
-      await tester.tap(find.byTooltip('Deselect all in Todo'));
+      await tester.tap(findAction('Deselect all in Todo'));
       await tester.pumpAndSettle();
       expect(selected, {'c'});
       await flushTimers(tester);
@@ -981,7 +982,7 @@ void main() {
       await tester.pumpWidget(selectableBoard(selected));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Select all in Unassigned'));
+      await tester.tap(findAction('Select all in Unassigned'));
       await tester.pumpAndSettle();
       expect(selected, {'a', 'b'});
       await flushTimers(tester);
@@ -1117,7 +1118,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(EditorScreen), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Move to column'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Move to column'));
     await tester.pumpAndSettle();

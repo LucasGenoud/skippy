@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/widgets/editor/note_actions_button.dart';
+import 'finders.dart';
 
 /// The app-bar menu is the "do things *to* this note" half of the editor. It
 /// must stay one flat list: an earlier design nested the rarer half behind
@@ -45,7 +46,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(menu(onMoveToStage: () {}));
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
 
     for (final label in [
@@ -77,7 +78,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
     expect(find.text('Rewrite with AI'), findsOneWidget);
     expect(find.text('Make concise'), findsOneWidget);
@@ -91,7 +92,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(converted, NoteKind.checklist);
 
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Fix grammar'));
     await tester.pumpAndSettle();
@@ -102,7 +103,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(menu(kind: NoteKind.audio, onConvert: (_) {}));
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
 
     expect(find.text('Text'), findsOneWidget);
@@ -114,7 +115,7 @@ void main() {
   testWidgets('card width choices report the selected span', (tester) async {
     int? selected;
     await tester.pumpWidget(menu(onGridSpan: (span) => selected = span));
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
 
     expect(find.text('Card width'), findsOneWidget);
@@ -137,7 +138,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(menu());
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
     expect(find.text('Move to column'), findsNothing);
     expect(find.text('Move to workspace'), findsOneWidget);
@@ -145,7 +146,7 @@ void main() {
 
   testWidgets('only the owner is offered Delete', (tester) async {
     await tester.pumpWidget(menu(isOwner: false));
-    await tester.tap(find.byTooltip('Note actions'));
+    await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
     expect(find.text('Delete'), findsNothing);
     expect(find.text('Collaborators'), findsOneWidget);

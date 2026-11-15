@@ -30,6 +30,41 @@ impl FileStore for FlakyDeleteStore {
 }
 
 #[tokio::test]
+async fn pattern_defaults_and_patches_without_a_version() {
+    let app = app().await;
+    let (token, _) = register(&app, "ada").await;
+    let note = create_note(&app, &token, json!({"title": "Plan"})).await;
+    assert_eq!(note["pattern"], "none");
+
+    let restored = create_note(&app, &token, json!({"title": "Grid", "pattern": "grid"})).await;
+    assert_eq!(restored["pattern"], "grid");
+
+    let id = note["id"].as_str().unwrap();
+    let (status, updated) = send(
+        &app,
+        "PATCH",
+        &format!("/api/notes/{id}"),
+        Some(&token),
+        Some(json!({"pattern": "dots"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["pattern"], "dots");
+    assert_eq!(updated["title"], "Plan");
+
+    // A pattern is organization, like colour: it never becomes a version.
+    let (_, versions) = send(
+        &app,
+        "GET",
+        &format!("/api/notes/{id}/versions"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(versions.as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
 async fn create_defaults_and_patch() {
     let app = app().await;
     let (token, user_id) = register(&app, "ada").await;

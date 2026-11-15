@@ -56,6 +56,54 @@ class MasonryHeights {
       _byId[id] = (width: size.width, height: size.height);
 }
 
+/// Lets a card that leaves one grid and joins another in the same frame fly
+/// from where it was to where it lands, instead of fading out of one and in to
+/// the other: a note pinned rises from Others into Pinned, a card moved to
+/// another board column crosses to it. Share one between the grids.
+///
+/// ```text
+///   frame 1   grid A: card leaving, recorded with its rect on screen
+///             grid B: card arriving, recorded, still invisible
+///   after     paired by note id: A drops its copy, B starts the card at
+///             A's rect and springs it to its slot
+/// ```
+class MasonryHandoff {
+  final Map<String, ({Rect rect, VoidCallback release})> _leaving = {};
+  final Map<String, ValueChanged<Rect>> _arriving = {};
+  bool _pairing = false;
+
+  void _leave(String id, Rect rect, VoidCallback release) {
+    _leaving[id] = (rect: rect, release: release);
+    _schedulePairing();
+  }
+
+  void _arrive(String id, ValueChanged<Rect> land) {
+    _arriving[id] = land;
+    _schedulePairing();
+  }
+
+  /// Pairs once every grid has built this frame, whichever built first.
+  void _schedulePairing() {
+    if (_pairing) {
+      return;
+    }
+    _pairing = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _pairing = false;
+      for (final MapEntry(key: id, value: land) in _arriving.entries) {
+        final leaving = _leaving[id];
+        if (leaving == null) {
+          continue;
+        }
+        leaving.release();
+        land(leaving.rect);
+      }
+      _leaving.clear();
+      _arriving.clear();
+    });
+  }
+}
+
 /// What the masonry should do with its temporary order after the callback.
 enum MasonryReorderDecision { keep, restore }
 
@@ -148,6 +196,9 @@ class AnimatedMasonry extends StatefulWidget {
   /// Heights to start from and to record into; see [MasonryHeights].
   final MasonryHeights? heights;
 
+  /// Shared with the grids a card can move to; see [MasonryHandoff].
+  final MasonryHandoff? handoff;
+
   const AnimatedMasonry({
     super.key,
     required this.notes,
@@ -164,6 +215,7 @@ class AnimatedMasonry extends StatefulWidget {
     this.scrollController,
     this.incomingIndex,
     this.heights,
+    this.handoff,
   });
 
   @override
@@ -196,7 +248,6 @@ class _Layout {
 class AnimatedMasonryState extends State<AnimatedMasonry>
     with TickerProviderStateMixin {
   static const double _estimatedHeight = 120;
-  static const Duration _moveDuration = Duration(milliseconds: 240);
   static const int _buildBatchSize = 20;
 
   /// How long the pointer has to stay on one target before the grid reflows
@@ -242,6 +293,13 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
   /// tile mounting in that frame fades in, so one mounted later by scrolling
   /// or progressive loading shows at once.
   final Set<String> _arriving = {};
+
+  /// Cards handed over from another grid this frame, at the offset in this
+  /// grid they start their flight from; see [MasonryHandoff].
+  final Map<String, Offset> _landing = {};
+
+  /// Handed-over cards still flying, painted above the cards they pass.
+  final Set<String> _flying = {};
 
   // Tile widgets, kept between our own rebuilds. A note card is expensive to
   // build (markdown, linkified spans, image resolution, an OpenContainer
@@ -540,9 +598,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     final incoming = ids.toSet();
     final previous = {for (final n in oldWidget.notes) n.id};
     _departing.removeWhere((id, _) => incoming.contains(id));
+    final handoff = widget.handoff;
     for (final id in incoming) {
       if (!previous.contains(id)) {
         _arriving.add(id);
+        handoff?._arrive(id, (from) => _land(id, from));
       }
     }
 
@@ -560,7 +620,42 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
         continue;
       }
       _departing[note.id] = (note: note, slot: slot);
+      if (_globalRect(note.id, slot) case final rect? when handoff != null) {
+        handoff._leave(note.id, rect, () => _onDeparted(note.id));
+      }
     }
+  }
+
+  /// Where [slot] is on screen, as laid out in the last frame.
+  Rect? _globalRect(String id, _Slot slot) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || !box.attached) {
+      return null;
+    }
+    final height = _heights[id] ?? _estimatedHeight;
+    return box.localToGlobal(Offset(slot.x, slot.y)) & Size(slot.width, height);
+  }
+
+  void _landed(String id) {
+    if (mounted && _flying.remove(id)) {
+      setState(() {});
+    }
+  }
+
+  /// A card handed over from another grid starts at [from], on screen.
+  void _land(String id, Rect from) {
+    final box = context.findRenderObject();
+    if (!mounted ||
+        Motion.reduced(context) ||
+        box is! RenderBox ||
+        !box.hasSize ||
+        !_orderIds.contains(id)) {
+      return;
+    }
+    setState(() {
+      _landing[id] = box.globalToLocal(from.topLeft);
+      _flying.add(id);
+    });
   }
 
   void _onDeparted(String id) {
@@ -570,6 +665,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 
     setState(() {
       _departing.remove(id);
+      _flying.remove(id);
       _heights.remove(id);
       _seeded.remove(id);
       _tiles.remove(id);
@@ -859,10 +955,11 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     _Slot slot,
     _Layout layout,
     _Presence presence,
-  ) => AnimatedPositioned(
+  ) => _SpringPositioned(
     key: ValueKey(note.id),
-    duration: _snapFrame ? Duration.zero : _moveDuration,
-    curve: Motion.standard,
+    snap: _snapFrame,
+    flyFrom: _landing[note.id],
+    onLanded: () => _landed(note.id),
     left: slot.x,
     top: slot.y,
     width: slot.width,
@@ -881,14 +978,14 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     if (_draggingIds.contains(note.id) && note.id != _draggingId) {
       return Opacity(opacity: 0.30, child: child);
     }
+    final reorders = widget.dragEnabled && widget.onReorder != null;
     final canDrag =
-        widget.draggableIds == null || widget.draggableIds!.contains(note.id);
-    // Keep the desktop wrapper mounted when selection disables a card's drag.
-    if (!widget.dragEnabled ||
-        widget.onReorder == null ||
-        (isTouchPrimaryPlatform && !canDrag)) {
-      return child;
-    }
+        reorders &&
+        (widget.draggableIds == null || widget.draggableIds!.contains(note.id));
+    // The wrapper stays mounted when a card cannot be dragged, by selection
+    // or by a view with no order to change, with its drags switched off (a
+    // draggable allowed none adds no recognizer). Dropping it would remount
+    // every card a label switch keeps on screen.
 
     // Built through a Builder so the second copy of the card only comes into
     // existence when a drag actually lifts one. Eagerly building feedback for
@@ -938,14 +1035,17 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
           _onDragEnd(selectWhenStationary: true),
       onDragEnd: (details) =>
           _onDragEnd(selectWhenStationary: true, tookIt: details.wasAccepted),
-      maxSimultaneousDrags: 1,
+      maxSimultaneousDrags: canDrag ? 1 : 0,
       child: child,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.notes.isEmpty) return const SizedBox.shrink();
+    // Cards still leaving play out even when none stay.
+    if (widget.notes.isEmpty && _departing.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -991,6 +1091,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
             _positionedTile(gone.note, gone.slot, layout, _Presence.leaving),
         ];
         Widget? raised;
+        final flying = <Widget>[];
         for (final id in _orderIds) {
           if (!_visibleIds.contains(id)) continue;
           if (notesById[id] case final Note note) {
@@ -998,21 +1099,37 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
               note,
               layout.slots[note.id]!,
               layout,
-              _arriving.contains(note.id)
+              _landing.containsKey(note.id)
+                  ? _Presence.handedOff
+                  : !_arriving.contains(note.id)
+                  ? _Presence.present
+                  : _departing.isEmpty
                   ? _Presence.arriving
-                  : _Presence.present,
+                  : _Presence.following,
             );
             if (note.id == _raisedId) {
               raised = tile;
+            } else if (_flying.contains(note.id)) {
+              // In flight over the cards it passes.
+              flying.add(tile);
             } else {
               tiles.add(tile);
             }
           }
         }
+        tiles.addAll(flying);
         if (raised != null) tiles.add(raised);
         if (_arriving.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _arriving.clear();
+          });
+        }
+        // Only the flights this frame started: a hand-off paired after this
+        // build, in the same post-frame pass, starts in the next one.
+        if (_landing.isNotEmpty) {
+          final started = [..._landing.keys];
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            started.forEach(_landing.remove);
           });
         }
 
@@ -1043,7 +1160,18 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
 }
 
 /// Where a card is in its life on the grid.
-enum _Presence { arriving, present, leaving }
+enum _Presence {
+  arriving,
+
+  /// Arriving while other cards leave, as when a label filter changes: it
+  /// waits for them to clear its spot rather than fading in through them.
+  following,
+
+  /// Handed over from another grid: shown at once, in flight to its slot.
+  handedOff,
+  present,
+  leaving,
+}
 
 /// Fades and scales a card in when it joins a shown grid and out when it
 /// leaves one. Always in the tree, so toggling it never remounts the card.
@@ -1069,13 +1197,16 @@ class _TilePresenceState extends State<_TilePresence>
     with SingleTickerProviderStateMixin {
   static const double _hiddenScale = 0.95;
 
+  /// How long a following card waits for the leaving ones.
+  static const Duration _followDelay = Duration(milliseconds: 90);
+
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: Motion.base,
     reverseDuration: Motion.fast,
     value: 1,
   );
-  late final Animation<double> _curve = CurvedAnimation(
+  late final CurvedAnimation _curve = CurvedAnimation(
     parent: _controller,
     curve: Motion.emphasized,
     reverseCurve: Motion.standard,
@@ -1098,14 +1229,46 @@ class _TilePresenceState extends State<_TilePresence>
     }
 
     _started = true;
-    if (widget.presence == _Presence.arriving && _animates) {
-      _controller.forward(from: 0);
+    if (!_animates) {
+      return;
     }
+    switch (widget.presence) {
+      case _Presence.arriving:
+        _controller.forward(from: 0);
+      case _Presence.following:
+        _follow();
+      case _Presence.handedOff:
+      case _Presence.present:
+      case _Presence.leaving:
+        break;
+    }
+  }
+
+  /// The entrance, held back by [_followDelay] and then run at its usual
+  /// length and curve.
+  void _follow() {
+    final total = Motion.base + _followDelay;
+    _controller.duration = total;
+    _curve.curve = Interval(
+      _followDelay.inMicroseconds / total.inMicroseconds,
+      1,
+      curve: Motion.emphasized,
+    );
+    _controller.forward(from: 0).whenCompleteOrCancel(() {
+      _controller.duration = Motion.base;
+      _curve.curve = Motion.emphasized;
+    });
   }
 
   @override
   void didUpdateWidget(_TilePresence oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // The card already shows where it flies from, in the grid it left.
+    if (widget.presence == _Presence.handedOff &&
+        oldWidget.presence != _Presence.handedOff) {
+      _controller.value = 1;
+      return;
+    }
     final leaving = widget.presence == _Presence.leaving;
     if (leaving == (oldWidget.presence == _Presence.leaving)) {
       return;
@@ -1138,6 +1301,103 @@ class _TilePresenceState extends State<_TilePresence>
     child: FadeTransition(
       opacity: _curve,
       child: ScaleTransition(scale: _scale, child: widget.child),
+    ),
+  );
+}
+
+/// A [Positioned] that glides to a new [left]/[top] on a [Motion.spring].
+/// A target that changes mid-glide carries the current speed into the next
+/// one, where a restarted tween would jump: cards retarget all through a drag
+/// reorder and whenever a card arrives above one still moving.
+class _SpringPositioned extends StatefulWidget {
+  final bool snap;
+
+  /// Where the card starts from when it was handed over from another grid,
+  /// in this grid's coordinates.
+  final Offset? flyFrom;
+
+  /// Called when a flight from [flyFrom] comes to rest.
+  final VoidCallback? onLanded;
+  final double left;
+  final double top;
+  final double width;
+  final Widget child;
+
+  const _SpringPositioned({
+    super.key,
+    required this.snap,
+    this.flyFrom,
+    this.onLanded,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.child,
+  });
+
+  @override
+  State<_SpringPositioned> createState() => _SpringPositionedState();
+}
+
+class _SpringPositionedState extends State<_SpringPositioned>
+    with TickerProviderStateMixin {
+  late final AnimationController _x = AnimationController.unbounded(
+    vsync: this,
+    value: widget.left,
+  );
+  late final AnimationController _y = AnimationController.unbounded(
+    vsync: this,
+    value: widget.top,
+  );
+  late final Listenable _both = Listenable.merge([_x, _y]);
+
+  @override
+  void didUpdateWidget(_SpringPositioned oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final jump =
+        widget.snap ||
+        Motion.reduced(context) ||
+        !TickerMode.valuesOf(context).enabled;
+    final from = widget.flyFrom;
+    if (from != null && from != oldWidget.flyFrom && !Motion.reduced(context)) {
+      _x.value = from.dx;
+      _y.value = from.dy;
+      _x.animateWith(Motion.springTo(from.dx, widget.left));
+      _y
+          .animateWith(Motion.springTo(from.dy, widget.top))
+          .whenCompleteOrCancel(() => widget.onLanded?.call());
+      return;
+    }
+    _glide(_x, oldWidget.left, widget.left, jump);
+    _glide(_y, oldWidget.top, widget.top, jump);
+  }
+
+  void _glide(AnimationController axis, double from, double to, bool jump) {
+    if (jump) {
+      axis.value = to;
+      return;
+    }
+    if (from == to) {
+      return;
+    }
+    axis.animateWith(Motion.springTo(axis.value, to, velocity: axis.velocity));
+  }
+
+  @override
+  void dispose() {
+    _x.dispose();
+    _y.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _both,
+    child: widget.child,
+    builder: (context, child) => Positioned(
+      left: _x.value,
+      top: _y.value,
+      width: widget.width,
+      child: child!,
     ),
   );
 }

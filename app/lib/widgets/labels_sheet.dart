@@ -204,8 +204,13 @@ class _LabelsSheetState extends State<LabelsSheet> {
               // Typing filters the rows and offers "Create"; each grows in or
               // out instead of the list jumping between keystrokes.
               child: AnimatedPresence(
-                layout: (children) =>
-                    ListView(shrinkWrap: true, children: children),
+                layout: (children) => ListView(
+                  shrinkWrap: true,
+                  // Browsing the labels puts the search keyboard away.
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  children: children,
+                ),
                 children: [
                   if (q.isNotEmpty && !exactExists)
                     ListTile(

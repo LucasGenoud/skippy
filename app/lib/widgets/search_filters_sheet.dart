@@ -233,7 +233,7 @@ class _Group extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title.toUpperCase(), style: sectionLabelStyle(theme)),
+          Text(title, style: sectionLabelStyle(theme)),
           const SizedBox(height: kSpaceSm),
           Wrap(
             spacing: 8,

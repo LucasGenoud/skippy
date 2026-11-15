@@ -89,6 +89,32 @@ NotesStore testStore(
 );
 
 void main() {
+  test('a pattern applies at once, syncs, and survives the cache', () async {
+    final api = FakeApi();
+    final cache = MemoryLocalCache();
+    api.notes['n1'] = serverNote('n1', title: 'a');
+    final store = testStore(api, cache: cache);
+    await store.load();
+
+    store.setPattern('n1', NotePattern.grid);
+    expect(store.noteById('n1')!.pattern, NotePattern.grid);
+
+    await settle();
+    expect(api.notes['n1']!.pattern, NotePattern.grid);
+    expect(api.log, contains('patchNote:n1:pattern'));
+
+    final reopened = testStore(api, cache: cache);
+    await reopened.load();
+    expect(reopened.noteById('n1')!.pattern, NotePattern.grid);
+  });
+
+  test('a note pattern round-trips through JSON and tolerates unknowns', () {
+    final note = serverNote('n1').copyWith(pattern: NotePattern.dots);
+    expect(Note.fromJson(note.toJson()).pattern, NotePattern.dots);
+    expect(NotePattern.fromWire('hexagons'), NotePattern.none);
+    expect(NotePattern.fromWire(null), NotePattern.none);
+  });
+
   test('refresh cannot replace edits completed during its snapshot', () async {
     final api = FakeApi()..notes['n1'] = serverNote('n1');
     final store = testStore(api);

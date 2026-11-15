@@ -123,7 +123,14 @@ class _NewNoteFabsState extends State<NewNoteFabs>
             openFullscreen: open,
             kind: kind,
             labelIds: widget.labelIds,
-            sourceRect: morphSourceRect(context),
+            source: MorphSource(
+              context,
+              radius: kRadius,
+              face: (_) => Material(
+                color: scheme.surface,
+                child: _KindFace(icon: icon, label: label),
+              ),
+            ),
           );
           _foldAfterOpening();
         },

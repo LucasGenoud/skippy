@@ -25,12 +25,15 @@ extension NotesStoreWorkspaces on NotesStore {
     _navigationChanged();
   }
 
-  WorkspaceScope get collectionScope => WorkspaceScope(
-    workspaceId: _activeWorkspaceId,
-    isDefault: workspaceScope.isDefault,
-    known: workspaceScope.known,
-    collectionId: activeCollection?.id,
-  );
+  WorkspaceScope get collectionScope {
+    final scope = workspaceScope;
+    return WorkspaceScope(
+      workspaceId: _activeWorkspaceId,
+      isDefault: scope.isDefault,
+      known: scope.known,
+      collectionId: activeCollection?.id,
+    );
+  }
 
   Future<void> duplicateWorkspace(
     String id,

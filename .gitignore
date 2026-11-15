@@ -19,7 +19,9 @@
 **/key.properties
 **/*.pem
 **/*.key
+**/*.p8
 **/*.p12
+**/*.cer
 **/*.pfx
 **/*.jks
 **/*.keystore
