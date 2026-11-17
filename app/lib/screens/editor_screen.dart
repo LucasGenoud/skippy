@@ -32,7 +32,6 @@ import '../widgets/checklist/animated_checklist.dart';
 import '../widgets/animated_presence.dart';
 import '../widgets/animated_reveal.dart';
 import '../widgets/audio_player.dart';
-import '../widgets/board/move_to_stage_sheet.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/editor/add_to_home_screen_help.dart';
 import '../widgets/editor/attachment_tiles.dart';
@@ -48,6 +47,8 @@ import '../widgets/editor/note_links_panel.dart';
 import '../widgets/file_drop.dart';
 import '../widgets/labels_sheet.dart';
 import '../widgets/link_preview.dart';
+import '../widgets/move_note_sheet.dart';
+import '../state/markdown_editing.dart';
 import '../widgets/link_summary_indicator.dart';
 import '../widgets/app_icon_button.dart';
 import '../widgets/deferred_build.dart';
@@ -58,7 +59,6 @@ import '../widgets/pick_image.dart';
 import '../widgets/pin_icon.dart';
 import '../widgets/reminders/reminder_editing.dart';
 import '../widgets/screen_width.dart';
-import '../widgets/workspace_menu.dart';
 import '../widgets/transcribing_indicator.dart';
 import '../widgets/state_cross_fade.dart';
 import '../widgets/note_markdown.dart';
@@ -780,14 +780,24 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  Future<void> _moveToCollection() async {
+  /// One picker for column, collection and workspace, opened on [initial].
+  Future<void> _moveNote(NoteMoveTarget initial) async {
     final note = _note;
     if (note == null) return;
-    final target = await CollectionPicker.show(context, note.workspaceId);
-    if (target != null) {
-      _store.moveToCollection(note.id, target);
-    }
+    await MoveNoteSheet.show(
+      context,
+      note.id,
+      targets: _moveTargets(NoteAvailability(_store, note)),
+      initial: initial,
+    );
   }
+
+  /// Columns only make sense for a note opened from its board.
+  List<NoteMoveTarget> _moveTargets(NoteAvailability can) => [
+    if (widget.openedFromBoard && can.canMoveToStage) NoteMoveTarget.stage,
+    if (can.canMoveToCollection) NoteMoveTarget.collection,
+    if (can.canMoveToWorkspace) NoteMoveTarget.workspace,
+  ];
 
   /// Duplicate the open note and keep editing the copy, so the next thing
   /// typed lands in the new note rather than in the one that was copied.
@@ -820,7 +830,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Future<void> _copyNoteToClipboard() async {
     final note = _note;
     if (note == null || note.isEmpty) return;
-    await copyNoteText(note);
+    await copyNotesText([note]);
   }
 
   /// Put this note on the device home screen.
@@ -1235,6 +1245,7 @@ class _EditorScreenState extends State<EditorScreen> {
                       NoteActionsButton(
                         isOwner: can.isOwner,
                         kind: _kind,
+                        noteTitle: _titleController.text,
                         onFind: _openFind,
                         onCopy: can.canCopy ? _copyNoteToClipboard : null,
                         onArchive: !trashed && can.canArchive
@@ -1244,16 +1255,8 @@ class _EditorScreenState extends State<EditorScreen> {
                         onShare: can.canEdit ? _openShare : null,
                         onDelete: can.canTrash ? _deleteAndClose : null,
                         onDuplicate: can.canDuplicate ? _duplicateNote : null,
-                        onMoveToCollection: can.canMoveToCollection
-                            ? _moveToCollection
-                            : null,
-                        onMoveToWorkspace: can.canMoveToWorkspace
-                            ? () => MoveToWorkspaceSheet.show(context, _noteId!)
-                            : null,
-                        onMoveToStage:
-                            widget.openedFromBoard && can.canMoveToStage
-                            ? () => MoveToStageSheet.show(context, _noteId!)
-                            : null,
+                        moveTargets: _moveTargets(can),
+                        onMove: _moveNote,
                         onHistory: can.canShowHistory
                             ? () => NoteHistoryScreen.open(context, _noteId!)
                             : null,
@@ -1848,6 +1851,7 @@ class _EditorScreenState extends State<EditorScreen> {
         selectable: true,
         styleSheet: noteMarkdownStyle(Theme.of(context)),
         builders: noteMarkdownBuilders(CodeBlockMode.interactive),
+        checkboxBuilder: _previewTaskBox(trashed: trashed),
         // A tap on preview text returns to its markdown source. Drag and
         // long-press gestures remain owned by the selectable text.
         onTapText: trashed ? null : _editMarkdownFromPreview,
@@ -1862,6 +1866,36 @@ class _EditorScreenState extends State<EditorScreen> {
           launchSafeLink(href);
         },
       ),
+    );
+  }
+
+  /// Draws the preview's task boxes, tappable to tick without leaving the
+  /// preview. The renderer hands over only checked or not, in document order,
+  /// so each box takes the next position as it is drawn; the modulo keeps that
+  /// right should the renderer draw the same document twice.
+  MarkdownCheckboxBuilder _previewTaskBox({required bool trashed}) {
+    final count = taskCount(_contentController.text);
+    var next = 0;
+    return (checked) {
+      final index = count == 0 ? 0 : next++ % count;
+      return PreviewTaskBox(
+        checked: checked,
+        onTap: trashed || _rewriting ? null : () => _toggleTask(index),
+      );
+    };
+  }
+
+  /// Ticks a task from the preview. The source changes like any typed edit,
+  /// so it is saved, versioned and undoable the same way.
+  void _toggleTask(int index) {
+    final text = toggleTask(_contentController.text, index);
+    if (text == _contentController.text) {
+      return;
+    }
+    _contentController.value = _contentController.value.copyWith(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+      composing: TextRange.empty,
     );
   }
 

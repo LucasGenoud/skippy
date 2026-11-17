@@ -267,6 +267,7 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                           onToggleCollapsed: widget.onToggleCollapsed,
                           selection: _columnSelection,
                           onToggleSelection: _toggleSelection,
+                          selecting: widget.selectionMode,
                         )
                       else
                         // The phone has no header to hold the toggle, so it
@@ -280,9 +281,9 @@ class _BoardColumnViewState extends State<BoardColumnView> {
                               padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
                               child: _SelectColumnButton(
                                 title: widget.column.title,
+                                count: widget.column.notes.length,
                                 selection: _columnSelection,
                                 onPressed: _toggleSelection,
-                                showLabel: true,
                               ),
                             ),
                           ),
@@ -452,47 +453,59 @@ class _AppearWhen extends StatelessWidget {
   }
 }
 
-/// Checkbox-style toggle over every card in a column.
+/// Selects every card in a column, and says so: "Select 4" names the action
+/// and what it adds, where a bare checkbox read like a property of the column.
+/// Once the whole column is picked it turns accent and offers to clear it.
 class _SelectColumnButton extends StatelessWidget {
   final String title;
+  final int count;
   final _ColumnSelection selection;
   final VoidCallback? onPressed;
-  final bool showLabel;
 
   const _SelectColumnButton({
     required this.title,
+    required this.count,
     required this.selection,
     required this.onPressed,
-    this.showLabel = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final all = selection == _ColumnSelection.all;
-    final icon = Icon(switch (selection) {
-      _ColumnSelection.none => Icons.check_box_outline_blank,
-      _ColumnSelection.some => Icons.indeterminate_check_box_outlined,
-      _ColumnSelection.all => Icons.check_box,
-    }, size: 20);
-    final tooltip = all ? 'Deselect all in $title' : 'Select all in $title';
-
-    if (showLabel) {
-      return Tooltip(
-        message: tooltip,
-        child: TextButton.icon(
-          onPressed: onPressed,
-          icon: icon,
-          label: Text(all ? 'Deselect all' : 'Select all'),
+    final duration = Motion.reduced(context) ? Duration.zero : Motion.fast;
+    final label = all ? 'All $count · Clear' : 'Select $count';
+    return Tooltip(
+      message: all ? 'Deselect all in $title' : 'Select all in $title',
+      child: TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          minimumSize: const Size(0, 30),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: all ? scheme.onPrimaryContainer : scheme.onSurface,
+          backgroundColor: all ? scheme.primaryContainer : scheme.surface,
+          side: BorderSide(
+            color: all ? scheme.primaryContainer : scheme.outlineVariant,
+          ),
+          shape: const RoundedRectangleBorder(borderRadius: kBorderRadius),
+          textStyle: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w600),
+          animationDuration: duration,
         ),
-      );
-    }
-    return IconButton(
-      icon: icon,
-      tooltip: tooltip,
-      color: all ? Theme.of(context).colorScheme.primary : null,
-      visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-      onPressed: onPressed,
+        // The label resizes the button, so the width eases while the words
+        // cross-fade.
+        child: AnimatedSize(
+          duration: duration,
+          curve: Motion.standard,
+          child: AnimatedSwitcher(
+            duration: duration,
+            child: Text(label, key: ValueKey(label)),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -508,12 +521,19 @@ class _BoardColumnHeader extends StatelessWidget {
   /// Null when the column holds nothing to select.
   final VoidCallback? onToggleSelection;
 
+  /// Cards are being picked. Only then does the header offer its "Select N";
+  /// otherwise the column menu does.
+  final bool selecting;
+
   const _BoardColumnHeader({
     required this.column,
     this.onToggleCollapsed,
     this.selection = _ColumnSelection.none,
     this.onToggleSelection,
+    this.selecting = false,
   });
+
+  bool get _offersSelect => selecting && onToggleSelection != null;
 
   bool get _hasMenu => column.stage != null || onToggleSelection != null;
 
@@ -523,7 +543,14 @@ class _BoardColumnHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
+        // A fully picked column wears the accent, so it reads as selected at
+        // a glance across the board.
+        AnimatedContainer(
+          duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+          curve: Motion.standard,
+          color: selection == _ColumnSelection.all
+              ? theme.colorScheme.primaryContainer.withValues(alpha: 0.18)
+              : Colors.transparent,
           padding: EdgeInsets.fromLTRB(
             onToggleCollapsed == null ? kSpaceMd : kSpaceXs,
             kSpaceXs,
@@ -552,17 +579,26 @@ class _BoardColumnHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              // "Select 4" already says how many, so it takes the count's
+              // place rather than crowding a narrow header.
               _AppearWhen(
-                visible: onToggleSelection != null,
-                child: _SelectColumnButton(
-                  title: column.title,
-                  selection: selection,
-                  onPressed: onToggleSelection,
+                visible: _offersSelect,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: _SelectColumnButton(
+                    title: column.title,
+                    count: column.notes.length,
+                    selection: selection,
+                    onPressed: onToggleSelection,
+                  ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(left: 4, right: 8),
-                child: _CountChip(count: column.totalCount),
+              _AppearWhen(
+                visible: !_offersSelect,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4, right: 8),
+                  child: _CountChip(count: column.totalCount),
+                ),
               ),
               if (_hasMenu)
                 IconButton(

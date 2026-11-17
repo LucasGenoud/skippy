@@ -107,8 +107,8 @@ void main() {
     }
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
-    expect(find.text('Find in note'), findsOneWidget);
-    expect(find.text('Copy to clipboard'), findsOneWidget);
+    expect(find.text('Find'), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget);
     expect(find.text('Archive'), findsOneWidget);
     await flushTimers(tester);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));

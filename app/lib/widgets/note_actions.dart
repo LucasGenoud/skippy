@@ -47,6 +47,47 @@ Future<void> copyNoteText(Note note) => Clipboard.setData(
   ClipboardData(text: noteToPlainText(note).trimRight()),
 );
 
+/// Puts [notes] on the clipboard as plain text, one after another, and says
+/// so: on a phone there is nothing else to show that the copy happened.
+Future<void> copyNotesText(List<Note> notes) async {
+  final copyable = [
+    for (final note in notes)
+      if (!note.isEmpty) note,
+  ];
+  if (copyable.isEmpty) {
+    showAppSnack('Nothing to copy');
+    return;
+  }
+  final text = [
+    for (final note in copyable) noteToPlainText(note).trimRight(),
+  ].join('\n\n');
+  await Clipboard.setData(ClipboardData(text: text));
+  showAppSnack(
+    copyable.length == 1 ? 'Note copied' : '${copyable.length} notes copied',
+    icon: Icons.content_copy_outlined,
+  );
+}
+
+/// Files [noteId] in [workspaceId]. Labels belong to a workspace, so any the
+/// note carried are dropped on the way; say so when that happened.
+void moveNoteToWorkspace(NotesStore store, String noteId, String workspaceId) {
+  final note = store.noteById(noteId);
+  if (note == null || note.workspaceId == workspaceId) {
+    return;
+  }
+  final droppedLabels = note.labelIds
+      .where((id) => store.labelById(id)?.workspaceId != workspaceId)
+      .length;
+  store.moveNoteToWorkspace(noteId, workspaceId);
+  if (droppedLabels > 0) {
+    showAppSnack(
+      '$droppedLabels ${droppedLabels == 1 ? 'label was' : 'labels were'} removed when moving the note',
+      icon: Icons.warning_amber_outlined,
+      kind: SnackKind.warning,
+    );
+  }
+}
+
 /// Opens the collaborators dialog for [note], unless there is nothing in it
 /// to share yet. Answers whether the user left the note from that dialog.
 Future<bool> shareNote(BuildContext context, Note? note) async {

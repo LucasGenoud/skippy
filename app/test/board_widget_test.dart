@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:skippy/models/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +12,7 @@ import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/widgets/board/board_column_view.dart';
 import 'package:skippy/widgets/board/board_view.dart';
 import 'package:skippy/widgets/board/move_to_stage_sheet.dart';
+import 'package:skippy/widgets/move_note_sheet.dart';
 import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/form_dialog.dart';
@@ -911,7 +914,7 @@ void main() {
       });
     }
 
-    testWidgets('a column header selects its cards without a selection', (
+    testWidgets('the header offers "Select N" only while selecting', (
       tester,
     ) async {
       await setViewport(tester, const Size(1200, 900));
@@ -923,17 +926,26 @@ void main() {
         'b',
         title: 'card b',
       ).copyWith(stageId: 'todo');
+      api.notes['c'] = serverNote('c', title: 'card c');
       await store.load();
       final selected = <String>{};
       await tester.pumpWidget(selectableBoard(selected));
       await tester.pumpAndSettle();
 
+      // Browsing: the header counts, and the column menu selects.
+      expect(findAction('Select all in Todo'), findsNothing);
+
+      await tester.longPress(find.text('card c'));
+      await tester.pumpAndSettle();
       // An empty column has nothing to select, so it offers nothing.
       expect(findAction('Select all in Doing'), findsNothing);
+      expect(find.text('Select 2'), findsOneWidget);
 
       await tester.tap(findAction('Select all in Todo'));
       await tester.pumpAndSettle();
-      expect(selected, {'a', 'b'});
+      expect(selected, {'a', 'b', 'c'});
+      // Fully picked, it says so and offers the way back.
+      expect(find.text('All 2 · Clear'), findsOneWidget);
       await flushTimers(tester);
     });
 
@@ -1101,6 +1113,50 @@ void main() {
     await flushTimers(tester);
   });
 
+  testWidgets('the move picker switches between kinds of destination', (
+    tester,
+  ) async {
+    await setViewport(tester, const Size(390, 844));
+    api.notes['n1'] = serverNote('n1', title: 'card one');
+    await store.load();
+    await tester.pumpWidget(boardApp(store));
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.text('card one'));
+    unawaited(
+      MoveNoteSheet.show(
+        context,
+        'n1',
+        targets: const [NoteMoveTarget.stage, NoteMoveTarget.workspace],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final sheet = find.byType(MoveNoteSheet);
+    expect(
+      find.descendant(of: sheet, matching: find.text('Doing')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('move-tab-workspace')));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: sheet, matching: find.text('Doing')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('My notes')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('move-tab-stage')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: sheet, matching: find.text('Doing')));
+    await tester.pumpAndSettle();
+    expect(store.noteById('n1')?.stageId, 'doing');
+    expect(sheet, findsNothing);
+    await flushTimers(tester);
+  });
+
   /// On a phone the board opens a note full-screen, which puts the card and
   /// its drag gesture out of reach, so the only way to refile a note you are
   /// reading was to close it first.
@@ -1129,7 +1185,7 @@ void main() {
     // and all.
     await tester.tap(
       find.descendant(
-        of: find.byType(MoveToStageSheet),
+        of: find.byType(MoveNoteSheet),
         matching: find.text('Doing'),
       ),
     );

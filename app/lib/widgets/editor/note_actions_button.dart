@@ -5,6 +5,7 @@ import '../form_dialog.dart';
 import '../../theme.dart';
 import '../app_icon_button.dart';
 import '../menu_label.dart';
+import '../move_note_sheet.dart';
 
 /// Everything you do *to* a note, as opposed to what you put *into* it.
 ///
@@ -13,20 +14,27 @@ import '../menu_label.dart';
 /// and this app-bar menu manages (share, file, convert, delete). An earlier
 /// design nested the rarer half of one combined menu behind "More note
 /// options", which asked the reader to guess whether a thing like "Move to
-/// column" counted as advanced — it doesn't, it is just infrequent, and hiding
-/// it turned a two-tap job into a hunt.
+/// column" counted as advanced, and turned a two-tap job into a hunt.
 ///
-/// So this list is flat: one scrollable column, every row reachable in two
-/// taps. The two families that would otherwise contribute five near-identical
-/// rows — the AI rewrites and the kind conversions — collapse into a chip row
-/// each, which is what keeps the flat list short enough to scan.
+/// So the sheet stays one level, ordered by how often each thing is reached
+/// for:
 ///
-/// Find, copy and archive head the list rather than sitting in the app bar:
-/// every button there is built each time a note opens, and on a phone they are
-/// one tap further away, not hidden.
+///   [Copy] [Find] [Share] [Archive] [Delete]   one tap, same place every time
+///   Move to…                                   column / collection / workspace
+///   Version history · Duplicate · Home Screen
+///   Turn into   (chips)
+///   Rewrite     (chips)
+///
+/// The three kinds of move are tabs of one picker ([MoveNoteSheet]) rather
+/// than three rows, and families of siblings (rewrites, conversions) are chip
+/// rows, which is what keeps it short on a phone.
 class NoteActionsButton extends StatelessWidget {
   final bool isOwner;
   final NoteKind kind;
+
+  /// Heads the sheet, so it is clear which note the actions act on. Null for
+  /// an untitled note.
+  final String? noteTitle;
   final VoidCallback? onFind;
   final VoidCallback? onCopy;
   final VoidCallback? onArchive;
@@ -36,9 +44,11 @@ class NoteActionsButton extends StatelessWidget {
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
   final VoidCallback? onDuplicate;
-  final VoidCallback? onMoveToWorkspace;
-  final VoidCallback? onMoveToCollection;
-  final VoidCallback? onMoveToStage;
+
+  /// Where this note can be moved, in tab order; [onMove] opens the picker on
+  /// the one given.
+  final List<NoteMoveTarget> moveTargets;
+  final ValueChanged<NoteMoveTarget>? onMove;
   final VoidCallback? onHistory;
   final VoidCallback? onAddToHomeScreen;
   final void Function(NoteKind target)? onConvert;
@@ -55,6 +65,7 @@ class NoteActionsButton extends StatelessWidget {
     super.key,
     required this.isOwner,
     required this.kind,
+    this.noteTitle,
     this.onFind,
     this.onCopy,
     this.onArchive,
@@ -62,9 +73,8 @@ class NoteActionsButton extends StatelessWidget {
     this.onShare,
     this.onDelete,
     this.onDuplicate,
-    this.onMoveToWorkspace,
-    this.onMoveToCollection,
-    this.onMoveToStage,
+    this.moveTargets = const [],
+    this.onMove,
     this.onHistory,
     this.onAddToHomeScreen,
     this.onConvert,
@@ -101,20 +111,29 @@ class NoteActionsButton extends StatelessWidget {
   bool get _offersRewrite =>
       onRewrite != null && rewriteTasks.isNotEmpty && kind != NoteKind.audio;
 
-  List<_NoteAction> _rows(ColorScheme scheme) => [
-    if (onFind != null)
-      const _NoteAction(
-        value: 'find',
-        icon: Icons.search,
-        label: 'Find in note',
-        hint: 'Highlight matches',
-      ),
+  bool get _offersMove => onMove != null && moveTargets.isNotEmpty;
+
+  List<_NoteAction> _quick(ColorScheme scheme) => [
     if (onCopy != null)
       const _NoteAction(
         value: 'copy',
         icon: Icons.content_copy_outlined,
-        label: 'Copy to clipboard',
-        hint: 'As plain text',
+        label: 'Copy',
+        hint: 'Copy to clipboard',
+      ),
+    if (onFind != null)
+      const _NoteAction(
+        value: 'find',
+        icon: Icons.search,
+        label: 'Find',
+        hint: 'Find in note',
+      ),
+    if (onShare != null)
+      const _NoteAction(
+        value: 'share',
+        icon: Icons.person_add_alt_outlined,
+        label: 'Share',
+        hint: 'Collaborators',
       ),
     if (onArchive != null)
       archived
@@ -130,36 +149,31 @@ class NoteActionsButton extends StatelessWidget {
               label: 'Archive',
               hint: 'Out of the way, kept',
             ),
-    if (onShare != null)
-      const _NoteAction(
-        value: 'share',
-        icon: Icons.person_add_alt_outlined,
-        label: 'Collaborators',
-        hint: 'Share with people',
+    if (isOwner && onDelete != null)
+      _NoteAction(
+        value: 'delete',
+        icon: Icons.delete_outline,
+        label: 'Delete',
+        hint: 'Move to trash',
+        color: scheme.error,
       ),
-    // Above "Move to workspace", in the same order the note card's menu lists
-    // the two.
-    if (onMoveToStage != null)
-      const _NoteAction(
-        value: 'stage',
-        icon: Icons.view_kanban_outlined,
-        label: 'Move to column',
-        hint: 'Another column on this board',
-      ),
-    if (onMoveToCollection != null)
-      const _NoteAction(
-        value: 'collection',
-        icon: Icons.folder_outlined,
-        label: 'Move to collection',
-        hint: 'Within this workspace',
-      ),
-    if (onMoveToWorkspace != null)
-      const _NoteAction(
-        value: 'move',
-        icon: Icons.drive_file_move_outlined,
-        label: 'Move to workspace',
-        hint: 'To another workspace',
-      ),
+  ];
+
+  List<_NoteAction> get _rows => [
+    if (_offersMove)
+      moveTargets.length == 1
+          ? _NoteAction(
+              value: 'move:${moveTargets.single.name}',
+              icon: _moveIcon(moveTargets.single),
+              label: 'Move to ${moveTargets.single.label.toLowerCase()}',
+              hint: _moveHint(moveTargets.single),
+            )
+          : _NoteAction(
+              value: 'move:${moveTargets.first.name}',
+              icon: Icons.drive_file_move_outlined,
+              label: 'Move to…',
+              hint: moveTargets.map((t) => t.label).join(', '),
+            ),
     if (onHistory != null)
       const _NoteAction(
         value: 'history',
@@ -182,15 +196,19 @@ class NoteActionsButton extends StatelessWidget {
         label: 'Add to Home Screen',
         hint: 'As a widget',
       ),
-    if (isOwner && onDelete != null)
-      _NoteAction(
-        value: 'delete',
-        icon: Icons.delete_outline,
-        label: 'Delete',
-        hint: 'Move to trash',
-        color: scheme.error,
-      ),
   ];
+
+  static IconData _moveIcon(NoteMoveTarget target) => switch (target) {
+    NoteMoveTarget.stage => Icons.view_kanban_outlined,
+    NoteMoveTarget.collection => Icons.folder_outlined,
+    NoteMoveTarget.workspace => Icons.drive_file_move_outlined,
+  };
+
+  static String _moveHint(NoteMoveTarget target) => switch (target) {
+    NoteMoveTarget.stage => 'Another column on this board',
+    NoteMoveTarget.collection => 'Within this workspace',
+    NoteMoveTarget.workspace => 'To another workspace',
+  };
 
   void _dispatch(String value) {
     if (value == 'find') onFind?.call();
@@ -199,13 +217,11 @@ class NoteActionsButton extends StatelessWidget {
     if (value == 'share') onShare?.call();
     if (value == 'delete') onDelete?.call();
     if (value == 'duplicate') onDuplicate?.call();
-    if (value == 'move') onMoveToWorkspace?.call();
-    if (value == 'collection') {
-      onMoveToCollection?.call();
-    }
-    if (value == 'stage') onMoveToStage?.call();
     if (value == 'history') onHistory?.call();
     if (value == 'homescreen') onAddToHomeScreen?.call();
+    for (final target in NoteMoveTarget.values) {
+      if (value == 'move:${target.name}') onMove?.call(target);
+    }
     if (value.startsWith('rewrite:')) {
       final id = value.substring('rewrite:'.length);
       for (final task in rewriteTasks) {
@@ -222,12 +238,17 @@ class NoteActionsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = _rows(Theme.of(context).colorScheme);
+    final quick = _quick(Theme.of(context).colorScheme);
+    final rows = _rows;
+    // A phone's grid is two columns wide, so a choice of card width there
+    // would mostly do nothing; it stays on wider windows.
+    final offersGridSpan = onGridSpan != null && !isNarrowScreen(context);
     final empty =
+        quick.isEmpty &&
         rows.isEmpty &&
         _convertTargets.isEmpty &&
         !_offersRewrite &&
-        onGridSpan == null;
+        !offersGridSpan;
     return AppIconButton(
       icon: rewriting
           ? const SizedBox(
@@ -249,13 +270,15 @@ class NoteActionsButton extends StatelessWidget {
                 maxWidth: 440,
                 isScrollControlled: true,
                 builder: (context) => _NoteActionsSheet(
+                  title: noteTitle,
+                  quick: quick,
                   rows: rows,
                   convertTargets: _convertTargets,
                   offersRewrite: _offersRewrite,
                   rewriteTasks: rewriteTasks,
                   rewriting: rewriting,
                   gridSpan: gridSpan,
-                  offersGridSpan: onGridSpan != null,
+                  offersGridSpan: offersGridSpan,
                 ),
               );
               if (action != null) _dispatch(action);
@@ -271,6 +294,8 @@ class NoteActionsButton extends StatelessWidget {
 }
 
 class _NoteActionsSheet extends StatelessWidget {
+  final String? title;
+  final List<_NoteAction> quick;
   final List<_NoteAction> rows;
   final List<NoteKind> convertTargets;
   final bool offersRewrite;
@@ -280,6 +305,8 @@ class _NoteActionsSheet extends StatelessWidget {
   final bool offersGridSpan;
 
   const _NoteActionsSheet({
+    required this.title,
+    required this.quick,
     required this.rows,
     required this.convertTargets,
     required this.offersRewrite,
@@ -308,8 +335,44 @@ class _NoteActionsSheet extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Text('Note actions', style: theme.textTheme.titleMedium),
+                child: Text(
+                  (title?.trim().isNotEmpty ?? false)
+                      ? title!.trim()
+                      : 'Note actions',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
               ),
+              if (quick.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Row(
+                    children: [
+                      for (final (i, action) in quick.indexed) ...[
+                        if (i > 0) const SizedBox(width: 6),
+                        Expanded(child: _QuickAction(action: action)),
+                      ],
+                    ],
+                  ),
+                ),
+              for (final row in rows)
+                ListTile(
+                  key: ValueKey('note-action-${row.value}'),
+                  leading: Icon(row.icon, color: row.color),
+                  title: MenuLabel(row.label, hint: row.hint, color: row.color),
+                  onTap: () => Navigator.pop(context, row.value),
+                ),
+              if (offersRewrite || convertTargets.isNotEmpty || offersGridSpan)
+                const Divider(height: 24),
+              if (convertTargets.isNotEmpty)
+                _ChipRow(
+                  title: 'Turn into',
+                  chips: [
+                    for (final target in convertTargets)
+                      NoteActionsButton._kindChip(context, target),
+                  ],
+                ),
               if (offersRewrite)
                 _ChipRow(
                   title: 'Rewrite with AI',
@@ -328,14 +391,6 @@ class _NoteActionsSheet extends StatelessWidget {
                       ),
                   ],
                 ),
-              if (convertTargets.isNotEmpty)
-                _ChipRow(
-                  title: 'Turn into',
-                  chips: [
-                    for (final target in convertTargets)
-                      NoteActionsButton._kindChip(context, target),
-                  ],
-                ),
               if (offersGridSpan)
                 _ChipRow(
                   title: 'Card width',
@@ -348,19 +403,51 @@ class _NoteActionsSheet extends StatelessWidget {
                       ),
                   ],
                 ),
-              if (rows.isNotEmpty &&
-                  (offersRewrite ||
-                      convertTargets.isNotEmpty ||
-                      offersGridSpan))
-                const Divider(height: 24),
-              for (final row in rows)
-                ListTile(
-                  key: ValueKey('note-action-${row.value}'),
-                  leading: Icon(row.icon, color: row.color),
-                  title: MenuLabel(row.label, hint: row.hint, color: row.color),
-                  onTap: () => Navigator.pop(context, row.value),
-                ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the sheet's most-used actions: an icon over a one-word label, in a
+/// row of equal tiles. The tooltip and screen reader get the full name.
+class _QuickAction extends StatelessWidget {
+  final _NoteAction action;
+
+  const _QuickAction({required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = action.color ?? scheme.onSurface;
+    return Tooltip(
+      message: action.hint,
+      child: Material(
+        key: ValueKey('note-action-${action.value}'),
+        color: scheme.surfaceContainerHigh,
+        borderRadius: kBorderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.pop(context, action.value),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(action.icon, color: color, size: 22),
+                const SizedBox(height: 6),
+                Text(
+                  action.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: color),
+                ),
+              ],
+            ),
           ),
         ),
       ),

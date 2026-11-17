@@ -6,6 +6,7 @@ import 'package:markdown/markdown.dart' as md;
 import '../theme.dart';
 import '../util/app_fonts.dart';
 import '../util/code_highlight.dart';
+import '../util/motion.dart';
 import '../util/snack.dart';
 
 /// How a code block behaves where it is drawn.
@@ -210,6 +211,58 @@ class _CodeBlock extends StatelessWidget {
         for (final token in highlightCode(source, language: language))
           TextSpan(text: token.text, style: styleFor(token.kind)),
       ],
+    );
+  }
+}
+
+/// A task's box in a markdown preview: the app's checkbox (accent fill, 6px
+/// corners) rather than the renderer's stock icon, and tappable when
+/// [onTap] is given.
+class PreviewTaskBox extends StatelessWidget {
+  final bool checked;
+  final VoidCallback? onTap;
+
+  const PreviewTaskBox({super.key, required this.checked, this.onTap});
+
+  static const double _size = 18;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final duration = Motion.reduced(context) ? Duration.zero : Motion.fast;
+    final box = AnimatedContainer(
+      duration: duration,
+      curve: Motion.standard,
+      width: _size,
+      height: _size,
+      decoration: BoxDecoration(
+        color: checked ? scheme.primaryContainer : Colors.transparent,
+        borderRadius: const BorderRadius.all(Radius.circular(kRadiusXs)),
+        border: Border.all(
+          color: checked ? scheme.primaryContainer : scheme.outline,
+          width: 1.5,
+        ),
+      ),
+      child: checked
+          ? Icon(Icons.check, size: 14, color: scheme.onPrimaryContainer)
+          : null,
+    );
+    return Semantics(
+      checked: checked,
+      button: onTap != null,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: onTap == null
+            ? box
+            : MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onTap,
+                  child: box,
+                ),
+              ),
+      ),
     );
   }
 }

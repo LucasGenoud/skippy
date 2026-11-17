@@ -504,9 +504,10 @@ ThemeData buildTheme(
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(_menuElevation),
         shadowColor: WidgetStatePropertyAll(menuShadow),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(vertical: kMenuInset),
-        ),
+        // Inset on every side, so a highlighted row sits inside the menu
+        // with the same gap all round instead of only above the first row
+        // and below the last.
+        padding: const WidgetStatePropertyAll(EdgeInsets.all(kMenuInset)),
         shape: WidgetStatePropertyAll(menuShape),
       ),
       submenuIcon: WidgetStatePropertyAll(
@@ -520,6 +521,14 @@ ThemeData buildTheme(
     menuButtonTheme: MenuButtonThemeData(
       style: ButtonStyle(
         minimumSize: const WidgetStatePropertyAll(Size(160, kMenuRowHeight)),
+        // Concentric with the menu: its radius less the inset around rows.
+        shape: const WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(
+              Radius.circular(kMenuRadius - kMenuInset),
+            ),
+          ),
+        ),
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(horizontal: kSpaceMd),
         ),

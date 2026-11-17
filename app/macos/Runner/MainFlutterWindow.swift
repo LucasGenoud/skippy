@@ -27,7 +27,24 @@ class MainFlutterWindow: NSWindow {
     self.setFrameAutosaveName(MainFlutterWindow.frameName)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    MainFlutterWindow.registerClipboard(
+      messenger: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()
+  }
+
+  /// Puts a PNG the app hands over on the pasteboard, for "Copy image".
+  private static func registerClipboard(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "skippy/clipboard", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "copyImage",
+        let png = call.arguments as? FlutterStandardTypedData
+      else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      NSPasteboard.general.clearContents()
+      result(NSPasteboard.general.setData(png.data, forType: .png))
+    }
   }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The one folder a copied picture is written to before it goes on the
+     clipboard. -->
+<paths>
+    <cache-path name="clipboard" path="clipboard/" />
+</paths>

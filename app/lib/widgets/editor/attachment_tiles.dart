@@ -7,8 +7,10 @@ import '../../models/dropped_file.dart';
 import '../../models/note.dart';
 import '../../util/attachment_image.dart';
 import '../../util/download.dart';
+import '../../util/image_clipboard.dart';
 import '../../util/mime.dart';
 import '../../util/motion.dart';
+import '../../util/snack.dart';
 
 /// The tiles under a note in the editor: images first, then other files, each
 /// followed by placeholders for the ones still [uploading] so a tile appears
@@ -63,6 +65,24 @@ class ImageAttachmentTile extends StatelessWidget {
       attachment.mime == 'image/svg+xml' ||
       attachment.mime.toLowerCase().contains('svg');
 
+  /// An SVG is a drawing, not pixels the clipboard can take.
+  bool get _canCopy => canCopyImages && !_isSvg;
+
+  /// Copies the picture, and says so: nothing else on screen changes.
+  Future<void> _copy() async {
+    final copied = await copyImageUrl(url);
+    showAppSnack(
+      copied ? 'Image copied' : "Couldn't copy the image",
+      icon: copied ? Icons.content_copy_outlined : Icons.error_outline,
+      kind: copied ? SnackKind.normal : SnackKind.danger,
+    );
+  }
+
+  void _download() => downloadUrl(
+    url,
+    attachment.filename.isEmpty ? 'image' : attachment.filename,
+  );
+
   void _openViewer(BuildContext context) {
     showGeneralDialog<void>(
       context: context,
@@ -81,14 +101,29 @@ class ImageAttachmentTile extends StatelessWidget {
         body: SafeArea(
           child: Column(
             children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  tooltip: 'Close image',
-                  color: Colors.white,
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_canCopy)
+                    IconButton(
+                      tooltip: 'Copy image',
+                      color: Colors.white,
+                      icon: const Icon(Icons.content_copy_outlined),
+                      onPressed: _copy,
+                    ),
+                  IconButton(
+                    tooltip: 'Download image',
+                    color: Colors.white,
+                    icon: const Icon(Icons.download_outlined),
+                    onPressed: _download,
+                  ),
+                  IconButton(
+                    tooltip: 'Close image',
+                    color: Colors.white,
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
               Expanded(
                 child: Padding(
@@ -212,15 +247,16 @@ class ImageAttachmentTile extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_canCopy)
+                      _OverlayAction(
+                        icon: Icons.content_copy_outlined,
+                        tooltip: 'Copy image',
+                        onPressed: _copy,
+                      ),
                     _OverlayAction(
                       icon: Icons.download_outlined,
                       tooltip: 'Download image',
-                      onPressed: () => downloadUrl(
-                        url,
-                        attachment.filename.isEmpty
-                            ? 'image'
-                            : attachment.filename,
-                      ),
+                      onPressed: _download,
                     ),
                     if (onRemove != null)
                       _OverlayAction(

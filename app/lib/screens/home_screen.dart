@@ -925,6 +925,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedNotes(store).any((note) => !note.pinned),
       ),
       onShare: () => _shareSelected(store),
+      onCopy: () => copyNotesText(_selectedNotes(store)),
     );
   }
 

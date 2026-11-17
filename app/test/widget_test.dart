@@ -33,6 +33,7 @@ import 'package:skippy/widgets/home_top_bar.dart';
 import 'package:skippy/widgets/linked_text.dart';
 import 'package:skippy/widgets/link_preview.dart';
 import 'package:skippy/widgets/markdown_toolbar.dart';
+import 'package:skippy/widgets/note_markdown.dart';
 import 'package:skippy/widgets/masonry.dart';
 import 'package:skippy/widgets/note_actions.dart';
 import 'package:skippy/widgets/checklist/check_mark.dart';
@@ -96,7 +97,7 @@ Widget homeApp(
 Future<void> openFind(WidgetTester tester) async {
   await tester.tap(findAction('Note actions'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Find in note'));
+  await tester.tap(find.text('Find'));
   await tester.pumpAndSettle();
 }
 
@@ -2207,6 +2208,53 @@ void main() {
       await flushTimers(tester);
     });
 
+    testWidgets('a task ticks from the preview without opening source', (
+      tester,
+    ) async {
+      api.notes['n1'] = serverNote(
+        'n1',
+        kind: NoteKind.markdown,
+        content: '## Trip\n- [ ] flights\n- [ ] passport',
+      );
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+
+      final boxes = find.byType(PreviewTaskBox);
+      expect(boxes, findsNWidgets(2));
+      await tester.tap(boxes.last);
+      await tester.pumpAndSettle();
+
+      expect(
+        store.noteById('n1')!.content,
+        '## Trip\n- [ ] flights\n- [x] passport',
+      );
+      // Still the preview, now drawing the tick.
+      expect(find.byType(MarkdownBody), findsOneWidget);
+      expect(
+        tester.widget<PreviewTaskBox>(find.byType(PreviewTaskBox).last).checked,
+        isTrue,
+      );
+      await flushTimers(tester);
+    });
+
+    testWidgets('Enter carries a markdown list on', (tester) async {
+      api.notes['n1'] = serverNote('n1', kind: NoteKind.markdown, content: '');
+      await store.load();
+      await tester.pumpWidget(harness(store, const EditorScreen(noteId: 'n1')));
+      await tester.pumpAndSettle();
+      if (findAction('Edit markdown').evaluate().isNotEmpty) {
+        await tester.tap(findAction('Edit markdown'));
+        await tester.pumpAndSettle();
+      }
+
+      final body = find.byType(TextField).last;
+      await tester.enterText(body, '- milk');
+      await tester.enterText(body, '- milk\n');
+      expect(store.noteById('n1')!.content, '- milk\n- ');
+      await flushTimers(tester);
+    });
+
     testWidgets('markdown keeps no mode row above the body', (tester) async {
       api.notes['n1'] = serverNote('n1', kind: NoteKind.markdown, content: 'x');
       await store.load();
@@ -2420,14 +2468,14 @@ void main() {
 
       await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
-      final rows = ['Find in note', 'Copy to clipboard', 'Archive'];
+      final rows = ['Find', 'Copy', 'Archive'];
       for (final row in rows) {
         expect(find.text(row), findsOneWidget);
       }
       // Above the rarer management actions.
       expect(
         tester.getCenter(find.text('Archive')).dy,
-        lessThan(tester.getCenter(find.text('Collaborators')).dy),
+        lessThan(tester.getCenter(find.text('Duplicate')).dy),
       );
     });
 
@@ -2477,7 +2525,7 @@ void main() {
       // other; once it settles only the new set is left.
       await tester.tap(findAction('Note actions'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Find in note'));
+      await tester.tap(find.text('Find'));
       for (var i = 0; i < 60; i++) {
         if (findAction('Close search').evaluate().isNotEmpty) {
           break;
@@ -4121,6 +4169,97 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.select_all), findsNothing);
       expect(findAction('Deselect all'), findsOneWidget);
+      await flushTimers(tester);
+    });
+
+    testWidgets('the view title rolls upward rather than cross-fading', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      Finder barTitle(String text) => find.descendant(
+        of: find.byType(HomeTopBar),
+        matching: find.text(text),
+      );
+      final from = tester.widget<Text>(
+        find.descendant(
+          of: find.byType(HomeTopBar),
+          matching: find.byWidgetPredicate(
+            (w) => w is Text && w.key is ValueKey<String>,
+          ),
+        ),
+      );
+      final rest = tester.getCenter(barTitle(from.data!)).dy;
+
+      await tester.tap(find.text('Archive').first);
+      await tester.pump();
+
+      // Sample the whole roll: the old title only ever rises off its line,
+      // the new one only ever rises onto it, so they never cross.
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 40));
+        if (barTitle(from.data!).evaluate().isNotEmpty) {
+          expect(
+            tester.getCenter(barTitle(from.data!)).dy,
+            lessThanOrEqualTo(rest),
+          );
+        }
+        expect(
+          tester.getCenter(barTitle('Archive')).dy,
+          greaterThanOrEqualTo(rest),
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(barTitle(from.data!), findsNothing);
+      expect(tester.getCenter(barTitle('Archive')).dy, rest);
+      await flushTimers(tester);
+    });
+
+    testWidgets('a phone copies the selected notes from the selection menu', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.notes['n1'] = serverNote('n1', title: 'First note', content: 'One');
+      api.notes['n2'] = serverNote('n2', title: 'Second note', content: 'Two');
+      await store.load();
+      await tester.pumpWidget(homeApp(store));
+      await tester.pumpAndSettle();
+
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = call.arguments['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      await tester.longPress(find.text('First note'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Second note'));
+      await tester.pumpAndSettle();
+      await tester.tap(findAction('More selected-note actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Copy to clipboard'));
+      await tester.pumpAndSettle();
+
+      expect(copied, 'First note\n\nOne\n\nSecond note\n\nTwo');
+      expect(find.text('2 notes copied'), findsOneWidget);
       await flushTimers(tester);
     });
 

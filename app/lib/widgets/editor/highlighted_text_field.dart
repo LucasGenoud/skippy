@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../state/markdown_editing.dart';
 import '../../state/note_links.dart';
 import '../../util/linkify.dart';
 import '../note_link_spans.dart';
@@ -359,7 +360,13 @@ class HighlightedTextField extends StatelessWidget {
       // The body of a note is prose. Flutter's default (`none`) actively
       // turns the keyboard's own capitalization off.
       textCapitalization: TextCapitalization.sentences,
-      inputFormatters: const [NoteLinkFormatter()],
+      inputFormatters: [
+        const NoteLinkFormatter(),
+        if (monospace) ...const [
+          MarkdownListFormatter(),
+          MarkdownWrapFormatter(),
+        ],
+      ],
       // An image committed by the keyboard (Gboard's clipboard panel) attaches
       // to the note instead of being refused; null outside a PasteFileArea.
       contentInsertionConfiguration: PasteFileArea.insertionOf(context),

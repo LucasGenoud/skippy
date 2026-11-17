@@ -26,7 +26,7 @@ import 'app_icon_button.dart';
       ThemeMode.dark => (icon: Icons.dark_mode_outlined, label: 'Dark'),
     };
 
-enum _SelectionAction { stage, label, share, color, pin }
+enum _SelectionAction { stage, label, share, copy, color, pin }
 
 /// What the selection bar shows and does: how many notes are picked, and what
 /// the open view lets you do to them. The home screen owns the selection and
@@ -58,6 +58,9 @@ class SelectionActions {
   final VoidCallback onPin;
   final VoidCallback onShare;
 
+  /// Puts every selected note on the clipboard as plain text.
+  final VoidCallback onCopy;
+
   const SelectionActions({
     required this.count,
     required this.allSelected,
@@ -77,6 +80,7 @@ class SelectionActions {
     required this.onSetColor,
     required this.onPin,
     required this.onShare,
+    required this.onCopy,
   });
 }
 
@@ -217,15 +221,19 @@ class HomeTopBar extends StatelessWidget {
           const SizedBox(width: kSpaceSm),
           const AppLogo(size: _logoSize),
           const SizedBox(width: kSpaceMd),
-          // The view's name, cross-faded as you move between views.
+          // The view's name rolls as you move between views: the old one
+          // slides up and out, the new one up and in from below.
           Expanded(
             child: AnimatedSwitcher(
               duration: Motion.reduced(context) ? Duration.zero : Motion.base,
-              switchInCurve: Motion.standard,
-              switchOutCurve: Motion.standard,
               layoutBuilder: (current, previous) => Stack(
                 alignment: Alignment.centerLeft,
                 children: [...previous, ?current],
+              ),
+              transitionBuilder: (child, animation) => _TitleRoll(
+                animation: animation,
+                incoming: child.key == ValueKey(title),
+                child: child,
               ),
               child: Text(
                 title,
@@ -530,7 +538,8 @@ class HomeTopBar extends StatelessWidget {
           enabled: selection.count > 0,
           tooltip: 'More selected-note actions',
           onSelected: (action) async {
-            if (action != _SelectionAction.pin) {
+            if (action != _SelectionAction.pin &&
+                action != _SelectionAction.copy) {
               await Motion.waitForMenuDismissal(context);
               if (!context.mounted) return;
             }
@@ -541,6 +550,8 @@ class HomeTopBar extends StatelessWidget {
                 selection.onMoveToStage();
               case _SelectionAction.share:
                 selection.onShare();
+              case _SelectionAction.copy:
+                selection.onCopy();
               case _SelectionAction.color:
                 selection.onSetColor();
               case _SelectionAction.pin:
@@ -565,6 +576,13 @@ class HomeTopBar extends StatelessWidget {
               child: MenuRow(
                 icon: Icons.person_add_alt_outlined,
                 label: 'Share',
+              ),
+            ),
+            const PopupMenuItem(
+              value: _SelectionAction.copy,
+              child: MenuRow(
+                icon: Icons.content_copy_outlined,
+                label: 'Copy to clipboard',
               ),
             ),
             const PopupMenuItem(
@@ -606,6 +624,11 @@ class HomeTopBar extends StatelessWidget {
           icon: const Icon(Icons.person_add_alt_outlined),
           tooltip: 'Share selected notes',
           onPressed: selection.count == 0 ? null : selection.onShare,
+        ),
+        AppIconButton(
+          icon: const Icon(Icons.content_copy_outlined),
+          tooltip: 'Copy selected notes',
+          onPressed: selection.count == 0 ? null : selection.onCopy,
         ),
         AppIconButton(
           icon: const Icon(Icons.palette_outlined),
@@ -740,6 +763,50 @@ class _SelectionBar extends StatelessWidget {
           ),
           for (final (i, action) in actions.indexed) dropIn(i + 1, action),
         ],
+      ),
+    );
+  }
+}
+
+/// One half of the title's roll. Both halves travel upward, so they never
+/// cross: the switcher plays an outgoing child's animation in reverse, which
+/// is why the direction is chosen per half rather than by the animation.
+///
+///   old  ↑ out, fading early
+///   new  ↑ in from below, fading in late
+class _TitleRoll extends StatelessWidget {
+  final Animation<double> animation;
+  final bool incoming;
+  final Widget child;
+
+  const _TitleRoll({
+    required this.animation,
+    required this.incoming,
+    required this.child,
+  });
+
+  /// How far each half travels, as a share of the title's height.
+  static const double _travel = 0.6;
+
+  @override
+  Widget build(BuildContext context) {
+    final eased = animation.drive(CurveTween(curve: Motion.emphasized));
+    final direction = incoming ? 1.0 : -1.0;
+    return SlideTransition(
+      position: eased.drive(
+        Tween(begin: Offset(0, _travel * direction), end: Offset.zero),
+      ),
+      child: FadeTransition(
+        // The old title is gone by the time the new one is half visible, so
+        // the two never read as one blurred word.
+        opacity: animation.drive(
+          CurveTween(
+            curve: incoming
+                ? const Interval(0.3, 1, curve: Motion.standard)
+                : const Interval(0.4, 1),
+          ),
+        ),
+        child: child,
       ),
     );
   }

@@ -6,9 +6,9 @@ import '../screens/workspace_settings_screen.dart';
 import '../state/notes_store.dart';
 import '../theme.dart';
 import '../util/motion.dart';
-import '../util/snack.dart';
 import 'form_dialog.dart';
 import 'menu_label.dart';
+import 'note_actions.dart';
 
 /// The workspace switcher that heads the drawer and the sidebar: the open
 /// workspace's name, and a menu to switch, create, or manage.
@@ -337,17 +337,7 @@ class MoveToWorkspaceSheet {
         ),
       ),
     );
-    if (target == null || target == note.workspaceId) return;
-    final droppedLabels = note.labelIds
-        .where((id) => store.labelById(id)?.workspaceId != target)
-        .length;
-    store.moveNoteToWorkspace(noteId, target);
-    if (droppedLabels > 0) {
-      showAppSnack(
-        '$droppedLabels ${droppedLabels == 1 ? 'label was' : 'labels were'} removed when moving the note',
-        icon: Icons.warning_amber_outlined,
-        kind: SnackKind.warning,
-      );
-    }
+    if (target == null) return;
+    moveNoteToWorkspace(store, noteId, target);
   }
 }

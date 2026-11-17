@@ -48,4 +48,35 @@ void main() {
     },
     variant: TargetPlatformVariant.mobile(),
   );
+
+  testWidgets(
+    'a phone offers Copy image on the tile and in the viewer',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ImageAttachmentTile(
+              attachment: Attachment(
+                id: 'photo-1',
+                mime: 'image/jpeg',
+                filename: 'receipt.jpg',
+              ),
+              url: 'http://fake.test/api/files/photo-1',
+            ),
+          ),
+        ),
+      );
+      expect(findAction('Copy image'), findsOneWidget);
+
+      tester
+          .widget<GestureDetector>(find.byKey(const Key('open-image-photo-1')))
+          .onTap!();
+      await tester.pumpAndSettle();
+      expect(findAction('Copy image'), findsNWidgets(2));
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+  );
 }

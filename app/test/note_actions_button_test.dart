@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/note.dart';
 import 'package:skippy/widgets/editor/note_actions_button.dart';
+import 'package:skippy/widgets/move_note_sheet.dart';
 import 'finders.dart';
 
 /// The app-bar menu is the "do things *to* this note" half of the editor. It
@@ -15,7 +16,9 @@ void main() {
     void Function(NoteKind)? onConvert,
     ValueChanged<NoteRewriteTask>? onRewrite,
     ValueChanged<int>? onGridSpan,
-    VoidCallback? onMoveToStage,
+    bool fromBoard = false,
+    ValueChanged<NoteMoveTarget>? onMove,
+    VoidCallback? onCopy,
     VoidCallback? onDelete,
     VoidCallback? onShare,
     bool rewriting = false,
@@ -29,8 +32,12 @@ void main() {
             onShare: onShare ?? () {},
             onDelete: onDelete ?? () {},
             onDuplicate: () {},
-            onMoveToWorkspace: () {},
-            onMoveToStage: onMoveToStage,
+            onCopy: onCopy,
+            moveTargets: [
+              if (fromBoard) NoteMoveTarget.stage,
+              NoteMoveTarget.workspace,
+            ],
+            onMove: onMove ?? (_) {},
             onHistory: () {},
             onConvert: onConvert,
             onRewrite: onRewrite,
@@ -45,26 +52,57 @@ void main() {
   testWidgets('every note action is one tap inside a single flat sheet', (
     tester,
   ) async {
-    await tester.pumpWidget(menu(onMoveToStage: () {}));
+    await tester.pumpWidget(menu(fromBoard: true));
     await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
 
-    for (final label in [
-      'Collaborators',
-      'Move to column',
-      'Move to workspace',
-      'Version history',
-      'Duplicate',
-      'Delete',
-    ]) {
+    for (final label in ['Share', 'Move to…', 'Version history', 'Duplicate']) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
+    expect(find.text('Delete'), findsOneWidget);
     // No second level to navigate.
     expect(find.text('More note options'), findsNothing);
-    // Promoted to app-bar buttons of their own, so they are not duplicated
-    // as rows here.
-    expect(find.text('Copy to clipboard'), findsNothing);
+    // Only what the note offers: no copy or archive callback, no tile.
+    expect(find.text('Copy'), findsNothing);
     expect(find.text('Archive'), findsNothing);
+  });
+
+  testWidgets('the frequent actions share one row above the rest', (
+    tester,
+  ) async {
+    var copied = false;
+    await tester.pumpWidget(menu(onCopy: () => copied = true));
+    await tester.tap(findAction('Note actions'));
+    await tester.pumpAndSettle();
+
+    final copy = tester.getCenter(find.text('Copy'));
+    expect(tester.getCenter(find.text('Share')).dy, copy.dy);
+    expect(tester.getCenter(find.text('Delete')).dy, copy.dy);
+    expect(
+      tester.getCenter(find.text('Version history')).dy,
+      greaterThan(copy.dy),
+    );
+
+    await tester.tap(find.text('Copy'));
+    await tester.pumpAndSettle();
+    expect(copied, isTrue);
+  });
+
+  testWidgets('the kinds of move are one row that opens on the first', (
+    tester,
+  ) async {
+    NoteMoveTarget? opened;
+    await tester.pumpWidget(
+      menu(fromBoard: true, onMove: (target) => opened = target),
+    );
+    await tester.tap(findAction('Note actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Move to column'), findsNothing);
+    expect(find.text('Move to workspace'), findsNothing);
+    await tester.tap(find.text('Move to…'));
+    await tester.pumpAndSettle();
+    expect(opened, NoteMoveTarget.stage);
   });
 
   testWidgets('rewrite and convert collapse into chip rows', (tester) async {
@@ -94,6 +132,7 @@ void main() {
 
     await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Fix grammar'));
     await tester.tap(find.text('Fix grammar'));
     await tester.pumpAndSettle();
     expect(rewritten, kDefaultNoteRewriteTasks[1]);
@@ -140,7 +179,8 @@ void main() {
     await tester.pumpWidget(menu());
     await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
-    expect(find.text('Move to column'), findsNothing);
+    // With one kind of destination, the row names it.
+    expect(find.text('Move to…'), findsNothing);
     expect(find.text('Move to workspace'), findsOneWidget);
   });
 
@@ -149,6 +189,6 @@ void main() {
     await tester.tap(findAction('Note actions'));
     await tester.pumpAndSettle();
     expect(find.text('Delete'), findsNothing);
-    expect(find.text('Collaborators'), findsOneWidget);
+    expect(find.text('Share'), findsOneWidget);
   });
 }

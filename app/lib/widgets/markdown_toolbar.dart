@@ -68,6 +68,19 @@ class MarkdownToolbar extends StatelessWidget {
   String _togglePrefix(String marker, String line) =>
       line.startsWith(marker) ? line.substring(marker.length) : '$marker$line';
 
+  /// Makes the line a task, turning a plain bullet into one rather than
+  /// stacking markers; on a task it removes the box and bullet.
+  String _toggleTask(String line) {
+    final task = RegExp(r'^- \[[ xX]\] ');
+    if (task.hasMatch(line)) {
+      return line.replaceFirst(task, '');
+    }
+    if (line.startsWith('- ')) {
+      return '- [ ] ${line.substring(2)}';
+    }
+    return '- [ ] $line';
+  }
+
   void _insertLink() {
     final text = controller.text;
     final (:start, :end) = _range();
@@ -141,6 +154,11 @@ class MarkdownToolbar extends StatelessWidget {
             'Bulleted list',
             const Icon(Icons.format_list_bulleted),
             () => _lines((line) => _togglePrefix('- ', line)),
+          ),
+          btn(
+            'Task',
+            const Icon(Icons.check_box_outlined),
+            () => _lines(_toggleTask),
           ),
           btn(
             'Numbered list',
