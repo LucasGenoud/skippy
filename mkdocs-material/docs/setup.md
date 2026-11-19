@@ -123,16 +123,47 @@ the app. After a change, run your start command again.
 
 | Setting | What it does |
 | --- | --- |
-| `PUBLIC_URL` | The address people use to reach Skippy, such as `https://notes.example.com`. Set it when Skippy runs behind a reverse proxy. Password reset emails link to it. |
+| `PUBLIC_URL` | The address people use to reach Skippy, such as `https://notes.example.com`. Set it when Skippy runs behind a reverse proxy. Password reset emails and single sign-on use it. |
 | `EMBED_URL` | Address of an OpenAI-compatible embeddings API. Turns on semantic search. None of the setups includes one. |
 | `EMBED_MODEL` | Embedding model name. Default: `bge-m3`. |
 | `EMBED_API_KEY` | Key for the embeddings API, if it needs one. |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | One AI provider for every user. Users cannot change it and never see the key. |
 | `LLM_LABELING`, `LLM_CHAT`, `LLM_WRITING` | `true` or `false`. Turns automatic labeling, notes chat, or AI writing on or off in every workspace. When unset, each workspace owner decides. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | One mail server for every user, for email reminders and password resets. Users then only enter their own address. |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Single sign-on through an OpenID Connect provider. See [Single sign-on](#single-sign-on). |
+| `OIDC_NAME` | Name on the sign-in button, as in "Continue with Authentik". Default: `SSO`. |
+| `OIDC_SCOPES` | Scopes requested from the provider. Default: `openid email profile`. |
+| `PASSWORD_LOGIN` | `false` turns off password sign-in, registration, and password reset, so single sign-on is the only way in. Default: `true`. |
 | `ALLOW_PRIVATE_USER_ENDPOINTS` | Lets users point their own AI, ntfy, or mail settings at hosts on your private network. Off by default. |
 | `OCR_LANGUAGES` | Languages Tesseract reads, such as `eng` or `fra+eng`. Default: `eng`. Voice and image text and Full only. |
 | `DOCS_PORT` | Port for the local copy of these docs. Default: `8123`. |
+
+## Single sign-on
+
+Skippy can sign people in through one OpenID Connect provider, such as
+Authentik, Authelia, Keycloak, Pocket ID, Google, or Microsoft Entra ID.
+
+1. Set `PUBLIC_URL`. Single sign-on needs it.
+2. At the provider, create a confidential client with this redirect URI:
+   `https://notes.example.com/api/auth/sso/callback`, using your `PUBLIC_URL`.
+3. Put the provider's issuer URL, the client ID, and the client secret in
+   `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`, then start Skippy
+   again.
+
+The sign-in screen then shows a "Continue with" button, in the web app and in
+the apps.
+
+- The first sign-in creates an account with the name and email the provider
+  shares.
+- If an account already uses that email, Skippy signs into it only when the
+  provider marks the email as verified.
+- After the first sign-in, the account follows the provider's user ID, so a
+  changed email at the provider keeps the same account.
+- An account created by single sign-on has no password. Its email is managed
+  at the provider.
+
+Set `PASSWORD_LOGIN=false` to make single sign-on the only way in. Skippy
+refuses to start with password sign-in off and no provider set.
 
 ## Install on a device
 

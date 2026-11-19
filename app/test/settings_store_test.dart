@@ -346,6 +346,8 @@ void main() {
         audioTranscription: false,
         imageOcr: false,
         passwordReset: false,
+        ssoName: null,
+        passwordLogin: true,
         serverVersion: 'test-server',
       );
       await settings.load();
@@ -370,6 +372,8 @@ void main() {
         audioTranscription: true,
         imageOcr: true,
         passwordReset: false,
+        ssoName: null,
+        passwordLogin: true,
         serverVersion: 'test-server',
       );
       final other = SettingsStore(api: api);
@@ -389,6 +393,8 @@ void main() {
       audioTranscription: false,
       imageOcr: false,
       passwordReset: false,
+      ssoName: null,
+      passwordLogin: true,
       serverVersion: 'test-server',
     );
     await settings.load();

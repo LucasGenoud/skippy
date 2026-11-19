@@ -128,6 +128,17 @@ pub struct ManagedSettings {
 
 /// Parse an env string for a [`Kind::Bool`] key. Anything unrecognized (or
 /// empty) yields `None`, so a typo'd value doesn't silently manage the key.
+/// `PASSWORD_LOGIN`: on unless set to a false value.
+pub fn password_login_from_env() -> anyhow::Result<bool> {
+    let Ok(raw) = std::env::var("PASSWORD_LOGIN") else {
+        return Ok(true);
+    };
+    if raw.trim().is_empty() {
+        return Ok(true);
+    }
+    parse_bool(&raw).ok_or_else(|| anyhow::anyhow!("PASSWORD_LOGIN must be true or false"))
+}
+
 fn parse_bool(raw: &str) -> Option<bool> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "true" | "1" | "on" | "yes" => Some(true),

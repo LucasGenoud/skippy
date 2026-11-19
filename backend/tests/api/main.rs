@@ -24,6 +24,7 @@ mod search;
 mod settings;
 mod share_links;
 mod sharing;
+mod sso;
 mod stages;
 mod unfurl;
 mod versions;

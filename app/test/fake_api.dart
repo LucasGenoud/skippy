@@ -200,6 +200,8 @@ class FakeApi implements Api {
     bool audioTranscription,
     bool imageOcr,
     bool passwordReset,
+    String? ssoName,
+    bool passwordLogin,
     String? serverVersion,
   })
   capabilities = (
@@ -207,6 +209,8 @@ class FakeApi implements Api {
     audioTranscription: false,
     imageOcr: false,
     passwordReset: false,
+    ssoName: null,
+    passwordLogin: true,
     serverVersion: 'test-server',
   );
 
@@ -284,6 +288,38 @@ class FakeApi implements Api {
   Future<void> logout() => _run('logout', () {});
 
   /// Addresses [requestPasswordReset] was called with, in order.
+  /// Handoff codes [ssoExchange] accepts, with the verifier each needs.
+  final Map<String, String> ssoCodes = {};
+
+  @override
+  Uri ssoStartUri({required String returnTo, required String codeChallenge}) =>
+      Uri.parse('https://fake.test/api/auth/sso/start').replace(
+        queryParameters: {
+          'return_to': returnTo,
+          'code_challenge': codeChallenge,
+        },
+      );
+
+  @override
+  Future<({String token, AuthUser user, bool created})> ssoExchange(
+    String code,
+    String codeVerifier,
+  ) => _run('ssoExchange', () {
+    if (ssoCodes.remove(code) != codeVerifier) {
+      throw ApiException(401, 'unauthorized');
+    }
+    return (
+      token: 'sso-token',
+      user: const AuthUser(
+        id: 'u-sso',
+        name: 'SSO user',
+        email: 'sso@example.test',
+        hasPassword: false,
+      ),
+      created: true,
+    );
+  });
+
   final List<String> passwordResetRequests = [];
 
   /// Thrown by [requestPasswordReset] and [resetPassword] when set, so tests
@@ -1024,6 +1060,8 @@ class FakeApi implements Api {
       bool audioTranscription,
       bool imageOcr,
       bool passwordReset,
+      String? ssoName,
+      bool passwordLogin,
       String? serverVersion,
     })
   >

@@ -119,6 +119,41 @@ impl SqliteRepository {
         Ok(row.map(|r| user_from_row(&r)))
     }
 
+    /// The account a single sign-on identity is tied to.
+    pub async fn user_by_identity(&self, issuer: &str, subject: &str) -> RepoResult<Option<User>> {
+        let row = sqlx::query(
+            "SELECT users.* FROM user_identities
+             JOIN users ON users.id = user_identities.user_id
+             WHERE issuer = ? AND subject = ?",
+        )
+        .bind(issuer)
+        .bind(subject)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| user_from_row(&r)))
+    }
+
+    /// Tie a single sign-on identity to an account. A no-op when the identity
+    /// is already tied to one.
+    pub async fn link_identity(
+        &self,
+        user_id: &str,
+        issuer: &str,
+        subject: &str,
+    ) -> RepoResult<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO user_identities (issuer, subject, user_id, created_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(issuer)
+        .bind(subject)
+        .bind(user_id)
+        .bind(now())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn user_by_id(&self, id: &str) -> RepoResult<Option<User>> {
         let row = sqlx::query("SELECT * FROM users WHERE id = ?")
             .bind(id)

@@ -114,6 +114,18 @@ abstract class Api {
   /// Redeem an emailed link. Returns the address the link was sent to, so the
   /// sign-in form can be filled in for the person who just used it.
   Future<String> resetPassword(String token, String password);
+
+  /// Where to send the browser to start single sign-on. The server hands the
+  /// result to [returnTo] as `sso_code`, collected with [ssoExchange] and the
+  /// verifier behind [codeChallenge].
+  Uri ssoStartUri({required String returnTo, required String codeChallenge});
+
+  /// Trade a single sign-on handoff code for a session. [created] is true
+  /// when this sign-in made the account.
+  Future<({String token, AuthUser user, bool created})> ssoExchange(
+    String code,
+    String codeVerifier,
+  );
   Future<AuthUser> me();
   Future<void> deleteAccount(String currentPassword);
   Future<AuthUser> updateAccount({
@@ -296,14 +308,16 @@ abstract class Api {
 
   /// Which optional, service-backed features this server has enabled. Drives
   /// semantic-search availability, whether audio recordings are transcribed,
-  /// whether uploaded pictures are read for text, and whether the login screen
-  /// offers a password reset.
+  /// whether uploaded pictures are read for text, and what the login screen
+  /// offers: a password reset, single sign-on, the password form.
   Future<
     ({
       bool semanticSearch,
       bool audioTranscription,
       bool imageOcr,
       bool passwordReset,
+      String? ssoName,
+      bool passwordLogin,
       String? serverVersion,
     })
   >
@@ -454,6 +468,37 @@ class ApiClient extends _ApiTransport implements Api {
     String email,
     String password,
   ) => _authCall('/auth/login', {'email': email, 'password': password});
+
+  @override
+  Uri ssoStartUri({required String returnTo, required String codeChallenge}) =>
+      _uri('/auth/sso/start').replace(
+        queryParameters: {
+          'return_to': returnTo,
+          'code_challenge': codeChallenge,
+        },
+      );
+
+  @override
+  Future<({String token, AuthUser user, bool created})> ssoExchange(
+    String code,
+    String codeVerifier,
+  ) async {
+    final data =
+        _decode(
+              await _client.post(
+                _uri('/auth/sso/exchange'),
+                headers: {'content-type': 'application/json'},
+                body: jsonEncode({'code': code, 'code_verifier': codeVerifier}),
+              ),
+              authed: false,
+            )
+            as Map<String, dynamic>;
+    return (
+      token: data['token'] as String,
+      user: AuthUser.fromJson(data['user'] as Map<String, dynamic>),
+      created: data['created'] == true,
+    );
+  }
 
   @override
   Future<void> requestPasswordReset(String email) async {
@@ -1047,6 +1092,8 @@ class ApiClient extends _ApiTransport implements Api {
       bool audioTranscription,
       bool imageOcr,
       bool passwordReset,
+      String? ssoName,
+      bool passwordLogin,
       String? serverVersion,
     })
   >
@@ -1063,6 +1110,13 @@ class ApiClient extends _ApiTransport implements Api {
       imageOcr: map['image_ocr'] == true,
       // Absent on servers older than the reset feature, which reads as off.
       passwordReset: map['password_reset'] == true,
+      // Null when the server offers no single sign-on, or predates it.
+      ssoName: switch (map['sso']) {
+        {'name': final Object name} => name.toString(),
+        _ => null,
+      },
+      // Absent on servers older than the switch, which always allowed it.
+      passwordLogin: map['password_login'] != false,
       // Older servers do not advertise their version; leave it unavailable
       // rather than treating a missing field as a malformed response.
       serverVersion: map['server_version']?.toString(),

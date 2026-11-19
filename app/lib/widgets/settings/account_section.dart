@@ -25,20 +25,25 @@ class AccountSection extends StatelessWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _open(context, _AccountField.name),
         ),
+        // An account made by single sign-on has no password to confirm
+        // either change with; its address belongs to the identity provider.
         ListTile(
           leading: const Icon(Icons.email_outlined),
           title: const Text('Email'),
           subtitle: Text(user.email),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _open(context, _AccountField.email),
+          trailing: user.hasPassword ? const Icon(Icons.chevron_right) : null,
+          onTap: user.hasPassword
+              ? () => _open(context, _AccountField.email)
+              : null,
         ),
-        ListTile(
-          leading: const Icon(Icons.lock_outline),
-          title: const Text('Password'),
-          subtitle: const Text('Change your sign-in password'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _open(context, _AccountField.password),
-        ),
+        if (user.hasPassword)
+          ListTile(
+            leading: const Icon(Icons.lock_outline),
+            title: const Text('Password'),
+            subtitle: const Text('Change your sign-in password'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _open(context, _AccountField.password),
+          ),
       ],
     );
   }
@@ -89,8 +94,12 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     super.dispose();
   }
 
+  /// False for an account made by single sign-on, which deletes on the
+  /// session alone.
+  bool get _asksPassword => context.read<AuthStore>().user?.hasPassword ?? true;
+
   Future<void> _delete() async {
-    if (_password.text.isEmpty) {
+    if (_asksPassword && _password.text.isEmpty) {
       setState(() => _error = 'Enter your current password');
       return;
     }
@@ -137,29 +146,31 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             'by other people. Your other notes, attachments, settings, and '
             'sessions are also deleted. This cannot be undone.',
           ),
-          const SizedBox(height: kSpaceLg),
-          TextField(
-            controller: _password,
-            autofocus: true,
-            obscureText: _obscure,
-            autofillHints: const [AutofillHints.password],
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _delete(),
-            decoration: InputDecoration(
-              labelText: 'Current password',
-              border: kFieldBorder,
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                tooltip: _obscure ? 'Show password' : 'Hide password',
-                icon: Icon(
-                  _obscure
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
+          if (_asksPassword) ...[
+            const SizedBox(height: kSpaceLg),
+            TextField(
+              controller: _password,
+              autofocus: true,
+              obscureText: _obscure,
+              autofillHints: const [AutofillHints.password],
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _delete(),
+              decoration: InputDecoration(
+                labelText: 'Current password',
+                border: kFieldBorder,
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
                 ),
-                onPressed: () => setState(() => _obscure = !_obscure),
               ),
             ),
-          ),
+          ],
           AnimatedFormError(
             message: _error,
             padding: const EdgeInsets.only(top: 12),

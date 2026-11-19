@@ -41,6 +41,8 @@ reqwest = { version = "0.12", default-features = false, features = ["multipart",
 hmac = "0.13"
 sha2 = "0.11"
 hex = "0.4"
+base64 = "0.22"
+form_urlencoded = "1"
 # SMTP for the email notification connector. rustls to match reqwest's TLS
 # stack (no OpenSSL in the build image); default features would pull native-tls.
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "pool", "hostname", "tokio1", "tokio1-rustls-tls"] }

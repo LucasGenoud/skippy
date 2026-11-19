@@ -51,6 +51,13 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _resetOffered = false;
   String? _capabilitiesFor;
 
+  /// The identity provider's name when this server offers single sign-on.
+  String? _ssoName;
+
+  /// False where the server signs in with single sign-on only, which leaves
+  /// nothing on this screen but the provider's button.
+  bool _passwordLogin = true;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +74,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (url == _capabilitiesFor) return;
     _capabilitiesFor = url;
     _resetOffered = false;
+    _ssoName = null;
+    _passwordLogin = true;
     _loadCapabilities(auth.api, url);
   }
 
@@ -74,7 +83,11 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final capabilities = await api.fetchCapabilities();
       if (!mounted || _capabilitiesFor != url) return;
-      setState(() => _resetOffered = capabilities.passwordReset);
+      setState(() {
+        _resetOffered = capabilities.passwordReset;
+        _ssoName = capabilities.ssoName;
+        _passwordLogin = capabilities.passwordLogin;
+      });
     } catch (_) {
       // Unreachable, or a server too old to answer: no reset link offered.
       // Signing in will report the connection failure on its own.
@@ -234,195 +247,234 @@ class _LoginScreenState extends State<LoginScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // Mode switch, makes Sign in vs Create explicit.
-                          SegmentedButton<bool>(
-                            // No leading icons: on narrow phone widths the icon
-                            // stole enough room that "Create account" wrapped to
-                            // two lines. The labels alone read clearly.
-                            segments: const [
-                              ButtonSegment(
-                                value: false,
-                                label: Text('Sign in'),
+                          if (_passwordLogin) ...[
+                            // Mode switch, makes Sign in vs Create explicit.
+                            SegmentedButton<bool>(
+                              // No leading icons: on narrow phone widths the icon
+                              // stole enough room that "Create account" wrapped to
+                              // two lines. The labels alone read clearly.
+                              segments: const [
+                                ButtonSegment(
+                                  value: false,
+                                  label: Text('Sign in'),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  label: Text(
+                                    'Create account',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.fade,
+                                  ),
+                                ),
+                              ],
+                              selected: {creating},
+                              onSelectionChanged: auth.busy
+                                  ? null
+                                  : (s) => _setMode(s.first),
+                              showSelectedIcon: false,
+                              style: ButtonStyle(
+                                visualDensity: VisualDensity.compact,
                               ),
-                              ButtonSegment(
-                                value: true,
-                                label: Text(
-                                  'Create account',
-                                  maxLines: 1,
-                                  softWrap: false,
-                                  overflow: TextOverflow.fade,
+                            ),
+                            const SizedBox(height: 20),
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              alignment: Alignment.topCenter,
+                              child: creating
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 16,
+                                      ),
+                                      child: LoginField(
+                                        controller: _name,
+                                        focusNode: _nameFocus,
+                                        label: 'Full name',
+                                        icon: Icons.badge_outlined,
+                                        autofillHint: AutofillHints.name,
+                                        autofocus: true,
+                                        textCapitalization:
+                                            TextCapitalization.words,
+                                        errorText: _nameError,
+                                        onChanged: (_) {
+                                          if (_nameError != null) {
+                                            setState(() => _nameError = null);
+                                          }
+                                          if (auth.errorStatus != null) {
+                                            auth.clearError();
+                                          }
+                                        },
+                                        onSubmitted: (_) =>
+                                            _emailFocus.requestFocus(),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            LoginField(
+                              controller: _email,
+                              focusNode: _emailFocus,
+                              label: 'Email',
+                              icon: Icons.email_outlined,
+                              // Desktop password managers pair a
+                              // `username` field with `current-password`.
+                              // Our username happens to be an email address,
+                              // but marking sign-in as email alone makes many
+                              // browser managers treat it as a contact field
+                              // instead of a saved-login identifier.
+                              autofillHint: creating
+                                  ? AutofillHints.email
+                                  : AutofillHints.username,
+                              autofocus: !creating,
+                              keyboardType: TextInputType.emailAddress,
+                              errorText: _emailError,
+                              rejected: emailRejected,
+                              onChanged: (_) {
+                                if (_emailError != null) {
+                                  setState(() => _emailError = null);
+                                }
+                                if (auth.errorStatus != null) auth.clearError();
+                              },
+                              onSubmitted: (_) => _passwordFocus.requestFocus(),
+                            ),
+                            const SizedBox(height: kSpaceLg),
+                            LoginField(
+                              controller: _password,
+                              focusNode: _passwordFocus,
+                              label: 'Password',
+                              icon: Icons.lock_outline,
+                              autofillHint: creating
+                                  ? AutofillHints.newPassword
+                                  : AutofillHints.password,
+                              obscureText: _obscure,
+                              textInputAction: creating
+                                  ? TextInputAction.next
+                                  : TextInputAction.done,
+                              errorText: _passwordError,
+                              rejected: passwordRejected,
+                              suffixIcon: IconButton(
+                                tooltip: _obscure ? 'Show' : 'Hide',
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                ),
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                              ),
+                              onChanged: (_) {
+                                if (_passwordError != null) {
+                                  setState(() => _passwordError = null);
+                                }
+                                if (auth.errorStatus != null) auth.clearError();
+                              },
+                              onSubmitted: (_) => creating
+                                  ? _confirmFocus.requestFocus()
+                                  : _submit(),
+                            ),
+                            // Forgot password, only while signing in and only
+                            // where the server can actually send the mail.
+                            AnimatedSize(
+                              duration: Motion.fast,
+                              curve: Motion.standard,
+                              alignment: Alignment.topCenter,
+                              child: !creating && _resetOffered
+                                  ? Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: auth.busy
+                                            ? null
+                                            : _showForgotPasswordDialog,
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                        child: const Text('Forgot password?'),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            // Confirm password, only when creating an account.
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              alignment: Alignment.topCenter,
+                              child: creating
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(top: 16),
+                                      child: LoginField(
+                                        controller: _confirm,
+                                        focusNode: _confirmFocus,
+                                        label: 'Confirm password',
+                                        icon: Icons.lock_outline,
+                                        autofillHint: AutofillHints.newPassword,
+                                        obscureText: _obscure,
+                                        textInputAction: TextInputAction.done,
+                                        errorText: _confirmError,
+                                        onSubmitted: (_) => _submit(),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            AnimatedFormError(message: auth.error),
+                            const SizedBox(height: 24),
+                            FilledButton.icon(
+                              onPressed: auth.busy ? null : _submit,
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
                                 ),
                               ),
-                            ],
-                            selected: {creating},
-                            onSelectionChanged: auth.busy
-                                ? null
-                                : (s) => _setMode(s.first),
-                            showSelectedIcon: false,
-                            style: ButtonStyle(
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOut,
-                            alignment: Alignment.topCenter,
-                            child: creating
-                                ? Padding(
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: LoginField(
-                                      controller: _name,
-                                      focusNode: _nameFocus,
-                                      label: 'Full name',
-                                      icon: Icons.badge_outlined,
-                                      autofillHint: AutofillHints.name,
-                                      autofocus: true,
-                                      textCapitalization:
-                                          TextCapitalization.words,
-                                      errorText: _nameError,
-                                      onChanged: (_) {
-                                        if (_nameError != null) {
-                                          setState(() => _nameError = null);
-                                        }
-                                        if (auth.errorStatus != null) {
-                                          auth.clearError();
-                                        }
-                                      },
-                                      onSubmitted: (_) =>
-                                          _emailFocus.requestFocus(),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                          LoginField(
-                            controller: _email,
-                            focusNode: _emailFocus,
-                            label: 'Email',
-                            icon: Icons.email_outlined,
-                            // Desktop password managers pair a
-                            // `username` field with `current-password`.
-                            // Our username happens to be an email address,
-                            // but marking sign-in as email alone makes many
-                            // browser managers treat it as a contact field
-                            // instead of a saved-login identifier.
-                            autofillHint: creating
-                                ? AutofillHints.email
-                                : AutofillHints.username,
-                            autofocus: !creating,
-                            keyboardType: TextInputType.emailAddress,
-                            errorText: _emailError,
-                            rejected: emailRejected,
-                            onChanged: (_) {
-                              if (_emailError != null) {
-                                setState(() => _emailError = null);
-                              }
-                              if (auth.errorStatus != null) auth.clearError();
-                            },
-                            onSubmitted: (_) => _passwordFocus.requestFocus(),
-                          ),
-                          const SizedBox(height: kSpaceLg),
-                          LoginField(
-                            controller: _password,
-                            focusNode: _passwordFocus,
-                            label: 'Password',
-                            icon: Icons.lock_outline,
-                            autofillHint: creating
-                                ? AutofillHints.newPassword
-                                : AutofillHints.password,
-                            obscureText: _obscure,
-                            textInputAction: creating
-                                ? TextInputAction.next
-                                : TextInputAction.done,
-                            errorText: _passwordError,
-                            rejected: passwordRejected,
-                            suffixIcon: IconButton(
-                              tooltip: _obscure ? 'Show' : 'Hide',
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                            ),
-                            onChanged: (_) {
-                              if (_passwordError != null) {
-                                setState(() => _passwordError = null);
-                              }
-                              if (auth.errorStatus != null) auth.clearError();
-                            },
-                            onSubmitted: (_) => creating
-                                ? _confirmFocus.requestFocus()
-                                : _submit(),
-                          ),
-                          // Forgot password, only while signing in and only
-                          // where the server can actually send the mail.
-                          AnimatedSize(
-                            duration: Motion.fast,
-                            curve: Motion.standard,
-                            alignment: Alignment.topCenter,
-                            child: !creating && _resetOffered
-                                ? Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: auth.busy
-                                          ? null
-                                          : _showForgotPasswordDialog,
-                                      style: TextButton.styleFrom(
-                                        visualDensity: VisualDensity.compact,
+                              icon: auth.busy
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
                                       ),
-                                      child: const Text('Forgot password?'),
+                                    )
+                                  : Icon(
+                                      creating
+                                          ? Icons.person_add_alt_1_outlined
+                                          : Icons.login_outlined,
                                     ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                          // Confirm password, only when creating an account.
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOut,
-                            alignment: Alignment.topCenter,
-                            child: creating
-                                ? Padding(
-                                    padding: const EdgeInsets.only(top: 16),
-                                    child: LoginField(
-                                      controller: _confirm,
-                                      focusNode: _confirmFocus,
-                                      label: 'Confirm password',
-                                      icon: Icons.lock_outline,
-                                      autofillHint: AutofillHints.newPassword,
-                                      obscureText: _obscure,
-                                      textInputAction: TextInputAction.done,
-                                      errorText: _confirmError,
-                                      onSubmitted: (_) => _submit(),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                          AnimatedFormError(message: auth.error),
-                          const SizedBox(height: 24),
-                          FilledButton.icon(
-                            onPressed: auth.busy ? null : _submit,
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              label: Text(
+                                creating ? 'Create account' : 'Sign in',
+                              ),
                             ),
-                            icon: auth.busy
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Icon(
-                                    creating
-                                        ? Icons.person_add_alt_1_outlined
-                                        : Icons.login_outlined,
-                                  ),
-                            label: Text(
-                              creating ? 'Create account' : 'Sign in',
+                          ],
+                          if (_ssoName case final String name) ...[
+                            if (_passwordLogin)
+                              const _OrDivider()
+                            else ...[
+                              Text(
+                                'Sign in with your $name account.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                              AnimatedFormError(message: auth.error),
+                              const SizedBox(height: 24),
+                            ],
+                            OutlinedButton.icon(
+                              onPressed: auth.busy ? null : auth.signInWithSso,
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                              ),
+                              icon: !_passwordLogin && auth.busy
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.key_outlined),
+                              label: Text('Continue with $name'),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -442,6 +494,35 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The rule between the password form and the single sign-on button.
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.outlineVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: kSpaceLg),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: color)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: kSpaceMd),
+            child: Text(
+              'or',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: color)),
+        ],
       ),
     );
   }

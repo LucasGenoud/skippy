@@ -110,7 +110,8 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/auth.rs`: password hashing, token authentication, and authenticated-user extraction.
 - `backend/src/error.rs`: API error shape and HTTP status conversion.
 - `backend/src/handlers/mod.rs`: feature exports and shared handler helpers.
-- `backend/src/handlers/auth.rs`: registration, login, logout, current user, and the signed-out password reset (mail-gated, one-shot links).
+- `backend/src/handlers/auth.rs`: registration, login, logout, current user, the signed-out password reset (mail-gated, one-shot links), and the single sign-on endpoints.
+- `backend/src/oidc.rs`: the OpenID Connect client behind single sign-on: discovery, the code flow with PKCE, ID token claim checks, and the in-memory pending sign-ins and handoff codes.
 - `backend/src/handlers/notes.rs`: note CRUD, reorder, trash purge, checklist history, and note mutation orchestration.
 - `backend/src/handlers/versions.rs`: version timeline and restores.
 - `backend/src/handlers/attachments.rs`: multipart upload, signed serving, ranges, transcription trigger, deletion.
@@ -154,6 +155,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/tests/api/*.rs`: behavior grouped by API feature.
 - `backend/tests/api/stages.rs`: board columns, including the rules that keep them independent of labels.
 - `backend/tests/api/mcp.rs`: token lifecycle, the MCP handshake, scope enforcement, and that tools see only what the account sees.
+- `backend/tests/api/sso.rs`: single sign-on against a fake OpenID Connect provider on loopback.
 - `backend/tests/api/workspace_ai.rs`: owner-provider AI for members, per-workspace switches, and what members learn about the owner's setup.
 - `backend/tests/s3.rs`: S3 file-store behavior against a local fake server.
 
@@ -200,6 +202,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/workspace_menu.dart`: workspace switcher, create/rename, roster management, and the move-a-note picker.
 - `app/lib/widgets/workspace_ai_section.dart`: a workspace's AI switches, editable by its owner and read-only for members.
 - `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations. Both audio players draw `audio_player_view.dart`, so they look the same by construction.
+- `app/lib/util/sso_browser*.dart`: the browser half of single sign-on, an auth session on native, a page redirect to `/sso` on the web.
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
 - `app/lib/util/keep_import.dart`: pure parsing of a Google Takeout Keep zip; `NotesStore.importKeep` adds the result without replacing anything.
@@ -297,6 +300,12 @@ Client-generated UUIDs allow offline creation. Empty drafts remain local until m
 ### Note links
 
 A note links to another by writing `[[id|Title]]` into its text or markdown body. The id is what the link follows; the title is only what shows where the live title is unknown (the editor source, exports, a note the reader cannot reach). The syntax belongs to the client (`state/note_links.dart`); the server only reads it (`note_links.rs`). Backlinks are computed on the client from notes it already holds, so they are participant-scoped for free and need no table. Anything that gives notes new ids must remap links between them: workspace duplication does it on the server, backup restore on the client. Readable exports drop the ids; JSON and backups keep them.
+
+### Single sign-on
+
+One OpenID Connect provider (`OIDC_*`), with the server as the confidential client; the client secret never reaches an app. The app opens `/api/auth/sso/start` with its own PKCE challenge, the provider returns to `/api/auth/sso/callback`, and the server sends the browser to the app's `return_to` with a short-lived, single-use `sso_code` that only the matching verifier can trade for a session at `/api/auth/sso/exchange`. `return_to` is limited to `PUBLIC_URL`'s origin, the `skippy-auth` scheme, and loopback. The ID token comes straight from the token endpoint over TLS, so its claims are checked but not its signature (OIDC Core 3.1.3.7).
+
+Accounts are tied to `(issuer, subject)` in `user_identities`, not to email. A first sign-in links to an existing account with the same email only when the provider sets `email_verified`; otherwise it creates one. An account made this way stores `NO_PASSWORD`, which no password verifies against; `AccountPublic.has_password` tells the client to drop password confirmation from email changes (refused) and account deletion (session alone). `PASSWORD_LOGIN=false` refuses register, login and reset, and the server will not start with it off and no provider.
 
 ### MCP and personal access tokens
 

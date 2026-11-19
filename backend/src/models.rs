@@ -14,6 +14,9 @@ pub struct AccountPublic {
     pub id: String,
     pub name: String,
     pub email: String,
+    /// False for an account made by single sign-on, which has no password to
+    /// confirm changes with.
+    pub has_password: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -37,9 +40,20 @@ impl User {
             id: self.id.clone(),
             name: self.name.clone(),
             email: self.email.clone(),
+            has_password: self.has_password(),
         }
     }
+
+    /// Whether the account can sign in with a password at all. Accounts made
+    /// by single sign-on store [`NO_PASSWORD`].
+    pub fn has_password(&self) -> bool {
+        self.password_hash != NO_PASSWORD
+    }
 }
+
+/// The stored hash of an account without a password. Not a valid PHC string,
+/// so no password ever verifies against it.
+pub const NO_PASSWORD: &str = "";
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -68,7 +82,24 @@ pub struct UpdateAccountRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct DeleteAccountRequest {
+    /// Not asked of an account without a password.
+    #[serde(default)]
     pub current_password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SsoExchangeRequest {
+    pub code: String,
+    pub code_verifier: String,
+}
+
+/// [`AuthResponse`] plus whether the sign-in made the account, which a
+/// password sign-in never does.
+#[derive(Debug, Serialize)]
+pub struct SsoExchangeResponse {
+    pub token: String,
+    pub user: AccountPublic,
+    pub created: bool,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,8 +1,9 @@
 //! Registration, login, session, and password reset endpoints.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
 
@@ -35,6 +36,15 @@ const RESET_LINK_TTL: TimeDelta = TimeDelta::hours(1);
 /// Path the app serves the reset form at. Anything under it reaches
 /// `index.html` through the static-file fallback, exactly like `/s/<token>`.
 const RESET_PATH: &str = "/reset/";
+/// Guessing ceiling on SSO handoff codes. 256 random bits, single use; this
+/// only keeps a broken client from hammering the endpoint.
+const SSO_EXCHANGE_ATTEMPTS: usize = 30;
+const SSO_EXCHANGE_WINDOW: Duration = Duration::from_secs(60);
+/// Length of an S256 PKCE challenge: 32 digest bytes in unpadded base64url.
+const PKCE_CHALLENGE_LEN: usize = 43;
+/// Name given to an SSO account whose provider shared no usable one.
+const FALLBACK_NAME: &str = "Skippy user";
+const MAX_NAME_CHARS: usize = 100;
 
 fn validate_name(name: &str) -> ApiResult<String> {
     let name = name.trim();
@@ -65,6 +75,17 @@ fn validate_email(email: &str) -> ApiResult<String> {
     Ok(email)
 }
 
+/// Refuse a password endpoint on a deployment that signs in only through
+/// single sign-on (`PASSWORD_LOGIN=false`).
+fn require_password_login(state: &AppState) -> ApiResult<()> {
+    if !state.password_login {
+        return Err(ApiError::Forbidden(
+            "this server signs in with single sign-on only",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_password(password: &str) -> ApiResult<()> {
     if password.len() < 6 {
         return Err(ApiError::BadRequest(
@@ -78,6 +99,7 @@ pub async fn register(
     State(state): State<AppState>,
     Json(request): Json<RegisterRequest>,
 ) -> ApiResult<(StatusCode, Json<AuthResponse>)> {
+    require_password_login(&state)?;
     state
         .auth_attempts
         .check("registration", REGISTRATION_ATTEMPTS, REGISTRATION_WINDOW)
@@ -110,6 +132,7 @@ pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
+    require_password_login(&state)?;
     let email = request.email.trim().to_lowercase();
     let limit_key = format!("login:{email}");
     state
@@ -176,7 +199,15 @@ pub async fn update_account(
     };
 
     let changing_email = !email.eq_ignore_ascii_case(&user.email);
-    if changing_email || request.new_password.is_some() {
+    let sensitive = changing_email || request.new_password.is_some();
+    // Nothing to confirm such a change with; the provider owns the address,
+    // and a password comes through the reset email instead.
+    if sensitive && !user.has_password() {
+        return Err(ApiError::Forbidden(
+            "this account signs in with single sign-on",
+        ));
+    }
+    if sensitive {
         let current = request.current_password.as_deref().unwrap_or_default();
         if !verify_password(current, &user.password_hash) {
             return Err(ApiError::Forbidden("current password is incorrect"));
@@ -188,7 +219,7 @@ pub async fn update_account(
             validate_password(&password)?;
             hash_password(&password)?
         }
-        None => user.password_hash,
+        None => user.password_hash.clone(),
     };
     state
         .repo
@@ -202,6 +233,7 @@ pub async fn update_account(
         id: user_id,
         name,
         email,
+        has_password: user.has_password(),
     }))
 }
 
@@ -215,7 +247,9 @@ pub async fn delete_account(
         .user_by_id(&user_id)
         .await?
         .ok_or(ApiError::Unauthorized)?;
-    if !verify_password(&request.current_password, &user.password_hash) {
+    // An account made by single sign-on has no password; the session is
+    // all there is to go on.
+    if user.has_password() && !verify_password(&request.current_password, &user.password_hash) {
         return Err(ApiError::Forbidden("current password is incorrect"));
     }
 
@@ -237,7 +271,9 @@ pub async fn delete_account(
 /// with. Advertised on `/api/capabilities` so the app only offers "Forgot
 /// password?" where pressing it would do something.
 pub fn password_reset_available(state: &AppState) -> bool {
-    state.public_url.is_some() && crate::notify::server_mail_configured(&state.managed)
+    state.password_login
+        && state.public_url.is_some()
+        && crate::notify::server_mail_configured(&state.managed)
 }
 
 /// The message that lands in someone's inbox. Plain text: it has to survive
@@ -322,6 +358,7 @@ pub async fn reset_password(
     State(state): State<AppState>,
     Json(request): Json<ResetPasswordRequest>,
 ) -> ApiResult<Json<ResetPasswordResponse>> {
+    require_password_login(&state)?;
     state
         .auth_attempts
         .check(
@@ -366,4 +403,237 @@ pub async fn reset_password(
     // locked themselves out has to wait out the window they just fixed.
     state.auth_attempts.reset(&format!("login:{}", user.email));
     Ok(Json(ResetPasswordResponse { email: user.email }))
+}
+
+// ---------------------------------------------------------------------------
+// Single sign-on. The flow is described in `crate::oidc`.
+
+fn require_sso(state: &AppState) -> ApiResult<&crate::oidc::OidcProvider> {
+    state.oidc.as_deref().ok_or(ApiError::Unavailable(
+        "single sign-on is not configured on this server",
+    ))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SsoStartQuery {
+    return_to: String,
+    code_challenge: String,
+}
+
+/// Send the browser to the identity provider. `return_to` is where the
+/// handoff code goes afterwards; `code_challenge` binds that code to the app
+/// that asked.
+pub async fn sso_start(
+    State(state): State<AppState>,
+    Query(query): Query<SsoStartQuery>,
+) -> ApiResult<Redirect> {
+    let oidc = require_sso(&state)?;
+    if !oidc.allowed_return(&query.return_to) {
+        return Err(ApiError::BadRequest(
+            "return_to is not an address of this app".to_string(),
+        ));
+    }
+    let challenge_ok = query.code_challenge.len() == PKCE_CHALLENGE_LEN
+        && query
+            .code_challenge
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !challenge_ok {
+        return Err(ApiError::BadRequest(
+            "code_challenge must be an S256 PKCE challenge".to_string(),
+        ));
+    }
+    // A provider that cannot be reached is reported to the app, not shown as
+    // JSON inside the auth session the person would have to cancel out of.
+    let url = match oidc.begin(&query.return_to, &query.code_challenge).await {
+        Ok(url) => url,
+        Err(error) => crate::oidc::with_param(&query.return_to, "sso_error", error.message()),
+    };
+    Ok(Redirect::to(&url))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SsoCallbackQuery {
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+/// Where the identity provider sends the browser back. Always answers with a
+/// redirect to the app, carrying either `sso_code` or `sso_error`, unless the
+/// sign-in it names is unknown, in which case there is nowhere safe to go.
+pub async fn sso_callback(
+    State(state): State<AppState>,
+    Query(query): Query<SsoCallbackQuery>,
+) -> Response {
+    let Some(oidc) = state.oidc.clone() else {
+        return ApiError::Unavailable("single sign-on is not configured on this server")
+            .into_response();
+    };
+    let Some(login) = query.state.as_deref().and_then(|s| oidc.take_pending(s)) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "This sign-in has expired. Go back to Skippy and try again.",
+        )
+            .into_response();
+    };
+    let fail = |message: &str| {
+        Redirect::to(&crate::oidc::with_param(
+            &login.return_to,
+            "sso_error",
+            message,
+        ))
+        .into_response()
+    };
+
+    if let Some(error) = query.error.as_deref() {
+        return fail(match error {
+            "access_denied" => "sign-in was cancelled",
+            _ => "the identity provider refused the sign-in",
+        });
+    }
+    let Some(code) = query.code.as_deref() else {
+        return fail("the identity provider sent no sign-in code");
+    };
+    let identity = match oidc.finish(code, &login).await {
+        Ok(identity) => identity,
+        Err(error) => {
+            crate::telemetry::event(
+                "warn",
+                "sso_rejected",
+                serde_json::json!({ "reason": error.message() }),
+            );
+            return fail(error.message());
+        }
+    };
+    let (user, created) = match sso_account(&state, &identity).await {
+        Ok(found) => found,
+        Err(SsoRefusal::Refused(message)) => return fail(message),
+        Err(SsoRefusal::Failed(error)) => {
+            state.report_background_failure("sso_account", &format!("{error:?}"));
+            return fail("the account could not be opened, try again");
+        }
+    };
+    let handoff = oidc.hand_off(&user.id, &login.app_challenge, created);
+    Redirect::to(&crate::oidc::with_param(
+        &login.return_to,
+        "sso_code",
+        &handoff,
+    ))
+    .into_response()
+}
+
+enum SsoRefusal {
+    /// Shown to the person signing in.
+    Refused(&'static str),
+    Failed(ApiError),
+}
+
+impl From<ApiError> for SsoRefusal {
+    fn from(error: ApiError) -> Self {
+        SsoRefusal::Failed(error)
+    }
+}
+
+impl From<crate::store::RepoError> for SsoRefusal {
+    fn from(error: crate::store::RepoError) -> Self {
+        SsoRefusal::Failed(error.into())
+    }
+}
+
+/// The account an identity signs into, made on first sign-in, and whether
+/// this sign-in made it.
+///
+/// An identity seen before keeps its account even if its email changed at the
+/// provider. A new one takes over an existing account with the same address
+/// only when the provider vouches for that address; otherwise whoever can set
+/// an unverified email at the provider could walk into someone else's notes.
+async fn sso_account(
+    state: &AppState,
+    identity: &crate::oidc::Identity,
+) -> Result<(User, bool), SsoRefusal> {
+    let repo = &state.repo;
+    if let Some(user) = repo
+        .user_by_identity(&identity.issuer, &identity.subject)
+        .await?
+    {
+        return Ok((user, false));
+    }
+
+    let Some(email) = identity.email.as_deref() else {
+        return Err(SsoRefusal::Refused(
+            "the identity provider did not share an email address",
+        ));
+    };
+    let Ok(email) = validate_email(email) else {
+        return Err(SsoRefusal::Refused(
+            "the identity provider shared an invalid email address",
+        ));
+    };
+
+    if let Some(user) = repo.user_by_email(&email).await? {
+        if !identity.email_verified {
+            return Err(SsoRefusal::Refused(
+                "an account with this email already exists, and the identity provider has not verified the address",
+            ));
+        }
+        repo.link_identity(&user.id, &identity.issuer, &identity.subject)
+            .await?;
+        return Ok((user, false));
+    }
+
+    let user = User {
+        id: new_id(),
+        name: sso_name(identity.name.as_deref(), &email),
+        email,
+        password_hash: NO_PASSWORD.to_string(),
+    };
+    repo.create_user(&user).await?;
+    super::create_default_workspace(state, &user.id).await?;
+    repo.link_identity(&user.id, &identity.issuer, &identity.subject)
+        .await?;
+    Ok((user, true))
+}
+
+/// A display name for a new SSO account: the provider's, else the email's
+/// local part, else a placeholder the person can rename.
+fn sso_name(provided: Option<&str>, email: &str) -> String {
+    let local = email.split('@').next().unwrap_or_default();
+    [provided.unwrap_or_default(), local]
+        .into_iter()
+        .map(|name| name.chars().take(MAX_NAME_CHARS).collect::<String>())
+        .find_map(|name| validate_name(&name).ok())
+        .unwrap_or_else(|| FALLBACK_NAME.to_string())
+}
+
+/// Trade a handoff code for a session.
+pub async fn sso_exchange(
+    State(state): State<AppState>,
+    Json(request): Json<SsoExchangeRequest>,
+) -> ApiResult<Json<SsoExchangeResponse>> {
+    let oidc = require_sso(&state)?;
+    // Only failures count: a code is 256 random bits, so the ceiling is there
+    // to slow a hammering client, and must never lock out real sign-ins.
+    let Some((user_id, created)) = oidc.redeem(request.code.trim(), &request.code_verifier) else {
+        state
+            .auth_attempts
+            .check("sso-exchange", SSO_EXCHANGE_ATTEMPTS, SSO_EXCHANGE_WINDOW)
+            .map_err(ApiError::RateLimited)?;
+        return Err(ApiError::Unauthorized);
+    };
+    let user = state
+        .repo
+        .user_by_id(&user_id)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    let token = new_id();
+    state.repo.create_session(&token, &user.id).await?;
+    Ok(Json(SsoExchangeResponse {
+        token,
+        user: user.account(),
+        created,
+    }))
 }

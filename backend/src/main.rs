@@ -234,6 +234,24 @@ async fn init_ocr() -> Option<Arc<dyn ImageOcr>> {
     }
 }
 
+/// Single sign-on and the password switch. Refuses to start a server nobody
+/// could sign in to, or an SSO setup with no address to come back to.
+fn init_sign_in(mut state: AppState) -> anyhow::Result<AppState> {
+    let password_login = sticky_notes_server::config::password_login_from_env()?;
+    state = state.with_password_login(password_login);
+    if let Some(config) = sticky_notes_server::oidc::OidcConfig::from_env()? {
+        let Some(public_url) = state.public_url.clone() else {
+            anyhow::bail!("single sign-on needs PUBLIC_URL to build its redirect URI");
+        };
+        let provider = sticky_notes_server::oidc::OidcProvider::new(config, &public_url)?;
+        state = state.with_oidc(Arc::new(provider));
+    }
+    if !password_login && state.oidc.is_none() {
+        anyhow::bail!("PASSWORD_LOGIN=false needs single sign-on (OIDC_*) configured");
+    }
+    Ok(state)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if let Some(argument) = std::env::args().nth(1) {
@@ -252,6 +270,7 @@ async fn main() -> anyhow::Result<()> {
         // The password reset email is the one place the server writes a link
         // to itself, so it needs to be told where it answers.
         .with_public_url(&std::env::var("PUBLIC_URL").unwrap_or_default());
+    state = init_sign_in(state)?;
     if let Some(service) = init_transcription().await {
         state = state.with_transcription(service);
     }

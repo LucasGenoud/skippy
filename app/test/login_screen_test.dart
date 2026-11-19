@@ -15,13 +15,23 @@ import 'package:skippy/widgets/login_field.dart';
 /// A server that only answers the capability probe the login screen makes on
 /// mount, with password reset [passwordReset]. Everything else 404s; the tests
 /// that submit the form supply their own [server].
-http.Client capabilityServer({bool passwordReset = false}) =>
-    MockClient((request) async {
-      if (request.url.path.endsWith('/capabilities')) {
-        return http.Response('{"password_reset": $passwordReset}', 200);
-      }
-      return http.Response('', 404);
-    });
+http.Client capabilityServer({
+  bool passwordReset = false,
+  String? sso,
+  bool passwordLogin = true,
+}) => MockClient((request) async {
+  if (request.url.path.endsWith('/capabilities')) {
+    return http.Response(
+      jsonEncode({
+        'password_reset': passwordReset,
+        'sso': sso == null ? null : {'name': sso},
+        'password_login': passwordLogin,
+      }),
+      200,
+    );
+  }
+  return http.Response('', 404);
+});
 
 /// [server] answers every request, including the capability probe, so a test
 /// that supplies one has to answer that too (or accept reset being hidden).
@@ -379,5 +389,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ada@example.test'), findsOneWidget);
+  });
+
+  testWidgets('offers single sign-on beside the password form', (tester) async {
+    await tester.pumpWidget(
+      loginApp(server: capabilityServer(sso: 'Pocket ID')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue with Pocket ID'), findsOneWidget);
+    expect(find.text('or'), findsOneWidget);
+    expect(find.text('Email'), findsOneWidget);
+  });
+
+  testWidgets('no single sign-on button when the server has none', (
+    tester,
+  ) async {
+    await tester.pumpWidget(loginApp());
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Continue with'), findsNothing);
+  });
+
+  testWidgets('an SSO-only server shows nothing but the provider', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      loginApp(
+        server: capabilityServer(
+          sso: 'Pocket ID',
+          passwordLogin: false,
+          passwordReset: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue with Pocket ID'), findsOneWidget);
+    expect(find.text('Email'), findsNothing);
+    expect(find.text('Password'), findsNothing);
+    expect(find.text('Create account'), findsNothing);
+    expect(find.text('Forgot password?'), findsNothing);
+    expect(find.text('or'), findsNothing);
   });
 }

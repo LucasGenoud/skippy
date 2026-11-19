@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -419,6 +420,160 @@ void main() {
       await auth.editUrl('http://a.test', 'http://server.test');
 
       expect(auth.savedUrls, ['http://a.test', 'http://server.test']);
+    });
+  });
+
+  group('single sign-on', () {
+    /// A server whose exchange checks the verifier against the challenge the
+    /// store put in the start URL, as the real one does.
+    late String challenge;
+    late Map<String, dynamic> exchanged;
+
+    AuthStore ssoStore(
+      Uri? Function(Uri start) browser, {
+      bool created = true,
+    }) {
+      final server = MockClient((request) async {
+        exchanged = jsonDecode(request.body) as Map<String, dynamic>;
+        final verifier = exchanged['code_verifier'] as String;
+        final hashed = base64UrlEncode(
+          sha256.convert(utf8.encode(verifier)).bytes,
+        ).replaceAll('=', '');
+        if (request.url.path != '/api/auth/sso/exchange' ||
+            hashed != challenge) {
+          return http.Response('{"error":"unauthorized"}', 401);
+        }
+        return http.Response(
+          jsonEncode({
+            'token': 'sso-tok',
+            'user': {
+              'id': 'u-sso',
+              'name': 'Grace',
+              'email': 'grace@example.com',
+              'has_password': false,
+            },
+            'created': created,
+          }),
+          200,
+        );
+      });
+      return AuthStore(
+        api: ApiClient(baseUrl: 'http://server.test', httpClient: server),
+        openSso: (start) async {
+          expect(start.path, '/api/auth/sso/start');
+          expect(start.queryParameters['return_to'], 'skippy-auth://callback');
+          challenge = start.queryParameters['code_challenge']!;
+          return browser(start);
+        },
+      );
+    }
+
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('a returned code becomes a session bound to this attempt', () async {
+      final auth = ssoStore(
+        (_) => Uri.parse('skippy-auth://callback?sso_code=abc'),
+      );
+
+      expect(await auth.signInWithSso(), isTrue);
+
+      expect(exchanged['code'], 'abc');
+      expect(auth.status, AuthStatus.signedIn);
+      expect(auth.user!.hasPassword, isFalse);
+      expect(auth.api.token, 'sso-tok');
+      expect(auth.accountOrigin, AccountOrigin.justCreated);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('sticky_notes_token'), 'sso-tok');
+    });
+
+    test('an existing account is not welcomed as new', () async {
+      final auth = ssoStore(
+        (_) => Uri.parse('skippy-auth://callback?sso_code=abc'),
+        created: false,
+      );
+      await auth.signInWithSso();
+      expect(auth.accountOrigin, AccountOrigin.existing);
+    });
+
+    test('a refusal from the provider is shown as a sentence', () async {
+      final auth = ssoStore(
+        (_) => Uri.parse(
+          'skippy-auth://callback?sso_error=sign-in%20was%20cancelled',
+        ),
+      );
+      expect(await auth.signInWithSso(), isFalse);
+      expect(auth.status, isNot(AuthStatus.signedIn));
+      expect(auth.error, 'Sign-in was cancelled');
+    });
+
+    test('a second tap while the browser is open starts nothing', () async {
+      final browser = Completer<Uri?>();
+      var opened = 0;
+      final auth = AuthStore(
+        api: ApiClient(baseUrl: 'http://server.test'),
+        openSso: (_) {
+          opened++;
+          return browser.future;
+        },
+      );
+      final first = auth.signInWithSso();
+      expect(await auth.signInWithSso(), isFalse);
+      expect(opened, 1);
+      browser.complete(null);
+      expect(await first, isFalse);
+      // Free again once the first attempt is over.
+      unawaited(auth.signInWithSso());
+      expect(opened, 2);
+    });
+
+    test('closing the browser reports nothing', () async {
+      final auth = ssoStore((_) => null);
+      expect(await auth.signInWithSso(), isFalse);
+      expect(auth.error, isNull);
+      expect(auth.status, isNot(AuthStatus.signedIn));
+    });
+
+    test('an expired code says so rather than blaming a password', () async {
+      final auth = AuthStore(
+        api: ApiClient(
+          baseUrl: 'http://server.test',
+          httpClient: MockClient(
+            (_) async => http.Response('{"error":"unauthorized"}', 401),
+          ),
+        ),
+        openSso: (_) async => Uri.parse('skippy-auth://callback?sso_code=x'),
+      );
+      expect(await auth.signInWithSso(), isFalse);
+      expect(auth.error, 'This sign-in expired. Try again.');
+    });
+
+    test('a web return needs the verifier saved for this server', () async {
+      final auth = ssoStore((_) => null);
+      expect(
+        await auth.completeSsoReturn(
+          Uri.parse('http://server.test/sso?sso_code=abc'),
+        ),
+        isFalse,
+      );
+      expect(auth.error, 'This sign-in expired. Try again.');
+
+      challenge = base64UrlEncode(
+        sha256.convert(utf8.encode('saved-verifier')).bytes,
+      ).replaceAll('=', '');
+      SharedPreferences.setMockInitialValues({
+        'sticky_notes_sso_pending': jsonEncode({
+          'verifier': 'saved-verifier',
+          'server': 'http://server.test',
+        }),
+      });
+      expect(
+        await auth.completeSsoReturn(
+          Uri.parse('http://server.test/sso?sso_code=abc'),
+        ),
+        isTrue,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('sticky_notes_sso_pending'), isNull);
     });
   });
 }

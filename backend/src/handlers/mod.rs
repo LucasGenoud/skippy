@@ -32,7 +32,7 @@ mod writing;
 pub use attachments::{delete_attachment, serve_file, transcribe_note, upload_attachment};
 pub use auth::{
     delete_account, forgot_password, login, logout, me, password_reset_available, register,
-    reset_password, update_account,
+    reset_password, sso_callback, sso_exchange, sso_start, update_account,
 };
 pub use chat::chat_ws;
 pub use events::ws_handler;
@@ -195,6 +195,11 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<serde_json::Val
         // needs both its own mail server and a public address to send a
         // working link. See [`password_reset_available`].
         "password_reset": password_reset_available(&state),
+        // What the login screen offers: a "Continue with {name}" button when
+        // single sign-on is configured, and the password form unless the
+        // deployment turned it off.
+        "sso": state.oidc.as_ref().map(|oidc| serde_json::json!({ "name": oidc.display_name() })),
+        "password_login": state.password_login,
         "server_version": crate::SERVER_VERSION,
     }))
 }

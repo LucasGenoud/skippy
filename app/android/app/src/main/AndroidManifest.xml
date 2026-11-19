@@ -77,6 +77,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Catches the end of a single sign-on (skippy-auth://callback) and
+             hands it back to the auth session flutter_web_auth_2 opened. -->
+        <activity
+            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+            android:exported="true"
+            android:taskAffinity="">
+            <intent-filter android:label="flutter_web_auth_2">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="skippy-auth"/>
+            </intent-filter>
+        </activity>
+
         <!-- Home-screen widget: the provider draws the note and handles ticks,
              the service supplies the scrollable checklist rows. -->
         <receiver

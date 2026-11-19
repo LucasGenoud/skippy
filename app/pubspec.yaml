@@ -1,7 +1,7 @@
 name: skippy
 description: "A cross-platform notes app with a Rust backend."
 publish_to: 'none'
-version: 1.30.0+71
+version: 1.31.0+72
 
 environment:
   sdk: ^3.12.0
@@ -23,6 +23,7 @@ dependencies:
   image_picker: ^1.1.0
   file_picker: ^13.1.0
   url_launcher: ^6.3.0
+  crypto: ^3.0.6
   web: ^1.1.0
   flutter_markdown_plus: ^1.0.12
   markdown: ^7.3.0
@@ -42,6 +43,7 @@ dependencies:
   permission_handler: ^13.0.1
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
+  flutter_web_auth_2: ^6.0.0
 
 dev_dependencies:
   flutter_test:

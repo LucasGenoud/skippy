@@ -10,6 +10,7 @@ pub mod models;
 pub mod note_links;
 pub mod notify;
 pub mod ocr;
+pub mod oidc;
 mod outbound;
 pub mod rate_limit;
 pub mod search;
@@ -121,6 +122,11 @@ pub struct AppState {
     /// Prevent overlapping cleanup drains while keeping the durable queue in
     /// SQLite as the source of truth across process restarts.
     pub cleanup_running: Arc<AtomicBool>,
+    /// Single sign-on through `OIDC_*`. `None` leaves it off.
+    pub oidc: Option<Arc<oidc::OidcProvider>>,
+    /// Whether password sign-in, registration and reset are offered.
+    /// `PASSWORD_LOGIN=false` turns them off where SSO is the only way in.
+    pub password_login: bool,
     /// Bounded unauthenticated login/registration attempts.
     pub auth_attempts: Arc<rate_limit::AttemptLimiter>,
     /// Total failures observed in detached jobs since this process started.
@@ -152,6 +158,8 @@ impl AppState {
             public_url: None,
             unfurl_cache: Arc::default(),
             cleanup_running: Arc::default(),
+            oidc: None,
+            password_login: true,
             auth_attempts: Arc::default(),
             background_failures: Arc::default(),
         }
@@ -198,6 +206,16 @@ impl AppState {
         self
     }
 
+    pub fn with_oidc(mut self, provider: Arc<oidc::OidcProvider>) -> Self {
+        self.oidc = Some(provider);
+        self
+    }
+
+    pub fn with_password_login(mut self, enabled: bool) -> Self {
+        self.password_login = enabled;
+        self
+    }
+
     /// Pin the deployment's public address. A blank value leaves it unset,
     /// which is the same as never having configured one.
     pub fn with_public_url(mut self, url: &str) -> Self {
@@ -226,6 +244,10 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
         // account holder cannot sign in. See `handlers::forgot_password`.
         .route("/auth/forgot-password", post(handlers::forgot_password))
         .route("/auth/reset-password", post(handlers::reset_password))
+        // Unauthenticated: they are how a session is made. See `crate::oidc`.
+        .route("/auth/sso/start", get(handlers::sso_start))
+        .route("/auth/sso/callback", get(handlers::sso_callback))
+        .route("/auth/sso/exchange", post(handlers::sso_exchange))
         .route("/auth/logout", post(handlers::logout))
         .route(
             "/auth/me",

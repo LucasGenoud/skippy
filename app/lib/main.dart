@@ -29,6 +29,7 @@ import 'util/motion.dart';
 import 'util/note_routes.dart';
 import 'util/public_route.dart';
 import 'util/snack.dart';
+import 'util/sso_browser.dart';
 import 'widgets/background_guard.dart';
 import 'widgets/screen_width.dart';
 
@@ -94,7 +95,16 @@ class _SkippyAppState extends State<SkippyApp> {
   void initState() {
     super.initState();
     _auth.addListener(_onAuthChanged);
-    _auth.loadSavedUrls().then((_) => _auth.restore());
+    // Taken before anything awaits, so the address bar is cleaned up at once.
+    final ssoReturn = takeSsoReturn();
+    _auth.loadSavedUrls().then((_) async {
+      await _auth.restore();
+      // Back from the identity provider (web): finish signing in, unless a
+      // saved session already did the job.
+      if (ssoReturn != null && _auth.status == AuthStatus.signedOut) {
+        await _auth.completeSsoReturn(ssoReturn);
+      }
+    });
     _shareIntake.start();
     // Set up early (not gated on sign-in) so a tap that launched the app
     // fresh from a terminated state is captured before anything else runs.

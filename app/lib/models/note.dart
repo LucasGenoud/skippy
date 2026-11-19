@@ -775,13 +775,30 @@ class AuthUser {
   final String name;
   final String email;
 
-  const AuthUser({required this.id, required this.name, required this.email});
+  /// False for an account made by single sign-on: it has no password to
+  /// confirm an email change or a deletion with.
+  final bool hasPassword;
+
+  const AuthUser({
+    required this.id,
+    required this.name,
+    required this.email,
+    this.hasPassword = true,
+  });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
     id: json['id'] as String,
     name: (json['name'] ?? json['username'] ?? '') as String,
     email: json['email'] as String? ?? '',
+    // Absent from servers older than single sign-on, and from profiles
+    // cached by older builds; every account had a password then.
+    hasPassword: json['has_password'] != false,
   );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'email': email};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'email': email,
+    'has_password': hasPassword,
+  };
 }

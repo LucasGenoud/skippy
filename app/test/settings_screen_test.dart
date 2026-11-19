@@ -333,6 +333,8 @@ void main() {
       audioTranscription: false,
       imageOcr: false,
       passwordReset: false,
+      ssoName: null,
+      passwordLogin: true,
       serverVersion: 'test-server',
     );
     await pumpSettings(tester, api, page: SettingsPage.ai);

@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/note.dart';
 import '../util/network_error.dart';
+import '../util/sso_browser.dart' as sso;
 import 'local_cache.dart';
 import 'starter_notes.dart';
 
 enum AuthStatus { restoring, signedOut, signedIn }
+
+AccountOrigin _existingAccount() => AccountOrigin.existing;
 
 class AuthStore extends ChangeNotifier {
   final ApiClient api;
@@ -38,6 +44,16 @@ class AuthStore extends ChangeNotifier {
   static const _urlsKey = 'sticky_notes_backend_urls';
   static const _activeUrlKey = 'sticky_notes_active_url';
 
+  /// A web sign-in in flight: its PKCE verifier and the server it started
+  /// on, kept across the page load the provider round trip costs.
+  static const _ssoPendingKey = 'sticky_notes_sso_pending';
+
+  /// Bytes of randomness in a PKCE verifier (43 base64url characters).
+  static const _verifierBytes = 32;
+
+  /// Whether a single sign-on browser session is open.
+  bool _ssoOpen = false;
+
   /// Invalidates authentication work when another attempt or a server/session
   /// switch supersedes it.
   int _authGeneration = 0;
@@ -48,7 +64,12 @@ class AuthStore extends ChangeNotifier {
   /// The currently active backend URL.
   String get activeUrl => api.baseUrl;
 
-  AuthStore({required this.api}) {
+  /// Opens the provider and returns the URL the sign-in came back on, or
+  /// null when it was abandoned. Replaceable so tests need no browser.
+  final Future<Uri?> Function(Uri start) _openSso;
+
+  AuthStore({required this.api, Future<Uri?> Function(Uri start)? openSso})
+    : _openSso = openSso ?? sso.runSsoBrowser {
     api.onUnauthorized = _onSessionRejected;
   }
 
@@ -222,7 +243,8 @@ class AuthStore extends ChangeNotifier {
 
   Future<bool> _authenticate(
     Future<({String token, AuthUser user})> Function() call, {
-    AccountOrigin origin = AccountOrigin.existing,
+    AccountOrigin Function() origin = _existingAccount,
+    String rejected = 'Wrong email or password',
   }) async {
     final generation = ++_authGeneration;
     final baseUrl = api.baseUrl;
@@ -253,7 +275,7 @@ class AuthStore extends ChangeNotifier {
         return false;
       }
       restoredSession = false;
-      accountOrigin = origin;
+      accountOrigin = origin();
       api.token = result.token;
       user = result.user;
       status = AuthStatus.signedIn;
@@ -262,7 +284,7 @@ class AuthStore extends ChangeNotifier {
       if (!isCurrent()) return false;
       errorStatus = e.statusCode;
       error = switch (e.statusCode) {
-        401 => 'Wrong email or password',
+        401 => rejected,
         409 => 'That email is already registered',
         _ => e.serverMessage,
       };
@@ -294,8 +316,118 @@ class AuthStore extends ChangeNotifier {
   Future<bool> registerAccount(String name, String email, String password) =>
       _authenticate(
         () => api.register(name, email, password),
-        origin: AccountOrigin.justCreated,
+        origin: () => AccountOrigin.justCreated,
       );
+
+  /// Sign in through the server's identity provider. On the web the page
+  /// leaves for the provider and [completeSsoReturn] finishes on its return;
+  /// natively the whole round trip happens here.
+  Future<bool> signInWithSso() async {
+    // The platform allows one auth session at a time; a second tap while the
+    // browser is up would only fail or hang.
+    if (_ssoOpen) return false;
+    _ssoOpen = true;
+    try {
+      return await _signInWithSso();
+    } finally {
+      _ssoOpen = false;
+    }
+  }
+
+  Future<bool> _signInWithSso() async {
+    final verifier = _pkceVerifier();
+    final start = api.ssoStartUri(
+      returnTo: sso.ssoReturnTo(),
+      codeChallenge: _pkceChallenge(verifier),
+    );
+    error = null;
+    errorStatus = null;
+    if (sso.ssoLeavesPage) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _ssoPendingKey,
+        jsonEncode({'verifier': verifier, 'server': api.baseUrl}),
+      );
+      await _openSso(start);
+      return false;
+    }
+
+    final Uri? back;
+    try {
+      back = await _openSso(start);
+    } catch (_) {
+      error = "Couldn't open the sign-in page";
+      notifyListeners();
+      return false;
+    }
+    // Closed by the person: nothing to report.
+    if (back == null) {
+      notifyListeners();
+      return false;
+    }
+    return _finishSso(back, verifier);
+  }
+
+  /// Finish a web sign-in the page was reloaded with (see
+  /// `sso_browser_web.dart`). The pending verifier is spent either way.
+  Future<bool> completeSsoReturn(Uri back) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_ssoPendingKey);
+    await prefs.remove(_ssoPendingKey);
+    final pending = raw == null ? null : jsonDecode(raw);
+    final verifier = switch (pending) {
+      {'verifier': final String v, 'server': final String server}
+          when server == api.baseUrl =>
+        v,
+      _ => null,
+    };
+    if (verifier == null) {
+      error = 'This sign-in expired. Try again.';
+      notifyListeners();
+      return false;
+    }
+    return _finishSso(back, verifier);
+  }
+
+  Future<bool> _finishSso(Uri back, String verifier) {
+    final code = back.queryParameters['sso_code'];
+    if (code == null) {
+      final reason =
+          back.queryParameters['sso_error'] ?? 'sign-in did not finish';
+      error = _sentence(reason);
+      errorStatus = null;
+      notifyListeners();
+      return Future.value(false);
+    }
+    var origin = AccountOrigin.existing;
+    return _authenticate(
+      () async {
+        final result = await api.ssoExchange(code, verifier);
+        if (result.created) origin = AccountOrigin.justCreated;
+        return (token: result.token, user: result.user);
+      },
+      origin: () => origin,
+      rejected: 'This sign-in expired. Try again.',
+    );
+  }
+
+  static String _pkceVerifier() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(
+      _verifierBytes,
+      (_) => random.nextInt(256),
+    );
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  static String _pkceChallenge(String verifier) => base64UrlEncode(
+    sha256.convert(utf8.encode(verifier)).bytes,
+  ).replaceAll('=', '');
+
+  /// Server reasons are lowercase fragments ("sign-in was cancelled").
+  static String _sentence(String reason) => reason.isEmpty
+      ? reason
+      : '${reason[0].toUpperCase()}${reason.substring(1)}';
 
   Future<void> updateAccount({
     String? name,

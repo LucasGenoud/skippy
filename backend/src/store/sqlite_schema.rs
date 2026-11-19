@@ -8,6 +8,17 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 ) STRICT;
 
+-- Single sign-on identities. `(issuer, subject)` is what the provider
+-- promises stays the same for one person, unlike their email.
+CREATE TABLE IF NOT EXISTS user_identities (
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (issuer, subject)
+) STRICT;
+CREATE INDEX IF NOT EXISTS user_identities_user ON user_identities(user_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
