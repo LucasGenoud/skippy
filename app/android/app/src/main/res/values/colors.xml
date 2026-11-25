@@ -7,4 +7,8 @@
     <color name="widget_background">#FFFFFF</color>
     <color name="widget_text">#1F1F1F</color>
     <color name="widget_text_secondary">#5F6368</color>
+
+    <!-- Launcher shortcut icons: a dark glyph on the app icon's white. -->
+    <color name="shortcut_background">#FFFFFF</color>
+    <color name="shortcut_glyph">#1F1F1F</color>
 </resources>

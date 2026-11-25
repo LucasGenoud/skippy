@@ -21,6 +21,7 @@ import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/state/settings_store.dart';
 import 'package:skippy/state/link_preview_cache.dart';
 import 'package:skippy/theme.dart';
+import 'package:skippy/util/launch_action.dart';
 import 'package:skippy/util/motion.dart';
 import 'package:skippy/util/snack.dart';
 import 'package:skippy/widgets/all_done_burst.dart';
@@ -73,6 +74,7 @@ Widget homeApp(
   NotesStore store, {
   SettingsStore? settings,
   Brightness brightness = Brightness.light,
+  ValueNotifier<LaunchNoteKind?>? newNoteRequest,
 }) => MultiProvider(
   providers: [
     ChangeNotifierProvider.value(value: store),
@@ -89,7 +91,7 @@ Widget homeApp(
     theme: buildTheme(brightness),
     scaffoldMessengerKey: scaffoldMessengerKey,
     builder: (context, child) => ScreenWidth(child: child ?? const SizedBox()),
-    home: const HomeScreen(),
+    home: HomeScreen(newNoteRequest: newNoteRequest),
   ),
 );
 
@@ -4762,6 +4764,82 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(find.text('milk and bread'), findsOneWidget);
       expect(api.log, contains('semanticSearch:milk'));
+    });
+  });
+
+  group('new note from outside the app', () {
+    Future<ValueNotifier<LaunchNoteKind?>> pumpHome(
+      WidgetTester tester, {
+      LaunchNoteKind? pending,
+      bool load = true,
+    }) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final request = ValueNotifier<LaunchNoteKind?>(pending);
+      addTearDown(request.dispose);
+      if (load) {
+        await store.load();
+      }
+      await tester.pumpWidget(homeApp(store, newNoteRequest: request));
+      await tester.pump();
+      return request;
+    }
+
+    testWidgets('a request that came before the screen opens on start', (
+      tester,
+    ) async {
+      final request = await pumpHome(tester, pending: LaunchNoteKind.checklist);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<EditorScreen>(find.byType(EditorScreen)).kind,
+        NoteKind.checklist,
+      );
+      expect(request.value, isNull);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+
+    testWidgets('a request while running starts the default kind', (
+      tester,
+    ) async {
+      final request = await pumpHome(tester);
+      expect(find.byType(EditorScreen), findsNothing);
+
+      request.value = LaunchNoteKind.preferred;
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<EditorScreen>(find.byType(EditorScreen)).kind,
+        NoteKind.text,
+      );
+      expect(request.value, isNull);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
+    });
+
+    testWidgets('waits for the first load before opening', (tester) async {
+      final request = await pumpHome(
+        tester,
+        pending: LaunchNoteKind.checklist,
+        load: false,
+      );
+      await tester.pump();
+      expect(find.byType(EditorScreen), findsNothing);
+      expect(request.value, LaunchNoteKind.checklist);
+
+      await store.load();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EditorScreen>(find.byType(EditorScreen)).kind,
+        NoteKind.checklist,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await flushTimers(tester);
     });
   });
 

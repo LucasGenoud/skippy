@@ -44,6 +44,10 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Long-press shortcuts: new note, checklist, voice note. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts"/>
             <!-- Share sheet: receive text/links + a single media/file. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
@@ -107,6 +111,17 @@
             android:name=".SkippyWidgetService"
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false"/>
+        <!-- Quick-settings tile that opens a new note. -->
+        <service
+            android:name=".NewNoteTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_glyph_note"
+            android:label="@string/tile_new_note"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+        </service>
         <!-- On-device reminders: the first receiver posts a scheduled
              notification when its alarm fires, the second re-arms every pending
              alarm after a reboot or an app update, which Android otherwise

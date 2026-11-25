@@ -206,6 +206,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/workspace_ai_section.dart`: a workspace's AI switches, editable by its owner and read-only for members.
 - `app/lib/widgets/file_drop*.dart`, `audio_player*.dart`, `audio_recorder*.dart`: conditional web/native implementations. Both audio players draw `audio_player_view.dart`, so they look the same by construction.
 - `app/lib/util/sso_browser*.dart`: the browser half of single sign-on, an auth session on native, a page redirect to `/sso` on the web.
+- `app/lib/util/launch_action.dart`: the `skippy://` deep links every outside entry point opens (widget taps, Siri and Shortcuts, Control Center, the Android tile and launcher shortcuts). `app_intent_launches.dart` carries iOS App Intents across, which run before Dart is listening; the intents live in `ios/Skippy Widget/NewNoteIntent.swift`, built into both the app and the widget extension.
 - `app/lib/util/runtime_config*.dart`, `connectivity*.dart`, `download*.dart`: platform-conditional infrastructure. Keep `dart:html` and `dart:io` out of shared files.
 - `app/lib/util/note_export.dart`: JSON, Markdown, and plain-text export.
 - `app/lib/util/keep_import.dart`: pure parsing of a Google Takeout Keep zip; `NotesStore.importKeep` adds the result without replacing anything.

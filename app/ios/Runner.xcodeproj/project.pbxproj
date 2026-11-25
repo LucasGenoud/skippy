@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		94199EC6603AEF12CC7FDA8B /* NewNoteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A3B444C9B4BB957D7BB126 /* NewNoteIntent.swift */; };
+		E2C315AD785DC6F84B1FC00D /* NewNoteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A3B444C9B4BB957D7BB126 /* NewNoteIntent.swift */; };
+		97F583B188F2C3DBDC748244 /* NewNoteControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA672A70ACCB2B9362B47F1 /* NewNoteControl.swift */; };
+		A6020D49A1A445659BC70F86 /* SkippyShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87885ED87450182EFAE7DF61 /* SkippyShortcuts.swift */; };
+		86915C032AAFB2E81F18CFD6 /* LaunchActionChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A6E852FA62DA0D526E43CE /* LaunchActionChannel.swift */; };
 		11AA173A8B8B783E4722C093 /* RSIShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F05216AA8CD2FC50A2AD436 /* RSIShareViewController.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		20FF0B32EBE1BC588EB190AC /* SkippyWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7397517A608E02F3A0BF5977 /* SkippyWidget.swift */; };
@@ -82,6 +87,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		84A3B444C9B4BB957D7BB126 /* NewNoteIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NewNoteIntent.swift; sourceTree = "<group>"; };
+		DAA672A70ACCB2B9362B47F1 /* NewNoteControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NewNoteControl.swift; sourceTree = "<group>"; };
+		87885ED87450182EFAE7DF61 /* SkippyShortcuts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SkippyShortcuts.swift; sourceTree = "<group>"; };
+		C7A6E852FA62DA0D526E43CE /* LaunchActionChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchActionChannel.swift; sourceTree = "<group>"; };
 		03F9011D71560F5604FD4003 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		0CBC31010BC7EE1211E37050 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
@@ -154,6 +163,8 @@
 				5F2132D9D6D63F9E0DC0C141 /* WidgetSync.swift */,
 				866E2D0114777518FF7113C3 /* SelectNoteIntent.swift */,
 				2E5B4112065403063BE2E52F /* ToggleItemIntent.swift */,
+				84A3B444C9B4BB957D7BB126 /* NewNoteIntent.swift */,
+				DAA672A70ACCB2B9362B47F1 /* NewNoteControl.swift */,
 				7397517A608E02F3A0BF5977 /* SkippyWidget.swift */,
 				85DEDD540FE262076060F7C6 /* NoteWidgetView.swift */,
 				0CBC31010BC7EE1211E37050 /* Info.plist */,
@@ -238,6 +249,8 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
+				87885ED87450182EFAE7DF61 /* SkippyShortcuts.swift */,
+				C7A6E852FA62DA0D526E43CE /* LaunchActionChannel.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				1D3C2682564304685F49C808 /* Runner.entitlements */,
 			);
@@ -461,6 +474,9 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				94199EC6603AEF12CC7FDA8B /* NewNoteIntent.swift in Sources */,
+				A6020D49A1A445659BC70F86 /* SkippyShortcuts.swift in Sources */,
+				86915C032AAFB2E81F18CFD6 /* LaunchActionChannel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -472,6 +488,8 @@
 				5639C86C7767D40E7429856E /* WidgetSync.swift in Sources */,
 				718329585BB6AF34D0BDAA4D /* SelectNoteIntent.swift in Sources */,
 				C42B8C73F21C5BEBA6C0E869 /* ToggleItemIntent.swift in Sources */,
+				E2C315AD785DC6F84B1FC00D /* NewNoteIntent.swift in Sources */,
+				97F583B188F2C3DBDC748244 /* NewNoteControl.swift in Sources */,
 				20FF0B32EBE1BC588EB190AC /* SkippyWidget.swift in Sources */,
 				F3AD1C6BD675E59968A9C92B /* NoteWidgetView.swift in Sources */,
 			);

@@ -41,6 +41,8 @@ Open <http://localhost:8123>. The app itself remains available at
 - Offline edits with automatic synchronization when the connection returns
 - Semantic search, optional transcription, OCR, and OpenAI-compatible AI tools
 - Share-sheet intake, keyboard shortcuts, dark mode, exports, and home-screen widgets
+- New notes from Siri, Shortcuts, Control Center and the Action Button on iOS,
+  and from a quick-settings tile or the app icon's shortcuts on Android
 - Import from Google Keep through a Google Takeout export
 - An MCP server, so AI assistants such as Claude can search, read, and add to notes
 

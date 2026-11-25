@@ -24,7 +24,9 @@ import 'state/settings_store.dart';
 import 'state/share_intake.dart';
 import 'theme.dart';
 import 'util/app_fonts.dart';
+import 'util/app_intent_launches.dart';
 import 'util/home_widgets.dart';
+import 'util/launch_action.dart';
 import 'util/local_notifications.dart';
 import 'util/motion.dart';
 import 'util/note_routes.dart';
@@ -69,7 +71,17 @@ class _SkippyAppState extends State<SkippyApp> {
   /// it, and taps on a widget arrive through it here.
   late final HomeWidgets _homeWidgets = HomeWidgets();
 
-  StreamSubscription<WidgetTap?>? _widgetTaps;
+  StreamSubscription<LaunchAction?>? _widgetLaunches;
+
+  /// Siri, Shortcuts and Control Center actions (iOS only).
+  late final AppIntentLaunches _intentLaunches = AppIntentLaunches();
+
+  StreamSubscription<LaunchAction>? _intentActions;
+
+  /// A note someone asked to start from outside the app, waiting for the home
+  /// screen to open it. Held here because the request can arrive before sign-in
+  /// has finished and the home screen exists.
+  final ValueNotifier<LaunchNoteKind?> _newNoteRequest = ValueNotifier(null);
 
   /// Lets a notification tap push the editor from outside the widget tree
   /// that built it (the tap callback has no BuildContext of its own).
@@ -112,18 +124,13 @@ class _SkippyAppState extends State<SkippyApp> {
     // fresh from a terminated state is captured before anything else runs.
     _localNotifications.ensureInitialized();
     _localNotifications.tappedNoteId.addListener(_onNotificationTap);
-    // Same reasoning for a home-screen widget: the stream only carries taps
-    // that arrive while the app runs, so a cold launch is asked about directly.
-    _widgetTaps = _homeWidgets.tappedNotes.listen((tap) {
-      if (tap != null) {
-        _requestOpenNote(tap.noteId, addChecklistItem: tap.addItem);
-      }
-    });
-    _homeWidgets.initialTap().then((tap) {
-      if (tap != null && mounted) {
-        _requestOpenNote(tap.noteId, addChecklistItem: tap.addItem);
-      }
-    });
+    // Same reasoning for a home-screen widget, tile or shortcut: the stream
+    // only carries links that arrive while the app runs, so a cold launch is
+    // asked about directly.
+    _widgetLaunches = _homeWidgets.launches.listen(_onLaunch);
+    _homeWidgets.initialLaunch().then(_onLaunch);
+    _intentActions = _intentLaunches.actions.listen(_onLaunch);
+    _intentLaunches.start().then((pending) => pending.forEach(_onLaunch));
     // Android only: the launcher opened us to ask which note a newly added
     // widget should show, and is holding that widget until we answer.
     _homeWidgets.pendingConfigureWidgetId().then((id) {
@@ -175,6 +182,20 @@ class _SkippyAppState extends State<SkippyApp> {
   /// the one that handed out the page, so ask that one. Caught in the browser,
   /// where a server on a non-default port left the page asking localhost:8787.
   late final ApiClient _publicApi = ApiClient(baseUrl: Uri.base.origin);
+
+  void _onLaunch(LaunchAction? action) {
+    if (!mounted) {
+      return;
+    }
+    switch (action) {
+      case OpenNoteAction(:final noteId, :final addItem):
+        _requestOpenNote(noteId, addChecklistItem: addItem);
+      case NewNoteAction(:final kind):
+        _newNoteRequest.value = kind;
+      case null:
+        return;
+    }
+  }
 
   void _onNotificationTap() {
     final noteId = _localNotifications.tappedNoteId.value;
@@ -345,7 +366,10 @@ class _SkippyAppState extends State<SkippyApp> {
   void dispose() {
     _auth.removeListener(_onAuthChanged);
     _localNotifications.tappedNoteId.removeListener(_onNotificationTap);
-    _widgetTaps?.cancel();
+    _widgetLaunches?.cancel();
+    _intentActions?.cancel();
+    _intentLaunches.dispose();
+    _newNoteRequest.dispose();
     _shareIntake.dispose();
     _store?.dispose();
     _settings?.dispose();
@@ -479,6 +503,7 @@ class _SkippyAppState extends State<SkippyApp> {
                                   key: ValueKey(
                                     '${_api.baseUrl}:${store.currentUserId}',
                                   ),
+                                  newNoteRequest: _newNoteRequest,
                                 ),
                       },
                     );

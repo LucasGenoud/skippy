@@ -15,6 +15,10 @@ Windows. It works offline and syncs when a device reconnects.
   from Google Keep, and pick the Keep zip from
   [Google Takeout](https://takeout.google.com).
 - Real-time collaboration and offline edits.
+- Start a note from outside the app: on iOS, ask Siri ("New note in Skippy")
+  or add the New Note, New Checklist or Voice Note control to Control Center,
+  the Lock Screen or the Action Button; on Android, add the New note
+  quick-settings tile or long-press the app icon.
 - Optional transcription, image text recognition, semantic search, and AI
   tools. The owner of a workspace sets up the AI once, and everyone in the
   workspace uses it. See [AI in a workspace](setup.md#ai-in-a-workspace).

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon. Each opens the same skippy://new link as Siri
+     and the quick-settings tile (see launch_action.dart), through the action
+     the home_widget plugin listens for. targetPackage is the applicationId,
+     not the namespace. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="note"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_note"
+        android:shortcutShortLabel="@string/shortcut_note_short"
+        android:shortcutLongLabel="@string/shortcut_note_long">
+        <intent
+            android:action="es.antonborri.home_widget.action.LAUNCH"
+            android:targetPackage="com.skippynotes.app"
+            android:targetClass="com.skippynotes.app.MainActivity"
+            android:data="skippy://new?homeWidget=1" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="checklist"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_checklist"
+        android:shortcutShortLabel="@string/shortcut_checklist_short"
+        android:shortcutLongLabel="@string/shortcut_checklist_long">
+        <intent
+            android:action="es.antonborri.home_widget.action.LAUNCH"
+            android:targetPackage="com.skippynotes.app"
+            android:targetClass="com.skippynotes.app.MainActivity"
+            android:data="skippy://new?homeWidget=1&amp;kind=checklist" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="voice"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_voice"
+        android:shortcutShortLabel="@string/shortcut_voice_short"
+        android:shortcutLongLabel="@string/shortcut_voice_long">
+        <intent
+            android:action="es.antonborri.home_widget.action.LAUNCH"
+            android:targetPackage="com.skippynotes.app"
+            android:targetClass="com.skippynotes.app.MainActivity"
+            android:data="skippy://new?homeWidget=1&amp;kind=voice" />
+    </shortcut>
+</shortcuts>

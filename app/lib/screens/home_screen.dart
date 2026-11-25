@@ -14,6 +14,7 @@ import '../state/note_collection.dart';
 import '../state/notes_store.dart';
 import '../state/settings_store.dart';
 import '../theme.dart';
+import '../util/launch_action.dart';
 import '../util/motion.dart';
 import '../util/platform.dart';
 import '../util/search_query.dart';
@@ -37,6 +38,7 @@ import '../widgets/note_zoom.dart';
 import '../widgets/page_header.dart';
 import '../widgets/public_link_dialog.dart';
 import '../widgets/quick_add_bar.dart';
+import '../widgets/recording_sheet.dart';
 import '../widgets/reminders/reminders_view.dart';
 import '../widgets/saved_view_dialog.dart';
 import '../widgets/screen_width.dart';
@@ -67,7 +69,11 @@ typedef _HomeView = ({
 typedef _GridMetrics = ({double pad, double maxWidth, int columns});
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  /// A note asked for from outside the app (Siri, a control, a tile, a
+  /// launcher shortcut). The screen opens it and clears the request.
+  final ValueNotifier<LaunchNoteKind?>? newNoteRequest;
+
+  const HomeScreen({super.key, this.newNoteRequest});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -103,6 +109,95 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     FocusManager.instance.addListener(_reclaimFocus);
+    widget.newNoteRequest?.addListener(_takeNewNoteRequest);
+    // A request that arrived before this screen existed, on a cold start.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _takeNewNoteRequest());
+  }
+
+  /// The store being waited on to finish its first load, and the listener
+  /// doing the waiting.
+  NotesStore? _loadWaitStore;
+  VoidCallback? _loadWaiter;
+
+  /// Open the note asked for from outside the app. Waits for the first load:
+  /// until then there is no collection to file the note in.
+  void _takeNewNoteRequest() {
+    final request = widget.newNoteRequest;
+    final kind = request?.value;
+    if (request == null || kind == null || !mounted) {
+      return;
+    }
+
+    final store = context.read<NotesStore>();
+    if (store.loading) {
+      _awaitFirstLoad(store);
+      return;
+    }
+
+    request.value = null;
+    switch (kind) {
+      case LaunchNoteKind.preferred:
+        _newNote();
+      case LaunchNoteKind.checklist:
+        _newNote(NoteKind.checklist);
+      case LaunchNoteKind.voice:
+        unawaited(_recordVoiceNote());
+    }
+  }
+
+  void _awaitFirstLoad(NotesStore store) {
+    if (_loadWaiter != null) {
+      return;
+    }
+
+    void waiter() {
+      if (store.loading) {
+        return;
+      }
+      _stopAwaitingLoad();
+      _takeNewNoteRequest();
+    }
+
+    _loadWaitStore = store;
+    _loadWaiter = waiter;
+    store.addListener(waiter);
+  }
+
+  void _stopAwaitingLoad() {
+    final waiter = _loadWaiter;
+    if (waiter != null) {
+      _loadWaitStore?.removeListener(waiter);
+    }
+    _loadWaitStore = null;
+    _loadWaiter = null;
+  }
+
+  /// Straight into the recorder, as the audio button does.
+  Future<void> _recordVoiceNote() async {
+    final store = context.read<NotesStore>();
+    if (store.activeCollection == null) {
+      CollectionSettings.show(context);
+      return;
+    }
+
+    final transcriptionAvailable = context
+        .read<SettingsStore>()
+        .audioTranscriptionCapable;
+    final labelIds = _composeLabelIds;
+    final clip = await RecordingSheet.show(context);
+    if (clip == null) {
+      return;
+    }
+
+    final id = await store.createAudioNote(
+      clip.bytes,
+      clip.mime,
+      labelIds: labelIds,
+      transcriptionAvailable: transcriptionAvailable,
+    );
+    if (id == null) {
+      showAppSnack("Couldn't save the recording");
+    }
   }
 
   /// When focus falls back to the route's own scope, a dismissed editor
@@ -146,6 +241,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     FocusManager.instance.removeListener(_reclaimFocus);
+    widget.newNoteRequest?.removeListener(_takeNewNoteRequest);
+    _stopAwaitingLoad();
     _semanticDebounce?.cancel();
     _searchController.dispose();
     _searchFocus.dispose();

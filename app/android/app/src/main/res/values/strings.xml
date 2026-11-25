@@ -4,4 +4,14 @@
     <string name="widget_description">Keep a note on your Home Screen. Checklists can be ticked here.</string>
     <string name="widget_toggle_item">Toggle item</string>
     <string name="widget_add_item">Add item</string>
+
+    <!-- Launcher shortcuts (long-press the app icon) and the quick-settings
+         tile. Short labels must fit about ten characters. -->
+    <string name="shortcut_note_short">New note</string>
+    <string name="shortcut_note_long">New note</string>
+    <string name="shortcut_checklist_short">Checklist</string>
+    <string name="shortcut_checklist_long">New checklist</string>
+    <string name="shortcut_voice_short">Voice note</string>
+    <string name="shortcut_voice_long">Record a voice note</string>
+    <string name="tile_new_note">New note</string>
 </resources>

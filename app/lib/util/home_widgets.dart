@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
+import 'launch_action.dart';
 import 'widget_payload.dart';
 
 /// The App Group shared by the app, the share extension and the widget. Already
@@ -27,28 +28,6 @@ const String kAppGroupId = 'group.com.lucasgenoud.skippy';
 const String kIOSWidgetKind = 'SkippyNoteWidget';
 const String kAndroidWidgetProvider =
     'com.lucasgenoud.skippy.SkippyWidgetProvider';
-
-/// Deep link a widget tap opens, as `skippy://note/<id>?homeWidget=1`.
-///
-/// That query parameter is required, not cosmetic: the plugin's launch-URL
-/// handlers ignore any URL without a `homeWidget` query item, so a link missing
-/// it foregrounds the app and is then silently dropped.
-const String kWidgetUrlScheme = 'skippy';
-
-/// Extra query flag on the link behind a widget's "Add item" row, as
-/// `skippy://note/<id>?homeWidget=1&add=1`.
-///
-/// Neither platform lets a home-screen widget take text input — WidgetKit has
-/// no text field at all, and Android's `RemoteViews` has no editable view — so
-/// adding an item cannot happen on the home screen. The row opens the note
-/// instead, with an empty checklist row already focused, which is the closest
-/// thing to typing straight into the widget. Native widget code appends this
-/// by hand, so it is a wire contract like the store keys.
-const String kWidgetAddItemParam = 'add';
-
-/// What a tap on a home-screen widget asked the app to do: show a note, and
-/// (from the "Add item" row) start a new checklist item in it.
-typedef WidgetTap = ({String noteId, bool addItem});
 
 /// Publishes notes to the device's home-screen widgets and reads back the ticks
 /// they made while the app was closed.
@@ -251,29 +230,19 @@ class HomeWidgets {
     await reload();
   }
 
-  /// What a widget-tap deep link asked for, or null for anything else.
-  static WidgetTap? tapFromUri(Uri? uri) {
-    if (uri == null || uri.scheme != kWidgetUrlScheme) return null;
-    // skippy://note/<id> parses as host 'note' with one path segment.
-    if (uri.host != 'note') return null;
-    final segments = uri.pathSegments;
-    if (segments.isEmpty || segments.first.isEmpty) return null;
-    return (
-      noteId: segments.first,
-      addItem: uri.queryParameters[kWidgetAddItemParam] == '1',
-    );
-  }
+  /// Taps on a widget while the app is already running, and on Android the
+  /// tiles and launcher shortcuts that open the same kind of link.
+  Stream<LaunchAction?> get launches =>
+      HomeWidget.widgetClicked.map(LaunchAction.fromUri);
 
-  /// Taps on a widget while the app is already running.
-  Stream<WidgetTap?> get tappedNotes =>
-      HomeWidget.widgetClicked.map(tapFromUri);
-
-  /// The tap that launched the app from a terminated state, which never reaches
-  /// [tappedNotes] because nothing was listening yet.
-  Future<WidgetTap?> initialTap() async {
+  /// The link that launched the app from a terminated state, which never
+  /// reaches [launches] because nothing was listening yet.
+  Future<LaunchAction?> initialLaunch() async {
     if (!await _ensureAppGroup()) return null;
     try {
-      return tapFromUri(await HomeWidget.initiallyLaunchedFromHomeWidget());
+      return LaunchAction.fromUri(
+        await HomeWidget.initiallyLaunchedFromHomeWidget(),
+      );
     } catch (e) {
       debugPrint('home widget: launch check failed: $e');
       return null;

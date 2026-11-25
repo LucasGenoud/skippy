@@ -11,6 +11,9 @@ import UIKit
     NativeGeofencePlugin.setPluginRegistrantCallback { registry in
       GeneratedPluginRegistrant.register(with: registry)
     }
+    // Siri, Shortcuts and Control Center intents run in here; their links
+    // wait in the channel until Dart is ready for them.
+    NewNoteRouter.open = { LaunchActionChannel.shared.open($0) }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -18,6 +21,9 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SkippyClipboard") {
       registerClipboard(messenger: registrar.messenger())
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SkippyLaunchActions") {
+      LaunchActionChannel.shared.attach(messenger: registrar.messenger())
     }
   }
 

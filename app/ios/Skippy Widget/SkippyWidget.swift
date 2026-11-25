@@ -88,5 +88,10 @@ struct SkippyWidgetBundle: WidgetBundle {
     if #available(iOS 17.0, *) {
       SkippyWidget()
     }
+    if #available(iOS 18.0, *) {
+      NewNoteControl()
+      NewChecklistControl()
+      VoiceNoteControl()
+    }
   }
 }
