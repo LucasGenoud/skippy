@@ -50,7 +50,7 @@ class ColorDot extends StatelessWidget {
         ),
         child: AnimatedSwitcher(
           duration: Motion.fast,
-          switchInCurve: Curves.easeOutBack,
+          switchInCurve: Motion.pop,
           switchOutCurve: Motion.standard,
           transitionBuilder: (child, animation) =>
               ScaleTransition(scale: animation, child: child),

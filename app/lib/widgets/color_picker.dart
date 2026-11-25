@@ -233,7 +233,7 @@ class _PatternSwatch extends StatelessWidget {
             child: Center(
               child: AnimatedSwitcher(
                 duration: Motion.fast,
-                switchInCurve: Curves.easeOutBack,
+                switchInCurve: Motion.pop,
                 switchOutCurve: Motion.standard,
                 transitionBuilder: (child, animation) =>
                     ScaleTransition(scale: animation, child: child),
@@ -302,7 +302,7 @@ class _ColorDot extends StatelessWidget {
           // The check pops in with a small overshoot when a color is picked.
           child: AnimatedSwitcher(
             duration: Motion.fast,
-            switchInCurve: Curves.easeOutBack,
+            switchInCurve: Motion.pop,
             switchOutCurve: Motion.standard,
             transitionBuilder: (child, animation) =>
                 ScaleTransition(scale: animation, child: child),

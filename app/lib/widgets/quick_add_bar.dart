@@ -548,7 +548,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
                     duration: Motion.base,
                     reverseDuration: Duration.zero,
                     switchInCurve: Motion.emphasized,
-                    switchOutCurve: Curves.easeIn,
+                    switchOutCurve: Motion.accelerate,
                     layoutBuilder: (currentChild, previousChildren) => Stack(
                       clipBehavior: Clip.none,
                       alignment: Alignment.topCenter,
@@ -765,7 +765,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
     if (_files.isEmpty) return null;
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.only(top: kSpaceSm),
       child: AnimatedPresence(
         axis: Axis.horizontal,
         layout: (children) => Wrap(runSpacing: 8, children: children),
@@ -879,7 +879,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
         ),
     ];
     return Padding(
-      padding: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.only(top: kSpaceSm),
       child: AnimatedPresence(
         axis: Axis.horizontal,
         layout: (children) => Wrap(runSpacing: 8, children: children),

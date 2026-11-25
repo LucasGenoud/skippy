@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerPhase;
 
+import '../theme.dart';
+
 /// Global messenger so snackbars can be shown from anywhere (including after
 /// a route pops, e.g. "Empty note discarded" when the editor closes).
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -45,7 +47,12 @@ void showAppSnack(
     messenger.showSnackBar(
       SnackBar(
         // Tighter than the Material default so the bar stays compact.
-        padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+        padding: const EdgeInsets.fromLTRB(
+          kSpaceMd,
+          kSpaceInline,
+          kSpaceSm,
+          kSpaceInline,
+        ),
         content: Row(
           children: [
             if (icon != null) ...[
@@ -59,7 +66,7 @@ void showAppSnack(
                 ),
                 child: Icon(icon, size: 15, color: chipFg),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: kSpaceSm),
             ],
             // Color comes from snackBarTheme.contentTextStyle (onSurface).
             Expanded(child: Text(message)),

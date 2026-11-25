@@ -35,10 +35,7 @@ class _NotesSkeletonState extends State<NotesSkeleton>
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
+    _pulse = AnimationController(vsync: this, duration: Motion.pulse)..repeat();
   }
 
   @override

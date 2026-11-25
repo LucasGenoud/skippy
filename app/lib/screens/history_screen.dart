@@ -193,6 +193,10 @@ class _NoteHistoryScreenState extends State<NoteHistoryScreen> {
   }
 }
 
+/// How far the Restore button reaches past the card's content edge: its end
+/// padding, so the label itself ends on the edge.
+const double _restoreOverhang = kSpaceSm;
+
 class _VersionCard extends StatelessWidget {
   final SettingsStore settings;
   final bool isCurrent;
@@ -253,10 +257,7 @@ class _VersionCard extends StatelessWidget {
                 ),
                 if (isCurrent)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
+                    padding: kBadgePadding,
                     decoration: BoxDecoration(
                       color: scheme.secondaryContainer,
                       borderRadius: kBorderRadius,
@@ -275,31 +276,47 @@ class _VersionCard extends StatelessWidget {
             if (onRestore != null || restoring) ...[
               const SizedBox(height: kSpaceXs),
               Align(
-                alignment: Alignment.centerRight,
-                child: AnimatedSwitcher(
-                  duration: Motion.fast,
-                  switchInCurve: Motion.standard,
-                  switchOutCurve: Motion.standard,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(scale: animation, child: child),
+                alignment: AlignmentDirectional.centerEnd,
+                // The label ends on the content edge, where Current sits; the
+                // button's own end padding hangs into the card's margin.
+                child: Transform.translate(
+                  offset: Offset(
+                    Directionality.of(context) == TextDirection.rtl
+                        ? -_restoreOverhang
+                        : _restoreOverhang,
+                    0,
                   ),
-                  child: restoring
-                      ? const Padding(
-                          key: ValueKey('restoring'),
-                          padding: EdgeInsets.all(8),
-                          child: SizedBox(
-                            height: 18,
-                            width: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                  child: AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Motion.standard,
+                    switchOutCurve: Motion.standard,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(scale: animation, child: child),
+                    ),
+                    child: restoring
+                        ? const Padding(
+                            key: ValueKey('restoring'),
+                            padding: EdgeInsets.all(8),
+                            child: SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : TextButton.icon(
+                            key: const ValueKey('restore'),
+                            onPressed: onRestore,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsetsDirectional.only(
+                                start: kSpaceMd,
+                                end: _restoreOverhang,
+                              ),
+                            ),
+                            icon: const Icon(Icons.restore, size: 18),
+                            label: const Text('Restore'),
                           ),
-                        )
-                      : TextButton.icon(
-                          key: const ValueKey('restore'),
-                          onPressed: onRestore,
-                          icon: const Icon(Icons.restore, size: 18),
-                          label: const Text('Restore'),
-                        ),
+                  ),
                 ),
               ),
             ],
@@ -338,7 +355,7 @@ class _VersionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CheckMark(checked: item.done),
-                const SizedBox(width: 6),
+                const SizedBox(width: kSpaceInline),
                 Expanded(
                   child: Text(
                     item.text.isEmpty ? ' ' : item.text,

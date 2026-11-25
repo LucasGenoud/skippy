@@ -279,8 +279,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 20),
                             AnimatedSize(
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
+                              duration: Motion.base,
+                              curve: Motion.emphasized,
                               alignment: Alignment.topCenter,
                               child: creating
                                   ? Padding(
@@ -395,8 +395,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             // Confirm password, only when creating an account.
                             AnimatedSize(
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
+                              duration: Motion.base,
+                              curve: Motion.emphasized,
                               alignment: Alignment.topCenter,
                               child: creating
                                   ? Padding(

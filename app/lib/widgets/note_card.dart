@@ -366,7 +366,11 @@ class _NoteTileState extends State<NoteTile> {
       child: Stack(
         children: [
           _cardBody(note, widget.query, actionsSlot),
-          if (collection != null) _CollectionMarker(tag: collection),
+          if (collection != null)
+            _CollectionMarker(
+              tag: collection,
+              pinShown: _PinButton.shows(note, _hovered, hidden: isRewriting),
+            ),
           _PinButton(note: note, hovered: _hovered, hidden: isRewriting),
           if (isRewriting) const _NoteRewriteProgress(),
           // Positioned stays put so the row can fade out rather than vanish
@@ -527,8 +531,18 @@ class _NoteTileState extends State<NoteTile> {
 /// metadata chip. Its tooltip carries the collection name without competing
 /// with the note's own tags.
 class _CollectionMarker extends StatelessWidget {
+  /// Inset that centres the tag in the pin's corner slot.
+  static const double _cornerInset = 6;
+
+  /// Inset that puts it just left of a showing pin.
+  static const double _besidePinInset = 38;
+
   final _Tag tag;
-  const _CollectionMarker({required this.tag});
+
+  /// Whether the pin holds the corner; the tag steps aside for it.
+  final bool pinShown;
+
+  const _CollectionMarker({required this.tag, required this.pinShown});
 
   @override
   Widget build(BuildContext context) {
@@ -536,9 +550,11 @@ class _CollectionMarker extends StatelessWidget {
     final color = PaletteEntry.hexToColor(tag.color);
     final icon = labelIconFor(tag.icon);
     final scheme = Theme.of(context).colorScheme;
-    return Positioned(
+    return AnimatedPositioned(
+      duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
+      curve: Motion.standard,
       top: 6,
-      right: 38,
+      right: pinShown ? _besidePinInset : _cornerInset,
       width: 28,
       height: 28,
       child: Tooltip(
@@ -574,10 +590,14 @@ class _PinButton extends StatelessWidget {
     this.hidden = false,
   });
 
+  /// Whether the pin is on show: on hover, or for good once pinned.
+  static bool shows(Note note, bool hovered, {required bool hidden}) =>
+      !hidden && !note.trashed && (hovered || note.pinned);
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final show = !hidden && !note.trashed && (hovered || note.pinned);
+    final show = shows(note, hovered, hidden: hidden);
     return Positioned(
       top: 4,
       right: 4,
@@ -672,8 +692,8 @@ class _SelectionButton extends StatelessWidget {
                   customBorder: const CircleBorder(),
                   child: AnimatedSwitcher(
                     duration: Motion.fast,
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
+                    switchInCurve: Motion.pop,
+                    switchOutCurve: Motion.accelerate,
                     child: selected
                         ? Icon(
                             Icons.check,

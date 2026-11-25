@@ -178,7 +178,7 @@ class _Header extends StatelessWidget {
               Row(
                 children: [
                   const AppLogo(size: 26),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: kSpaceSm),
                   Text(
                     'Skippy',
                     style: theme.textTheme.titleSmall?.copyWith(
@@ -382,13 +382,14 @@ class _BoardColumn extends StatelessWidget {
         borderRadius: kBorderRadius,
         border: Border.all(color: boardColumnBorderColor(scheme)),
       ),
-      padding: const EdgeInsets.all(10),
+      // The same inset as a board column in the app.
+      padding: const EdgeInsets.all(kSpaceSm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 2, 4, 10),
+            padding: const EdgeInsets.fromLTRB(kSpaceXs, 2, kSpaceXs, kSpaceSm),
             child: Row(
               children: [
                 Expanded(
@@ -498,7 +499,8 @@ class PublicNoteCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              // The same inset as a note card in the app.
+              padding: const EdgeInsets.all(kSpaceLg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -512,7 +514,7 @@ class PublicNoteCard extends StatelessWidget {
                       maxLines: expanded ? null : 3,
                       overflow: expanded ? null : TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: kSpaceSm),
                   ],
                   if (note.isChecklist)
                     _Checklist(note: note, expanded: expanded)
@@ -534,10 +536,10 @@ class PublicNoteCard extends StatelessWidget {
                           : TextOverflow.ellipsis,
                     ),
                   if (noteLabels.isNotEmpty) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: kSpaceMd),
                     Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                      spacing: kSpaceInline,
+                      runSpacing: kSpaceInline,
                       children: [
                         for (final label in noteLabels)
                           _LabelChip(label: label),
@@ -632,7 +634,7 @@ class _LabelChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final tint = labelColor(label, scheme.onSurfaceVariant);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: kChipPadding,
       decoration: BoxDecoration(
         color: scheme.surface.withValues(alpha: 0.7),
         borderRadius: kBorderRadius,
@@ -644,7 +646,7 @@ class _LabelChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(labelIcon(label), size: 13, color: tint),
-          const SizedBox(width: 5),
+          const SizedBox(width: kSpaceXs),
           Text(
             label.name,
             style: Theme.of(

@@ -229,7 +229,7 @@ class _Group extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: kSpaceLg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

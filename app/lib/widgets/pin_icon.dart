@@ -14,8 +14,8 @@ class PinIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
     duration: Motion.reduced(context) ? Duration.zero : Motion.fast,
-    switchInCurve: Curves.easeOutBack,
-    switchOutCurve: Curves.easeIn,
+    switchInCurve: Motion.pop,
+    switchOutCurve: Motion.accelerate,
     transitionBuilder: (child, animation) =>
         ScaleTransition(scale: animation, child: child),
     child: Icon(

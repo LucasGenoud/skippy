@@ -11,6 +11,9 @@ import 'labels_sheet.dart';
 import 'saved_view_dialog.dart';
 import 'workspace_menu.dart';
 
+/// How far a sidebar row's highlight sits in from the sidebar's edges.
+const double _kRowInset = kSpaceMd;
+
 class AppDrawer extends StatelessWidget {
   final ViewSelection selection;
   final ValueChanged<ViewSelection> onSelect;
@@ -303,7 +306,7 @@ class _AppSidebarState extends State<AppSidebar> {
                         onTap: () =>
                             _afterDrawer(context, ManageCollectionsDialog.show),
                       ),
-                      const Divider(height: 32, indent: 16, endIndent: 16),
+                      const _SectionRule(),
                       _SidebarSectionHeader(label: 'Labels', isOpen: isOpen),
                       for (final label in store.labels)
                         _SidebarItem(
@@ -355,7 +358,7 @@ class _AppSidebarState extends State<AppSidebar> {
                         onTap: () =>
                             _afterDrawer(context, EditLabelsDialog.show),
                       ),
-                      const Divider(height: 24, indent: 16, endIndent: 16),
+                      const _SectionRule(),
                       _SidebarSectionHeader(
                         label: 'Smart views',
                         isOpen: isOpen,
@@ -391,7 +394,7 @@ class _AppSidebarState extends State<AppSidebar> {
                         onTap: () =>
                             _afterDrawer(context, EditSmartViewsDialog.show),
                       ),
-                      const Divider(height: 32, indent: 16, endIndent: 16),
+                      const _SectionRule(),
                       _SidebarSectionHeader(label: 'Library', isOpen: isOpen),
                       for (final entry in library)
                         _SidebarItem(
@@ -442,6 +445,16 @@ class _AppSidebarState extends State<AppSidebar> {
   }
 }
 
+/// The rule between two sidebar sections: one height for every gap, and as
+/// wide as a row's highlight, so the sections read as one even rhythm.
+class _SectionRule extends StatelessWidget {
+  const _SectionRule();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Divider(height: 32, indent: _kRowInset, endIndent: _kRowInset);
+}
+
 class _SidebarSectionHeader extends StatelessWidget {
   final String label;
   final bool isOpen;
@@ -453,10 +466,13 @@ class _SidebarSectionHeader extends StatelessWidget {
       height: 28,
       child: AnimatedOpacity(
         opacity: isOpen ? 1 : 0,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOutCubic,
+        duration: Motion.slow,
+        curve: Motion.standard,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 6, 28, 6),
+          padding: const EdgeInsets.symmetric(
+            horizontal: _kRowInset + kSpaceLg,
+            vertical: kSpaceInline,
+          ),
           child: Text(
             label,
             maxLines: 1,
@@ -552,7 +568,10 @@ class _SidebarItem extends StatelessWidget {
     return Tooltip(
       message: isOpen ? '' : label,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+        padding: const EdgeInsets.symmetric(
+          horizontal: _kRowInset,
+          vertical: kRowGap,
+        ),
         child: _RowHighlight(
           dropTarget: dropTarget,
           danger: danger,

@@ -196,6 +196,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/image_mosaic.dart`: the animated grid a note's pictures sit in, on the card (up to four, the last counting the rest) and in the editor (all of them). `widgets/editor/image_viewer.dart` steps through them full size.
 - `app/lib/widgets/note_actions.dart`: archive, trash, copy, share, AI rewrite and the upload limit, shared by the card, the editor and the home screen. `state/note_availability.dart` decides which of them a note offers.
 - `app/lib/widgets/page_header.dart`: the title block a destination opens with (Reminders, Archive, Trash). Small-caps group labels use `sectionLabelStyle` in `theme.dart`.
+- `app/lib/widgets/row_aligned_field.dart`: puts a text field or an avatar row among list rows on the rows' icon and title columns (`rowAlignedFieldDecoration`, `avatarTitleGap`).
 - `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card
   for a note's reminder and by the checklist editor for a row's.
 - `app/lib/widgets/swipe_to_archive.dart`: the touch-only swipe that archives a card from the grid.

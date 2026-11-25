@@ -19,6 +19,7 @@ import '../widgets/workspace_ai_section.dart';
 import '../widgets/workspace_menu.dart';
 import 'workspace_stats_screen.dart';
 import '../widgets/form_error_banner.dart';
+import '../widgets/row_aligned_field.dart';
 import '../widgets/user_avatar.dart';
 
 /// Settings for one workspace: its name, which views it offers, who is in it,
@@ -197,6 +198,9 @@ class _PeopleSection extends StatefulWidget {
   State<_PeopleSection> createState() => _PeopleSectionState();
 }
 
+/// People's avatars on the roster.
+const double _avatarRadius = 16;
+
 class _PeopleSectionState extends State<_PeopleSection> {
   final _controller = TextEditingController();
   bool _busy = false;
@@ -250,10 +254,11 @@ class _PeopleSectionState extends State<_PeopleSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(
+          horizontalTitleGap: avatarTitleGap(_avatarRadius),
           leading: UserAvatar(
             userId: workspace.owner?.id,
             version: workspace.owner?.avatar,
-            radius: 16,
+            radius: _avatarRadius,
             fallback: Text(workspaceInitial(workspace.owner?.name ?? '?')),
           ),
           title: Text(
@@ -263,10 +268,11 @@ class _PeopleSectionState extends State<_PeopleSection> {
         ),
         for (final member in workspace.members)
           ListTile(
+            horizontalTitleGap: avatarTitleGap(_avatarRadius),
             leading: UserAvatar(
               userId: member.id,
               version: member.avatar,
-              radius: 16,
+              radius: _avatarRadius,
               backgroundColor: scheme.secondaryContainer,
               fallback: Text(workspaceInitial(member.name)),
             ),
@@ -290,10 +296,9 @@ class _PeopleSectionState extends State<_PeopleSection> {
                   child: TextField(
                     controller: _controller,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      hintText: 'Invite people by email',
-                      isDense: true,
-                      prefixIcon: Icon(Icons.person_add_alt, size: 20),
+                    decoration: rowAlignedFieldDecoration(
+                      hint: 'Invite people by email',
+                      icon: Icons.person_add_alt,
                     ),
                     onSubmitted: (_) => _invite(),
                   ),
@@ -473,7 +478,7 @@ class _DeleteWorkspaceDialogState extends State<_DeleteWorkspaceDialog> {
           Text(deletionMessage),
           const SizedBox(height: kSpaceLg),
           Wrap(
-            spacing: 6,
+            spacing: kSpaceInline,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('Type', style: Theme.of(context).textTheme.bodySmall),

@@ -151,7 +151,7 @@ class _Strip extends StatelessWidget {
                       ),
                     ),
                     if (subtitle != null) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: kSpaceLineGap),
                       Text(
                         subtitle,
                         maxLines: 1,

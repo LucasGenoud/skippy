@@ -204,7 +204,7 @@ class _NotifyConfigDialogState extends State<_NotifyConfigDialog> {
                       channel.label,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: kSpaceLineGap),
                     Text(
                       channel.blurb,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(

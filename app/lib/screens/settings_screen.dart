@@ -182,7 +182,7 @@ class _IndexRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final target = selected ? 1.0 : 0.0;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: kRowGap),
       child: TweenAnimationBuilder<double>(
         // begin == end, so a row that starts selected doesn't fade in.
         tween: Tween<double>(begin: target, end: target),

@@ -213,10 +213,10 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
           ),
           const SizedBox(height: 20),
           const FormSectionLabel('Color'),
-          const SizedBox(height: 10),
+          const SizedBox(height: kSpaceMd),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: kSpaceSm,
+            runSpacing: kSpaceSm,
             children: [
               ColorDot(
                 color: null,
@@ -235,7 +235,7 @@ class _SavedViewDialogState extends State<SavedViewDialog> {
           ),
           const SizedBox(height: 20),
           const FormSectionLabel('Icon'),
-          const SizedBox(height: 10),
+          const SizedBox(height: kSpaceMd),
           IconGrid(
             selected: _icon,
             tint: PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,

@@ -265,7 +265,7 @@ class _SavedLocationDialogState extends State<SavedLocationDialog> {
             radiusMeters: _mapRadius,
             onMoved: _onMapMoved,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: kSpaceInline),
           Row(
             children: [
               Expanded(

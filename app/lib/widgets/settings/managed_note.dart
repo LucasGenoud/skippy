@@ -9,7 +9,7 @@ class ManagedNote extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.only(top: kSpaceLineGap),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -21,7 +21,10 @@ class FormErrorBanner extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final message = this.message.trim().isEmpty ? _fallback : this.message;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpaceMd,
+        vertical: kSpaceSm,
+      ),
       decoration: BoxDecoration(
         color: scheme.errorContainer,
         borderRadius: kBorderRadius,

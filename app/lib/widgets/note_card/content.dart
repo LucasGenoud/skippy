@@ -118,17 +118,17 @@ class _NoteCardContent extends StatelessWidget {
                       const _AudioPill(),
                       if (note.transcribing)
                         const Padding(
-                          padding: EdgeInsets.only(top: 10),
+                          padding: EdgeInsets.only(top: kSpaceSm),
                           child: TranscribingIndicator(compact: true),
                         )
                       else if (note.transcriptFailed)
                         const Padding(
-                          padding: EdgeInsets.only(top: 10),
+                          padding: EdgeInsets.only(top: kSpaceSm),
                           child: TranscriptFailed(compact: true),
                         )
                       else if (note.content.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.only(top: kSpaceSm),
                           child: LinkedText(
                             text: note.content,
                             style: theme.textTheme.bodyMedium?.copyWith(
@@ -201,7 +201,7 @@ class _NoteCardContent extends StatelessWidget {
                       ),
                     if (note.summarizingLinks)
                       Padding(
-                        padding: const EdgeInsets.only(top: 10),
+                        padding: const EdgeInsets.only(top: kSpaceSm),
                         child: LinkSummaryIndicator(
                           compact: true,
                           onCancel: () => context
@@ -238,8 +238,8 @@ class _NoteCardContent extends StatelessWidget {
               hasLinkPreviews ? 12 : (reserveActions ? 4 : 16),
             ),
             child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: kSpaceInline,
+              runSpacing: kSpaceInline,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (hasProgress)
@@ -509,8 +509,8 @@ class _ChecklistRow extends StatelessWidget {
                   // frame.
                   child: AnimatedSwitcher(
                     duration: Motion.fast,
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeIn,
+                    switchInCurve: Motion.pop,
+                    switchOutCurve: Motion.accelerate,
                     transitionBuilder: (child, animation) =>
                         ScaleTransition(scale: animation, child: child),
                     child: CheckMark(
@@ -522,7 +522,7 @@ class _ChecklistRow extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: kSpaceSm),
           Expanded(
             child: AnimatedDefaultTextStyle(
               duration: Motion.fast,
@@ -681,7 +681,7 @@ class _FileChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: kChipPadding,
       constraints: const BoxConstraints(maxWidth: 140),
       decoration: BoxDecoration(
         borderRadius: kBorderRadius,
@@ -719,7 +719,10 @@ class _AudioPill extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpaceSm,
+          vertical: kSpaceXs,
+        ),
         decoration: BoxDecoration(
           borderRadius: kBorderRadius,
           color: scheme.onSurface.withValues(alpha: 0.06),
@@ -728,7 +731,7 @@ class _AudioPill extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.graphic_eq, size: 15, color: scheme.primary),
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpaceInline),
             Text(
               'Audio',
               style: Theme.of(

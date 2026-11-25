@@ -154,7 +154,7 @@ class WorkspaceMenu extends StatelessWidget {
                       ),
                     ),
                     if (!compact) ...[
-                      const SizedBox(width: 10),
+                      const SizedBox(width: kSpaceSm),
                       Flexible(
                         child: Text(
                           name,

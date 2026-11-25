@@ -97,9 +97,14 @@ class _MoveNoteSheetState extends State<MoveNoteSheet> {
             ),
             if (tabbed)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, kSpaceSm, 20, 0),
+                padding: const EdgeInsets.fromLTRB(
+                  kModalInset,
+                  kSpaceSm,
+                  kModalInset,
+                  0,
+                ),
                 child: Wrap(
-                  spacing: 8,
+                  spacing: kSpaceSm,
                   children: [
                     for (final target in widget.targets)
                       ChoiceChip(
@@ -233,6 +238,8 @@ class _Destination extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      // On the sheet's inset, where its title and tabs start.
+      contentPadding: const EdgeInsets.symmetric(horizontal: kModalInset),
       leading: leading,
       title: Text(label, overflow: TextOverflow.ellipsis),
       subtitle: subtitle == null ? null : Text(subtitle!),

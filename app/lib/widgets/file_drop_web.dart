@@ -190,7 +190,7 @@ class _FileDropAreaState extends State<FileDropArea> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
-                      vertical: 18,
+                      vertical: kSpaceLg,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

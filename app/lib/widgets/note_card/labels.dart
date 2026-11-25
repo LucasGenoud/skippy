@@ -228,12 +228,9 @@ class _LabelChip extends StatelessWidget {
     final tint = PaletteEntry.hexToColor(color);
     final marked = iconKey != null || tint != null;
     return Container(
-      padding: EdgeInsets.only(
-        left: marked ? 7 : 10,
-        right: 10,
-        top: 3,
-        bottom: 3,
-      ),
+      // The same insets as the date chip beside it; a leading glyph brings
+      // its own air, so the start is tighter when there is one.
+      padding: kChipPadding.copyWith(left: marked ? kSpaceInline : kSpaceSm),
       decoration: _chipDecoration(scheme),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -58,14 +58,14 @@ class _PopCheckboxState extends State<PopCheckbox>
       tween: Tween(
         begin: 1.0,
         end: 1.6,
-      ).chain(CurveTween(curve: Curves.easeOutCubic)),
+      ).chain(CurveTween(curve: Motion.standard)),
       weight: 30,
     ),
     TweenSequenceItem(
       tween: Tween(
         begin: 1.6,
         end: 1.0,
-      ).chain(CurveTween(curve: Curves.elasticOut)),
+      ).chain(CurveTween(curve: Motion.flourish)),
       weight: 70,
     ),
   ]).animate(_controller);
@@ -178,8 +178,8 @@ class _ParticlePainter extends CustomPainter {
     final center = size.center(Offset.zero);
     // Dots race out fast then coast; they fade through the back half so the
     // whole thing is over in a blink.
-    final travel = Curves.easeOutCubic.transform(t);
-    final fade = 1 - Curves.easeIn.transform(t);
+    final travel = Motion.standard.transform(t);
+    final fade = 1 - Motion.accelerate.transform(t);
     for (final p in particles) {
       final pos =
           center +

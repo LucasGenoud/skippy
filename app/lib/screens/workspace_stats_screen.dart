@@ -69,22 +69,21 @@ class WorkspaceStatsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Statistics'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(20),
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16, bottom: 12),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                workspace.name,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                overflow: TextOverflow.ellipsis,
+        // The workspace's name under the title it qualifies, on the title's
+        // column whether or not a back button leads the bar.
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Statistics'),
+            Text(
+              workspace.name,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
+          ],
         ),
       ),
       body: Center(
@@ -142,29 +141,45 @@ class _Overview extends StatelessWidget {
   final WorkspaceStats stats;
   const _Overview({required this.stats});
 
+  /// Narrowest a tile gets before the row drops from four to two.
+  static const double _minTileWidth = 140;
+
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(builder: _tiles);
+  }
+
+  /// The four tiles sharing the row evenly: four across when they fit at
+  /// [_minTileWidth], otherwise two by two.
+  Widget _tiles(BuildContext context, BoxConstraints constraints) {
+    final fourFit = constraints.maxWidth >= 4 * _minTileWidth + 3 * kSpaceMd;
+    final columns = fourFit ? 4 : 2;
+    final width = (constraints.maxWidth - kSpaceMd * (columns - 1)) / columns;
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: kSpaceMd,
+      runSpacing: kSpaceMd,
       children: [
         _StatCard(
+          width: width,
           icon: Icons.sticky_note_2_outlined,
           value: stats.activeNotes,
           label: 'Notes',
           emphasized: true,
         ),
         _StatCard(
+          width: width,
           icon: Icons.archive_outlined,
           value: stats.archived,
           label: 'Archived',
         ),
         _StatCard(
+          width: width,
           icon: Icons.delete_outline,
           value: stats.trashed,
           label: 'In trash',
         ),
         _StatCard(
+          width: width,
           icon: Icons.notifications_none,
           value: stats.withReminders,
           label: 'Reminders',
@@ -468,12 +483,14 @@ List<Color> _seriesColors(BuildContext context) {
 /// A headline count. The first card of a row is emphasized, so the eye lands
 /// on the number that matters before reading the rest.
 class _StatCard extends StatelessWidget {
+  final double width;
   final IconData icon;
   final int value;
   final String label;
   final bool emphasized;
 
   const _StatCard({
+    required this.width,
     required this.icon,
     required this.value,
     required this.label,
@@ -487,8 +504,11 @@ class _StatCard extends StatelessWidget {
         ? scheme.onPrimaryContainer
         : scheme.onSurface;
     return Container(
-      width: 140,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      width: width,
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpaceLg,
+        vertical: kSpaceMd,
+      ),
       decoration: BoxDecoration(
         color: emphasized
             ? scheme.primaryContainer
@@ -621,7 +641,7 @@ class _Breakdown extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: kSpaceSm),
                   Expanded(
                     child: Text(
                       slice.label,

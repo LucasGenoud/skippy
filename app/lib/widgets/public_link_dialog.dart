@@ -240,7 +240,7 @@ class _PublicLinkDialogState extends State<PublicLinkDialog> {
             url: publicShareUrl(widget.api.baseUrl, link),
             onCopy: _copy,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: kSpaceMd),
           Row(
             children: [
               Icon(

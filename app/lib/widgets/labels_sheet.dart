@@ -241,7 +241,7 @@ class _LabelsSheetState extends State<LabelsSheet> {
                         // switching between two frames.
                         trailing: AnimatedSwitcher(
                           duration: Motion.fast,
-                          switchInCurve: Curves.easeOutBack,
+                          switchInCurve: Motion.pop,
                           switchOutCurve: Motion.standard,
                           transitionBuilder: (child, animation) =>
                               ScaleTransition(scale: animation, child: child),
@@ -504,10 +504,10 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
           ),
           const SizedBox(height: 20),
           const FormSectionLabel('Color'),
-          const SizedBox(height: 10),
+          const SizedBox(height: kSpaceMd),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: kSpaceSm,
+            runSpacing: kSpaceSm,
             children: [
               // Default (no colour) slot.
               ColorDot(
@@ -553,7 +553,7 @@ class _LabelEditorDialogState extends State<LabelEditorDialog> {
           ),
           const SizedBox(height: 20),
           const FormSectionLabel('Icon'),
-          const SizedBox(height: 10),
+          const SizedBox(height: kSpaceMd),
           IconGrid(
             selected: _icon,
             tint: PaletteEntry.hexToColor(_color) ?? scheme.onSurfaceVariant,

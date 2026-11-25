@@ -277,6 +277,59 @@ void main() {
       },
     );
 
+    // With the pin hidden, its corner is empty: the tag sits there rather
+    // than floating a slot in, and steps aside when the pin shows.
+    testWidgets(
+      'the collection tag takes the corner until the pin shows',
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+      (tester) async {
+        api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+          collections: const [
+            NoteCollection(
+              id: 'reading',
+              workspaceId: 'w-default',
+              name: 'Reading',
+              icon: 'book',
+            ),
+          ],
+        );
+        api.notes['n1'] = serverNote(
+          'n1',
+          title: 'Archived book',
+          workspaceId: 'w-default',
+          archived: true,
+        ).copyWith(collectionId: 'reading');
+        await store.load();
+        await tester.pumpWidget(
+          harness(
+            store,
+            Center(
+              child: SizedBox(
+                width: 280,
+                child: NoteTile(
+                  note: store.noteById('n1')!,
+                  showCollection: true,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        double inset() =>
+            tester.getRect(find.byType(NoteTile)).right -
+            tester.getCenter(find.byIcon(Icons.menu_book_outlined)).dx;
+        expect(inset(), moreOrLessEquals(20, epsilon: 1));
+
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        addTearDown(mouse.removePointer);
+        await mouse.moveTo(tester.getCenter(find.byType(NoteTile)));
+        await tester.pumpAndSettle();
+        expect(inset(), moreOrLessEquals(52, epsilon: 1));
+      },
+    );
+
     testWidgets('groups at most five unique website previews', (tester) async {
       api.notes['n1'] = serverNote(
         'n1',

@@ -33,7 +33,7 @@ class ReminderChip extends StatelessWidget {
     );
     final label = '$when${repeat == null ? '' : ' · ${repeat!.label}'}';
     final chip = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: kChipPadding,
       decoration: BoxDecoration(
         borderRadius: kBorderRadius,
         color: scheme.onSurface.withValues(alpha: 0.08),

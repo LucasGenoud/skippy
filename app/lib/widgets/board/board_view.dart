@@ -299,8 +299,8 @@ class _BoardViewState extends State<BoardView> {
           current: page,
           onSelect: (index) => _pageController.animateToPage(
             index,
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeOutCubic,
+            duration: Motion.base,
+            curve: Motion.standard,
           ),
           onWillDrop: _canDropOnStage,
           onDrop: _dropOnStage,
@@ -437,7 +437,7 @@ class _BoardActionTarget extends StatelessWidget {
               ? Row(
                   children: [
                     Icon(icon, size: 16),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: kSpaceInline),
                     Text(title),
                   ],
                 )
@@ -590,8 +590,8 @@ class _StageStripState extends State<_StageStrip> {
       Scrollable.ensureVisible(
         chip,
         alignment: 0.5,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
+        duration: Motion.base,
+        curve: Motion.standard,
       );
     });
   }
@@ -606,7 +606,10 @@ class _StageStripState extends State<_StageStrip> {
       child: SingleChildScrollView(
         controller: _controller,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpaceMd,
+          vertical: kSpaceInline,
+        ),
         child: Row(
           children: [
             for (final (index, column) in widget.columns.indexed)
@@ -664,7 +667,7 @@ class _AddColumnChip extends StatelessWidget {
         child: Row(
           children: [
             Icon(Icons.add, size: 16, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpaceInline),
             Text(
               'Add column',
               style: Theme.of(
@@ -744,7 +747,7 @@ class _StageChip extends StatelessWidget {
                   const TextStyle(),
               child: Text(column.title),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpaceInline),
             RollingCount(
               count: column.totalCount,
               style: Theme.of(

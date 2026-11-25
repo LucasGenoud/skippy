@@ -31,7 +31,7 @@ class AddToHomeScreenHelp extends StatelessWidget {
         children: [
           for (var i = 0; i < steps.length; i++)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.only(bottom: kSpaceMd),
               child: _Step(number: i + 1, text: steps[i]),
             ),
           _Step(
@@ -87,7 +87,7 @@ class _Step extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: kSpaceSm),
         Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
       ],
     );

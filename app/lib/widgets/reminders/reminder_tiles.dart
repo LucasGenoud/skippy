@@ -460,7 +460,7 @@ class _TileBodyState extends State<_TileBody> {
                       ),
                       if (widget.meta.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.only(top: kSpaceLineGap),
                           child: Wrap(
                             spacing: kSpaceMd,
                             runSpacing: 2,

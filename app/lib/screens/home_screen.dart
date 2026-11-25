@@ -1518,7 +1518,10 @@ class _OfflineBannerState extends State<_OfflineBanner> {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpaceLg,
+        vertical: kSpaceSm,
+      ),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
         borderRadius: kBorderRadius,

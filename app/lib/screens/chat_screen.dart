@@ -286,8 +286,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               borderSide: BorderSide.none,
                             ),
                             contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 12,
+                              horizontal: kSpaceLg,
+                              vertical: kSpaceMd,
                             ),
                           ),
                         ),
@@ -387,7 +387,10 @@ class _Bubble extends StatelessWidget {
     final failedEmpty = turn.error != null && turn.text.isEmpty;
 
     final bubble = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpaceMd,
+        vertical: kSpaceSm,
+      ),
       decoration: BoxDecoration(
         color: isUser
             ? scheme.primaryContainer
@@ -422,7 +425,7 @@ class _Bubble extends StatelessWidget {
           else
             Text(turn.text),
           if (turn.error != null && turn.text.isNotEmpty) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: kSpaceInline),
             Text(
               'Interrupted: ${turn.error}',
               style: Theme.of(
@@ -437,10 +440,10 @@ class _Bubble extends StatelessWidget {
     final sourcesChips = turn.sources.isEmpty
         ? const SizedBox.shrink()
         : Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.only(bottom: kSpaceInline),
             child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: kSpaceInline,
+              runSpacing: kSpaceInline,
               children: [
                 for (final source in turn.sources)
                   ActionChip(
@@ -459,7 +462,7 @@ class _Bubble extends StatelessWidget {
       final created? => Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Wrap(
-          spacing: 6,
+          spacing: kSpaceInline,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             ActionChip(
@@ -494,7 +497,7 @@ class _Bubble extends StatelessWidget {
     };
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: kSpaceInline),
       child: _entrance(
         context,
         Column(
@@ -574,7 +577,7 @@ class _TypingDotsState extends State<_TypingDots>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: Motion.pulse,
   )..repeat();
 
   @override
@@ -600,7 +603,7 @@ class _TypingDotsState extends State<_TypingDots>
                 opacity:
                     0.25 +
                     0.75 *
-                        Curves.easeInOutCubic.transform(
+                        Motion.swell.transform(
                           1 - ((_controller.value + i / 3) % 1 * 2 - 1).abs(),
                         ),
                 child: Container(

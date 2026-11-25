@@ -12,6 +12,10 @@ import '../util/motion.dart';
 import '../util/platform.dart';
 import 'measure_size.dart';
 
+/// How long a finger rests on a card before it lifts for dragging: a gesture
+/// threshold, not a transition.
+const Duration _kLongPressLift = Duration(milliseconds: 220);
+
 /// The result of one drag reorder.
 ///
 /// The layout owns these gesture facts; consumers should not have to infer the
@@ -1023,7 +1027,7 @@ class AnimatedMasonryState extends State<AnimatedMasonry>
     }
     return LongPressDraggable<String>(
       data: note.id,
-      delay: const Duration(milliseconds: 220),
+      delay: _kLongPressLift,
       feedback: feedback,
       childWhenDragging: ghost,
       onDragStarted: () => _onDragStarted(note.id),
@@ -1432,8 +1436,8 @@ class _DragFeedback extends StatelessWidget {
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOut,
+      duration: Motion.fast,
+      curve: Motion.standard,
       // The lifted card is repositioned on every pointer sample. Without a
       // boundary of its own, each of those moves repaints the whole card *and*
       // its blurred shadow; with one, the rasterized layer is simply moved.
@@ -1454,8 +1458,8 @@ class _DragFeedback extends StatelessWidget {
                       borderRadius: kBorderRadius,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
+                          horizontal: kSpaceMd,
+                          vertical: kSpaceInline,
                         ),
                         child: Text(
                           label!,

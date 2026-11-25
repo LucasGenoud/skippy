@@ -84,7 +84,7 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 6),
+      padding: const EdgeInsets.only(top: kSpaceLg, bottom: kSpaceInline),
       child: Text(
         title,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -152,7 +152,7 @@ class _KeyCap extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: kBadgePadding,
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
         borderRadius: kBorderRadius,

@@ -19,7 +19,7 @@ class PaletteRow extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _Swatch(color: entry.light, icon: Icons.light_mode_outlined),
-          const SizedBox(width: 6),
+          const SizedBox(width: kSpaceInline),
           _Swatch(color: entry.dark, icon: Icons.dark_mode_outlined),
         ],
       ),
@@ -259,7 +259,7 @@ class _ShadeEditorState extends State<_ShadeEditor> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: kSpaceMd),
         Wrap(
           spacing: 8,
           runSpacing: 8,

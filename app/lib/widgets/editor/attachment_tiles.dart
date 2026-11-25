@@ -299,7 +299,7 @@ class UploadingAttachmentTile extends StatelessWidget {
                 size: 20,
                 color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: kSpaceSm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +369,7 @@ class FileAttachmentTile extends StatelessWidget {
                   size: 20,
                   color: scheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: kSpaceSm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

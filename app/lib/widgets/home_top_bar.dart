@@ -249,69 +249,74 @@ class HomeTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: kSpaceLg),
-          // Twice the title's share, so the field grows with the window.
-          Flexible(
+          // Twice the title's share, so the field grows with the window. The
+          // slot takes its whole share even once the field stops growing, so
+          // the actions after it stay at the end of the bar.
+          Expanded(
             flex: 2,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _searchWidth),
-              child: _SearchPill(
-                focusNode: focusNode,
-                height: _pillHeight,
-                // The pill's buttons hover smaller than a toolbar's, keeping
-                // their shape off its edges.
-                child: IconButtonTheme(
-                  data: IconButtonThemeData(
-                    style: IconButton.styleFrom(
-                      fixedSize: const Size.square(_pillButtonSize),
-                      minimumSize: const Size.square(_pillButtonSize),
-                      padding: EdgeInsets.zero,
-                    ).merge(IconButtonTheme.of(context).style),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: kSpaceMd),
-                      Icon(
-                        Icons.search,
-                        color: scheme.onSurfaceVariant,
-                        size: 18,
-                      ),
-                      const SizedBox(width: kSpaceSm),
-                      Expanded(
-                        child: TextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          onChanged: onQuery,
-                          textInputAction: TextInputAction.search,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          decoration: InputDecoration(
-                            hintText: 'Search',
-                            hintStyle: TextStyle(
-                              color: scheme.onSurfaceVariant,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _searchWidth),
+                child: _SearchPill(
+                  focusNode: focusNode,
+                  height: _pillHeight,
+                  // The pill's buttons hover smaller than a toolbar's, keeping
+                  // their shape off its edges.
+                  child: IconButtonTheme(
+                    data: IconButtonThemeData(
+                      style: IconButton.styleFrom(
+                        fixedSize: const Size.square(_pillButtonSize),
+                        minimumSize: const Size.square(_pillButtonSize),
+                        padding: EdgeInsets.zero,
+                      ).merge(IconButtonTheme.of(context).style),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: kSpaceMd),
+                        Icon(
+                          Icons.search,
+                          color: scheme.onSurfaceVariant,
+                          size: 18,
+                        ),
+                        const SizedBox(width: kSpaceSm),
+                        Expanded(
+                          child: TextField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            onChanged: onQuery,
+                            textInputAction: TextInputAction.search,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                            decoration: InputDecoration(
+                              hintText: 'Search',
+                              hintStyle: TextStyle(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                              border: InputBorder.none,
+                              isCollapsed: true,
                             ),
-                            border: InputBorder.none,
-                            isCollapsed: true,
                           ),
                         ),
-                      ),
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: controller,
-                        builder: (context, value, _) => _fadeScale(
-                          child: value.text.isEmpty
-                              ? const SizedBox.shrink()
-                              : AppIconButton(
-                                  icon: const Icon(Icons.close, size: 18),
-                                  tooltip: 'Clear search',
-                                  onPressed: () {
-                                    controller.clear();
-                                    onQuery('');
-                                  },
-                                ),
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: controller,
+                          builder: (context, value, _) => _fadeScale(
+                            child: value.text.isEmpty
+                                ? const SizedBox.shrink()
+                                : AppIconButton(
+                                    icon: const Icon(Icons.close, size: 18),
+                                    tooltip: 'Clear search',
+                                    onPressed: () {
+                                      controller.clear();
+                                      onQuery('');
+                                    },
+                                  ),
+                          ),
                         ),
-                      ),
-                      _filtersControl(),
-                      if (semanticAvailable) _semanticControl(scheme),
-                      const SizedBox(width: _pillButtonInset),
-                    ],
+                        _filtersControl(),
+                        if (semanticAvailable) _semanticControl(scheme),
+                        const SizedBox(width: _pillButtonInset),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -374,7 +379,7 @@ class HomeTopBar extends StatelessWidget {
                 onPressed: () =>
                     Navigator.of(context).push(SettingsScreen.route()),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: kSpaceInline),
               _UserAvatarMenu(onShareView: onShareView),
               const SizedBox(width: kSpaceXs),
             ],
@@ -818,8 +823,8 @@ class _TitleRoll extends StatelessWidget {
 Widget _fadeScale({required Widget child}) {
   return AnimatedSwitcher(
     duration: Motion.fast,
-    switchInCurve: Curves.easeOut,
-    switchOutCurve: Curves.easeIn,
+    switchInCurve: Motion.standard,
+    switchOutCurve: Motion.standard,
     transitionBuilder: (child, animation) => FadeTransition(
       opacity: animation,
       child: ScaleTransition(scale: animation, child: child),
@@ -1219,7 +1224,7 @@ class _SyncBadgeState extends State<_SyncBadge>
     with SingleTickerProviderStateMixin {
   late final AnimationController _spin = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1100),
+    duration: Motion.pulse,
   );
 
   @override

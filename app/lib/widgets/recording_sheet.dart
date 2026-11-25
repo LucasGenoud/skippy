@@ -4,7 +4,15 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 
+import '../util/motion.dart';
 import 'audio_recorder.dart';
+
+/// How quickly the mic button follows the input level: fast enough to track
+/// speech, which a transition token would smooth away.
+const Duration _kMeterFollow = Duration(milliseconds: 90);
+
+/// Height of the sheet's Cancel and Stop buttons: a full touch target.
+const double _kActionHeight = 48;
 
 /// Full-focus recording modal: a mic that pulses and throws off ripples with
 /// your voice, a live waveform, and a running timer. Resolves with the encoded
@@ -32,7 +40,7 @@ class _RecordingSheetState extends State<RecordingSheet>
   final AudioRecorder _recorder = AudioRecorder();
   late final AnimationController _pulse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1800),
+    duration: Motion.pulse,
   )..repeat();
 
   StreamSubscription<double>? _ampSub;
@@ -190,7 +198,7 @@ class _RecordingSheetState extends State<RecordingSheet>
               opacity: _ready
                   ? 0.3 +
                         0.7 *
-                            Curves.easeInOutCubic.transform(
+                            Motion.swell.transform(
                               1 - (_pulse.value * 2 - 1).abs(),
                             )
                   : 0.3,
@@ -228,7 +236,7 @@ class _RecordingSheetState extends State<RecordingSheet>
             child: OutlinedButton(
               onPressed: _stopping ? null : _cancel,
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                minimumSize: const Size.fromHeight(_kActionHeight),
               ),
               child: const Text('Cancel'),
             ),
@@ -238,7 +246,7 @@ class _RecordingSheetState extends State<RecordingSheet>
             child: FilledButton.icon(
               onPressed: (_ready && !_stopping) ? _stop : null,
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                minimumSize: const Size.fromHeight(_kActionHeight),
               ),
               icon: _stopping
                   ? const SizedBox(
@@ -284,8 +292,8 @@ class _MicPulse extends StatelessWidget {
               children: [
                 for (var i = 0; i < 3; i++) _ripple(scheme, i, live),
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 90),
-                  curve: Curves.easeOut,
+                  duration: _kMeterFollow,
+                  curve: Motion.standard,
                   width: 88 + live * 18,
                   height: 88 + live * 18,
                   decoration: BoxDecoration(

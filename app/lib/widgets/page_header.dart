@@ -45,7 +45,7 @@ class PageHeader extends StatelessWidget {
                 if (title != null)
                   Text(title, style: theme.textTheme.headlineSmall),
                 if (subtitle != null) ...[
-                  if (title != null) const SizedBox(height: 2),
+                  if (title != null) const SizedBox(height: kSpaceLineGap),
                   AnimatedSwitcher(
                     duration: Motion.fast,
                     switchInCurve: Motion.standard,

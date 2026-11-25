@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 
 /// Shared motion tokens so every animation in the app feels like one system.
 /// Two rules keep it coherent: durations stay short (no transition over [slow]
-/// = 250ms, animations should feel snappy, never slow; [celebration] is the one
-/// decorative exception) and easing is always a cubic bezier ([emphasized] or
-/// [standard]), never linear. Reach for a token rather than a bare
+/// = 250ms, animations should feel snappy, never slow; [celebration] and the
+/// looping [pulse] are the exceptions, since nothing waits on them) and easing
+/// is never linear. Transitions ease with [emphasized] or [standard]; the
+/// remaining curves each have one job: [pop] for a small glyph landing,
+/// [accelerate] for leaving, [swell] for a loop's rise and fall, [flourish]
+/// for the checkbox tick. Reach for a token rather than a bare
 /// `Duration`/`Curve` so a transition can't drift off-system.
 class Motion {
   const Motion._();
@@ -27,12 +30,33 @@ class Motion {
   /// about how quickly the app responds. Skipped outright under reduce motion.
   static const Duration celebration = Duration(milliseconds: 1100);
 
+  /// One cycle of a looping indicator: a loading shimmer, a pulse while
+  /// something works, the recording ripple, typing dots, the sync spinner.
+  /// One rhythm for all of them, calm enough to sit on screen for seconds.
+  static const Duration pulse = Duration(milliseconds: 1400);
+
   /// Material 3 "emphasized" easing, lively but controlled. The default for
   /// enter/exit and anything that grows or morphs.
   static const Curve emphasized = Cubic(0.2, 0.0, 0.0, 1.0);
 
   /// A calmer ease-out cubic, for hovers, fades, and moves in place.
   static const Curve standard = Curves.easeOutCubic;
+
+  /// A small glyph landing with a slight overshoot: a pin, a swatch's check,
+  /// a chosen icon. Only for things small enough that the overshoot reads as
+  /// a tap answered, never for a surface or a reflow.
+  static const Curve pop = Curves.easeOutBack;
+
+  /// Leaving: starts slow and gets out of the way, the counterpart of
+  /// [standard] for an exit that should not linger.
+  static const Curve accelerate = Curves.easeIn;
+
+  /// The rise and fall inside a loop, so a pulse turns around softly instead
+  /// of bouncing off its peaks.
+  static const Curve swell = Curves.easeInOutCubic;
+
+  /// The checkbox tick's springy settle, the one place a bounce is wanted.
+  static const Curve flourish = Curves.elasticOut;
 
   /// For motion that can be retargeted or handed off from a finger: a moving
   /// card, a released note. A tween restarted midway jumps in speed; a spring

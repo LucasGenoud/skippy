@@ -13,7 +13,7 @@ Future<void> _showImageViewer(
   barrierDismissible: true,
   barrierLabel: 'Close image',
   barrierColor: Colors.black,
-  transitionDuration: const Duration(milliseconds: 180),
+  transitionDuration: Motion.base,
   transitionBuilder: (context, animation, secondaryAnimation, child) =>
       FadeTransition(
         opacity: animation.drive(CurveTween(curve: Motion.standard)),

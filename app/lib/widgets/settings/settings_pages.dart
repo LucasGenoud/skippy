@@ -96,7 +96,13 @@ class SettingsPageBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
-        if (titled) PageHeader(title: page.title),
+        // Rows and group labels below sit [kSpaceLg] in; the header's own
+        // inset is set for the card grid, [kSpaceSm] short of that.
+        if (titled)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: kSpaceSm),
+            child: PageHeader(title: page.title),
+          ),
         ..._rows(context),
       ],
     );

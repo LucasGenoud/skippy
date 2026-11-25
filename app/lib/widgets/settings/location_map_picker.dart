@@ -197,7 +197,7 @@ class _LocationMapPickerState extends State<LocationMapPicker> {
                     tooltip: 'Zoom in',
                     onPressed: () => _zoomBy(1),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: kSpaceInline),
                   _MapButton(
                     icon: Icons.remove,
                     tooltip: 'Zoom out',
@@ -214,10 +214,7 @@ class _LocationMapPickerState extends State<LocationMapPicker> {
                 child: ColoredBox(
                   color: scheme.surface.withValues(alpha: 0.72),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
+                    padding: kChipPadding,
                     child: Text(
                       _attribution,
                       textAlign: TextAlign.right,

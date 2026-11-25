@@ -235,7 +235,7 @@ class _ReindexProgress extends StatelessWidget {
             child: LinearProgressIndicator(value: value, minHeight: 6),
           ),
           if (p != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: kSpaceInline),
             Text(
               '${p.done} / ${p.total} embedded',
               style: Theme.of(

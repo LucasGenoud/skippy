@@ -915,9 +915,9 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
   ///
   /// The windows overlap by a quarter, which is enough that the slot is never
   /// empty but not so much that the two are both solid at once.
-  static const Curve _swapOut = Interval(0, 0.55, curve: Curves.easeIn);
-  static const Curve _swapIn = Interval(0.3, 1, curve: Curves.easeOut);
-  static const Curve _swapInScale = Interval(0.3, 1, curve: Curves.easeOutBack);
+  static const Curve _swapOut = Interval(0, 0.55, curve: Motion.accelerate);
+  static const Curve _swapIn = Interval(0.3, 1, curve: Motion.standard);
+  static const Curve _swapInScale = Interval(0.3, 1, curve: Motion.pop);
 
   /// Longer than [_controlFade] because the two halves run in sequence rather
   /// than together; each still gets well under a tenth of a second.
@@ -1643,7 +1643,7 @@ class _AnimatedChecklistState extends State<AnimatedChecklist> {
       onTap: _toggleChecked,
       borderRadius: kBorderRadius,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: kSpaceMd),
         child: Row(
           children: [
             const SizedBox(width: kSpaceXs),

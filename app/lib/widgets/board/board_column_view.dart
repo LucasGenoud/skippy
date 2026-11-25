@@ -481,7 +481,7 @@ class _SelectColumnButton extends StatelessWidget {
         onPressed: onPressed,
         style: TextButton.styleFrom(
           visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: kSpaceSm),
           minimumSize: const Size(0, 30),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           foregroundColor: all ? scheme.onPrimaryContainer : scheme.onSurface,
@@ -788,7 +788,7 @@ class _CountChip extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(minWidth: 40),
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: kBadgePadding,
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: kBorderRadius,

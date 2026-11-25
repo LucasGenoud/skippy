@@ -351,7 +351,7 @@ class _IndexRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: kRowGap),
       child: _SelectableRow(
         selected: selected,
         onTap: onTap,

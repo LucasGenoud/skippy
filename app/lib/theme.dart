@@ -59,6 +59,31 @@ const BorderRadius kCheckBorderRadius = BorderRadius.all(
 /// from slowly drifting into slightly different spacings and icon sizes.
 const double kSpaceXs = 4;
 const double kSpaceSm = 8;
+
+/// Between an icon and its label inside a chip or a compact row, and between
+/// two closely tied lines (an error under the text it interrupts).
+const double kSpaceInline = 6;
+
+/// Between a line and the smaller line under it that qualifies it: a title
+/// and its subtitle, a label and its hint.
+const double kSpaceLineGap = 2;
+
+/// Half the gap between two selectable rows in a list (the sidebar, the
+/// settings index, the collections list), so their highlights never touch.
+const double kRowGap = 2;
+
+/// Inside a chip: a reminder, a label, a collection tag. Tighter than the
+/// grid vertically, because a chip's line height already carries its air.
+const EdgeInsets kChipPadding = EdgeInsets.symmetric(
+  horizontal: kSpaceSm,
+  vertical: 3,
+);
+
+/// Inside a count badge or a key cap, which sit inline with text.
+const EdgeInsets kBadgePadding = EdgeInsets.symmetric(
+  horizontal: kSpaceInline,
+  vertical: 2,
+);
 const double kSpaceMd = 12;
 const double kSpaceLg = 16;
 const double kCompactIconSize = 20;
@@ -78,8 +103,10 @@ const double kModalHeaderGap = 16;
 
 /// The three insets a dialog is built from, shared with the hand-rolled sheets
 /// through `ModalHeader`/`ModalFooter` so a sheet and a dialog showing the same
-/// thing are laid out identically. The action row sits a touch tighter because
-/// a text button brings padding of its own.
+/// thing are laid out identically. The action row's buttons end on the
+/// content edge, like a `ModalFooter`'s: a filled button's box would otherwise
+/// hang past the body above it. Only the bottom is tighter, since a button
+/// brings height of its own.
 const EdgeInsets kModalTitlePadding = EdgeInsets.fromLTRB(
   kModalInset,
   kModalInset,
@@ -94,9 +121,9 @@ const EdgeInsets kModalContentPadding = EdgeInsets.fromLTRB(
 );
 
 const EdgeInsets kModalActionsPadding = EdgeInsets.fromLTRB(
-  kModalInset - kSpaceSm,
+  kModalInset,
   0,
-  kModalInset - kSpaceSm,
+  kModalInset,
   kModalInset - kSpaceSm,
 );
 

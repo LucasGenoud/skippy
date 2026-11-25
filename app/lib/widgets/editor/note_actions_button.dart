@@ -350,7 +350,7 @@ class _NoteActionsSheet extends StatelessWidget {
                   child: Row(
                     children: [
                       for (final (i, action) in quick.indexed) ...[
-                        if (i > 0) const SizedBox(width: 6),
+                        if (i > 0) const SizedBox(width: kSpaceInline),
                         Expanded(child: _QuickAction(action: action)),
                       ],
                     ],
@@ -432,12 +432,15 @@ class _QuickAction extends StatelessWidget {
         child: InkWell(
           onTap: () => Navigator.pop(context, action.value),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 12, 4, 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: kSpaceXs,
+              vertical: kSpaceMd,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(action.icon, color: color, size: 22),
-                const SizedBox(height: 6),
+                const SizedBox(height: kSpaceInline),
                 Text(
                   action.label,
                   maxLines: 1,

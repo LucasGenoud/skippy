@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
 import '../util/motion.dart';
 
 /// The flourish for finishing a checklist: confetti thrown out over the list,
@@ -121,7 +122,10 @@ class _AllDonePill extends StatelessWidget {
     return AnimatedBuilder(
       animation: progress,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpaceLg,
+          vertical: kSpaceSm,
+        ),
         decoration: BoxDecoration(
           color: scheme.primaryContainer,
           borderRadius: BorderRadius.circular(999),
@@ -141,7 +145,7 @@ class _AllDonePill extends StatelessWidget {
               size: 18,
               color: scheme.onPrimaryContainer,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpaceInline),
             Text(
               'All done',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -162,7 +166,7 @@ class _AllDonePill extends StatelessWidget {
             ? 1.0
             : 1 - (t - 0.72) / 0.28;
         final scale = t < 0.25
-            ? lerpDouble(0.7, 1.0, Curves.easeOutBack.transform(t / 0.25))!
+            ? lerpDouble(0.7, 1.0, Motion.pop.transform(t / 0.25))!
             : lerpDouble(1.0, 0.94, ((t - 0.25) / 0.75).clamp(0.0, 1.0))!;
         return Opacity(
           opacity: opacity.clamp(0.0, 1.0),
@@ -223,7 +227,7 @@ class _ConfettiPainter extends CustomPainter {
     final origin = size.center(Offset.zero);
     // Out fast, then coasting: the outward travel eases off while gravity
     // keeps accumulating, which is what bends each path into an arc.
-    final travel = Curves.easeOutCubic.transform(t);
+    final travel = Motion.standard.transform(t);
     final gravity = t * t;
     final fade = t < 0.55 ? 1.0 : 1 - (t - 0.55) / 0.45;
     // How far the burst throws, in pixels. Clamped rather than taken straight

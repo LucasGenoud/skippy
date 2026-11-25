@@ -21,7 +21,7 @@ class _TranscribingIndicatorState extends State<TranscribingIndicator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1400),
+    duration: Motion.pulse,
   )..repeat();
 
   /// Transcription normally takes seconds. A note stuck in `pending` (say,
@@ -64,7 +64,7 @@ class _TranscribingIndicatorState extends State<TranscribingIndicator>
               color: scheme.primary,
               height: widget.compact ? 14 : 18,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: kSpaceSm),
             Text(
               'Transcribing…',
               style: theme.textTheme.bodySmall?.copyWith(
@@ -220,7 +220,7 @@ class TranscriptFailed extends StatelessWidget {
             onPressed: onRetry,
             style: TextButton.styleFrom(
               visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: kSpaceSm),
             ),
             child: const Text('Retry'),
           ),

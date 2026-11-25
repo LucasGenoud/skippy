@@ -202,8 +202,8 @@ class _StageEditorDialogState extends State<StageEditorDialog> {
           Text('Colour', style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: kSpaceSm),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: kSpaceSm,
+            runSpacing: kSpaceSm,
             children: [
               _ColorChoice(
                 color: null,

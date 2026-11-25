@@ -39,7 +39,10 @@ class _PlaybackUnavailable extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpaceMd,
+        vertical: kSpaceSm,
+      ),
       decoration: BoxDecoration(
         color: scheme.onSurface.withValues(alpha: 0.06),
         borderRadius: kBorderRadius,
@@ -171,7 +174,10 @@ class _AudioPlayerBarState extends State<_NativeAudioPlayerBar> {
     final scheme = Theme.of(context).colorScheme;
     if (_error != null) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpaceMd,
+          vertical: kSpaceSm,
+        ),
         decoration: BoxDecoration(
           color: scheme.errorContainer,
           borderRadius: kBorderRadius,

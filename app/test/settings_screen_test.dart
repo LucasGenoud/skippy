@@ -96,6 +96,18 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 
+  // The open page's title starts where its group labels do, not 8px left
+  // of everything under it.
+  testWidgets('a wide window lines the page title up with its content', (
+    tester,
+  ) async {
+    await pumpSettings(tester, FakeApi(), size: const Size(1200, 1600));
+
+    final title = tester.getTopLeft(find.text('Account').last).dx;
+    final group = tester.getTopLeft(find.text('Danger zone')).dx;
+    expect(title, moreOrLessEquals(group, epsilon: 1));
+  });
+
   testWidgets('settings shows client and server build versions', (
     tester,
   ) async {

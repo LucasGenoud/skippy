@@ -35,7 +35,11 @@ class NoteLinkPicker extends StatelessWidget {
           constraints: const BoxConstraints(maxHeight: _pickerMaxHeight),
           child: notes.isEmpty
               ? Padding(
-                  padding: const EdgeInsets.all(14),
+                  // On the rows' inset.
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kSpaceLg,
+                    vertical: kSpaceMd,
+                  ),
                   child: Text(
                     query.trim().isEmpty
                         ? 'No notes to link to'
@@ -56,8 +60,8 @@ class NoteLinkPicker extends StatelessWidget {
                         onTap: () => onPick(note),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 9,
+                            horizontal: kSpaceLg,
+                            vertical: kSpaceSm,
                           ),
                           child: Row(
                             children: [
@@ -127,7 +131,7 @@ class NoteLinksSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label, style: sectionLabelStyle(theme)),
-              const SizedBox(height: 6),
+              const SizedBox(height: kSpaceInline),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,

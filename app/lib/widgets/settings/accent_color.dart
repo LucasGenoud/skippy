@@ -40,8 +40,8 @@ class AccentColorTile extends StatelessWidget {
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 12),
         child: Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: kSpaceSm,
+          runSpacing: kSpaceSm,
           children: [
             for (final color in kAccentPresets)
               _AccentDot(
@@ -108,7 +108,7 @@ class _AccentDot extends StatelessWidget {
         ),
         child: AnimatedSwitcher(
           duration: Motion.fast,
-          switchInCurve: Curves.easeOutBack,
+          switchInCurve: Motion.pop,
           switchOutCurve: Motion.standard,
           transitionBuilder: (child, animation) =>
               ScaleTransition(scale: animation, child: child),

@@ -73,7 +73,7 @@ class ProbeRow extends StatelessWidget {
                         size: 18,
                         color: result.ok ? scheme.primary : scheme.error,
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: kSpaceInline),
                       Expanded(
                         child: Text(
                           result.ok ? successText : (result.error ?? 'failed'),

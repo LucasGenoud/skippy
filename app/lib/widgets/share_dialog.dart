@@ -9,10 +9,14 @@ import '../util/snack.dart';
 import 'form_dialog.dart';
 import 'public_link_dialog.dart';
 import 'form_error_banner.dart';
+import 'row_aligned_field.dart';
 import 'user_avatar.dart';
 
 /// Collaborator management for a note. Owners add/remove people by email;
 /// collaborators can see the roster and leave.
+/// Collaborators' avatars in the dialog.
+const double _avatarRadius = 16;
+
 class ShareDialog extends StatefulWidget {
   final String noteId;
   const ShareDialog({super.key, required this.noteId});
@@ -90,10 +94,11 @@ class _ShareDialogState extends State<ShareDialog> {
           ListTile(
             contentPadding: kModalRowPadding,
             shape: kRoundedShape,
+            horizontalTitleGap: avatarTitleGap(_avatarRadius),
             leading: UserAvatar(
               userId: note.owner?.id,
               version: note.owner?.avatar,
-              radius: 16,
+              radius: _avatarRadius,
               fallback: Text(
                 (note.owner?.name ?? '?').substring(0, 1).toUpperCase(),
               ),
@@ -107,10 +112,11 @@ class _ShareDialogState extends State<ShareDialog> {
               contentPadding: kModalRowPadding,
               shape: kRoundedShape,
               dense: true,
+              horizontalTitleGap: avatarTitleGap(_avatarRadius),
               leading: UserAvatar(
                 userId: collaborator.id,
                 version: collaborator.avatar,
-                radius: 16,
+                radius: _avatarRadius,
                 backgroundColor: scheme.secondaryContainer,
                 fallback: Text(collaborator.name.substring(0, 1).toUpperCase()),
               ),
@@ -145,10 +151,10 @@ class _ShareDialogState extends State<ShareDialog> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: 'Add people by email',
-                      isDense: true,
-                      prefixIcon: Icon(Icons.person_add_alt, size: 20),
+                    decoration: rowAlignedFieldDecoration(
+                      hint: 'Add people by email',
+                      icon: Icons.person_add_alt,
+                      indent: kModalRowPadding.left,
                     ),
                     onSubmitted: (_) => _add(),
                   ),

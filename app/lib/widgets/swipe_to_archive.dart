@@ -281,7 +281,7 @@ class _ArchiveReveal extends StatelessWidget {
     // exploratory drag and then warms decisively over the last stretch: a
     // linear ramp is halfway to the accent by the halfway mark, which reads as
     // armed well before releasing would do anything.
-    final warmth = Curves.easeInCubic.transform(progress);
+    final warmth = Motion.accelerate.transform(progress);
     final panel = Color.lerp(
       scheme.secondaryContainer,
       scheme.primaryContainer,

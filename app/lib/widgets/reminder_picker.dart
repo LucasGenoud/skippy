@@ -427,7 +427,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(preset.label),
-        const SizedBox(height: 2),
+        const SizedBox(height: kSpaceLineGap),
         Text(
           _whenLabel(preset.at),
           style: theme.textTheme.bodySmall?.copyWith(
@@ -484,7 +484,7 @@ class _ReminderSheetState extends State<_ReminderSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text('Quick add', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 10),
+        const SizedBox(height: kSpaceMd),
         _presets(theme, scheme, presets),
         const SizedBox(height: kSpaceMd),
         OutlinedButton.icon(
