@@ -35,6 +35,7 @@ import '../widgets/audio_player.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/editor/add_to_home_screen_help.dart';
 import '../widgets/editor/attachment_tiles.dart';
+import '../widgets/editor/compose_bar_reveal.dart';
 import '../widgets/editor/editor_bottom_bar.dart';
 import '../widgets/editor/editor_morph.dart';
 import '../widgets/editor/editor_resize.dart';
@@ -1616,7 +1617,7 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
       // Formatting accessory bar while writing markdown. The tap region stops
       // a click on it from counting as a click away from the body.
-      AnimatedReveal(
+      ComposeBarReveal(
         child:
             _kind == NoteKind.markdown &&
                 _formatBarShown &&
@@ -1626,9 +1627,19 @@ class _EditorScreenState extends State<EditorScreen> {
             ? TextFieldTapRegion(
                 child: Focus(
                   focusNode: _formatBarFocus,
-                  child: MarkdownToolbar(
-                    controller: _contentController,
-                    focusNode: _contentFocus,
+                  child: Padding(
+                    // Lined up with the bottom bar's buttons, clear of its
+                    // hairline below.
+                    padding: const EdgeInsets.fromLTRB(
+                      kSpaceMd,
+                      kSpaceXs,
+                      kSpaceMd,
+                      kSpaceSm,
+                    ),
+                    child: MarkdownToolbar(
+                      controller: _contentController,
+                      focusNode: _contentFocus,
+                    ),
                   ),
                 ),
               )

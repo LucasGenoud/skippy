@@ -232,6 +232,13 @@ Color codeFillColor(ColorScheme scheme) => scheme.onSurface.withValues(
   alpha: scheme.brightness == Brightness.light ? 0.06 : 0.09,
 );
 
+/// The tray behind the editor's formatting buttons: a trough in the note,
+/// drawn as a veil so it recesses into every note colour. Fainter than
+/// [codeFillColor], since a button's hover shape has to read on top of it.
+Color toolbarTrayColor(ColorScheme scheme) => scheme.onSurface.withValues(
+  alpha: scheme.brightness == Brightness.light ? 0.04 : 0.06,
+);
+
 /// The ink a note's background pattern is drawn in: faint enough that text
 /// over it keeps its contrast, on any note colour.
 Color notePatternInk(ColorScheme scheme) => scheme.onSurface.withValues(

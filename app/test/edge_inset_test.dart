@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:skippy/models/note.dart';
 import 'package:skippy/state/notes_store.dart';
+import 'package:skippy/widgets/markdown_toolbar.dart';
 import 'package:skippy/widgets/masonry.dart';
 
 import 'fake_api.dart';
+import 'finders.dart';
 import 'notes_store_test.dart' show serverNote;
 import 'widget_test.dart' show homeApp, flushTimers;
 
@@ -126,6 +129,31 @@ void main() {
               .first,
         );
         await tester.pumpAndSettle();
+        expect(_flushButtons(tester), isEmpty);
+        await flushTimers(tester);
+      }, variant: desktop);
+
+      testWidgets('in the markdown toolbar', (tester) async {
+        api.notes['md'] = serverNote(
+          'md',
+          title: 'Plan',
+          kind: NoteKind.markdown,
+        );
+        await store.load();
+        await showHome(tester);
+        await tester.tap(
+          find
+              .descendant(
+                of: find.byType(AnimatedMasonry),
+                matching: find.text('Plan'),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(findAction('Edit markdown').last);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MarkdownToolbar), findsOneWidget);
         expect(_flushButtons(tester), isEmpty);
         await flushTimers(tester);
       }, variant: desktop);

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+
 /// Formatting accessory bar for markdown notes: each button inserts the
 /// matching markdown around the current selection (or at the caret), so
 /// headings, bold, lists and links are one tap away instead of remembering
@@ -12,6 +14,14 @@ class MarkdownToolbar extends StatelessWidget {
   final FocusNode? focusNode;
 
   const MarkdownToolbar({super.key, required this.controller, this.focusNode});
+
+  /// A button's hover shape, inside the tray.
+  static const double _buttonSize = 36;
+
+  /// Space between the tray's edge and the buttons' hover shapes.
+  static const double _inset = kSpaceXs;
+
+  static const double _dividerHeight = 16;
 
   ({int start, int end}) _range() {
     final sel = controller.selection;
@@ -101,14 +111,21 @@ class MarkdownToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     Widget btn(String tooltip, Widget icon, VoidCallback onTap) => IconButton(
       tooltip: tooltip,
       onPressed: onTap,
-      iconSize: 20,
-      visualDensity: VisualDensity.compact,
+      iconSize: kCompactIconSize,
       color: scheme.onSurfaceVariant,
+      style: IconButton.styleFrom(
+        fixedSize: const Size.square(_buttonSize),
+        minimumSize: const Size.square(_buttonSize),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+      ),
       icon: icon,
     );
 
@@ -116,62 +133,96 @@ class MarkdownToolbar extends StatelessWidget {
       'Heading $level',
       Text(
         'H$level',
-        style: TextStyle(
+        style: theme.textTheme.titleSmall?.copyWith(
           fontWeight: FontWeight.w700,
-          fontSize: 15,
           color: scheme.onSurfaceVariant,
         ),
       ),
       () => _lines((line) => _heading(level, line)),
     );
 
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: scheme.outlineVariant)),
-      ),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        children: [
-          heading(1),
-          heading(2),
-          heading(3),
-          btn('Bold', const Icon(Icons.format_bold), () => _wrap('**', '**')),
-          btn('Italic', const Icon(Icons.format_italic), () => _wrap('_', '_')),
-          btn(
-            'Strikethrough',
-            const Icon(Icons.format_strikethrough),
-            () => _wrap('~~', '~~'),
+    // A short hairline between groups: headings, inline, blocks, link.
+    final divider = Container(
+      width: 1,
+      height: _dividerHeight,
+      margin: const EdgeInsets.symmetric(horizontal: kSpaceXs),
+      color: hairlineColor(scheme),
+    );
+
+    // The tray hugs its buttons and scrolls sideways when they outgrow it.
+    // Buttons keep [_inset] from its edges and its corner is theirs plus that
+    // inset, so their hover shapes sit concentric inside it.
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: toolbarTrayColor(scheme),
+          borderRadius: kCardBorderRadius,
+        ),
+        child: ClipRRect(
+          borderRadius: kCardBorderRadius,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(_inset),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                heading(1),
+                heading(2),
+                heading(3),
+                divider,
+                btn(
+                  'Bold',
+                  const Icon(Icons.format_bold),
+                  () => _wrap('**', '**'),
+                ),
+                btn(
+                  'Italic',
+                  const Icon(Icons.format_italic),
+                  () => _wrap('_', '_'),
+                ),
+                btn(
+                  'Strikethrough',
+                  const Icon(Icons.format_strikethrough),
+                  () => _wrap('~~', '~~'),
+                ),
+                btn(
+                  'Inline code',
+                  const Icon(Icons.code),
+                  () => _wrap('`', '`'),
+                ),
+                divider,
+                btn(
+                  'Code block',
+                  const Icon(Icons.data_object),
+                  () => _wrap('```\n', '\n```'),
+                ),
+                btn(
+                  'Bulleted list',
+                  const Icon(Icons.format_list_bulleted),
+                  () => _lines((line) => _togglePrefix('- ', line)),
+                ),
+                btn(
+                  'Task',
+                  const Icon(Icons.check_box_outlined),
+                  () => _lines(_toggleTask),
+                ),
+                btn(
+                  'Numbered list',
+                  const Icon(Icons.format_list_numbered),
+                  () => _lines((line) => _togglePrefix('1. ', line)),
+                ),
+                btn(
+                  'Quote',
+                  const Icon(Icons.format_quote),
+                  () => _lines((line) => _togglePrefix('> ', line)),
+                ),
+                divider,
+                btn('Link', const Icon(Icons.link), _insertLink),
+              ],
+            ),
           ),
-          btn('Inline code', const Icon(Icons.code), () => _wrap('`', '`')),
-          btn(
-            'Code block',
-            const Icon(Icons.data_object),
-            () => _wrap('```\n', '\n```'),
-          ),
-          btn(
-            'Bulleted list',
-            const Icon(Icons.format_list_bulleted),
-            () => _lines((line) => _togglePrefix('- ', line)),
-          ),
-          btn(
-            'Task',
-            const Icon(Icons.check_box_outlined),
-            () => _lines(_toggleTask),
-          ),
-          btn(
-            'Numbered list',
-            const Icon(Icons.format_list_numbered),
-            () => _lines((line) => _togglePrefix('1. ', line)),
-          ),
-          btn(
-            'Quote',
-            const Icon(Icons.format_quote),
-            () => _lines((line) => _togglePrefix('> ', line)),
-          ),
-          btn('Link', const Icon(Icons.link), _insertLink),
-        ],
+        ),
       ),
     );
   }
