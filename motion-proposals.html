@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skippy motion options</title>
+<style>
+:root {
+  --canvas: #f4f4f5; --surface: #ffffff; --trough: #e9e9ec; --edge: #e4e4e7;
+  --ink: #18181b; --muted: #71717a; --accent: #fbbc04; --on-accent: #1f1600;
+  --yellow: #fdf3d0; --blue: #e3eefb; --green: #e3f4e6; --rose: #fbe4e4;
+  --scrim: rgba(0,0,0,.45);
+  --r-card: 10px; --r-dialog: 12px; --r: 8px;
+  --emph: cubic-bezier(0.2,0,0,1); --std: cubic-bezier(0.215,0.61,0.355,1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0f0f11; --surface: #1c1c1f; --trough: #151517; --edge: #2c2c31;
+    --ink: #f4f4f5; --muted: #a1a1aa;
+    --yellow: #3a3220; --blue: #1f2a3a; --green: #1f3324; --rose: #3a2224;
+    --scrim: rgba(0,0,0,.6);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--ink);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
+h2 { font-size: 17px; margin: 0 0 4px; }
+p.lead { color: var(--muted); margin: 0 0 20px; max-width: 70ch; }
+.bar { position: sticky; top: 0; z-index: 50; background: var(--canvas);
+  padding: 10px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  border-bottom: 1px solid var(--edge); margin-bottom: 24px; }
+.seg { display: inline-flex; background: var(--trough); border-radius: var(--r); padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; color: var(--muted); font: inherit;
+  padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.btn { border: 1px solid var(--edge); background: var(--surface); color: var(--ink);
+  font: inherit; padding: 6px 12px; border-radius: var(--r); cursor: pointer; }
+.btn.accent { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+section.case { background: var(--surface); border: 1px solid var(--edge); border-radius: var(--r-dialog);
+  padding: 20px; margin-bottom: 28px; }
+.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.note { color: var(--muted); margin: 8px 0 0; min-height: 3em; max-width: 80ch; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+  background: var(--trough); color: var(--muted); margin-right: 6px; vertical-align: 1px; }
+.tag.now { background: var(--accent); color: var(--on-accent); }
+.tag.rec { background: #16a34a; color: #fff; }
+.stage { position: relative; height: 420px; background: var(--canvas); border-radius: var(--r);
+  overflow: hidden; border: 1px solid var(--edge); }
+.grid { position: absolute; inset: 16px; }
+.card { position: absolute; background: var(--surface); border: 1px solid var(--edge);
+  border-radius: var(--r-card); padding: 10px 12px; overflow: hidden; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.card h4, .ed h3 { margin: 0 0 4px; font-size: 14px; }
+.card p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.c-yellow { background: var(--yellow); } .c-blue { background: var(--blue); }
+.c-green { background: var(--green); } .c-rose { background: var(--rose); }
+.scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; pointer-events: none; }
+.scrim.on { pointer-events: auto; }
+.dlg { position: absolute; border-radius: var(--r-dialog); overflow: hidden; transform-origin: 0 0;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25); display: none; }
+.dlg .face { position: absolute; left: 0; top: 0; padding: 10px 12px; }
+.dlg .face p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.dlg .face h4 { margin: 0 0 4px; font-size: 14px; }
+.ed { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; }
+.ed .top, .ed .bottom { display: flex; gap: 6px; padding: 8px 10px; color: var(--muted); }
+.ed .top { justify-content: flex-end; }
+.ed .ico { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
+.ed .ico:hover { background: rgba(127,127,127,.15); }
+.ed .col { flex: 1; width: 100%; max-width: 380px; margin: 0 auto; padding: 0 18px; overflow: hidden; }
+.ed .col p { margin: 0 0 8px; }
+.ed .bottom { border-top: 1px solid var(--edge); }
+.side { position: absolute; left: 0; top: 0; bottom: 0; width: 150px; background: var(--surface);
+  border-right: 1px solid var(--edge); padding: 12px 8px; }
+.side button { display: block; width: 100%; text-align: left; border: 0; background: transparent;
+  color: var(--ink); font: inherit; padding: 7px 10px; border-radius: 6px; cursor: pointer; position: relative; z-index: 1; }
+.wash { position: absolute; left: 8px; right: 8px; height: 34px; border-radius: 6px; background: var(--trough);
+  transition: top 240ms var(--emph); }
+.vgrid { position: absolute; left: 166px; right: 16px; top: 16px; bottom: 0; overflow: hidden; }
+.layer { position: absolute; inset: 0; }
+kbd { font: 12px ui-monospace, monospace; background: var(--trough); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Motion options</h1>
+  <p class="lead">Three moments from the desktop app, each with the old behaviour, what is now on <code>dev</code> (uncommitted), and alternatives. Tokens match the app: 150 / 240 / 250 ms, emphasized <code>(0.2, 0, 0, 1)</code> and standard ease-out. Use slow motion to judge the shape of a move.</p>
+
+  <div class="bar">
+    <span>Speed</span>
+    <div class="seg" id="speed">
+      <button aria-pressed="true" data-v="1">1×</button>
+      <button aria-pressed="false" data-v="4">¼×</button>
+      <button aria-pressed="false" data-v="10">⅒×</button>
+    </div>
+  </div>
+
+  <!-- Case 1 -->
+  <section class="case" id="c1">
+    <h2>1. Card → editor (open and close)</h2>
+    <div class="controls"><div class="seg" data-variants></div><span style="color:var(--muted)">Click a card; click the scrim or × to close.</span></div>
+    <div class="stage"><div class="grid"></div><div class="scrim"></div><div class="dlg"><div class="face"></div><div class="ed"></div></div></div>
+    <p class="note"></p>
+  </section>
+
+  <!-- Case 2 -->
+  <section class="case" id="c2">
+    <h2>2. Floating editor ↔ full screen</h2>
+    <div class="controls"><div class="seg" data-variants></div><button class="btn accent" data-toggle>Toggle full screen</button></div>
+    <div class="stage"><div class="scrim" style="opacity:1"></div><div class="dlg c-yellow" style="display:block"><div class="ed"></div></div></div>
+    <p class="note"></p>
+  </section>
+
+  <!-- Case 3 -->
+  <section class="case" id="c3">
+    <h2>3. Switching label / collection / view</h2>
+    <div class="controls"><div class="seg" data-variants></div><span style="color:var(--muted)">Click labels in the sidebar, or press <kbd>↑</kbd><kbd>↓</kbd> while hovering.</span></div>
+    <div class="stage"><div class="side"><div class="wash"></div></div><div class="vgrid"></div></div>
+    <p class="note"></p>
+  </section>
+</main>
+
+<script>
+const EMPH = 'cubic-bezier(0.2,0,0,1)';
+const STD = 'cubic-bezier(0.215,0.61,0.355,1)';
+let speed = 1;
+const d = ms => ms * speed;
+
+document.querySelectorAll('#speed button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#speed button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  speed = +b.dataset.v;
+});
+
+const NOTES = [
+  { id: 1, t: 'Groceries', b: 'Milk, eggs, coffee beans, lemons, basil', c: 'yellow', h: 96, l: ['Home'] },
+  { id: 2, t: 'Q4 roadmap', b: 'Board view polish. Offline queue. Sharing audit. Desktop fullscreen editor.', c: '', h: 132, l: ['Work'] },
+  { id: 3, t: 'Book ideas', b: 'A city where notes stick to walls by themselves.', c: 'blue', h: 104, l: ['Ideas'] },
+  { id: 4, t: 'Call plumber', b: 'Kitchen tap drips. Thursday after 4.', c: 'rose', h: 86, l: ['Home'] },
+  { id: 5, t: 'Standup', b: 'Morph fix, view swap, tests green.', c: '', h: 92, l: ['Work'] },
+  { id: 6, t: 'Garden', b: 'Tomatoes need staking. Move the mint to a pot before it takes over.', c: 'green', h: 120, l: ['Home', 'Ideas'] },
+  { id: 7, t: 'Talk outline', b: 'Optimistic UI, durable queues, last write wins.', c: 'blue', h: 110, l: ['Work', 'Ideas'] },
+  { id: 8, t: 'Birthday', b: 'Gift for Sam: the cookbook.', c: 'yellow', h: 80, l: ['Home'] },
+  { id: 9, t: 'Bug: snap', b: 'Fullscreen shrink cuts to the end in one frame.', c: 'rose', h: 96, l: ['Work'] },
+];
+const LONG = ['Kitchen tap drips. Thursday after 4. Ask about the radiator in the hallway too, it clanks at night.',
+  'Bring the old washer as a sample. Check whether the shut-off valve under the sink still turns.',
+  'If he cannot come this week, try the shop on the corner.'];
+
+function masonry(notes, W, cols = 3, gap = 8) {
+  const cw = (W - gap * (cols - 1)) / cols, hs = Array(cols).fill(0), out = {};
+  for (const n of notes) {
+    const i = hs.indexOf(Math.min(...hs));
+    out[n.id] = { x: i * (cw + gap), y: hs[i], w: cw, h: n.h };
+    hs[i] += n.h + gap;
+  }
+  return out;
+}
+function cardEl(n, r) {
+  const el = document.createElement('div');
+  el.className = 'card' + (n.c ? ' c-' + n.c : '');
+  el.innerHTML = `<h4>${n.t}</h4><p>${n.b}</p>`;
+  Object.assign(el.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
+  el.dataset.id = n.id;
+  return el;
+}
+function rel(el, stage) {
+  const a = el.getBoundingClientRect(), b = stage.getBoundingClientRect();
+  return { x: a.left - b.left - stage.clientLeft, y: a.top - b.top - stage.clientTop, w: a.width, h: a.height };
+}
+function edHTML(n, opts = {}) {
+  return `<div class="top">${opts.full ? '<span class="ico" data-full title="Full screen">⤢</span>' : ''}<span class="ico" data-close title="Close">×</span></div>
+    <div class="col"><h3>${n.t}</h3><p>${n.b}</p>${LONG.map(p => `<p>${p}</p>`).join('')}</div>
+    <div class="bottom"><span class="ico">↶</span><span class="ico">↷</span><span class="ico">🏷</span><span class="ico">⏰</span></div>`;
+}
+function variants(section, list, onPick) {
+  const seg = section.querySelector('[data-variants]'), note = section.querySelector('.note');
+  let cur = list.find(v => v.default) || list[0];
+  for (const v of list) {
+    const b = document.createElement('button');
+    b.textContent = v.name; b.setAttribute('aria-pressed', v === cur);
+    b.onclick = () => { seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); cur = v; show(); onPick && onPick(v); };
+    seg.appendChild(b);
+  }
+  const show = () => note.innerHTML = cur.tags.map(t => `<span class="tag ${t === 'On dev now' ? 'now' : t === 'Recommended' ? 'rec' : ''}">${t}</span>`).join('') + cur.desc;
+  show();
+  return () => cur;
+}
+// Calls fn whenever el's width changes: the page may load hidden, at 0px.
+function onWidth(el, fn) {
+  let last = -1;
+  const check = () => { const w = el.clientWidth; if (w > 0 && w !== last) { last = w; fn(); } };
+  new ResizeObserver(check).observe(el);
+  addEventListener('resize', check);
+  el.closest('section').addEventListener('pointerenter', check);
+  requestAnimationFrame(check);
+}
+const rev = frames => frames.slice().reverse().map(f => ({ ...f, offset: f.offset == null ? undefined : 1 - f.offset }));
+
+/* ---------- Case 1: card -> editor ---------- */
+(() => {
+  const sec = document.getElementById('c1'), stage = sec.querySelector('.stage'), grid = sec.querySelector('.grid'),
+    scrim = sec.querySelector('.scrim'), dlg = sec.querySelector('.dlg'), face = dlg.querySelector('.face'), ed = dlg.querySelector('.ed');
+  const pick = variants(sec, [
+    { id: 'scale', name: 'Before: scale to width', tags: ['Before'],
+      desc: 'The whole editor is shrunk to the card\'s width and cropped to its height, then scaled up. Text starts as an unreadable stamp and balloons; the card stays visible under it.' },
+    { id: 'crop', name: 'Crop reveal', tags: ['On dev now'], default: true,
+      desc: 'The editor starts at 80% scale with its text column pinned to the card\'s corner, and the box uncovers more of it as it grows. Reads as the card opening up; text stays readable.' },
+    { id: 'container', name: 'Container transform', tags: ['Recommended'],
+      desc: 'Like the phone\'s NoteZoom: the card\'s own surface grows to the dialog at 1:1 (no scaling), the card face fades out over the first 30%, the editor content fades in between 30 and 75%. Source card is hidden while open. Closest to Material container transform; the web client\'s morph.ts is the same idea.' },
+    { id: 'fade', name: 'Fade + scale', tags: ['Simplest'],
+      desc: 'No link to the card: the dialog fades in from 94% in the centre. Calm and cheap, but loses the sense of where the note came from.' },
+  ]);
+  const notes = NOTES.slice(0, 9);
+  const layout = () => {
+    grid.innerHTML = '';
+    const pos = masonry(notes, grid.clientWidth);
+    notes.forEach(n => { const el = cardEl(n, pos[n.id]); el.onclick = () => open(n, el); grid.appendChild(el); });
+  };
+  let stale = false;
+  onWidth(grid, () => { if (state) { stale = true; } else { layout(); } });
+
+  let state = null;
+  function finalRect() {
+    const w = Math.min(stage.clientWidth - 48, 460), h = 330;
+    return { x: (stage.clientWidth - w) / 2, y: (stage.clientHeight - h) / 2, w, h };
+  }
+  function frames(v, c, f) {
+    const R = 12;
+    if (v === 'scale') {
+      const s = c.w / f.w;
+      return { el: [
+        { transform: `translate(${c.x - f.x}px,${c.y - f.y}px) scale(${s})`, clipPath: `inset(0 0 ${Math.max(0, f.h - c.h / s)}px 0 round ${10 / s}px)` },
+        { transform: 'none', clipPath: `inset(0 0 0 0 round ${R}px)` }],
+        fade: [{ opacity: 0 }, { opacity: 1, offset: .25 }, { opacity: 1 }] };
+    }
+    if (v === 'crop') {
+      const s = .8;
+      return { el: [
+        { transform: `translate(${c.x - f.x}px,${c.y - f.y}px) scale(${s})`, clipPath: `inset(0 ${Math.max(0, f.w - c.w / s)}px ${Math.max(0, f.h - c.h / s)}px 0 round ${10 / s}px)` },
+        { transform: 'none', clipPath: `inset(0 0 0 0 round ${R}px)` }],
+        fade: [{ opacity: 0 }, { opacity: 1, offset: .3 }, { opacity: 1 }] };
+    }
+    if (v === 'container') {
+      return { el: [
+        { left: c.x + 'px', top: c.y + 'px', width: c.w + 'px', height: c.h + 'px', borderRadius: '10px' },
+        { left: f.x + 'px', top: f.y + 'px', width: f.w + 'px', height: f.h + 'px', borderRadius: R + 'px' }],
+        face: [{ opacity: 1 }, { opacity: 0, offset: .3 }, { opacity: 0 }],
+        content: [{ opacity: 0 }, { opacity: 0, offset: .3 }, { opacity: 1, offset: .75 }, { opacity: 1 }] };
+    }
+    return { el: [{ transform: 'scale(.94)', opacity: 0, transformOrigin: '50% 50%' }, { transform: 'none', opacity: 1, transformOrigin: '50% 50%' }] };
+  }
+  function place(f, v) {
+    Object.assign(dlg.style, { display: 'block', left: f.x + 'px', top: f.y + 'px', width: f.w + 'px', height: f.h + 'px', transform: '', clipPath: '', opacity: '' });
+    Object.assign(ed.style, { width: f.w + 'px', height: f.h + 'px', opacity: '' });
+    face.style.display = v === 'container' ? 'block' : 'none';
+  }
+  function run(v, fr, closing) {
+    const dur = closing ? (v === 'fade' ? 150 : 250) : 250, easing = closing ? STD : EMPH;
+    const o = k => closing ? rev(k) : k, anims = [];
+    anims.push(dlg.animate(o(fr.el), { duration: d(dur), easing, fill: 'both' }));
+    if (fr.fade) anims.push(ed.animate(o(fr.fade), { duration: d(dur), fill: 'both' }));
+    if (fr.face) anims.push(face.animate(o(fr.face), { duration: d(dur), fill: 'both' }));
+    if (fr.content) anims.push(ed.animate(o(fr.content), { duration: d(dur), fill: 'both' }));
+    scrim.animate(closing ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 0 }, { opacity: 1 }], { duration: d(dur), easing: STD, fill: 'forwards' });
+    return Promise.all(anims.map(a => a.finished)).then(() => anims);
+  }
+  function open(n, card) {
+    if (state) return;
+    const v = pick().id, c = rel(card, stage), f = finalRect();
+    dlg.className = 'dlg' + (n.c ? ' c-' + n.c : '');
+    dlg.style.background = n.c ? '' : 'var(--surface)';
+    face.innerHTML = `<h4>${n.t}</h4><p>${n.b}</p>`; face.style.width = c.w + 'px';
+    ed.innerHTML = edHTML(n);
+    ed.querySelector('[data-close]').onclick = close;
+    place(f, v);
+    if (v === 'container') card.style.visibility = 'hidden';
+    scrim.classList.add('on');
+    const fr = frames(v, c, f);
+    state = { v, card, fr, anims: [] };
+    run(v, fr, false).then(a => { if (state) state.anims = a; });
+  }
+  function close() {
+    if (!state || state.closing) return;
+    state.closing = true;
+    const { v, card, fr } = state;
+    state.anims.forEach(a => a.cancel());
+    run(v, fr, true).then(anims => {
+      dlg.style.display = 'none'; anims.forEach(a => a.cancel());
+      card.style.visibility = ''; scrim.classList.remove('on'); state = null;
+      if (stale) { stale = false; layout(); }
+    });
+  }
+  scrim.onclick = close;
+})();
+
+/* ---------- Case 2: floating <-> full screen ---------- */
+(() => {
+  const sec = document.getElementById('c2'), stage = sec.querySelector('.stage'), dlg = sec.querySelector('.dlg'), ed = dlg.querySelector('.ed');
+  const pick = variants(sec, [
+    { id: 'old', name: 'Before', tags: ['Before'],
+      desc: 'Growing is a clip reveal around content already laid out at full size; shrinking cuts straight to the end, because the smaller size constraint arrives in the same frame as the toggle. Also left a 16px margin and rounded corners at full size.' },
+    { id: 'resize', name: 'Live resize', tags: ['On dev now', 'Recommended'], default: true,
+      desc: 'The box itself moves between the two rects every frame (both directions), corners going 12 → 0px, edge to edge. The text column (max 680 in the app) stays its width and glides to the centre, so text barely reflows.' },
+    { id: 'fade', name: 'Resize, content fades', tags: ['Alternative'],
+      desc: 'Same box move, but the content dips out over the first 40% and comes back at its final layout. Hides any reflow; costs a flash of empty surface.' },
+    { id: 'flip', name: 'FLIP scale', tags: ['Not advised'],
+      desc: 'Lays out at the end size and scales from the old rect. Cheapest per frame, but text and icons stretch visibly when the aspect ratio changes.' },
+  ]);
+  ed.innerHTML = edHTML(NOTES[3]);
+  ed.style.position = 'absolute'; ed.style.inset = '0';
+  let full = false, anim = [];
+  const rects = () => {
+    const W = stage.clientWidth, H = stage.clientHeight, w = Math.min(W - 48, 440), h = 300;
+    return { float: { x: (W - w) / 2, y: (H - h) / 2, w, h }, full: { x: 0, y: 0, w: W, h: H } };
+  };
+  const css = (r, rad) => ({ left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', borderRadius: rad + 'px' });
+  const apply = r => Object.assign(dlg.style, css(r, full ? 0 : 12));
+  onWidth(stage, () => apply(full ? rects().full : rects().float));
+  sec.querySelector('[data-toggle]').onclick = () => {
+    const R = rects(), from = full ? R.full : R.float;
+    full = !full;
+    const to = full ? R.full : R.float, v = pick().id;
+    anim.forEach(a => a.cancel()); anim = [];
+    apply(to);
+    const rFrom = full ? 12 : 0, rTo = full ? 0 : 12;
+    if (v === 'old') {
+      if (!full) return;
+      anim.push(dlg.animate([{ clipPath: `inset(${from.y}px ${to.w - from.x - from.w}px ${to.h - from.y - from.h}px ${from.x}px round 12px)` }, { clipPath: 'inset(16px round 12px)' }], { duration: d(250), easing: EMPH }));
+      return;
+    }
+    if (v === 'flip') {
+      const sx = from.w / to.w, sy = from.h / to.h;
+      anim.push(dlg.animate([{ transform: `translate(${from.x - to.x}px,${from.y - to.y}px) scale(${sx},${sy})`, borderRadius: rFrom + 'px' }, { transform: 'none', borderRadius: rTo + 'px' }], { duration: d(250), easing: EMPH }));
+      return;
+    }
+    anim.push(dlg.animate([css(from, rFrom), css(to, rTo)], { duration: d(250), easing: EMPH }));
+    if (v === 'fade') anim.push(ed.animate([{ opacity: 1 }, { opacity: 0, offset: .2 }, { opacity: 0, offset: .4 }, { opacity: 1 }], { duration: d(250), easing: STD }));
+  };
+})();
+
+/* ---------- Case 3: view switch ---------- */
+(() => {
+  const sec = document.getElementById('c3'), stage = sec.querySelector('.stage'), side = sec.querySelector('.side'),
+    wash = side.querySelector('.wash'), vgrid = sec.querySelector('.vgrid');
+  const LABELS = ['All notes', 'Work', 'Home', 'Ideas'];
+  let cur = 0, layer = null;
+  const pick = variants(sec, [
+    { id: 'old', name: 'Before: rise + sink', tags: ['Before'],
+      desc: 'Old grid slides 28px down while the new one rises 28px from below, overlapping: two grids pass through each other, and cards present in both views blink out and back in.' },
+    { id: 'through', name: 'Fade through', tags: ['On dev now'], default: true,
+      desc: 'Old grid fades out in place (150ms); the new one waits ~85ms, then fades in while rising 12px. No double exposure. Matches the web client\'s keyed popLayout swap, minus its overlap.' },
+    { id: 'axis', name: 'Shared axis', tags: ['Alternative'],
+      desc: 'Direction follows the sidebar: moving down the list the old grid leaves upward and the new one comes from below; moving up, the reverse. Gives a sense of place, at the cost of more movement.' },
+    { id: 'stagger', name: 'Fade + stagger', tags: ['Alternative'],
+      desc: 'Old grid fades; new cards pop in one by one (fade + 95% scale, 18ms apart, capped at 200ms), like the opening grid. Lively; can feel busy on every click.' },
+    { id: 'shared', name: 'Shared cards glide', tags: ['Recommended'],
+      desc: 'Cards in both views stay and glide to their new slots; cards leaving fade and shrink, new ones fade in after. Since label views overlap heavily, most of the screen moves rather than flashes, and you can follow a note between views. The masonry already springs cards between slots, so this extends existing behaviour.' },
+  ], () => render(true));
+
+  LABELS.forEach((l, i) => {
+    const b = document.createElement('button'); b.textContent = l;
+    b.onclick = () => go(i); side.appendChild(b);
+  });
+  const notesFor = i => i === 0 ? NOTES : NOTES.filter(n => n.l.includes(LABELS[i]));
+  const moveWash = () => { const b = side.querySelectorAll('button')[cur]; wash.style.top = b.offsetTop + 'px'; };
+
+  function makeLayer(list) {
+    const L = document.createElement('div'); L.className = 'layer';
+    const pos = masonry(list, vgrid.clientWidth);
+    list.forEach(n => L.appendChild(cardEl(n, pos[n.id])));
+    vgrid.appendChild(L); return L;
+  }
+  function render() { vgrid.innerHTML = ''; layer = makeLayer(notesFor(cur)); }
+
+  function go(i) {
+    if (i === cur) return;
+    const dir = i > cur ? 1 : -1; cur = i; moveWash();
+    const v = pick().id, list = notesFor(cur);
+    if (v === 'shared') return glide(list);
+    const old = layer; layer = makeLayer(list);
+    const gone = a => a.finished.then(() => old.remove());
+    if (v === 'old') {
+      gone(old.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(28px)' }], { duration: d(150), easing: STD, fill: 'forwards' }));
+      layer.animate([{ opacity: 0, transform: 'translateY(28px)' }, { opacity: 1, transform: 'none' }], { duration: d(240), easing: EMPH });
+    } else if (v === 'through' || v === 'axis') {
+      const s = v === 'axis' ? 16 : 12, out = v === 'axis' ? `translateY(${-s * dir}px)` : 'none';
+      gone(old.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: out }], { duration: d(150), easing: STD, fill: 'forwards' }));
+      layer.animate([{ transform: `translateY(${s * (v === 'axis' ? dir : 1)}px)` }, { transform: 'none' }], { duration: d(240), easing: EMPH });
+      layer.animate([{ opacity: 0 }, { opacity: 0, offset: .35, easing: STD }, { opacity: 1 }], { duration: d(240) });
+    } else if (v === 'stagger') {
+      gone(old.animate([{ opacity: 1 }, { opacity: 0 }], { duration: d(150), easing: STD, fill: 'forwards' }));
+      [...layer.children].forEach((c, k) => c.animate([{ opacity: 0, transform: 'scale(.95)' }, { opacity: 1, transform: 'none' }],
+        { duration: d(240), easing: EMPH, delay: d(60 + Math.min(200, k * 18)), fill: 'backwards' }));
+    }
+  }
+  function glide(list) {
+    const pos = masonry(list, vgrid.clientWidth), keep = new Set(list.map(n => n.id)), have = new Map();
+    [...layer.children].forEach(c => have.set(+c.dataset.id, c));
+    have.forEach((c, id) => {
+      if (keep.has(id)) return;
+      c.style.zIndex = 0;
+      c.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.95)' }], { duration: d(150), easing: STD, fill: 'forwards' }).finished.then(() => c.remove());
+    });
+    list.forEach(n => {
+      const r = pos[n.id], c = have.get(n.id);
+      if (c) {
+        const fx = parseFloat(c.style.left), fy = parseFloat(c.style.top);
+        Object.assign(c.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', zIndex: 1 });
+        c.animate([{ transform: `translate(${fx - r.x}px,${fy - r.y}px)` }, { transform: 'none' }], { duration: d(240), easing: EMPH });
+      } else {
+        const el = cardEl(n, r); layer.appendChild(el);
+        el.animate([{ opacity: 0, transform: 'scale(.95)' }, { opacity: 1, transform: 'none' }], { duration: d(240), easing: EMPH, delay: d(90), fill: 'backwards' });
+      }
+    });
+  }
+  sec.addEventListener('mouseenter', () => sec.dataset.hover = 1);
+  sec.addEventListener('mouseleave', () => delete sec.dataset.hover);
+  document.addEventListener('keydown', e => {
+    if (!sec.dataset.hover) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); go(Math.min(LABELS.length - 1, cur + 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); go(Math.max(0, cur - 1)); }
+  });
+  onWidth(vgrid, () => { render(); moveWash(); });
+})();
+</script>
+</body>
+</html>

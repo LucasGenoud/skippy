@@ -33,6 +33,56 @@
       ],
       "cwd": "backend",
       "port": 8790
+    },
+    {
+      "name": "next-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "ADDR=0.0.0.0:8791 DB=sticky_notes.db PUBLIC_URL=http://localhost:8791 WEB=../web/out ./target/debug/sticky-notes-server"
+      ],
+      "cwd": "backend",
+      "port": 8791
+    },
+    {
+      "name": "next-web-check",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "ADDR=0.0.0.0:8792 DB=sticky_notes.db PUBLIC_URL=http://localhost:8792 WEB=../web/out ./target/debug/sticky-notes-server"
+      ],
+      "cwd": "backend",
+      "port": 8792
+    },
+    {
+      "name": "chat-check-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "ADDR=0.0.0.0:8793 DB=/private/tmp/claude-502/-Users-lucas-genoud-sticky-notes/05de2692-d96f-4b8f-a79e-88a0cfb0de65/scratchpad/chat-check.db PUBLIC_URL=http://localhost:8793 WEB=../web/out EMBED_URL=http://127.0.0.1:8799/v1 EMBED_MODEL=fake LLM_BASE_URL=http://127.0.0.1:8799/v1 LLM_MODEL=fake LLM_API_KEY=fake ALLOW_PRIVATE_USER_ENDPOINTS=1 ./target/debug/sticky-notes-server"
+      ],
+      "cwd": "backend",
+      "port": 8793
+    },
+    {
+      "name": "chat-check-flutter",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "ADDR=0.0.0.0:8794 DB=/private/tmp/claude-502/-Users-lucas-genoud-sticky-notes/05de2692-d96f-4b8f-a79e-88a0cfb0de65/scratchpad/chat-check.db PUBLIC_URL=http://localhost:8794 WEB=../app/build/web EMBED_URL=http://127.0.0.1:8799/v1 EMBED_MODEL=fake LLM_BASE_URL=http://127.0.0.1:8799/v1 LLM_MODEL=fake LLM_API_KEY=fake ALLOW_PRIVATE_USER_ENDPOINTS=1 ./target/debug/sticky-notes-server"
+      ],
+      "cwd": "backend",
+      "port": 8794
+    },
+    {
+      "name": "next-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "npm_config_cache=$TMPDIR/npm-cache SKIPPY_BACKEND=http://localhost:8790 npx next dev --webpack --port 3000"
+      ],
+      "cwd": "web",
+      "port": 3000
     }
   ]
 }
