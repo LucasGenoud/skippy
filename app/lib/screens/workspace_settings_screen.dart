@@ -19,6 +19,7 @@ import '../widgets/workspace_ai_section.dart';
 import '../widgets/workspace_menu.dart';
 import 'workspace_stats_screen.dart';
 import '../widgets/form_error_banner.dart';
+import '../widgets/user_avatar.dart';
 
 /// Settings for one workspace: its name, which views it offers, who is in it,
 /// what AI it allows, what it holds, and how to delete or leave it.
@@ -249,9 +250,11 @@ class _PeopleSectionState extends State<_PeopleSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(
-          leading: CircleAvatar(
+          leading: UserAvatar(
+            userId: workspace.owner?.id,
+            version: workspace.owner?.avatar,
             radius: 16,
-            child: Text(workspaceInitial(workspace.owner?.name ?? '?')),
+            fallback: Text(workspaceInitial(workspace.owner?.name ?? '?')),
           ),
           title: Text(
             widget.isOwner ? 'You' : (workspace.owner?.name ?? 'Owner'),
@@ -260,10 +263,12 @@ class _PeopleSectionState extends State<_PeopleSection> {
         ),
         for (final member in workspace.members)
           ListTile(
-            leading: CircleAvatar(
+            leading: UserAvatar(
+              userId: member.id,
+              version: member.avatar,
               radius: 16,
               backgroundColor: scheme.secondaryContainer,
-              child: Text(workspaceInitial(member.name)),
+              fallback: Text(workspaceInitial(member.name)),
             ),
             title: Text(member.id == me ? '${member.name} (you)' : member.name),
             subtitle: const Text('Member'),

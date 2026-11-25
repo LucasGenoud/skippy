@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/api_token.dart';
+import '../../models/workspace.dart';
 import '../../state/notes_store.dart';
 import '../../state/settings_store.dart';
 import '../../util/motion.dart';
@@ -63,15 +64,20 @@ class _AiAccessSectionState extends State<AiAccessSection> {
 
   Future<void> _create() async {
     final api = context.read<NotesStore>().api;
-    final request = await showFormDialog<(String, TokenScope)>(
+    final workspaces = context.read<NotesStore>().workspaces;
+    final request = await showFormDialog<_TokenRequest>(
       context,
-      builder: (_) => const _NewTokenDialog(),
+      builder: (_) => _NewTokenDialog(workspaces: workspaces),
     );
     if (request == null || !mounted) return;
 
     final CreatedApiToken created;
     try {
-      created = await api.createApiToken(request.$1, request.$2);
+      created = await api.createApiToken(
+        request.name,
+        request.scope,
+        workspaceId: request.workspaceId,
+      );
     } catch (_) {
       showAppSnack(
         "Couldn't create the token",
@@ -203,6 +209,10 @@ class _AiAccessSectionState extends State<AiAccessSection> {
 
   Widget _tokenTile(ApiToken token, SettingsStore settings) {
     final used = token.lastUsedAt;
+    final workspaceId = token.workspaceId;
+    final reach = workspaceId == null
+        ? ''
+        : 'Only ${context.read<NotesStore>().workspaceById(workspaceId)?.name ?? 'one workspace'} · ';
     return ListTile(
       dense: true,
       contentPadding: const EdgeInsets.only(left: 32, right: 8),
@@ -214,7 +224,7 @@ class _AiAccessSectionState extends State<AiAccessSection> {
       ),
       title: Text(token.name, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${token.scope.label} · '
+        '${token.scope.label} · $reach'
         '${used == null ? 'never used' : 'last used ${settings.formatDate(used)}'}',
         overflow: TextOverflow.ellipsis,
       ),
@@ -227,9 +237,13 @@ class _AiAccessSectionState extends State<AiAccessSection> {
   }
 }
 
-/// Names a token and picks what it may do.
+typedef _TokenRequest = ({String name, TokenScope scope, String? workspaceId});
+
+/// Names a token and picks what it may do, and where.
 class _NewTokenDialog extends StatefulWidget {
-  const _NewTokenDialog();
+  final List<Workspace> workspaces;
+
+  const _NewTokenDialog({required this.workspaces});
 
   @override
   State<_NewTokenDialog> createState() => _NewTokenDialogState();
@@ -238,6 +252,9 @@ class _NewTokenDialog extends StatefulWidget {
 class _NewTokenDialogState extends State<_NewTokenDialog> {
   final _name = TextEditingController();
   TokenScope _scope = TokenScope.read;
+
+  /// The one workspace it reaches; null for all of them.
+  String? _workspaceId;
 
   @override
   void dispose() {
@@ -250,7 +267,21 @@ class _NewTokenDialogState extends State<_NewTokenDialog> {
     if (name.isEmpty) {
       return;
     }
-    Navigator.pop(context, (name, _scope));
+    final _TokenRequest request = (
+      name: name,
+      scope: _scope,
+      workspaceId: _workspaceId,
+    );
+    Navigator.pop(context, request);
+  }
+
+  String _where() {
+    for (final workspace in widget.workspaces) {
+      if (workspace.id == _workspaceId) {
+        return workspace.name;
+      }
+    }
+    return 'every workspace you belong to';
   }
 
   @override
@@ -286,11 +317,35 @@ class _NewTokenDialogState extends State<_NewTokenDialog> {
             onSelectionChanged: (selection) =>
                 setState(() => _scope = selection.single),
           ),
+          // One workspace leaves nothing to choose.
+          if (widget.workspaces.length > 1) ...[
+            const SizedBox(height: kSpaceLg),
+            DropdownButtonFormField<String?>(
+              key: const Key('api-token-workspace'),
+              initialValue: _workspaceId,
+              decoration: const InputDecoration(
+                labelText: 'Where',
+                isDense: true,
+                border: kFieldBorder,
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('All workspaces'),
+                ),
+                for (final workspace in widget.workspaces)
+                  DropdownMenuItem(
+                    value: workspace.id,
+                    child: Text(workspace.name),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _workspaceId = value),
+            ),
+          ],
           const SizedBox(height: kSpaceSm),
           Text(
             _scope == TokenScope.read
-                ? 'Search, list and read notes in every workspace you belong '
-                      'to.'
+                ? 'Search, list and read notes in ${_where()}.'
                 : 'Also create notes and add to existing ones. It cannot '
                       'delete, move or share anything.',
             style: theme.textTheme.bodySmall?.copyWith(

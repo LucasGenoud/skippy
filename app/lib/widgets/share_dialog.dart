@@ -9,6 +9,7 @@ import '../util/snack.dart';
 import 'form_dialog.dart';
 import 'public_link_dialog.dart';
 import 'form_error_banner.dart';
+import 'user_avatar.dart';
 
 /// Collaborator management for a note. Owners add/remove people by email;
 /// collaborators can see the roster and leave.
@@ -89,9 +90,11 @@ class _ShareDialogState extends State<ShareDialog> {
           ListTile(
             contentPadding: kModalRowPadding,
             shape: kRoundedShape,
-            leading: CircleAvatar(
+            leading: UserAvatar(
+              userId: note.owner?.id,
+              version: note.owner?.avatar,
               radius: 16,
-              child: Text(
+              fallback: Text(
                 (note.owner?.name ?? '?').substring(0, 1).toUpperCase(),
               ),
             ),
@@ -104,10 +107,12 @@ class _ShareDialogState extends State<ShareDialog> {
               contentPadding: kModalRowPadding,
               shape: kRoundedShape,
               dense: true,
-              leading: CircleAvatar(
+              leading: UserAvatar(
+                userId: collaborator.id,
+                version: collaborator.avatar,
                 radius: 16,
                 backgroundColor: scheme.secondaryContainer,
-                child: Text(collaborator.name.substring(0, 1).toUpperCase()),
+                fallback: Text(collaborator.name.substring(0, 1).toUpperCase()),
               ),
               title: Text(
                 collaborator.id == me

@@ -6,6 +6,7 @@ mod collections;
 mod helpers;
 
 mod attachments;
+mod avatars;
 mod audio;
 mod auth;
 mod chat;

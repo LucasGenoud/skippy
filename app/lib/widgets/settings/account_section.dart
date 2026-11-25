@@ -4,8 +4,12 @@ import 'package:provider/provider.dart';
 import '../../api/api_client.dart';
 import '../../state/auth_store.dart';
 import '../../theme.dart';
+import '../../util/avatar_image.dart';
+import '../../util/snack.dart';
 import '../form_dialog.dart';
 import '../form_error_banner.dart';
+import '../pick_image.dart';
+import '../user_avatar.dart';
 
 enum _AccountField { name, email, password }
 
@@ -16,8 +20,33 @@ class AccountSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = context.watch<AuthStore?>()?.user;
     if (user == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final name = user.name.trim();
     return Column(
       children: [
+        ListTile(
+          leading: UserAvatar(
+            userId: user.id,
+            version: user.avatar,
+            backgroundColor: scheme.primaryContainer,
+            foregroundColor: scheme.onPrimaryContainer,
+            fallback: name.isEmpty
+                ? const Icon(Icons.person_outline)
+                : Text(name.characters.first.toUpperCase()),
+          ),
+          title: const Text('Picture'),
+          subtitle: Text(
+            user.avatar == null ? 'Add a picture' : 'Change your picture',
+          ),
+          trailing: user.avatar == null
+              ? const Icon(Icons.chevron_right)
+              : IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Remove picture',
+                  onPressed: () => _removePicture(context),
+                ),
+          onTap: () => _changePicture(context),
+        ),
         ListTile(
           leading: const Icon(Icons.badge_outlined),
           title: const Text('Name'),
@@ -46,6 +75,37 @@ class AccountSection extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  Future<void> _changePicture(BuildContext context) async {
+    final auth = context.read<AuthStore>();
+    final picked = await pickNoteImage(context);
+    if (picked == null) {
+      return;
+    }
+
+    final png = await squareAvatarPng(picked.bytes);
+    if (png == null) {
+      showAppSnack("That picture couldn't be read", kind: SnackKind.warning);
+      return;
+    }
+    try {
+      await auth.setAvatar(png);
+    } on ApiException catch (e) {
+      showAppSnack(e.serverMessage, kind: SnackKind.danger);
+    } catch (_) {
+      showAppSnack("Couldn't save the picture", kind: SnackKind.danger);
+    }
+  }
+
+  Future<void> _removePicture(BuildContext context) async {
+    try {
+      await context.read<AuthStore>().removeAvatar();
+    } on ApiException catch (e) {
+      showAppSnack(e.serverMessage, kind: SnackKind.danger);
+    } catch (_) {
+      showAppSnack("Couldn't remove the picture", kind: SnackKind.danger);
+    }
   }
 
   void _open(BuildContext context, _AccountField field) {

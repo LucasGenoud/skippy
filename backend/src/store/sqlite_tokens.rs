@@ -19,7 +19,15 @@ fn token_from_row(row: &SqliteRow) -> ApiTokenView {
         scope: TokenScope::from_wire(row.get("scope")).unwrap_or(TokenScope::Read),
         created_at: row.get("created_at"),
         last_used_at: row.get("last_used_at"),
+        workspace_id: row.get("workspace_id"),
     }
+}
+
+/// Who a token acts for, and how far it reaches.
+pub struct TokenGrant {
+    pub user_id: String,
+    pub scope: TokenScope,
+    pub workspace_id: Option<String>,
 }
 
 impl SqliteRepository {
@@ -29,12 +37,13 @@ impl SqliteRepository {
         user_id: &str,
         name: &str,
         scope: TokenScope,
+        workspace_id: Option<&str>,
         secret: &str,
     ) -> RepoResult<ApiTokenView> {
         let created_at = now();
         sqlx::query(
-            "INSERT INTO api_tokens (id, user_id, name, digest, scope, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO api_tokens (id, user_id, name, digest, scope, created_at, workspace_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(user_id)
@@ -42,6 +51,7 @@ impl SqliteRepository {
         .bind(session_token_digest(secret))
         .bind(scope.wire())
         .bind(&created_at)
+        .bind(workspace_id)
         .execute(&self.pool)
         .await?;
         Ok(ApiTokenView {
@@ -50,12 +60,13 @@ impl SqliteRepository {
             scope,
             created_at,
             last_used_at: None,
+            workspace_id: workspace_id.map(str::to_string),
         })
     }
 
     pub async fn api_tokens_for_user(&self, user_id: &str) -> RepoResult<Vec<ApiTokenView>> {
         let rows = sqlx::query(
-            "SELECT id, name, scope, created_at, last_used_at FROM api_tokens
+            "SELECT id, name, scope, created_at, last_used_at, workspace_id FROM api_tokens
              WHERE user_id = ? ORDER BY created_at, id",
         )
         .bind(user_id)
@@ -82,10 +93,11 @@ impl SqliteRepository {
         Ok(())
     }
 
-    /// The account and scope behind a token secret, noting that it was used.
-    pub async fn api_token_owner(&self, secret: &str) -> RepoResult<Option<(String, TokenScope)>> {
+    /// What a token secret grants, noting that it was used.
+    pub async fn api_token_owner(&self, secret: &str) -> RepoResult<Option<TokenGrant>> {
         let digest = session_token_digest(secret);
-        let Some(row) = sqlx::query("SELECT id, user_id, scope FROM api_tokens WHERE digest = ?")
+        let Some(row) =
+            sqlx::query("SELECT id, user_id, scope, workspace_id FROM api_tokens WHERE digest = ?")
             .bind(&digest)
             .fetch_optional(&self.pool)
             .await?
@@ -105,6 +117,10 @@ impl SqliteRepository {
         .await?;
 
         let scope = TokenScope::from_wire(row.get("scope")).unwrap_or(TokenScope::Read);
-        Ok(Some((row.get("user_id"), scope)))
+        Ok(Some(TokenGrant {
+            user_id: row.get("user_id"),
+            scope,
+            workspace_id: row.get("workspace_id"),
+        }))
     }
 }

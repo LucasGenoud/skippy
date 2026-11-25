@@ -869,6 +869,14 @@ void main() {
       },
     );
 
+    test('a mistyped query still suggests the item', () async {
+      api.history = {
+        'n1': ['Milk', 'Eggs'],
+      };
+      await store.load();
+      expect(store.suggestionsFor('n1', 'mlik'), ['Milk']);
+    });
+
     test('suggestions never leak from other notes', () async {
       api.history = {
         'groceries': ['Milk', 'Eggs'],

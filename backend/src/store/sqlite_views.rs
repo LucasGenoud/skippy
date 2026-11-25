@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use sqlx::{Row, SqlitePool};
 
 use super::RepoResult;
-use super::sqlite::MY_WORKSPACES;
+use super::sqlite::{AVATAR_OF_U, MY_WORKSPACES};
 use crate::models::{Attachment, ItemReminder, NoteRecord, NoteView, UserPublic};
 
 pub(super) async fn build_note_views(
@@ -58,11 +58,11 @@ pub(super) async fn build_note_views(
     }
 
     let mut collaborators_by_note: HashMap<String, Vec<UserPublic>> = HashMap::new();
-    for row in sqlx::query(
-        "SELECT ns.note_id, u.id, u.name FROM note_shares ns
+    for row in sqlx::query(&format!(
+        "SELECT ns.note_id, u.id, u.name, {AVATAR_OF_U} FROM note_shares ns
          JOIN users u ON u.id = ns.user_id
-         WHERE ns.note_id IN (SELECT value FROM json_each(?))",
-    )
+         WHERE ns.note_id IN (SELECT value FROM json_each(?))"
+    ))
     .bind(&note_ids)
     .fetch_all(pool)
     .await?
@@ -73,6 +73,7 @@ pub(super) async fn build_note_views(
             .push(UserPublic {
                 id: row.get("id"),
                 name: row.get("name"),
+                avatar: row.get("avatar"),
             });
     }
 
@@ -122,11 +123,11 @@ pub(super) async fn build_note_views(
             });
     }
 
-    let workspace_owners: HashMap<String, UserPublic> = sqlx::query(
-        "SELECT w.id AS workspace_id, u.id, u.name FROM workspaces w
+    let workspace_owners: HashMap<String, UserPublic> = sqlx::query(&format!(
+        "SELECT w.id AS workspace_id, u.id, u.name, {AVATAR_OF_U} FROM workspaces w
          JOIN users u ON u.id = w.owner_id
-         WHERE w.id IN (SELECT value FROM json_each(?))",
-    )
+         WHERE w.id IN (SELECT value FROM json_each(?))"
+    ))
     .bind(&workspace_ids)
     .fetch_all(pool)
     .await?
@@ -137,6 +138,7 @@ pub(super) async fn build_note_views(
             UserPublic {
                 id: row.get("id"),
                 name: row.get("name"),
+                avatar: row.get("avatar"),
             },
         )
     })

@@ -163,6 +163,7 @@ Authenticated JSON endpoints live under `/api`. The main groups are:
 - `/search`, `/chat`, `/settings`, `/unfurl`, and `/ws`
 - `/notes/{id}/versions`, `/notes/{id}/attachments`, and item reminders
 - `/health` and `/capabilities` for service status
+- `/auth/me/avatar` and `/users/{id}/avatar` for profile pictures
 - `/tokens` for personal access tokens, and `/mcp`, a Model Context Protocol
   server that AI assistants reach with one of those tokens
 

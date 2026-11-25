@@ -376,9 +376,43 @@ class FakeApi implements Api {
       id: account.id,
       name: name ?? account.name,
       email: email ?? account.email,
+      hasPassword: account.hasPassword,
+      avatar: account.avatar,
     );
     return account;
   });
+
+  /// Profile pictures by user id; [account]'s is set through [setAvatar].
+  final Map<String, Uint8List> avatars = {};
+
+  @override
+  Future<AuthUser> setAvatar(Uint8List png) => _run('setAvatar', () {
+    avatars[account.id] = png;
+    account = AuthUser(
+      id: account.id,
+      name: account.name,
+      email: account.email,
+      hasPassword: account.hasPassword,
+      avatar: (account.avatar ?? 0) + 1,
+    );
+    return account;
+  });
+
+  @override
+  Future<AuthUser> removeAvatar() => _run('removeAvatar', () {
+    avatars.remove(account.id);
+    account = AuthUser(
+      id: account.id,
+      name: account.name,
+      email: account.email,
+      hasPassword: account.hasPassword,
+    );
+    return account;
+  });
+
+  @override
+  Future<Uint8List?> fetchAvatar(String userId, int version) =>
+      _run('fetchAvatar', () => avatars[userId]);
 
   @override
   Future<List<Workspace>> fetchWorkspaces() async {
@@ -766,18 +800,22 @@ class FakeApi implements Api {
       _run('fetchApiTokens', () => apiTokens.values.toList());
 
   @override
-  Future<CreatedApiToken> createApiToken(String name, TokenScope scope) =>
-      _run('createApiToken', () {
-        final id = 'api-${_apiTokens++}';
-        final token = ApiToken(
-          id: id,
-          name: name,
-          scope: scope,
-          createdAt: DateTime(2026, 1, 1),
-        );
-        apiTokens[id] = token;
-        return CreatedApiToken(token: token, secret: 'skp_secret_$id');
-      });
+  Future<CreatedApiToken> createApiToken(
+    String name,
+    TokenScope scope, {
+    String? workspaceId,
+  }) => _run('createApiToken', () {
+    final id = 'api-${_apiTokens++}';
+    final token = ApiToken(
+      id: id,
+      name: name,
+      scope: scope,
+      createdAt: DateTime(2026, 1, 1),
+      workspaceId: workspaceId,
+    );
+    apiTokens[id] = token;
+    return CreatedApiToken(token: token, secret: 'skp_secret_$id');
+  });
 
   @override
   Future<void> deleteApiToken(String id) =>

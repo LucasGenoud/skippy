@@ -256,6 +256,11 @@ pub fn build_app_with_cors_origin(state: AppState, allowed_origin: Option<Header
                 .delete(handlers::delete_account),
         )
         .route(
+            "/auth/me/avatar",
+            axum::routing::put(handlers::put_avatar).delete(handlers::delete_avatar),
+        )
+        .route("/users/{id}/avatar", get(handlers::get_avatar))
+        .route(
             "/workspaces/{id}/duplicate",
             post(handlers::duplicate_workspace),
         )

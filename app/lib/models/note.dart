@@ -229,15 +229,23 @@ class UserRef {
   final String id;
   final String name;
 
-  const UserRef({required this.id, required this.name});
+  /// Version of the person's profile picture; null when they have none.
+  final int? avatar;
+
+  const UserRef({required this.id, required this.name, this.avatar});
 
   factory UserRef.fromJson(Map<String, dynamic> json) => UserRef(
     id: json['id'] as String,
     // Read old cached notes once so an offline upgrade remains usable.
     name: (json['name'] ?? json['username']) as String,
+    avatar: (json['avatar'] as num?)?.toInt(),
   );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    if (avatar != null) 'avatar': avatar,
+  };
 }
 
 class Attachment {
@@ -779,11 +787,15 @@ class AuthUser {
   /// confirm an email change or a deletion with.
   final bool hasPassword;
 
+  /// Version of the profile picture; null when there is none.
+  final int? avatar;
+
   const AuthUser({
     required this.id,
     required this.name,
     required this.email,
     this.hasPassword = true,
+    this.avatar,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
@@ -793,6 +805,7 @@ class AuthUser {
     // Absent from servers older than single sign-on, and from profiles
     // cached by older builds; every account had a password then.
     hasPassword: json['has_password'] != false,
+    avatar: (json['avatar'] as num?)?.toInt(),
   );
 
   Map<String, dynamic> toJson() => {
@@ -800,5 +813,6 @@ class AuthUser {
     'name': name,
     'email': email,
     'has_password': hasPassword,
+    if (avatar != null) 'avatar': avatar,
   };
 }

@@ -135,6 +135,14 @@ abstract class Api {
     String? newPassword,
   });
 
+  /// Make [png] the account's profile picture.
+  Future<AuthUser> setAvatar(Uint8List png);
+  Future<AuthUser> removeAvatar();
+
+  /// [userId]'s picture at [version]; null when there is none this account
+  /// may see.
+  Future<Uint8List?> fetchAvatar(String userId, int version);
+
   // workspaces
   /// Every workspace the user owns or was invited to, default first.
   Future<List<Workspace>> fetchWorkspaces();
@@ -223,7 +231,12 @@ abstract class Api {
   Future<List<ApiToken>> fetchApiTokens();
 
   /// Create a token; the result carries its secret, which is never sent again.
-  Future<CreatedApiToken> createApiToken(String name, TokenScope scope);
+  /// A token reaching every workspace, or only [workspaceId].
+  Future<CreatedApiToken> createApiToken(
+    String name,
+    TokenScope scope, {
+    String? workspaceId,
+  });
 
   /// Revoke a token. A client using it is refused from its next request.
   Future<void> deleteApiToken(String id);
@@ -391,6 +404,9 @@ abstract class Api {
     String? workspaceId,
   });
 }
+
+/// HTTP 404, which a profile-picture fetch reads as "no picture".
+const int _kNotFound = 404;
 
 class ApiClient extends _ApiTransport implements Api {
   static const connectionProbeTimeout = Duration(seconds: 3);
@@ -570,6 +586,40 @@ class ApiClient extends _ApiTransport implements Api {
     if (newPassword != null) body['new_password'] = newPassword;
     final data = await _patch('/auth/me', body);
     return AuthUser.fromJson(data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<AuthUser> setAvatar(Uint8List png) async {
+    _decode(
+      await _client.put(
+        _uri('/auth/me/avatar'),
+        headers: {..._headers(json: false), 'content-type': 'image/png'},
+        body: png,
+      ),
+    );
+    return me();
+  }
+
+  @override
+  Future<AuthUser> removeAvatar() async {
+    await _delete('/auth/me/avatar');
+    return me();
+  }
+
+  @override
+  Future<Uint8List?> fetchAvatar(String userId, int version) async {
+    final response = await _client.get(
+      _uri('/users/${Uri.encodeComponent(userId)}/avatar?v=$version'),
+      headers: _headers(json: false),
+    );
+    if (response.statusCode == _kNotFound) {
+      return null;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      // Raises the error, and signs out on a refused session, like any call.
+      _decode(response);
+    }
+    return response.bodyBytes;
   }
 
   // -- workspaces ------------------------------------------------------------
@@ -833,8 +883,16 @@ class ApiClient extends _ApiTransport implements Api {
   }
 
   @override
-  Future<CreatedApiToken> createApiToken(String name, TokenScope scope) async {
-    final data = await _post('/tokens', {'name': name, 'scope': scope.wire});
+  Future<CreatedApiToken> createApiToken(
+    String name,
+    TokenScope scope, {
+    String? workspaceId,
+  }) async {
+    final data = await _post('/tokens', {
+      'name': name,
+      'scope': scope.wire,
+      'workspace_id': ?workspaceId,
+    });
     return CreatedApiToken.fromJson(data as Map<String, dynamic>);
   }
 

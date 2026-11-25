@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:skippy/models/api_token.dart';
+import 'package:skippy/models/workspace.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/widgets/settings/ai_access_section.dart';
 
@@ -67,5 +68,26 @@ void main() {
 
     expect(api.apiTokens, isEmpty);
     expect(find.text('Old agent'), findsNothing);
+  });
+
+  testWidgets('a token can be limited to one workspace', (tester) async {
+    api.workspaces['w-work'] = const Workspace(id: 'w-work', name: 'Work');
+    await store.load();
+    await pumpSection(tester);
+
+    await tester.tap(find.byKey(const Key('new-api-token')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('api-token-name')), 'Claude');
+    await tester.tap(find.byKey(const Key('api-token-workspace')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Work').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('create-api-token')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('api-token-done')));
+    await tester.pumpAndSettle();
+
+    expect(api.apiTokens.values.single.workspaceId, 'w-work');
+    expect(find.textContaining('Only Work'), findsOneWidget);
   });
 }

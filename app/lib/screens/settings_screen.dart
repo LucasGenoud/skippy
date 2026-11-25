@@ -7,6 +7,7 @@ import '../util/motion.dart';
 import '../widgets/screen_width.dart';
 import '../widgets/settings/settings_pages.dart';
 import '../widgets/state_cross_fade.dart';
+import '../widgets/user_avatar.dart';
 
 export '../widgets/settings/settings_pages.dart' show SettingsPage;
 
@@ -146,10 +147,12 @@ class _AccountRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final name = user?.name.trim() ?? '';
     return ListTile(
-      leading: CircleAvatar(
+      leading: UserAvatar(
+        userId: user?.id,
+        version: user?.avatar,
         backgroundColor: scheme.primaryContainer,
         foregroundColor: scheme.onPrimaryContainer,
-        child: name.isEmpty
+        fallback: name.isEmpty
             ? Icon(SettingsPage.account.icon)
             : Text(name.characters.first.toUpperCase()),
       ),

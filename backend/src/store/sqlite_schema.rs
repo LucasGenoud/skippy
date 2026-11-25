@@ -8,6 +8,15 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 ) STRICT;
 
+-- A profile picture, small enough to keep inline. `updated_at` (unix
+-- milliseconds) is the version clients key their copy by.
+CREATE TABLE IF NOT EXISTS user_avatars (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL,
+    bytes BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
 -- Single sign-on identities. `(issuer, subject)` is what the provider
 -- promises stays the same for one person, unlike their email.
 CREATE TABLE IF NOT EXISTS user_identities (
@@ -35,7 +44,10 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     digest TEXT NOT NULL UNIQUE,
     scope TEXT NOT NULL CHECK (scope IN ('read', 'write')),
     created_at TEXT NOT NULL,
-    last_used_at TEXT
+    last_used_at TEXT,
+    -- The one workspace the token reaches; NULL reaches all of them. The
+    -- token is revoked with its workspace.
+    workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS api_tokens_user ON api_tokens(user_id);
 
@@ -303,6 +315,7 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     migrate_grid_span(pool).await?;
     migrate_note_pattern(pool).await?;
     migrate_workspace_ai(pool).await?;
+    migrate_token_workspace(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS workspace_copies (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE) STRICT").execute(pool).await?;
     import_personal_views(pool).await?;
     Ok(())
@@ -313,6 +326,19 @@ async fn migrate_grid_span(pool: &SqlitePool) -> anyhow::Result<()> {
     if !table_has_column(&mut tx, "notes", "grid_span").await? {
         sqlx::query(
             "ALTER TABLE notes ADD COLUMN grid_span INTEGER NOT NULL DEFAULT 1 CHECK (grid_span BETWEEN 1 AND 3)",
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn migrate_token_workspace(pool: &SqlitePool) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    if !table_has_column(&mut tx, "api_tokens", "workspace_id").await? {
+        sqlx::query(
+            "ALTER TABLE api_tokens ADD COLUMN workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE",
         )
         .execute(&mut *tx)
         .await?;
@@ -665,6 +691,7 @@ mod tests {
             name: "User".into(),
             email: "u@test".into(),
             password_hash: "hash".into(),
+            avatar: None,
         })
         .await
         .unwrap();
@@ -747,6 +774,47 @@ mod tests {
         };
         assert_eq!(switches("w").await, (1, 0, 1, 1, 1));
         assert_eq!(switches("x").await, (1, 1, 1, 1, 1));
+    }
+
+    #[tokio::test]
+    async fn existing_tokens_keep_reaching_every_workspace() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        // The table as it was before tokens could be limited to a workspace.
+        sqlx::raw_sql(
+            "CREATE TABLE api_tokens (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL CHECK (trim(name) <> ''),
+                digest TEXT NOT NULL UNIQUE,
+                scope TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+                created_at TEXT NOT NULL,
+                last_used_at TEXT
+            ) STRICT;",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql(super::SCHEMA).execute(&pool).await.unwrap();
+        sqlx::raw_sql(
+            "INSERT INTO users VALUES ('u','User','u@test','hash','now');
+             INSERT INTO api_tokens VALUES ('t','u','Claude','d','read','now',NULL);",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        super::initialize(&pool).await.unwrap();
+        super::initialize(&pool).await.unwrap();
+
+        let reach: Option<String> =
+            sqlx::query_scalar("SELECT workspace_id FROM api_tokens WHERE id = 't'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(reach, None);
     }
 
     #[tokio::test]
@@ -1026,6 +1094,7 @@ mod tests {
             name: "One".to_string(),
             email: "one@example.test".to_string(),
             password_hash: "hash".to_string(),
+            avatar: None,
         })
         .await
         .unwrap();

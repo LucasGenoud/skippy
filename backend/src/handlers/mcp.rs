@@ -93,7 +93,7 @@ async fn handle(state: &AppState, user: &TokenUser, method: &str, params: &Value
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            match mcp_tools::call(state, &user.user_id, user.scope, name, &arguments).await {
+            match mcp_tools::call(state, user, name, &arguments).await {
                 Some(outcome) => Ok(tool_result(outcome)),
                 None => Err((INVALID_PARAMS, format!("unknown tool: {name}"))),
             }

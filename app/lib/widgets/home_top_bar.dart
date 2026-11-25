@@ -16,6 +16,7 @@ import '../state/settings_store.dart';
 import '../util/motion.dart';
 import 'screen_width.dart';
 import 'app_icon_button.dart';
+import 'user_avatar.dart';
 
 /// The top bar displays the active setting, matching Settings → Appearance.
 /// Tapping still cycles to the next choice.
@@ -890,7 +891,8 @@ class _UserAvatarMenu extends StatelessWidget {
     final auth = context.watch<AuthStore>();
     final settings = context.watch<SettingsStore>();
     final scheme = Theme.of(context).colorScheme;
-    final name = auth.user?.name ?? '';
+    final user = auth.user;
+    final name = user?.name ?? '';
     final initial = name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?';
     final syncStatus = context.select<NotesStore, SyncStatus>(
       (s) => s.syncStatus,
@@ -920,11 +922,13 @@ class _UserAvatarMenu extends StatelessWidget {
           enabled: false,
           child: Row(
             children: [
-              CircleAvatar(
+              UserAvatar(
+                userId: user?.id,
+                version: user?.avatar,
                 radius: 18,
                 backgroundColor: scheme.primaryContainer,
                 foregroundColor: scheme.onPrimaryContainer,
-                child: Text(
+                fallback: Text(
                   initial,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
@@ -1079,11 +1083,13 @@ class _UserAvatarMenu extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            CircleAvatar(
+            UserAvatar(
+              userId: user?.id,
+              version: user?.avatar,
               radius: 18,
               backgroundColor: scheme.primaryContainer,
               foregroundColor: scheme.onPrimaryContainer,
-              child: Text(
+              fallback: Text(
                 initial,
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,

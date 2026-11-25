@@ -441,6 +441,17 @@ class AuthStore extends ChangeNotifier {
       currentPassword: currentPassword,
       newPassword: newPassword,
     );
+    await _adopt(updated);
+  }
+
+  /// Make [png] the account's profile picture.
+  Future<void> setAvatar(Uint8List png) async =>
+      _adopt(await api.setAvatar(png));
+
+  Future<void> removeAvatar() async => _adopt(await api.removeAvatar());
+
+  /// Take [updated] as the signed-in profile, here and in the offline copy.
+  Future<void> _adopt(AuthUser updated) async {
     user = updated;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_userKey, jsonEncode(updated.toJson()));

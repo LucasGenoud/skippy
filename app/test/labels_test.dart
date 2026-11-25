@@ -242,6 +242,23 @@ void main() {
       expect(find.text('Errands'), findsOneWidget);
     });
 
+    testWidgets('deleting a label asks first', (tester) async {
+      final store = await openAt(tester, const Size(1200, 900));
+
+      await tester.tap(find.byTooltip('Delete label'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete Work?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(store.labels.single.name, 'Work');
+
+      await tester.tap(find.byTooltip('Delete label'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete label'));
+      await tester.pumpAndSettle();
+      expect(store.labels, isEmpty);
+    });
+
     testWidgets('dragging a handle down reorders the list', (tester) async {
       final store = await openAt(
         tester,

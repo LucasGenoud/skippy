@@ -232,8 +232,11 @@ Streamable HTTP with the header `Authorization: Bearer <token>`. Revoke a
 token in the same Settings section; resetting your password revokes all of
 them.
 
-A token reaches every workspace you belong to, except one whose owner turned
-off **Assistant access (MCP)** in its settings.
+A token reaches every workspace you belong to, or only the one you pick
+under **Where** when you create it, so an assistant for work never sees your
+personal notes. Either way it skips a workspace whose owner turned off
+**Assistant access (MCP)** in its settings. A token limited to a workspace is
+revoked when that workspace is deleted.
 
 ## Documentation site
 

@@ -112,6 +112,7 @@ pub async fn register(
         name,
         email,
         password_hash: hash_password(&request.password)?,
+        avatar: None,
     };
     state.repo.create_user(&user).await?;
     // Every account starts with a workspace; notes have nowhere to live
@@ -234,6 +235,7 @@ pub async fn update_account(
         name,
         email,
         has_password: user.has_password(),
+        avatar: user.avatar,
     }))
 }
 
@@ -590,6 +592,7 @@ async fn sso_account(
         name: sso_name(identity.name.as_deref(), &email),
         email,
         password_hash: NO_PASSWORD.to_string(),
+        avatar: None,
     };
     repo.create_user(&user).await?;
     super::create_default_workspace(state, &user.id).await?;

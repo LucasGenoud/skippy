@@ -67,6 +67,8 @@ impl FromRequestParts<AppState> for AuthUser {
 pub struct TokenUser {
     pub user_id: String,
     pub scope: TokenScope,
+    /// The one workspace the token reaches; None for all of them.
+    pub workspace_id: Option<String>,
 }
 
 impl FromRequestParts<AppState> for TokenUser {
@@ -74,12 +76,16 @@ impl FromRequestParts<AppState> for TokenUser {
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
         let token = bearer_token(parts).ok_or(ApiError::Unauthorized)?;
-        let (user_id, scope) = state
+        let grant = state
             .repo
             .api_token_owner(&token)
             .await?
             .ok_or(ApiError::Unauthorized)?;
-        Ok(TokenUser { user_id, scope })
+        Ok(TokenUser {
+            user_id: grant.user_id,
+            scope: grant.scope,
+            workspace_id: grant.workspace_id,
+        })
     }
 }
 

@@ -9,10 +9,18 @@ import '../models/link_preview.dart';
 class LinkPreviewCache {
   final Api api;
   final Map<String, Future<LinkPreview?>> _inFlight = {};
+  final Map<String, LinkPreview?> _resolved = {};
 
   LinkPreviewCache({required this.api});
 
   /// The preview for [url], fetching (and caching) on first request.
-  Future<LinkPreview?> preview(String url) =>
-      _inFlight.putIfAbsent(url, () => api.unfurl(url));
+  Future<LinkPreview?> preview(String url) => _inFlight.putIfAbsent(url, () {
+    final fetch = api.unfurl(url);
+    fetch.then((value) => _resolved[url] = value, onError: (_) {});
+    return fetch;
+  });
+
+  /// The preview for [url] if its fetch has finished, so a card built for a
+  /// link already fetched starts from it instead of a frame of bare host.
+  LinkPreview? resolved(String url) => _resolved[url];
 }

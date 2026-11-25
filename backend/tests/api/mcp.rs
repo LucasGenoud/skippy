@@ -401,3 +401,92 @@ async fn assistants_cannot_reach_a_workspace_closed_to_them() {
     let (_, note) = send(&app, "GET", &hidden_path, Some(&ada), None).await;
     assert_eq!(note["content"], "", "the refused append wrote nothing");
 }
+
+#[tokio::test]
+async fn a_token_can_be_limited_to_one_workspace() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let (bob, _) = register(&app, "bob").await;
+    let (_, work) = send(
+        &app,
+        "POST",
+        "/api/workspaces",
+        Some(&ada),
+        Some(json!({"name":"Work"})),
+    )
+    .await;
+    let work_id = work["id"].as_str().unwrap();
+    let inside = create_note(&app, &ada, json!({"title":"Work plan","workspace_id":work_id})).await;
+    let outside = create_note(&app, &ada, json!({"title":"Home plan"})).await;
+
+    // Only a workspace the account is in can be chosen.
+    let (status, _) = send(
+        &app,
+        "POST",
+        "/api/tokens",
+        Some(&bob),
+        Some(json!({"name":"Claude","scope":"write","workspace_id":work_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/tokens",
+        Some(&ada),
+        Some(json!({"name":"Claude","scope":"write","workspace_id":work_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(body["workspace_id"], work_id);
+    let secret = body["secret"].as_str().unwrap().to_string();
+
+    let listed = call(&app, &secret, "list_notes", json!({})).await;
+    let ids: Vec<&Value> = listed["structuredContent"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| &n["id"])
+        .collect();
+    assert_eq!(ids, vec![&inside["id"]], "{listed}");
+
+    let found = call(&app, &secret, "search_notes", json!({"query":"plan"})).await;
+    let hits = found["structuredContent"]["notes"].as_array().unwrap();
+    assert!(hits.iter().all(|n| n["id"] != outside["id"]), "{found}");
+
+    let got = call(&app, &secret, "get_note", json!({"id":outside["id"]})).await;
+    assert_eq!(got["isError"], true);
+    let appended = call(
+        &app,
+        &secret,
+        "append_to_note",
+        json!({"id":outside["id"],"text":"leak"}),
+    )
+    .await;
+    assert_eq!(appended["isError"], true);
+
+    let workspaces = call(&app, &secret, "list_workspaces", json!({})).await;
+    let workspaces = workspaces["structuredContent"]["workspaces"].as_array().unwrap();
+    assert_eq!(workspaces.len(), 1);
+    assert_eq!(workspaces[0]["id"], work_id);
+
+    // A new note lands in the token's workspace, not the default one.
+    let created = call(&app, &secret, "create_note", json!({"title":"Standup"})).await;
+    assert_eq!(created["structuredContent"]["workspace_id"], work_id, "{created}");
+
+    // The token goes with its workspace.
+    let (status, _) = send(
+        &app,
+        "DELETE",
+        &format!("/api/workspaces/{work_id}"),
+        Some(&ada),
+        None,
+    )
+    .await;
+    assert!(status.is_success());
+    let (status, _) = rpc(&app, &secret, "tools/list", json!({})).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, tokens) = send(&app, "GET", "/api/tokens", Some(&ada), None).await;
+    assert!(tokens.as_array().unwrap().is_empty());
+}

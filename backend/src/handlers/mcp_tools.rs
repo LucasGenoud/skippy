@@ -2,7 +2,8 @@
 //! participant-scoped repository queries as the app, and every write through
 //! the note pipelines the HTTP handlers and chat use, so an AI client sees and
 //! changes exactly what its token's owner could, with the same side effects,
-//! less any workspace whose owner closed it to assistants.
+//! less any workspace whose owner closed it to assistants, and, for a token
+//! limited to one workspace, every other workspace.
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,6 +12,7 @@ use serde_json::{Value, json};
 use super::notes::{apply_note_update, create_note_for_user};
 use super::{new_id, resolve_workspace, workspaces};
 use crate::AppState;
+use crate::auth::TokenUser;
 use crate::error::ApiError;
 use crate::models::*;
 use crate::note_links;
@@ -26,6 +28,15 @@ const SNIPPET_CHARS: usize = 200;
 /// not part of, says it lives.
 const SHARED_WORKSPACE: &str = "Shared with you";
 const CLOSED: &str = "assistants are turned off in that workspace";
+const OUT_OF_REACH: &str = "this token is limited to another workspace";
+
+/// Whose notes a call acts on, and the one workspace it may reach, if the
+/// token was limited to one.
+#[derive(Clone, Copy)]
+struct Reach<'a> {
+    user: &'a str,
+    workspace: Option<&'a str>,
+}
 
 type Outcome = Result<Value, String>;
 
@@ -136,22 +147,25 @@ pub(super) fn definitions(scope: TokenScope) -> Vec<Value> {
 /// a read token is refused as a tool error, so the model learns why.
 pub(super) async fn call(
     state: &AppState,
-    user_id: &str,
-    scope: TokenScope,
+    token: &TokenUser,
     name: &str,
     args: &Value,
 ) -> Option<Outcome> {
     let writes = matches!(name, "create_note" | "append_to_note");
-    if writes && scope == TokenScope::Read {
+    if writes && token.scope == TokenScope::Read {
         return Some(Err("this token can only read notes".into()));
     }
+    let reach = Reach {
+        user: &token.user_id,
+        workspace: token.workspace_id.as_deref(),
+    };
     let outcome = match name {
-        "search_notes" => search_notes(state, user_id, args).await,
-        "list_notes" => list_notes(state, user_id, args).await,
-        "get_note" => get_note(state, user_id, args).await,
-        "list_workspaces" => list_workspaces(state, user_id).await,
-        "create_note" => create_note(state, user_id, args).await,
-        "append_to_note" => append_to_note(state, user_id, args).await,
+        "search_notes" => search_notes(state, reach, args).await,
+        "list_notes" => list_notes(state, reach, args).await,
+        "get_note" => get_note(state, reach, args).await,
+        "list_workspaces" => list_workspaces(state, reach).await,
+        "create_note" => create_note(state, reach, args).await,
+        "append_to_note" => append_to_note(state, reach, args).await,
         _ => return None,
     };
     Some(outcome)
@@ -160,12 +174,13 @@ pub(super) async fn call(
 // ---------------------------------------------------------------------------
 // Reads
 
-async fn search_notes(state: &AppState, user_id: &str, args: &Value) -> Outcome {
+async fn search_notes(state: &AppState, reach: Reach<'_>, args: &Value) -> Outcome {
+    let user_id = reach.user;
     let query = required(args, "query")?;
     let limit = limit(args, DEFAULT_SEARCH_RESULTS, MAX_SEARCH_RESULTS);
     let workspace = optional(args, "workspace_id");
     let names = Names::load(state, user_id).await?;
-    let views: Vec<NoteView> = visible_notes(state, user_id)
+    let views: Vec<NoteView> = visible_notes(state, reach)
         .await?
         .into_iter()
         .filter(|v| workspace.is_none_or(|w| v.note.workspace_id == w))
@@ -212,7 +227,8 @@ async fn search_notes(state: &AppState, user_id: &str, args: &Value) -> Outcome 
     Ok(json!({"notes": notes}))
 }
 
-async fn list_notes(state: &AppState, user_id: &str, args: &Value) -> Outcome {
+async fn list_notes(state: &AppState, reach: Reach<'_>, args: &Value) -> Outcome {
+    let user_id = reach.user;
     let limit = limit(args, DEFAULT_LIST_RESULTS, MAX_LIST_RESULTS);
     let workspace = optional(args, "workspace_id");
     let collection = optional(args, "collection_id");
@@ -220,7 +236,7 @@ async fn list_notes(state: &AppState, user_id: &str, args: &Value) -> Outcome {
     let names = Names::load(state, user_id).await?;
     let label_ids = optional(args, "label").map(|name| names.label_ids_named(name));
 
-    let mut views: Vec<NoteView> = visible_notes(state, user_id)
+    let mut views: Vec<NoteView> = visible_notes(state, reach)
         .await?
         .into_iter()
         .filter(|v| include_archived || !v.note.archived)
@@ -242,7 +258,8 @@ async fn list_notes(state: &AppState, user_id: &str, args: &Value) -> Outcome {
     Ok(json!({"notes": notes}))
 }
 
-async fn get_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
+async fn get_note(state: &AppState, reach: Reach<'_>, args: &Value) -> Outcome {
+    let user_id = reach.user;
     let id = required(args, "id")?;
     let view = state
         .repo
@@ -250,11 +267,11 @@ async fn get_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
         .await
         .map_err(|e| message(e.into()))?
         .ok_or_else(|| message(ApiError::NotFound))?;
-    if !open_to_assistants(state, &view.note.workspace_id).await? {
+    if !open_to_assistants(state, reach, &view.note.workspace_id).await? {
         return Err(message(ApiError::NotFound));
     }
     let names = Names::load(state, user_id).await?;
-    let others = visible_notes(state, user_id).await?;
+    let others = visible_notes(state, reach).await?;
     let title_of = |id: &str| {
         others
             .iter()
@@ -306,12 +323,14 @@ async fn get_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
     }))
 }
 
-async fn list_workspaces(state: &AppState, user_id: &str) -> Outcome {
+async fn list_workspaces(state: &AppState, reach: Reach<'_>) -> Outcome {
+    let user_id = reach.user;
     let workspaces: Vec<WorkspaceView> = workspaces::ensure_workspaces(state, user_id)
         .await
         .map_err(message)?
         .into_iter()
         .filter(|w| w.ai.switches.assistant_access)
+        .filter(|w| reach.workspace.is_none_or(|id| w.id == id))
         .collect();
     let labels = state
         .repo
@@ -341,7 +360,8 @@ async fn list_workspaces(state: &AppState, user_id: &str) -> Outcome {
 // ---------------------------------------------------------------------------
 // Writes
 
-async fn create_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
+async fn create_note(state: &AppState, reach: Reach<'_>, args: &Value) -> Outcome {
+    let user_id = reach.user;
     let title = optional(args, "title").unwrap_or_default().to_string();
     let content = optional(args, "content").unwrap_or_default().to_string();
     let items = strings(args, "items");
@@ -359,10 +379,15 @@ async fn create_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
         None => KIND_TEXT,
     };
 
-    let workspace_id = resolve_workspace(state, user_id, optional(args, "workspace_id"))
+    // A limited token files new notes in its workspace unless told otherwise.
+    let requested = optional(args, "workspace_id").or(reach.workspace);
+    let workspace_id = resolve_workspace(state, user_id, requested)
         .await
         .map_err(message)?;
-    if !open_to_assistants(state, &workspace_id).await? {
+    if reach.workspace.is_some_and(|id| id != workspace_id) {
+        return Err(OUT_OF_REACH.into());
+    }
+    if !open_to_assistants(state, reach, &workspace_id).await? {
         return Err(CLOSED.into());
     }
     let (label_ids, unknown_labels) =
@@ -396,7 +421,8 @@ async fn create_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
     }))
 }
 
-async fn append_to_note(state: &AppState, user_id: &str, args: &Value) -> Outcome {
+async fn append_to_note(state: &AppState, reach: Reach<'_>, args: &Value) -> Outcome {
+    let user_id = reach.user;
     let id = required(args, "id")?;
     let text = optional(args, "text").unwrap_or_default();
     let items = strings(args, "items");
@@ -409,7 +435,7 @@ async fn append_to_note(state: &AppState, user_id: &str, args: &Value) -> Outcom
         .await
         .map_err(|e| message(e.into()))?
         .ok_or_else(|| message(ApiError::NotFound))?;
-    if !open_to_assistants(state, &record.workspace_id).await? {
+    if !open_to_assistants(state, reach, &record.workspace_id).await? {
         return Err(message(ApiError::NotFound));
     }
     if record.trashed {
@@ -490,11 +516,11 @@ impl Names {
 }
 
 /// Everything the account can read, less the trash and the workspaces closed
-/// to assistants.
-async fn visible_notes(state: &AppState, user_id: &str) -> Result<Vec<NoteView>, String> {
+/// to assistants or out of the token's reach.
+async fn visible_notes(state: &AppState, reach: Reach<'_>) -> Result<Vec<NoteView>, String> {
     let notes: Vec<NoteView> = state
         .repo
-        .notes_for_user(user_id)
+        .notes_for_user(reach.user)
         .await
         .map_err(|e| message(e.into()))?
         .into_iter()
@@ -503,7 +529,7 @@ async fn visible_notes(state: &AppState, user_id: &str) -> Result<Vec<NoteView>,
     let mut open = HashMap::new();
     for id in notes.iter().map(|v| &v.note.workspace_id) {
         if !open.contains_key(id) {
-            open.insert(id.clone(), open_to_assistants(state, id).await?);
+            open.insert(id.clone(), open_to_assistants(state, reach, id).await?);
         }
     }
     Ok(notes
@@ -512,8 +538,16 @@ async fn visible_notes(state: &AppState, user_id: &str) -> Result<Vec<NoteView>,
         .collect())
 }
 
-/// Whether the workspace's owner lets assistants reach its notes.
-async fn open_to_assistants(state: &AppState, workspace_id: &str) -> Result<bool, String> {
+/// Whether the token reaches the workspace and its owner lets assistants
+/// reach its notes.
+async fn open_to_assistants(
+    state: &AppState,
+    reach: Reach<'_>,
+    workspace_id: &str,
+) -> Result<bool, String> {
+    if reach.workspace.is_some_and(|id| id != workspace_id) {
+        return Ok(false);
+    }
     Ok(state
         .repo
         .workspace(workspace_id)

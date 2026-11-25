@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 pub struct UserPublic {
     pub id: String,
     pub name: String,
+    /// Version of the profile picture at `/api/users/{id}/avatar`; absent
+    /// when there is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -17,6 +21,8 @@ pub struct AccountPublic {
     /// False for an account made by single sign-on, which has no password to
     /// confirm changes with.
     pub has_password: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +31,8 @@ pub struct User {
     pub name: String,
     pub email: String,
     pub password_hash: String,
+    /// Profile picture version, read alongside the row; see [`UserPublic`].
+    pub avatar: Option<i64>,
 }
 
 impl User {
@@ -32,6 +40,7 @@ impl User {
         UserPublic {
             id: self.id.clone(),
             name: self.name.clone(),
+            avatar: self.avatar,
         }
     }
 
@@ -41,6 +50,7 @@ impl User {
             name: self.name.clone(),
             email: self.email.clone(),
             has_password: self.has_password(),
+            avatar: self.avatar,
         }
     }
 
@@ -693,6 +703,8 @@ pub struct ApiTokenView {
     pub scope: TokenScope,
     pub created_at: String,
     pub last_used_at: Option<String>,
+    /// The one workspace the token reaches; null for every workspace.
+    pub workspace_id: Option<String>,
 }
 
 /// A token just created: the only time its secret is ever sent.
@@ -708,6 +720,9 @@ pub struct CreateApiToken {
     pub name: String,
     /// `read` or `write`; anything else is refused rather than defaulted.
     pub scope: String,
+    /// Limit the token to one of the account's workspaces.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
 }
 
 /// A note as served to an anonymous reader.

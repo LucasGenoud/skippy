@@ -21,12 +21,16 @@ class ApiToken {
   final DateTime createdAt;
   final DateTime? lastUsedAt;
 
+  /// The one workspace the token reaches; null for every workspace.
+  final String? workspaceId;
+
   const ApiToken({
     required this.id,
     required this.name,
     required this.scope,
     required this.createdAt,
     this.lastUsedAt,
+    this.workspaceId,
   });
 
   factory ApiToken.fromJson(Map<String, dynamic> json) => ApiToken(
@@ -37,6 +41,7 @@ class ApiToken {
         DateTime.tryParse(json['created_at'] as String? ?? '') ??
         DateTime.now(),
     lastUsedAt: DateTime.tryParse(json['last_used_at'] as String? ?? ''),
+    workspaceId: json['workspace_id'] as String?,
   );
 }
 

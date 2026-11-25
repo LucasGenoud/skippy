@@ -90,6 +90,7 @@ pub(super) fn user_from_row(row: &SqliteRow) -> User {
         name: row.get("name"),
         email: row.get("email"),
         password_hash: row.get("password_hash"),
+        avatar: row.get("avatar"),
     }
 }
 

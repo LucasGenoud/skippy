@@ -13,6 +13,7 @@ import 'screens/public_share_screen.dart';
 import 'screens/reset_password_screen.dart';
 import 'screens/widget_config_screen.dart';
 import 'state/auth_store.dart';
+import 'state/avatar_cache.dart';
 import 'state/home_widget_bridge.dart';
 import 'state/link_preview_cache.dart';
 import 'state/location_reminder_scheduler.dart';
@@ -51,6 +52,7 @@ class _SkippyAppState extends State<SkippyApp> {
   /// Link previews can include metadata from private URLs, so this cache lives
   /// only for one authenticated server/user session.
   LinkPreviewCache? _linkPreviews;
+  AvatarCache? _avatars;
 
   /// Receives content shared into the app from the OS share sheet (mobile) and
   /// creates a note for it. Long-lived so a share that arrives before sign-in
@@ -278,6 +280,7 @@ class _SkippyAppState extends State<SkippyApp> {
       _reminders?.dispose();
       _locationReminders?.dispose();
       _linkPreviews = LinkPreviewCache(api: _api);
+      _avatars = AvatarCache(api: _api);
       _settings = SettingsStore(api: _api)..load();
       final settings = _settings!;
       _store =
@@ -332,6 +335,7 @@ class _SkippyAppState extends State<SkippyApp> {
       _locationReminders = null;
       _widgets = null;
       _linkPreviews = null;
+      _avatars = null;
       _shareIntake.setStore(null);
       setState(() {});
     }
@@ -367,6 +371,7 @@ class _SkippyAppState extends State<SkippyApp> {
         Provider<LocalNotifications>.value(value: _localNotifications),
         if (_linkPreviews != null)
           Provider<LinkPreviewCache>.value(value: _linkPreviews!),
+        if (_avatars != null) Provider<AvatarCache>.value(value: _avatars!),
         if (store != null) ChangeNotifierProvider.value(value: store),
         if (settings != null) ChangeNotifierProvider.value(value: settings),
       ],

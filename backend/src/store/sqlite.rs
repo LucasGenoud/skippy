@@ -19,6 +19,14 @@ use crate::models::*;
 pub(super) const MY_WORKSPACES: &str = "SELECT id FROM workspaces WHERE owner_id = ?
      UNION SELECT workspace_id FROM workspace_members WHERE user_id = ?";
 
+/// A `users` row plus its picture version, for [`user_from_row`].
+const USER_COLUMNS: &str =
+    "users.*, (SELECT updated_at FROM user_avatars a WHERE a.user_id = users.id) AS avatar";
+
+/// The picture version of the user aliased `u`, for building a [`UserPublic`].
+pub(super) const AVATAR_OF_U: &str =
+    "(SELECT updated_at FROM user_avatars a WHERE a.user_id = u.id) AS avatar";
+
 /// Predicate over the notes table (named by `alias`) for everything a user may
 /// see: notes shared with them directly and notes owned by a workspace they
 /// belong to. Binds the user id three times.
@@ -112,7 +120,9 @@ impl SqliteRepository {
     }
 
     pub async fn user_by_email(&self, email: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
+        let row = sqlx::query(&format!(
+            "SELECT {USER_COLUMNS} FROM users WHERE email = ? COLLATE NOCASE"
+        ))
             .bind(email)
             .fetch_optional(&self.pool)
             .await?;
@@ -121,11 +131,11 @@ impl SqliteRepository {
 
     /// The account a single sign-on identity is tied to.
     pub async fn user_by_identity(&self, issuer: &str, subject: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query(
-            "SELECT users.* FROM user_identities
+        let row = sqlx::query(&format!(
+            "SELECT {USER_COLUMNS} FROM user_identities
              JOIN users ON users.id = user_identities.user_id
-             WHERE issuer = ? AND subject = ?",
-        )
+             WHERE issuer = ? AND subject = ?"
+        ))
         .bind(issuer)
         .bind(subject)
         .fetch_optional(&self.pool)
@@ -155,7 +165,7 @@ impl SqliteRepository {
     }
 
     pub async fn user_by_id(&self, id: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query("SELECT * FROM users WHERE id = ?")
+        let row = sqlx::query(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = ?"))
             .bind(id)
             .fetch_optional(&self.pool)
             .await?;
@@ -505,7 +515,7 @@ impl SqliteRepository {
 
     pub async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>> {
         let rows = sqlx::query(&format!(
-            "SELECT w.*, u.name AS owner_name FROM workspaces w
+            "SELECT w.*, u.name AS owner_name, {AVATAR_OF_U} FROM workspaces w
              JOIN users u ON u.id = w.owner_id WHERE w.id IN ({MY_WORKSPACES}) AND w.id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY w.is_default DESC, w.created_at ASC"
         ))
@@ -521,6 +531,7 @@ impl SqliteRepository {
                     UserPublic {
                         id: row.get("owner_id"),
                         name: row.get("owner_name"),
+                        avatar: row.get("avatar"),
                     },
                 )
             })
@@ -540,7 +551,7 @@ impl SqliteRepository {
         let collections = self.collections_for_user(user_id).await?;
         let mut members_by_workspace: HashMap<String, Vec<UserPublic>> = HashMap::new();
         for row in sqlx::query(&format!(
-            "SELECT m.workspace_id, u.id, u.name FROM workspace_members m
+            "SELECT m.workspace_id, u.id, u.name, {AVATAR_OF_U} FROM workspace_members m
              JOIN users u ON u.id = m.user_id WHERE m.workspace_id IN ({MY_WORKSPACES})"
         ))
         .bind(user_id)
@@ -554,6 +565,7 @@ impl SqliteRepository {
                 .push(UserPublic {
                     id: row.get("id"),
                     name: row.get("name"),
+                    avatar: row.get("avatar"),
                 });
         }
         Ok(workspaces

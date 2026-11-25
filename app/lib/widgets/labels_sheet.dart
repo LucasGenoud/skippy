@@ -278,6 +278,44 @@ class _LabelsSheetState extends State<LabelsSheet> {
   }
 }
 
+/// Asks before deleting [label]: it comes off every note that carries it, for
+/// everyone in the workspace, and there is no undo.
+Future<void> _confirmDelete(
+  BuildContext context,
+  NotesStore store,
+  Label label,
+) async {
+  final count = store
+      .notesInWorkspace(label.workspaceId)
+      .where((n) => n.labelIds.contains(label.id))
+      .length;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AppDialog(
+      title: Text('Delete ${label.name}?'),
+      content: Text(
+        count == 0
+            ? 'No notes carry this label.'
+            : 'It comes off $count ${count == 1 ? 'note' : 'notes'}, for '
+                  'everyone in this workspace. The notes stay.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Delete label'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) {
+    store.deleteLabel(label.id);
+  }
+}
+
 /// The "Edit labels" management dialog reached from the drawer. Lists labels
 /// with their colour/icon; each opens a [LabelEditorDialog] on tap.
 ///
@@ -337,7 +375,7 @@ class EditLabelsDialog extends StatelessWidget {
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Delete label',
-                  onPressed: () => store.deleteLabel(label.id),
+                  onPressed: () => _confirmDelete(context, store, label),
                 ),
               ),
             ),

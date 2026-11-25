@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -574,6 +575,50 @@ void main() {
       );
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('sticky_notes_sso_pending'), isNull);
+    });
+  });
+
+  group('profile picture', () {
+    test('a new picture is uploaded and its version kept', () async {
+      seedSession();
+      final png = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 1, 2]);
+      final sent = <http.Request>[];
+      final auth = storeWith(
+        MockClient((request) async {
+          sent.add(request);
+          if (request.method == 'PUT') return http.Response('', 204);
+          return http.Response(
+            jsonEncode({
+              'id': 'u-me',
+              'name': 'Me',
+              'email': 'me@example.com',
+              'avatar': 7,
+            }),
+            200,
+          );
+        }),
+      );
+      await auth.restore();
+      sent.clear();
+
+      await auth.setAvatar(png);
+
+      final put = sent.firstWhere((r) => r.method == 'PUT');
+      expect(put.url.path, '/api/auth/me/avatar');
+      expect(put.headers['content-type'], 'image/png');
+      expect(put.bodyBytes, png);
+      expect(auth.user!.avatar, 7);
+      final prefs = await SharedPreferences.getInstance();
+      final cached = jsonDecode(prefs.getString('sticky_notes_user')!);
+      expect(cached['avatar'], 7);
+    });
+
+    test('a picture nobody may see reads as none', () async {
+      final api = ApiClient(
+        baseUrl: 'http://server.test',
+        httpClient: MockClient((_) async => http.Response('', 404)),
+      );
+      expect(await api.fetchAvatar('u-other', 3), isNull);
     });
   });
 }

@@ -13,6 +13,7 @@ import '../util/backup.dart';
 import '../util/connectivity.dart';
 import '../util/keep_import.dart';
 import 'bulk_import.dart';
+import 'checklist_suggestions.dart';
 import 'checklist_tree.dart';
 import 'local_cache.dart';
 import 'note_collection.dart';
@@ -1323,10 +1324,10 @@ class NotesStore extends ChangeNotifier {
   }
 
   /// Typing suggestions for checklist rows, drawn from items previously
-  /// checked off IN THIS NOTE, history never leaks across notes. Prefix
-  /// matches rank above substring matches; texts already on the list are
-  /// excluded. An empty query suggests the note's whole history, most used
-  /// first (the popup scrolls).
+  /// checked off IN THIS NOTE, history never leaks across notes. Ranked by
+  /// [rankSuggestions]: prefix, then substring, then a letter or two off;
+  /// texts already on the list are excluded. An empty query suggests the
+  /// note's whole history, most used first (the popup scrolls).
   List<String> suggestionsFor(
     String? noteId,
     String query, {
@@ -1334,20 +1335,7 @@ class NotesStore extends ChangeNotifier {
   }) {
     final history = noteId == null ? null : _checklistHistory[noteId];
     if (history == null || history.isEmpty) return const [];
-    final q = query.trim().toLowerCase();
-    final excluded = {for (final e in exclude) e.trim().toLowerCase()};
-    final prefix = <String>[];
-    final contains = <String>[];
-    for (final text in history) {
-      final lower = text.toLowerCase();
-      if (excluded.contains(lower)) continue;
-      if (q.isEmpty || lower.startsWith(q)) {
-        prefix.add(text);
-      } else if (lower.contains(q)) {
-        contains.add(text);
-      }
-    }
-    return [...prefix, ...contains];
+    return rankSuggestions(history, query, exclude: exclude);
   }
 
   /// Convert a note to [target], mapping content sensibly: lines <-> items,

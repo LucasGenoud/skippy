@@ -8,6 +8,7 @@ mod collections;
 pub use collections::{delete_collection, put_collection};
 mod attachments;
 mod auth;
+mod avatars;
 mod background;
 mod chat;
 mod events;
@@ -34,6 +35,7 @@ pub use auth::{
     delete_account, forgot_password, login, logout, me, password_reset_available, register,
     reset_password, sso_callback, sso_exchange, sso_start, update_account,
 };
+pub use avatars::{delete_avatar, get_avatar, put_avatar};
 pub use chat::chat_ws;
 pub use events::ws_handler;
 pub use labels::{create_label, delete_label, list_labels, update_label};

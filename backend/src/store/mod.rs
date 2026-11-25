@@ -1,5 +1,6 @@
 pub mod sqlite;
 mod sqlite_attachments;
+mod sqlite_avatars;
 mod sqlite_history;
 mod sqlite_infrastructure;
 mod sqlite_rows;

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'package:provider/provider.dart';
@@ -44,6 +46,7 @@ class LinkPreviewCard extends StatelessWidget {
     final cache = context.read<LinkPreviewCache>();
     return FutureBuilder<LinkPreview?>(
       future: cache.preview(url),
+      initialData: cache.resolved(url),
       builder: (context, snapshot) {
         void open() => (onOpen ?? launchLinkUrl)(url);
         return _Strip(
@@ -69,6 +72,9 @@ class LinkPreviewCard extends StatelessWidget {
 /// row overlay) can compute how much room a given count will take.
 const double kLinkPreviewStripHeight = 60;
 const int kMaxLinkPreviewCards = 5;
+
+/// How long typing must pause before an open note's previews follow it.
+const Duration kLinkPreviewSettle = Duration(milliseconds: 500);
 
 List<String> linkPreviewUrls(String text) => findUrls(
   text,
@@ -247,10 +253,26 @@ ImageProvider? _previewImageProvider(String imageUrl) {
     final bytes = isBase64
         ? base64Decode(payload)
         : utf8.encode(Uri.decodeComponent(payload));
-    return bytes.isEmpty ? null : MemoryImage(bytes);
+    return bytes.isEmpty ? null : _DataUriImage(imageUrl, bytes);
   } catch (_) {
     return null;
   }
+}
+
+/// A [MemoryImage] equal to any other decoded from the same URI. A plain one
+/// is equal only to itself, so each rebuild made a new image-cache key, and
+/// the thumbnail reloaded and faded in again on every keystroke.
+class _DataUriImage extends MemoryImage {
+  final String uri;
+
+  const _DataUriImage(this.uri, super.bytes);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _DataUriImage && other.uri == uri && other.scale == scale;
+
+  @override
+  int get hashCode => Object.hash(uri, scale);
 }
 
 /// The strip's leading square: the Open Graph image if there is one, otherwise
@@ -322,7 +344,11 @@ class _Thumb extends StatelessWidget {
 }
 
 /// Up to five unique previews in one rounded rectangle, with row dividers.
-class LinkPreviewList extends StatelessWidget {
+///
+/// The links shown follow [text] once it has been still for
+/// [kLinkPreviewSettle], so a link being typed is not unfurled, and its strip
+/// replaced, once per keystroke.
+class LinkPreviewList extends StatefulWidget {
   final String text;
   final void Function(String url)? onOpen;
   final Future<void> Function(String url)? onSummarize;
@@ -339,8 +365,38 @@ class LinkPreviewList extends StatelessWidget {
   });
 
   @override
+  State<LinkPreviewList> createState() => _LinkPreviewListState();
+}
+
+class _LinkPreviewListState extends State<LinkPreviewList> {
+  late List<String> _urls = linkPreviewUrls(widget.text);
+  Timer? _settle;
+
+  @override
+  void didUpdateWidget(LinkPreviewList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.text == oldWidget.text) {
+      return;
+    }
+
+    _settle?.cancel();
+    _settle = Timer(kLinkPreviewSettle, () {
+      final urls = linkPreviewUrls(widget.text);
+      if (!listEquals(urls, _urls)) {
+        setState(() => _urls = urls);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _settle?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final urls = linkPreviewUrls(text);
+    final urls = _urls;
     if (urls.isEmpty) return const SizedBox.shrink();
     return DecoratedBox(
       position: DecorationPosition.foreground,
@@ -356,11 +412,14 @@ class LinkPreviewList extends StatelessWidget {
           children: [
             for (var i = 0; i < urls.length; i++)
               LinkPreviewCard(
+                // Keyed by link so a link added above another keeps each
+                // card on its own preview.
+                key: ValueKey(urls[i]),
                 url: urls[i],
-                onOpen: onOpen,
-                onSummarize: onSummarize,
-                onStopSummarize: onStopSummarize,
-                summarizing: summarizingUrls.contains(urls[i]),
+                onOpen: widget.onOpen,
+                onSummarize: widget.onSummarize,
+                onStopSummarize: widget.onStopSummarize,
+                summarizing: widget.summarizingUrls.contains(urls[i]),
                 topDivider: i > 0,
                 outlined: false,
                 borderRadius: BorderRadius.zero,

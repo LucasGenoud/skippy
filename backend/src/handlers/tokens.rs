@@ -38,6 +38,16 @@ pub async fn create_api_token(
     }
     let scope = TokenScope::from_wire(&body.scope)
         .ok_or_else(|| ApiError::BadRequest("scope must be read or write".to_string()))?;
+    let workspace_id = body
+        .workspace_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if let Some(id) = workspace_id
+        && !state.repo.is_workspace_member(id, &user_id).await?
+    {
+        return Err(ApiError::NotFound);
+    }
     if state.repo.api_tokens_for_user(&user_id).await?.len() >= MAX_TOKENS_PER_USER {
         return Err(ApiError::BadRequest(format!(
             "an account can hold at most {MAX_TOKENS_PER_USER} tokens"
@@ -47,7 +57,7 @@ pub async fn create_api_token(
     let secret = format!("{SECRET_PREFIX}{}", new_token());
     let token = state
         .repo
-        .create_api_token(&new_id(), &user_id, name, scope, &secret)
+        .create_api_token(&new_id(), &user_id, name, scope, workspace_id, &secret)
         .await?;
     Ok((StatusCode::CREATED, Json(CreatedApiToken { token, secret })))
 }
