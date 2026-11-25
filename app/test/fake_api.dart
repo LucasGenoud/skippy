@@ -1021,7 +1021,16 @@ class FakeApi implements Api {
 
   @override
   Future<void> deleteAttachment(String attachmentId) =>
-      _run('deleteAttachment:$attachmentId', () {});
+      _run('deleteAttachment:$attachmentId', () {
+        for (final MapEntry(:key, :value) in notes.entries.toList()) {
+          final kept = value.attachments
+              .where((attachment) => attachment.id != attachmentId)
+              .toList();
+          if (kept.length != value.attachments.length) {
+            notes[key] = value.copyWith(attachments: kept);
+          }
+        }
+      });
 
   @override
   String fileUrl(String attachmentId) => 'http://fake.test/files/$attachmentId';

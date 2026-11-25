@@ -1292,6 +1292,91 @@ void main() {
     });
   });
 
+  group('several images on one note', () {
+    Uint8List bytes(int size) => Uint8List(size);
+
+    test(
+      'images added one by one keep their order through a refetch',
+      () async {
+        api.notes['n1'] = serverNote('n1', title: 'trip');
+        await store.load();
+
+        for (final (size, name) in [
+          (11, 'a.png'),
+          (12, 'b.png'),
+          (13, 'c.png'),
+        ]) {
+          await store.uploadFile('n1', bytes(size), 'image/png', name);
+        }
+        expect(store.noteById('n1')!.attachments.map((a) => a.filename), [
+          'a.png',
+          'b.png',
+          'c.png',
+        ]);
+
+        await store.refresh();
+        expect(store.noteById('n1')!.attachments.map((a) => a.filename), [
+          'a.png',
+          'b.png',
+          'c.png',
+        ]);
+      },
+    );
+
+    test(
+      'a refetch landing before the upload returns adds no duplicate',
+      () async {
+        final racing = _RefetchDuringUploadApi();
+        final racingStore = testStore(racing);
+        addTearDown(racingStore.dispose);
+        racing.store = racingStore;
+        racing.notes['n1'] = serverNote('n1', title: 'trip');
+        await racingStore.load();
+
+        await racingStore.uploadFile('n1', bytes(11), 'image/png', 'a.png');
+
+        expect(racingStore.noteById('n1')!.attachments.map((a) => a.filename), [
+          'a.png',
+        ]);
+      },
+    );
+
+    test(
+      'removing one image is immediate, works offline, and keeps the rest',
+      () async {
+        api.notes['n1'] = serverNote('n1', title: 'trip');
+        await store.load();
+        for (final (size, name) in [
+          (11, 'a.png'),
+          (12, 'b.png'),
+          (13, 'c.png'),
+        ]) {
+          await store.uploadFile('n1', bytes(size), 'image/png', name);
+        }
+
+        api.failWith = Exception('network down');
+        store.removeAttachment('n1', 'att-12');
+        expect(store.noteById('n1')!.attachments.map((a) => a.filename), [
+          'a.png',
+          'c.png',
+        ]);
+        await settle();
+        expect(store.offline, isTrue);
+        expect(api.notes['n1']!.attachments, hasLength(3));
+
+        api.failWith = null;
+        store.retryNow();
+        await settle();
+        expect(api.log, contains('deleteAttachment:att-12'));
+        await store.refresh();
+        expect(store.noteById('n1')!.attachments.map((a) => a.filename), [
+          'a.png',
+          'c.png',
+        ]);
+      },
+    );
+  });
+
   group('createTextNote (shared text/links)', () {
     test('shared text becomes one persisted text note', () async {
       final id = await store.createTextNote('https://example.com');
@@ -2148,4 +2233,27 @@ void main() {
       second.dispose();
     });
   });
+}
+
+/// Models the server's change nudge arriving before the upload's own response:
+/// the store refetches a note that already holds the new attachment.
+class _RefetchDuringUploadApi extends FakeApi {
+  NotesStore? store;
+
+  @override
+  Future<Attachment> uploadAttachment(
+    String noteId,
+    Uint8List bytes,
+    String mime,
+    String filename,
+  ) async {
+    final attachment = await super.uploadAttachment(
+      noteId,
+      bytes,
+      mime,
+      filename,
+    );
+    await store!.refresh();
+    return attachment;
+  }
 }

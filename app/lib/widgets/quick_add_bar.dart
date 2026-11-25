@@ -403,9 +403,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
 
   Future<void> _addImage() => _withModal(() async {
     try {
-      final picked = await pickNoteImage(context);
-      if (picked == null || !mounted) return;
-      _addFiles([picked]);
+      final picked = await pickNoteImages(context);
+      if (picked.isEmpty || !mounted) return;
+      _addFiles(picked);
     } catch (_) {
       showAppSnack("Couldn't add the image");
     }
@@ -484,15 +484,16 @@ class _QuickAddBarState extends State<QuickAddBar> {
   Future<void> _quickImageNote() async {
     final store = context.read<NotesStore>();
     try {
-      final picked = await pickNoteImage(context);
-      if (picked == null || withinUploadLimit([picked]).isEmpty) return;
+      final picked = withinUploadLimit(await pickNoteImages(context));
+      if (picked.isEmpty) return;
       // The picker can outlive this bar (the camera is a whole other screen),
       // so the spinner is only for a bar that is still on screen; the note
       // still gets created either way.
       if (mounted) setState(() => _uploading = true);
-      final id = await store.createNoteWithFiles([
+      final id = await store.createNoteWithFiles(
         picked,
-      ], labelIds: widget.labelIds);
+        labelIds: widget.labelIds,
+      );
       if (id == null) showAppSnack("Couldn't upload the image");
     } catch (_) {
       showAppSnack("Couldn't upload the image");

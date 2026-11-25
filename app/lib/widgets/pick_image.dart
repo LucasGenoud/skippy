@@ -30,6 +30,27 @@ Future<DroppedFile?> pickNoteImage(BuildContext context) async {
   if (source == null) return null;
   final picked = await ImagePicker().pickImage(source: source);
   if (picked == null) return null;
+  return _droppedFile(picked, source);
+}
+
+/// Picks images for a note: one photo from the camera, or as many as the
+/// user selects from the library. Asks first on a phone, as
+/// [pickNoteImage] does. Empty when the user backs out.
+Future<List<DroppedFile>> pickNoteImages(BuildContext context) async {
+  final source = canTakePhoto
+      ? await chooseImageSource(context)
+      : ImageSource.gallery;
+  if (source == null) return const [];
+  if (source == ImageSource.camera) {
+    final shot = await ImagePicker().pickImage(source: source);
+    return shot == null ? const [] : [await _droppedFile(shot, source)];
+  }
+
+  final picked = await ImagePicker().pickMultiImage();
+  return [for (final file in picked) await _droppedFile(file, source)];
+}
+
+Future<DroppedFile> _droppedFile(XFile picked, ImageSource source) async {
   final bytes = await picked.readAsBytes();
   var mime = picked.mimeType ?? mimeFromName(picked.name);
   if (source != ImageSource.camera) {

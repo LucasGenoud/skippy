@@ -19,10 +19,14 @@ extension NotesStoreAttachments on NotesStore {
       mime,
       filename,
     );
+    // A refetch nudged by this very upload can land first and already hold
+    // the file; appending it again would show the picture twice.
     final note = noteById(noteId);
-    if (note != null) {
-      _replace(note.copyWith(attachments: [...note.attachments, attachment]));
+    if (note == null || note.attachments.any((a) => a.id == attachment.id)) {
+      return;
     }
+
+    _replace(note.copyWith(attachments: [...note.attachments, attachment]));
   }
 
   Future<void> _materializeForAttachment(String noteId) async {

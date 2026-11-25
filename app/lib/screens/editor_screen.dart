@@ -1011,9 +1011,8 @@ class _EditorScreenState extends State<EditorScreen> {
     dismissKeyboard();
     _ensureNote();
     try {
-      final picked = await pickNoteImage(context);
-      if (picked == null) return;
-      await _uploadAll([picked], failureMessage: "Couldn't upload the image");
+      final picked = await pickNoteImages(context);
+      await _uploadAll(picked, failureMessage: "Couldn't upload the image");
     } catch (_) {
       showAppSnack(
         "Couldn't upload the image",

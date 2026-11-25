@@ -218,7 +218,7 @@ class _NoteCardContent extends StatelessWidget {
         if (images.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(top: hasTextBlock ? 12 : 0),
-            child: _ImageStrip(
+            child: _ImageGrid(
               images: images,
               store: store,
               borderRadius: BorderRadius.vertical(
@@ -541,50 +541,119 @@ class _ChecklistRow extends StatelessWidget {
   }
 }
 
-class _ImageStrip extends StatelessWidget {
+/// A note's pictures on its card: up to [kCardMosaicTiles] in a grid (see
+/// [mosaicLayout]), the last tile counting any the grid leaves out.
+class _ImageGrid extends StatelessWidget {
   final List<Attachment> images;
   final NotesStore store;
   final BorderRadius borderRadius;
-  const _ImageStrip({
+  const _ImageGrid({
     required this.images,
     required this.store,
     this.borderRadius = BorderRadius.zero,
   });
 
+  // Logical widths the pictures decode at: about a card wide alone, about
+  // half a card in the grid.
+  static const double _singleDecodeWidth = 320;
+  static const double _tileDecodeWidth = 200;
+
   @override
   Widget build(BuildContext context) {
-    final first = images.first;
-    final extra = images.length - 1;
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: Stack(
-        children: [
-          // Grow to the image's aspect ratio (up to a cap) so image-forward
-          // notes show as much of the picture as fits; SVGs render through the
-          // vector path inside [NoteImage].
-          NoteImage(
-            attachment: first,
-            url: store.fileUrl(first),
-            maxHeight: 280,
+    final shown = images.take(kCardMosaicTiles).toList();
+    final hidden = images.length - shown.length;
+    final single = shown.length == 1;
+    return Semantics(
+      label: images.length == 1 ? '1 image' : '${images.length} images',
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: ImageMosaic(
+          style: MosaicStyle.card,
+          leadImage: NoteImage.sizeProbe(
+            shown.first,
+            store.fileUrl(shown.first),
           ),
-          if (extra > 0)
-            Positioned(
-              right: 8,
-              bottom: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: kBorderRadius,
-                ),
-                child: Text(
-                  '+$extra',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+          tiles: [
+            for (var i = 0; i < shown.length; i++)
+              _CardImageTile(
+                key: ValueKey('card-image-${shown[i].id}'),
+                image: shown[i],
+                url: store.fileUrl(shown[i]),
+                decodeWidth: single ? _singleDecodeWidth : _tileDecodeWidth,
+                // A lone tall picture keeps its top, where the subject of a
+                // screenshot or a document usually is.
+                alignment: single ? Alignment.topCenter : Alignment.center,
+                hidden: i == shown.length - 1 ? hidden : 0,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CardImageTile extends StatelessWidget {
+  final Attachment image;
+  final String url;
+  final double decodeWidth;
+  final Alignment alignment;
+
+  /// How many pictures the grid leaves out; shown over this tile when any.
+  final int hidden;
+
+  const _CardImageTile({
+    super.key,
+    required this.image,
+    required this.url,
+    required this.decodeWidth,
+    required this.alignment,
+    required this.hidden,
+  });
+
+  static const double _scrimAlpha = 0.45;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = Theme.of(context).textTheme.titleMedium?.copyWith(
+      color: Colors.white,
+      fontWeight: FontWeight.w600,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        NoteImage(
+          attachment: image,
+          url: url,
+          decodeWidth: decodeWidth,
+          alignment: alignment,
+        ),
+        // The count fades in and out with the pictures behind it rather
+        // than appearing over a tile that was a plain picture a frame ago.
+        IgnorePointer(
+          child: AnimatedOpacity(
+            opacity: hidden > 0 ? 1 : 0,
+            duration: Motion.fast,
+            curve: Motion.standard,
+            child: ColoredBox(
+              color: Colors.black.withValues(alpha: _scrimAlpha),
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: Motion.fast,
+                  child: hidden > 0
+                      ? Text(
+                          '+$hidden',
+                          key: ValueKey(hidden),
+                          style: count,
+                          semanticsLabel: '$hidden more',
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ),
             ),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 }

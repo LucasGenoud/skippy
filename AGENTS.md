@@ -193,6 +193,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/board/`: the board view (side-by-side columns on wide screens, paged on phones), the column picker, and the stage editor.
 - `app/lib/widgets/reminders/`: the Reminders view (agenda by day, month calendar, place reminders; calendar beside the agenda on wide screens, a tab on phones) and the shared reminder editing helpers the editor also uses. Its rules live in `state/reminder_agenda.dart`.
 - `app/lib/widgets/note_card.dart`: the card shell (open, hover, select, swipe); its `note_card/` parts draw the content, the labels, and the hover actions.
+- `app/lib/widgets/image_mosaic.dart`: the animated grid a note's pictures sit in, on the card (up to four, the last counting the rest) and in the editor (all of them). `widgets/editor/image_viewer.dart` steps through them full size.
 - `app/lib/widgets/note_actions.dart`: archive, trash, copy, share, AI rewrite and the upload limit, shared by the card, the editor and the home screen. `state/note_availability.dart` decides which of them a note offers.
 - `app/lib/widgets/page_header.dart`: the title block a destination opens with (Reminders, Archive, Trash). Small-caps group labels use `sectionLabelStyle` in `theme.dart`.
 - `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card

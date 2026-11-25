@@ -25,6 +25,7 @@ import 'board/move_to_stage_sheet.dart';
 import 'checklist/check_mark.dart';
 import 'collection_settings.dart';
 import 'color_picker.dart';
+import 'image_mosaic.dart';
 import 'labels_sheet.dart';
 import 'link_preview.dart';
 import 'link_summary_indicator.dart';
@@ -217,14 +218,15 @@ class _NoteTileState extends State<NoteTile> {
     dismissKeyboard();
     final store = context.read<NotesStore>();
     try {
-      final picked = await pickNoteImage(context);
-      if (picked == null || withinUploadLimit([picked]).isEmpty) return;
-      await store.uploadFile(
-        widget.note.id,
-        picked.bytes,
-        picked.mime,
-        picked.name,
-      );
+      final images = withinUploadLimit(await pickNoteImages(context));
+      for (final picked in images) {
+        await store.uploadFile(
+          widget.note.id,
+          picked.bytes,
+          picked.mime,
+          picked.name,
+        );
+      }
     } catch (_) {
       showAppSnack(
         "Couldn't upload the image",
