@@ -177,6 +177,28 @@ void main() {
       expect(find.text('Read only'), findsOneWidget);
     });
 
+    // A short note still fills the page's column, like the header above it,
+    // instead of shrinking to its text in the middle of the screen.
+    testWidgets('a shared note fills the column on a phone', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      api.publicShares['tok'] = PublicShare(
+        target: ShareTarget.note,
+        title: 'Focaccia',
+        sharedBy: 'Ada',
+        notes: [note('n1', title: 'Focaccia', content: 'flour')],
+      );
+
+      await tester.pumpWidget(host(api, 'tok'));
+      await tester.pumpAndSettle();
+
+      final rule = tester.getRect(find.byType(Divider).first);
+      final card = tester.getRect(find.byType(PublicNoteCard));
+      expect(card.left, moreOrLessEquals(rule.left, epsilon: 1));
+      expect(card.right, moreOrLessEquals(rule.right, epsilon: 1));
+    });
+
     testWidgets('a revoked or expired link says so without saying which', (
       tester,
     ) async {

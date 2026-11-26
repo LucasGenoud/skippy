@@ -444,12 +444,16 @@ class _SingleNote extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
           // The single-note page shows the whole note rather than a card's
           // preview, so nothing is clipped and there is nowhere to tap through
-          // to.
-          child: PublicNoteCard(
-            note: note,
-            api: api,
-            labels: labels,
-            expanded: true,
+          // to. It fills the column, like the header above, however short it
+          // is.
+          child: SizedBox(
+            width: double.infinity,
+            child: PublicNoteCard(
+              note: note,
+              api: api,
+              labels: labels,
+              expanded: true,
+            ),
           ),
         ),
       ),
