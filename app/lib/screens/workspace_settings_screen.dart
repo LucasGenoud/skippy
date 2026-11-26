@@ -201,6 +201,10 @@ class _PeopleSection extends StatefulWidget {
 /// People's avatars on the roster.
 const double _avatarRadius = 16;
 
+/// A Material 3 [ListTile]'s default end padding, where its trailing
+/// button sits.
+const double _kListTileEndInset = 24;
+
 class _PeopleSectionState extends State<_PeopleSection> {
   final _controller = TextEditingController();
   bool _busy = false;
@@ -289,7 +293,12 @@ class _PeopleSectionState extends State<_PeopleSection> {
         if (widget.isOwner) ...[
           const SizedBox(height: kSpaceSm),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            // Inset like the roster rows above, so Send sits in the same
+            // column as their remove buttons.
+            padding: const EdgeInsetsDirectional.only(
+              start: kSpaceLg,
+              end: _kListTileEndInset,
+            ),
             child: Row(
               children: [
                 Expanded(

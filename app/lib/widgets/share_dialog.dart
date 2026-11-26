@@ -151,48 +151,53 @@ class _ShareDialogState extends State<ShareDialog> {
             ),
           if (isOwner) ...[
             const SizedBox(height: kSpaceSm),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: rowAlignedFieldDecoration(
-                      hint: 'Add people by email',
-                      icon: Icons.person_add_alt,
-                      indent: kModalRowPadding.left,
+            // Inset like the rows above, so Share sits in the same column as
+            // their remove buttons.
+            Padding(
+              padding: EdgeInsetsDirectional.only(end: kModalRowPadding.right),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      decoration: rowAlignedFieldDecoration(
+                        hint: 'Add people by email',
+                        icon: Icons.person_add_alt,
+                        indent: kModalRowPadding.left,
+                      ),
+                      onSubmitted: (_) => _add(),
                     ),
-                    onSubmitted: (_) => _add(),
                   ),
-                ),
-                const SizedBox(width: kSpaceSm),
-                AnimatedSwitcher(
-                  duration: Motion.fast,
-                  switchInCurve: Motion.standard,
-                  switchOutCurve: Motion.standard,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(scale: animation, child: child),
+                  const SizedBox(width: kSpaceSm),
+                  AnimatedSwitcher(
+                    duration: Motion.fast,
+                    switchInCurve: Motion.standard,
+                    switchOutCurve: Motion.standard,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(scale: animation, child: child),
+                    ),
+                    child: _busy
+                        ? const Padding(
+                            key: ValueKey('busy'),
+                            padding: EdgeInsets.all(
+                              (_kSendButtonSize - _kSpinnerSize) / 2,
+                            ),
+                            child: SizedBox(
+                              width: _kSpinnerSize,
+                              height: _kSpinnerSize,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : IconButton(
+                            key: const ValueKey('send'),
+                            icon: const Icon(Icons.send),
+                            tooltip: 'Share',
+                            onPressed: _add,
+                          ),
                   ),
-                  child: _busy
-                      ? const Padding(
-                          key: ValueKey('busy'),
-                          padding: EdgeInsets.all(
-                            (_kSendButtonSize - _kSpinnerSize) / 2,
-                          ),
-                          child: SizedBox(
-                            width: _kSpinnerSize,
-                            height: _kSpinnerSize,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : IconButton(
-                          key: const ValueKey('send'),
-                          icon: const Icon(Icons.send),
-                          tooltip: 'Share',
-                          onPressed: _add,
-                        ),
-                ),
-              ],
+                ],
+              ),
             ),
             AnimatedFormError(
               message: _error,

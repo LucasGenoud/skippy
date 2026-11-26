@@ -351,4 +351,57 @@ void main() {
     expect(more.dx, moreOrLessEquals(item.dx, epsilon: 0.5));
     await flushTimers(tester);
   });
+
+  // A roster's remove buttons and the invite row's send button share one
+  // trailing column.
+  testWidgets('share dialog trailing buttons share a column', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    (store.api as FakeApi).notes['n'] = serverNote(
+      'n',
+      title: 'Plan',
+      workspaceId: 'w-default',
+      collaborators: const [UserRef(id: 'u-ada', name: 'Ada')],
+    );
+    await store.load();
+    await tester.pumpWidget(homeApp(store));
+    await tester.pumpAndSettle();
+    ShareDialog.show(tester.element(find.byType(Scaffold).first), 'n');
+    await tester.pumpAndSettle();
+
+    final remove = tester.getCenter(find.byIcon(Icons.close).last).dx;
+    final send = tester.getCenter(find.byIcon(Icons.send)).dx;
+    expect(send, moreOrLessEquals(remove, epsilon: 1));
+    await flushTimers(tester);
+  });
+
+  testWidgets('workspace roster trailing buttons share a column', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = store.api as FakeApi;
+    api.workspaces['w-default'] = api.workspaces['w-default']!.copyWith(
+      members: const [UserRef(id: 'u-ada', name: 'Ada')],
+    );
+    await store.load();
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: store),
+          ChangeNotifierProvider(create: (_) => SettingsStore(api: store.api)),
+        ],
+        child: const MaterialApp(
+          home: WorkspaceSettingsScreen(workspaceId: 'w-default'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final remove = tester.getCenter(find.byIcon(Icons.close).first).dx;
+    final send = tester.getCenter(find.byIcon(Icons.send)).dx;
+    expect(send, moreOrLessEquals(remove, epsilon: 1));
+  });
 }
