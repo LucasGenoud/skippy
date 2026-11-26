@@ -630,7 +630,7 @@ class _Breakdown extends StatelessWidget {
           const SizedBox(height: kSpaceMd),
           for (final slice in slices)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
+              padding: const EdgeInsets.symmetric(vertical: kSpaceHair),
               child: Row(
                 children: [
                   Container(
@@ -706,7 +706,7 @@ class _MonthBar extends StatelessWidget {
               _floor;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: kSpaceHair),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [

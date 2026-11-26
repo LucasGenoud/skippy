@@ -112,7 +112,7 @@ class _Equalizer extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             for (var i = 0; i < _bars; i++) ...[
-              if (i != 0) const SizedBox(width: 3),
+              if (i != 0) const SizedBox(width: kSpaceHair),
               _bar(i),
             ],
           ],
@@ -172,7 +172,7 @@ class _ShimmerLines extends StatelessWidget {
           for (var i = 0; i < widthFactors.length; i++)
             Padding(
               padding: EdgeInsets.only(
-                bottom: i == widthFactors.length - 1 ? 0 : 9,
+                bottom: i == widthFactors.length - 1 ? 0 : kSpaceSm,
               ),
               child: FractionallySizedBox(
                 alignment: Alignment.centerLeft,

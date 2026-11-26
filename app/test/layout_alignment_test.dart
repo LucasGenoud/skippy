@@ -321,4 +321,34 @@ void main() {
     expect(create.right, moreOrLessEquals(field.right, epsilon: 1));
     await flushTimers(tester);
   });
+
+  // "+N more" under a card's checklist starts where the items' text does.
+  testWidgets('a card checklist lines its overflow up with its items', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    (store.api as FakeApi).notes['c'] = serverNote(
+      'c',
+      title: 'Long list',
+      kind: NoteKind.checklist,
+      workspaceId: 'w-default',
+      items: [
+        for (var i = 0; i < 40; i++) ChecklistItem(id: '$i', text: 'Item $i'),
+      ],
+    );
+    await store.load();
+    await tester.pumpWidget(homeApp(store));
+    await tester.pumpAndSettle();
+
+    final more = tester.getTopLeft(
+      find.textContaining('more', findRichText: true).first,
+    );
+    final item = tester.getTopLeft(
+      find.text('Item 0', findRichText: true).first,
+    );
+    expect(more.dx, moreOrLessEquals(item.dx, epsilon: 0.5));
+    await flushTimers(tester);
+  });
 }

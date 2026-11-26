@@ -13,6 +13,10 @@ import '../util/motion.dart';
 import '../util/network_error.dart';
 import '../widgets/screen_width.dart';
 
+/// The check beside the active server, and the blank that keeps the other
+/// servers' names lined up with it.
+const double _kServerCheckSize = 18;
+
 class LoginScreen extends StatefulWidget {
   /// Prefills the email field. Set when someone has just come back from the
   /// password reset page, so the only thing left to type is the password they
@@ -828,8 +832,12 @@ class _BackendUrlSelector extends StatelessWidget {
           ...savedUrls.map(
             (url) => MenuItemButton(
               leadingIcon: url == activeUrl
-                  ? Icon(Icons.check, size: 18, color: scheme.primary)
-                  : const SizedBox(width: 18),
+                  ? Icon(
+                      Icons.check,
+                      size: _kServerCheckSize,
+                      color: scheme.primary,
+                    )
+                  : const SizedBox(width: _kServerCheckSize),
               trailingIcon: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

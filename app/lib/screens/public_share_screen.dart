@@ -389,7 +389,12 @@ class _BoardColumn extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(kSpaceXs, 2, kSpaceXs, kSpaceSm),
+            padding: const EdgeInsets.fromLTRB(
+              kSpaceXs,
+              kSpaceHair,
+              kSpaceXs,
+              kSpaceSm,
+            ),
             child: Row(
               children: [
                 Expanded(
@@ -592,7 +597,7 @@ class _Checklist extends StatelessWidget {
       children: [
         for (final item in shown)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(vertical: kSpaceHair),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

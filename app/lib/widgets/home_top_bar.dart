@@ -198,6 +198,9 @@ class HomeTopBar extends StatelessWidget {
   /// as above and below them: (50px pill - 40px button pad) / 2.
   static const double _narrowPillInset = 5;
 
+  /// Pads the 18px search spinner to the width of the toggle it replaces.
+  static const double _busyInset = 14;
+
   static const _selectingKey = ValueKey('selecting');
   static const _browsingKey = ValueKey('browsing');
 
@@ -403,7 +406,7 @@ class HomeTopBar extends StatelessWidget {
       child: semanticBusy
           ? const Padding(
               key: ValueKey('busy'),
-              padding: EdgeInsets.symmetric(horizontal: 14),
+              padding: EdgeInsets.symmetric(horizontal: _busyInset),
               child: SizedBox(
                 width: 18,
                 height: 18,
@@ -437,7 +440,10 @@ class HomeTopBar extends StatelessWidget {
       height: barHeight,
       // Tighter than the desktop bar's inset on purpose: the pill here holds
       // real buttons, and this leaves them their full 48px touch target.
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpaceMd,
+        vertical: _narrowPillInset,
+      ),
       color: scheme.surface,
       child: _SearchPill(
         focusNode: focusNode,
@@ -1084,7 +1090,7 @@ class _UserAvatarMenu extends StatelessWidget {
         }
       },
       child: Padding(
-        padding: const EdgeInsets.all(6.0),
+        padding: const EdgeInsets.all(kSpaceInline),
         child: Stack(
           clipBehavior: Clip.none,
           children: [

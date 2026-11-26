@@ -121,9 +121,9 @@ class _CodeBlock extends StatelessWidget {
           Padding(
             padding: EdgeInsets.fromLTRB(
               kSpaceMd,
-              showHeader ? 0 : kSpaceSm + 2,
+              showHeader ? 0 : kSpaceMd,
               kSpaceMd,
-              kSpaceSm + 2,
+              kSpaceMd,
             ),
             child: interactive
                 ? SingleChildScrollView(
@@ -149,7 +149,12 @@ class _CodeBlock extends StatelessWidget {
     );
     if (!interactive) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(kSpaceMd, kSpaceSm, kSpaceMd, 2),
+        padding: const EdgeInsets.fromLTRB(
+          kSpaceMd,
+          kSpaceSm,
+          kSpaceMd,
+          kSpaceHair,
+        ),
         child: label,
       );
     }

@@ -133,7 +133,7 @@ class _ShortcutRow extends StatelessWidget {
           const SizedBox(width: kSpaceMd),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(top: 3),
+              padding: const EdgeInsets.only(top: kSpaceHair),
               child: Text(description),
             ),
           ),

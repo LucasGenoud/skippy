@@ -3,6 +3,11 @@ import 'package:flutter/scheduler.dart' show SchedulerPhase;
 
 import '../theme.dart';
 
+/// How long a toast stays up: long enough to read, and longer when it offers
+/// an action such as Undo, so there is time to reach it.
+const Duration _kToastTime = Duration(seconds: 3);
+const Duration _kToastWithActionTime = Duration(seconds: 5);
+
 /// Global messenger so snackbars can be shown from anywhere (including after
 /// a route pops, e.g. "Empty note discarded" when the editor closes).
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -72,7 +77,7 @@ void showAppSnack(
             Expanded(child: Text(message)),
           ],
         ),
-        duration: Duration(seconds: hasAction ? 5 : 3),
+        duration: hasAction ? _kToastWithActionTime : _kToastTime,
         // Flutter now defaults action snackbars to persistent. Undo should be
         // available briefly, not leave deletion confirmations pinned forever.
         persist: false,

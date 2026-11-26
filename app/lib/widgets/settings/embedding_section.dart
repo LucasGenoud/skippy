@@ -178,7 +178,7 @@ class _StatRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: kSpaceHair),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

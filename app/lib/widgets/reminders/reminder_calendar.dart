@@ -390,7 +390,7 @@ class _DayCell extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: kSpaceHair),
             SizedBox(
               height: _dotSize,
               child: Row(
@@ -400,7 +400,9 @@ class _DayCell extends StatelessWidget {
                     Container(
                       width: _dotSize,
                       height: _dotSize,
-                      margin: const EdgeInsets.symmetric(horizontal: 1),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: kSpaceHair / 2,
+                      ),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: dotColor,

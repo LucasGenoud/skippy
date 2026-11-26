@@ -160,7 +160,7 @@ class _DragReorderListState<T> extends State<DragReorderList<T>> {
       onVerticalDragEnd: (_) => _dragEnd(),
       onVerticalDragCancel: _dragEnd,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: kSpaceHair),
         child: Icon(
           Icons.drag_indicator,
           size: 20,

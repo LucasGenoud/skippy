@@ -30,6 +30,11 @@ class Motion {
   /// about how quickly the app responds. Skipped outright under reduce motion.
   static const Duration celebration = Duration(milliseconds: 1100);
 
+  /// For something the user just dismissed that must get out of the way at
+  /// once, such as the composer closing on a click elsewhere. Not zero,
+  /// because `AnimatedSize` asserts on a zero reverse duration.
+  static const Duration immediate = Duration(milliseconds: 1);
+
   /// One cycle of a looping indicator: a loading shimmer, a pulse while
   /// something works, the recording ripple, typing dots, the sync spinner.
   /// One rhythm for all of them, calm enough to sit on screen for seconds.

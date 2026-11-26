@@ -68,6 +68,11 @@ const double kSpaceInline = 6;
 /// and its subtitle, a label and its hint.
 const double kSpaceLineGap = 2;
 
+/// An optical nudge inside a dense element, below the grid on purpose: a
+/// row's rhythm in a compact list, a baseline fix, the gap between marks in
+/// a chart. A 4px step is visibly too much there.
+const double kSpaceHair = 2;
+
 /// Half the gap between two selectable rows in a list (the sidebar, the
 /// settings index, the collections list), so their highlights never touch.
 const double kRowGap = 2;

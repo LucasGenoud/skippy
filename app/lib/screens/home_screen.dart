@@ -970,7 +970,9 @@ class _HomeScreenState extends State<HomeScreen> {
           // bottom so the bar sits centered in the space above the divider
           // rather than pinned to it.
           padding: EdgeInsets.symmetric(
-            vertical: ScreenWidth.isAtLeast(context, kWideBreakpoint) ? 6 : 0,
+            vertical: ScreenWidth.isAtLeast(context, kWideBreakpoint)
+                ? kSpaceInline
+                : 0,
           ),
           child: HomeTopBar(
             controller: _searchController,

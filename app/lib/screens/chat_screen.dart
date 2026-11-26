@@ -597,7 +597,10 @@ class _TypingDotsState extends State<_TypingDots>
         children: [
           for (var i = 0; i < 3; i++)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+              padding: const EdgeInsets.symmetric(
+                horizontal: kSpaceHair,
+                vertical: kSpaceInline,
+              ),
               child: Opacity(
                 // Each dot pulses on a phase-shifted triangle wave, eased so
                 // it turns around softly instead of bouncing off its peaks.

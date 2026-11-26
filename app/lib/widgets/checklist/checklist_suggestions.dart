@@ -60,8 +60,8 @@ class ChecklistSuggestions extends StatelessWidget {
                       onTap: () => onPick(suggestion),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
+                          horizontal: kSpaceLg,
+                          vertical: kSpaceSm,
                         ),
                         child: Row(
                           children: [

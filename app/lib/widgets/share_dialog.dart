@@ -17,6 +17,11 @@ import 'user_avatar.dart';
 /// Collaborators' avatars in the dialog.
 const double _avatarRadius = 16;
 
+/// The send button, and the spinner that takes its place without moving
+/// anything.
+const double _kSendButtonSize = 40;
+const double _kSpinnerSize = 20;
+
 class ShareDialog extends StatefulWidget {
   final String noteId;
   const ShareDialog({super.key, required this.noteId});
@@ -171,10 +176,12 @@ class _ShareDialogState extends State<ShareDialog> {
                   child: _busy
                       ? const Padding(
                           key: ValueKey('busy'),
-                          padding: EdgeInsets.all(10),
+                          padding: EdgeInsets.all(
+                            (_kSendButtonSize - _kSpinnerSize) / 2,
+                          ),
                           child: SizedBox(
-                            width: 20,
-                            height: 20,
+                            width: _kSpinnerSize,
+                            height: _kSpinnerSize,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         )

@@ -463,7 +463,7 @@ class _TileBodyState extends State<_TileBody> {
                           padding: const EdgeInsets.only(top: kSpaceLineGap),
                           child: Wrap(
                             spacing: kSpaceMd,
-                            runSpacing: 2,
+                            runSpacing: kSpaceHair,
                             children: widget.meta,
                           ),
                         ),

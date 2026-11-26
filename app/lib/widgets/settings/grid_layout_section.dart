@@ -7,6 +7,9 @@ import '../../state/settings_store.dart';
 import '../../theme.dart';
 import '../../util/motion.dart';
 
+/// Inset of the miniature grid inside its fixed-height preview tile.
+const double _kPreviewInset = 10;
+
 /// Settings block for the note-grid layout: card density, how wide the centered
 /// grid may grow, and a live miniature preview of the two combined.
 class GridLayoutSection extends StatelessWidget {
@@ -115,7 +118,7 @@ class _GridPreview extends StatelessWidget {
 
         return Container(
           height: 88,
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: _kPreviewInset),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
             borderRadius: kBorderRadius,

@@ -1,5 +1,10 @@
 part of '../note_card.dart';
 
+/// A card checklist row's box, and where its text starts after it; the
+/// "+N more" line under the rows starts there too.
+const double _kCardCheckSize = 18;
+const double _kCardCheckTextInset = _kCardCheckSize + kSpaceSm;
+
 // What a card shows of its note: title, body preview, checklist rows, images,
 // files and the metadata chips under them.
 
@@ -183,7 +188,10 @@ class _NoteCardContent extends StatelessWidget {
                         _ChecklistRow(note: note, item: item),
                       if (unchecked.length > previewItems.length)
                         Padding(
-                          padding: const EdgeInsets.only(left: 28, top: 2),
+                          padding: const EdgeInsets.only(
+                            left: _kCardCheckTextInset,
+                            top: kSpaceHair,
+                          ),
                           child: Text(
                             '+ ${unchecked.length - previewItems.length} more',
                             style: theme.textTheme.bodySmall?.copyWith(
@@ -477,8 +485,8 @@ class _ChecklistRow extends StatelessWidget {
     return Padding(
       key: ValueKey('checklist-card-row-${item.id}'),
       padding: EdgeInsets.only(
-        top: 2,
-        bottom: 2,
+        top: kSpaceHair,
+        bottom: kSpaceHair,
         // Nesting shows on the card too, at a smaller step than the editor's:
         // the preview is a few lines wide and three full indents would leave
         // a subtask with nowhere to put its text.
@@ -490,12 +498,12 @@ class _ChecklistRow extends StatelessWidget {
           // Enlarge the checkbox hit target without growing the visible icon,
           // while keeping the icon centred on the first text line.
           SizedBox(
-            width: 18,
+            width: _kCardCheckSize,
             height: controlBandHeight,
             child: Center(
               child: SizedBox(
-                width: 18,
-                height: 18,
+                width: _kCardCheckSize,
+                height: _kCardCheckSize,
                 child: InkWell(
                   onTap: canToggle
                       ? () => context.read<NotesStore>().toggleChecklistItem(

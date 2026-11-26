@@ -11,6 +11,9 @@ import 'audio_recorder.dart';
 /// speech, which a transition token would smooth away.
 const Duration _kMeterFollow = Duration(milliseconds: 90);
 
+/// Space between the live waveform's bars.
+const double _kWaveBarGap = 3;
+
 /// Height of the sheet's Cancel and Stop buttons: a full touch target.
 const double _kActionHeight = 48;
 
@@ -351,7 +354,7 @@ class _Waveform extends StatelessWidget {
             Container(
               width: 3,
               height: (4 + level * 42).clamp(4.0, 46.0),
-              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              margin: const EdgeInsets.symmetric(horizontal: _kWaveBarGap / 2),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.75),
                 borderRadius: BorderRadius.circular(2),

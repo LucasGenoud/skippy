@@ -256,7 +256,7 @@ class _MapButton extends StatelessWidget {
         child: InkWell(
           onTap: onPressed,
           child: Padding(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(kSpaceInline),
             child: Icon(icon, size: 18, color: scheme.onSurface),
           ),
         ),

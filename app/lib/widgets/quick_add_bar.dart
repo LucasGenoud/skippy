@@ -36,6 +36,9 @@ import 'reminders/reminder_editing.dart';
 import 'share_dialog.dart';
 import 'state_cross_fade.dart';
 
+/// Pads the 18px upload spinner to the 48px of the button it replaces.
+const double _kBusyInset = 15;
+
 /// Inline quick add, shown above the grid on wide screens: pick a kind and
 /// compose the whole note inline, plain text, a checklist, or markdown,
 /// without ever leaving the grid. Close / tap outside / Escape all save (an
@@ -539,7 +542,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
                   // A zero reverse duration trips an AnimatedSize layout assertion,
                   // so one millisecond is used: visually instant, framework-safe.
                   duration: Motion.base,
-                  reverseDuration: const Duration(milliseconds: 1),
+                  reverseDuration: Motion.immediate,
                   curve: Motion.emphasized,
                   alignment: Alignment.topCenter,
                   // Cross-fade bar <-> composer while the size animates, so the
@@ -621,7 +624,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
                 alignment: Alignment.center,
                 child: _uploading
                     ? const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 15),
+                        padding: EdgeInsets.symmetric(horizontal: _kBusyInset),
                         child: SizedBox(
                           width: 18,
                           height: 18,
@@ -1053,12 +1056,12 @@ class _RemoveFileButton extends StatelessWidget {
         onTap: onPressed,
         customBorder: const CircleBorder(),
         child: Container(
-          margin: const EdgeInsets.all(2),
+          margin: const EdgeInsets.all(kSpaceHair),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.55),
             shape: BoxShape.circle,
           ),
-          padding: const EdgeInsets.all(2),
+          padding: const EdgeInsets.all(kSpaceHair),
           child: const Icon(Icons.close, size: 14, color: Colors.white),
         ),
       ),

@@ -132,8 +132,8 @@ class WorkspaceMenu extends StatelessWidget {
               ),
               child: Padding(
                 padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 8 : 10,
-                  vertical: 8,
+                  horizontal: compact ? kSpaceSm : kSpaceMd,
+                  vertical: kSpaceSm,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

@@ -246,7 +246,7 @@ class _LabelChip extends StatelessWidget {
             Container(
               width: 8,
               height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
+              margin: const EdgeInsets.symmetric(horizontal: kSpaceHair),
               decoration: BoxDecoration(
                 color: tint,
                 borderRadius: const BorderRadius.all(Radius.circular(2)),
