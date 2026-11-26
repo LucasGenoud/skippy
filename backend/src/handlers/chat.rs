@@ -17,7 +17,7 @@ use tokio::sync::OwnedSemaphorePermit;
 use crate::AppState;
 use crate::assist::{self, PromptNote, RouteDecision, WriteAction, WritePermissions};
 use crate::error::ApiResult;
-use crate::llm::{LlmConfig, TokenStream};
+use crate::llm::{ChatMessage, LlmConfig, TokenStream};
 use crate::models::*;
 use crate::search::SearchService;
 
@@ -39,6 +39,14 @@ struct ChatRequest {
     /// actually looking at. Absent means every note they can see.
     #[serde(default)]
     workspace_id: Option<String>,
+    /// The collection open inside that workspace. New notes are filed there
+    /// and the prompts name it; ignored unless it belongs to the workspace.
+    #[serde(default)]
+    collection_id: Option<String>,
+    /// The user switched writes off for this turn: a change request is
+    /// answered, never planned.
+    #[serde(default)]
+    read_only: bool,
 }
 
 /// Who a turn is being answered for: the asker, the provider they configured,
@@ -47,8 +55,105 @@ struct TurnContext<'a> {
     user_id: &'a str,
     cfg: &'a LlmConfig,
     workspace_id: Option<&'a str>,
+    collection_id: Option<&'a str>,
+    taxonomy: &'a Taxonomy,
     prompt: &'a str,
     permissions: WritePermissions,
+}
+
+/// The collections and labels the caller can see, loaded once per turn so
+/// prompts can name them and plans can map names back to ids.
+struct Taxonomy {
+    collections: Vec<Collection>,
+    labels: Vec<Label>,
+}
+
+impl Taxonomy {
+    async fn load(state: &AppState, user_id: &str) -> Result<Self, TurnError> {
+        const FAILED: &str = "could not load collections and labels";
+        let collections = state.repo.collections_for_user(user_id).await;
+        let labels = state.repo.labels_for_user(user_id).await;
+        Ok(Self {
+            collections: collections.map_err(|_| FAILED)?,
+            labels: labels.map_err(|_| FAILED)?,
+        })
+    }
+
+    /// The workspace's collection named or identified by `wanted`.
+    fn collection_id(&self, workspace_id: &str, wanted: &str) -> Option<String> {
+        let wanted = wanted.trim();
+        self.collections
+            .iter()
+            .filter(|c| c.workspace_id == workspace_id)
+            .find(|c| c.id == wanted || c.name.eq_ignore_ascii_case(wanted))
+            .map(|c| c.id.clone())
+    }
+
+    fn collection_name(&self, id: Option<&str>) -> &str {
+        self.collections
+            .iter()
+            .find(|c| Some(c.id.as_str()) == id)
+            .map_or("none", |c| c.name.as_str())
+    }
+
+    /// Ids of the workspace's labels in `names`; names it lacks are dropped,
+    /// since the taxonomy is the members' to grow, not the model's.
+    fn label_ids(&self, workspace_id: &str, names: &[String]) -> Vec<String> {
+        let mut ids = Vec::new();
+        for name in names {
+            let found = self.labels.iter().find(|l| {
+                l.workspace_id == workspace_id && l.name.eq_ignore_ascii_case(name.trim())
+            });
+            if let Some(label) = found
+                && !ids.contains(&label.id)
+            {
+                ids.push(label.id.clone());
+            }
+        }
+        ids
+    }
+
+    fn label_names(&self, ids: &[String]) -> String {
+        let names: Vec<&str> = self
+            .labels
+            .iter()
+            .filter(|l| ids.contains(&l.id))
+            .map(|l| l.name.as_str())
+            .collect();
+        if names.is_empty() {
+            "none".to_string()
+        } else {
+            names.join(", ")
+        }
+    }
+
+    fn place(&self, workspace_id: &str, collection_id: Option<&str>) -> assist::ChatPlace {
+        let names = |id: Option<&str>| self.collection_name(id).to_string();
+        assist::ChatPlace {
+            collection: collection_id.map(|id| names(Some(id))),
+            collections: self
+                .collections
+                .iter()
+                .filter(|c| c.workspace_id == workspace_id)
+                .map(|c| c.name.clone())
+                .collect(),
+            labels: self
+                .labels
+                .iter()
+                .filter(|l| l.workspace_id == workspace_id)
+                .map(|l| l.name.clone())
+                .collect(),
+        }
+    }
+}
+
+/// Appends `extra` to a prompt's leading system message. One system message,
+/// not two: some OpenAI-compatible servers refuse a second.
+fn extend_system(mut messages: Vec<ChatMessage>, extra: &str) -> Vec<ChatMessage> {
+    if let Some(first) = messages.first_mut() {
+        first.content.push_str(extra);
+    }
+    messages
 }
 
 #[derive(Deserialize)]
@@ -62,7 +167,8 @@ struct ChatHistoryEntry {
 /// arrive together in the first frame; one request is handled per connection:
 ///
 /// ```text
-/// client → server:  {"token":"…","message":"…","history":[{"role","content"},…]}
+/// client → server:  {"token":"…","message":"…","history":[{"role","content"},…],
+///                    "workspace_id"?,"collection_id"?,"read_only"?}
 /// server → client:  {"type":"sources","notes":[{"id","title"}, …]}
 ///                   {"type":"created","action":"create"|"append"|"update","note":{"id","title"}}
 ///                                                (0..1, only when the turn
@@ -212,14 +318,29 @@ async fn run_turn(
     };
     let llm_settings = ai.settings();
     let scope = turn_scope(state, &user_id, workspace_id.as_deref()).await?;
+    let taxonomy = Taxonomy::load(state, &user_id).await?;
+    let collection_id = workspace_id.as_deref().and_then(|w| {
+        let wanted = request.collection_id.as_deref()?;
+        taxonomy
+            .collection_id(w, wanted)
+            .filter(|id| id == wanted.trim())
+    });
+    let place = workspace_id.as_deref().map_or(String::new(), |w| {
+        assist::place_text(&taxonomy.place(w, collection_id.as_deref()))
+    });
 
-    let decision = route(state, cfg, &history, message, &llm_settings.prompt).await;
+    let decision = route(state, cfg, &history, message, &llm_settings.prompt, &place).await;
+    // Read-only answers a change request over the notes it is about.
+    let decision = match decision {
+        RouteDecision::Write(query) if request.read_only => RouteDecision::Search(query),
+        decision => decision,
+    };
 
     // Phase 2, retrieve when the turn needs notes. A Search reads them to
     // answer; a Write reads them as candidates to add to.
     let notes = match &decision {
         RouteDecision::Search(query) | RouteDecision::Write(query) => {
-            retrieve(state, &search, &scope, &user_id, query).await?
+            retrieve(state, &search, &scope, &taxonomy, &user_id, query).await?
         }
         RouteDecision::Direct => Vec::new(),
     };
@@ -233,6 +354,8 @@ async fn run_turn(
             user_id: &user_id,
             cfg,
             workspace_id: workspace_id.as_deref(),
+            collection_id: collection_id.as_deref(),
+            taxonomy: &taxonomy,
             prompt: &llm_settings.prompt,
             permissions: WritePermissions {
                 create: llm_settings.chat_create,
@@ -240,7 +363,8 @@ async fn run_turn(
                 organize: llm_settings.chat_organize,
             },
         };
-        if let Some(applied) = write_from_plan(state, &turn, &notes, &history, message).await? {
+        let applied = write_from_plan(state, &turn, &notes, &history, message, &place).await?;
+        if let Some(applied) = applied {
             confirm_write(sink, &applied).await;
             return Ok(());
         }
@@ -257,6 +381,10 @@ async fn run_turn(
         return Ok(());
     }
 
+    let mut extra = place;
+    if request.read_only {
+        extra.push_str(assist::READ_ONLY_NOTE);
+    }
     let messages = match &decision {
         // Write reaches here only when its plan was unusable: answer over the
         // retrieved notes like an ordinary read turn rather than writing.
@@ -267,6 +395,7 @@ async fn run_turn(
             assist::chat_messages_direct(&history, message, &llm_settings.prompt)
         }
     };
+    let messages = extend_system(messages, &extra);
     let tokens = state
         .llm
         .stream(cfg, messages)
@@ -360,10 +489,10 @@ async fn route(
     history: &[(String, String)],
     message: &str,
     prompt: &str,
+    place: &str,
 ) -> RouteDecision {
-    let routing = state
-        .llm
-        .complete(cfg, assist::route_messages(history, message, prompt));
+    let messages = extend_system(assist::route_messages(history, message, prompt), place);
+    let routing = state.llm.complete(cfg, messages);
     match tokio::time::timeout(PLANNING_TIMEOUT, routing).await {
         Ok(Ok(reply)) => assist::parse_route_reply(&reply),
         _ => None,
@@ -377,6 +506,7 @@ async fn retrieve(
     state: &AppState,
     search: &SearchService,
     scope: &Scope,
+    taxonomy: &Taxonomy,
     user_id: &str,
     query: &str,
 ) -> Result<Vec<PromptNote>, TurnError> {
@@ -417,10 +547,16 @@ async fn retrieve(
         if record.trashed {
             continue;
         }
+        let label_ids = match state.repo.note_view(&note_id, user_id).await {
+            Ok(Some(view)) => view.label_ids,
+            _ => Vec::new(),
+        };
         // Prompt rendering, not the embedding text: checklists keep their
         // per-item checked state here.
         let text = format!(
-            "kind={}, pinned={}, archived={}, color={}, reminder_at={}\n{}",
+            "collection={}, labels={}, kind={}, pinned={}, archived={}, color={}, reminder_at={}\n{}",
+            taxonomy.collection_name(record.collection_id.as_deref()),
+            taxonomy.label_names(&label_ids),
             record.kind,
             record.pinned,
             record.archived,
@@ -536,9 +672,11 @@ async fn write_from_plan(
     candidates: &[PromptNote],
     history: &[(String, String)],
     message: &str,
+    place: &str,
 ) -> Result<Option<AppliedWrite>, TurnError> {
     let planner =
         assist::write_plan_messages(candidates, history, message, turn.permissions, turn.prompt);
+    let planner = extend_system(planner, place);
     let planning = state.llm.complete(turn.cfg, planner);
     let Ok(Ok(reply)) = tokio::time::timeout(PLANNING_TIMEOUT, planning).await else {
         return Ok(None);
@@ -554,9 +692,14 @@ async fn write_from_plan(
             title,
             content,
             items,
-        } => create_from_plan(state, turn, kind, title, content, items)
-            .await
-            .map(Some),
+            labels,
+            collection,
+        } => {
+            let filing = Filing { labels, collection };
+            create_from_plan(state, turn, kind, title, content, items, filing)
+                .await
+                .map(Some)
+        }
         WriteAction::Append {
             note_id,
             content,
@@ -573,7 +716,15 @@ async fn write_from_plan(
             trashed,
             reminder_at,
             reminder_repeat,
+            add_labels,
+            remove_labels,
+            collection,
         } => {
+            let refile = Refile {
+                add_labels,
+                remove_labels,
+                collection,
+            };
             let patch = UpdateNote {
                 title,
                 content,
@@ -585,9 +736,22 @@ async fn write_from_plan(
                 reminder_repeat,
                 ..Default::default()
             };
-            update_from_plan(state, turn, &note_id, items, patch).await
+            update_from_plan(state, turn, &note_id, items, refile, patch).await
         }
     }
+}
+
+/// Where a planned note goes: label names and a collection by name or id.
+struct Filing {
+    labels: Vec<String>,
+    collection: Option<String>,
+}
+
+/// A planned change of labels or collection on an existing note.
+struct Refile {
+    add_labels: Vec<String>,
+    remove_labels: Vec<String>,
+    collection: Option<String>,
 }
 
 async fn create_from_plan(
@@ -597,6 +761,7 @@ async fn create_from_plan(
     title: String,
     content: String,
     items: Vec<String>,
+    filing: Filing,
 ) -> Result<AppliedWrite, TurnError> {
     let is_checklist = kind == KIND_CHECKLIST;
     let (content, item_structs) = if is_checklist {
@@ -625,6 +790,22 @@ async fn create_from_plan(
         (body, Vec::new())
     };
     let n = item_structs.len();
+    // Labels and a named collection resolve only inside the open workspace;
+    // without one, the note keeps the create pipeline's defaults.
+    let (collection_id, label_ids) = match turn.workspace_id {
+        Some(w) => {
+            let named = filing
+                .collection
+                .as_deref()
+                .and_then(|c| turn.taxonomy.collection_id(w, c));
+            let labels = turn.taxonomy.label_ids(w, &filing.labels);
+            (
+                named.or(turn.collection_id.map(str::to_owned)),
+                (!labels.is_empty()).then_some(labels),
+            )
+        }
+        None => (None, None),
+    };
     let body = CreateNote {
         kind: Some(kind),
         title,
@@ -633,6 +814,8 @@ async fn create_from_plan(
         // The note belongs where the user is looking; absent, the create
         // pipeline falls back to their default workspace.
         workspace_id: turn.workspace_id.map(str::to_owned),
+        collection_id,
+        label_ids,
         ..Default::default()
     };
     let view = create_note_for_user(state, turn.user_id, body)
@@ -673,6 +856,9 @@ async fn append_from_plan(
     let Ok(Some(record)) = state.repo.note_record_for_user(note_id, turn.user_id).await else {
         return Ok(None);
     };
+    if holds_data(&record.kind) {
+        return Ok(None);
+    }
     let is_checklist = record.kind == KIND_CHECKLIST;
     let mut body = UpdateNote::default();
     let mut added = 0usize;
@@ -745,11 +931,40 @@ async fn update_from_plan(
     turn: &TurnContext<'_>,
     note_id: &str,
     items: Option<Vec<String>>,
+    refile: Refile,
     mut patch: UpdateNote,
 ) -> Result<Option<AppliedWrite>, TurnError> {
+    let Ok(Some(view)) = state.repo.note_view(note_id, turn.user_id).await else {
+        return Ok(None);
+    };
     let Ok(Some(record)) = state.repo.note_record_for_user(note_id, turn.user_id).await else {
         return Ok(None);
     };
+    // Names resolve in the note's own workspace, which an unscoped turn may
+    // not have open.
+    let taxonomy = turn.taxonomy;
+    patch.collection_id = refile
+        .collection
+        .as_deref()
+        .and_then(|c| taxonomy.collection_id(&record.workspace_id, c))
+        .filter(|id| record.collection_id.as_deref() != Some(id));
+    if !refile.add_labels.is_empty() || !refile.remove_labels.is_empty() {
+        let removed = taxonomy.label_ids(&record.workspace_id, &refile.remove_labels);
+        let mut labels: Vec<String> = view
+            .label_ids
+            .iter()
+            .filter(|id| !removed.contains(id))
+            .cloned()
+            .collect();
+        for id in taxonomy.label_ids(&record.workspace_id, &refile.add_labels) {
+            if !labels.contains(&id) {
+                labels.push(id);
+            }
+        }
+        if labels != view.label_ids {
+            patch.label_ids = Some(labels);
+        }
+    }
     // Rows keep their ids, ticks and nesting by position, so a rewrite of the
     // list reads as an edit rather than a new list.
     patch.items = items.map(|texts| {
@@ -772,7 +987,7 @@ async fn update_from_plan(
             })
             .collect()
     });
-    let undo = serde_json::json!({
+    let mut undo = serde_json::json!({
         "title": record.title,
         "content": record.content,
         "items": record.items,
@@ -783,6 +998,14 @@ async fn update_from_plan(
         "reminder_at": record.reminder_at,
         "reminder_repeat": record.reminder_repeat,
     });
+    if patch.label_ids.is_some() {
+        undo["label_ids"] = serde_json::json!(view.label_ids);
+    }
+    // A move clears the board column, so undo puts both back.
+    if patch.collection_id.is_some() {
+        undo["collection_id"] = serde_json::json!(record.collection_id);
+        undo["stage_id"] = serde_json::json!(record.stage_id);
+    }
     let view = apply_note_update(state, turn.user_id, note_id, patch)
         .await
         .map_err(|_| "could not update the note")?;
@@ -832,6 +1055,3 @@ fn titled(title: &str) -> String {
 fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
-    if holds_data(&record.kind) {
-        return Ok(None);
-    }

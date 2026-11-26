@@ -111,6 +111,24 @@ void main() {
       expect(sendButton(tester).onPressed, isNotNull);
     });
 
+    testWidgets('read-only is remembered and sent with the open collection', (
+      tester,
+    ) async {
+      api.chatScript = const [ChatDeltaEvent('Read only.'), ChatDoneEvent()];
+      await tester.pumpWidget(harness(const ChatScreen()));
+
+      await tester.tap(findAction('Read-only'));
+      await tester.pump();
+      expect(settings.chatReadOnly, isTrue);
+
+      await tester.enterText(find.byType(TextField), 'archive it');
+      await tester.tap(findAction('Send'));
+      await tester.pumpAndSettle();
+
+      expect(api.lastChatReadOnly, isTrue);
+      expect(api.lastChatCollectionId, store.activeCollection?.id);
+    });
+
     // The question sits on the accent fill, so it takes the accent's own
     // foreground; the default ink is white in dark mode, unreadable on it.
     testWidgets('the question is legible on its bubble in dark mode', (

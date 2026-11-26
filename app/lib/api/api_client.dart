@@ -397,11 +397,14 @@ abstract class Api {
   /// One notes-chat turn: sends [message] with prior [history] and emits the
   /// server's frames (sources, streamed deltas, then done/error). The stream
   /// closes after the terminal event. [workspaceId] scopes retrieval, and any
-  /// note the turn writes, to the workspace the user has open.
+  /// note the turn writes, to the workspace the user has open; [collectionId]
+  /// is where new notes go. A [readOnly] turn answers and never writes.
   Stream<ChatEvent> chat(
     String message,
     List<ChatMessage> history, {
     String? workspaceId,
+    String? collectionId,
+    bool readOnly = false,
   });
 }
 
@@ -1349,6 +1352,8 @@ class ApiClient extends _ApiTransport implements Api {
     String message,
     List<ChatMessage> history, {
     String? workspaceId,
+    String? collectionId,
+    bool readOnly = false,
   }) {
     // One WebSocket per turn: the server answers a single request per
     // connection, which keeps both ends free of reconnect bookkeeping. A
@@ -1407,6 +1412,9 @@ class ApiClient extends _ApiTransport implements Api {
             'history': [for (final m in history) m.toJson()],
             if (workspaceId != null && workspaceId.isNotEmpty)
               'workspace_id': workspaceId,
+            if (collectionId != null && collectionId.isNotEmpty)
+              'collection_id': collectionId,
+            if (readOnly) 'read_only': true,
           }),
         );
       } catch (_) {

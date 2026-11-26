@@ -1224,15 +1224,23 @@ class FakeApi implements Api {
   /// Workspace sent with the most recent [chat] call.
   String? lastChatWorkspaceId;
 
+  /// Collection and read-only flag sent with the most recent [chat] call.
+  String? lastChatCollectionId;
+  bool? lastChatReadOnly;
+
   @override
   Stream<ChatEvent> chat(
     String message,
     List<ChatMessage> history, {
     String? workspaceId,
+    String? collectionId,
+    bool readOnly = false,
   }) {
     log.add('chat:$message');
     lastChatHistory = history;
     lastChatWorkspaceId = workspaceId;
+    lastChatCollectionId = collectionId;
+    lastChatReadOnly = readOnly;
     final fail = failWith;
     if (fail != null) return Stream.error(fail);
     return Stream.fromIterable(chatScript);

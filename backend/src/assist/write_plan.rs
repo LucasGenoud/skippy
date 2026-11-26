@@ -21,6 +21,10 @@ pub enum WriteAction {
         title: String,
         content: String,
         items: Vec<String>,
+        /// Label names to apply; unknown ones are dropped by the caller.
+        labels: Vec<String>,
+        /// Collection to file it in, by name or id; `None` is the open one.
+        collection: Option<String>,
     },
     /// Add to an existing note; `note_id` is one of the retrieved candidates.
     Append {
@@ -40,6 +44,10 @@ pub enum WriteAction {
         trashed: Option<bool>,
         reminder_at: Option<Option<String>>,
         reminder_repeat: Option<Option<String>>,
+        add_labels: Vec<String>,
+        remove_labels: Vec<String>,
+        /// Collection to move it to, by name or id.
+        collection: Option<String>,
     },
 }
 
@@ -67,7 +75,8 @@ pub fn write_plan_messages(
          notes. Reply with ONLY one JSON object, no other text.\n\
          To create a new note:\n\
          {\"action\":\"create\",\"kind\":\"text\"|\"markdown\"|\"checklist\",\"title\":\"…\",\
-         \"content\":\"…\",\"items\":[\"…\"]}\n\
+         \"content\":\"…\",\"items\":[\"…\"],\"labels\":[\"…\"],\"collection\":\"…\"}\n\
+         It is filed in the open collection unless the user names another. \
          Use \"checklist\" with an \"items\" array for a list of things (to-dos, \
          shopping, steps); use \"text\" with \"content\" for prose. Keep \
          the title short; it may be empty. Include only the fields you need.\n\
@@ -81,8 +90,11 @@ pub fn write_plan_messages(
          {\"action\":\"update\",\"note_id\":\"<id>\",\"title\":\"…\",\"content\":\"…\",\
          \"items\":[\"…\"],\"pinned\":true|false,\"archived\":true|false,\
          \"trashed\":true|false,\"color\":\"…\",\"reminder_at\":\"RFC3339\"|null,\
-         \"reminder_repeat\":\"daily\"|\"weekly\"|\"monthly\"|\"yearly\"|null}\n\
-         Include only fields the user requested. The items array is the full \
+         \"reminder_repeat\":\"daily\"|\"weekly\"|\"monthly\"|\"yearly\"|null,\
+         \"add_labels\":[\"…\"],\"remove_labels\":[\"…\"],\"collection\":\"…\"}\n\
+         \"collection\" moves the note to another collection. Labels and \
+         collections are named exactly as listed under \"Where the user is\"; \
+         never invent one. Include only fields the user requested. The items array is the full \
          replacement checklist. Never invent a note id.\n\n\
          Existing notes you may change:",
     );
@@ -119,6 +131,12 @@ fn string_list(value: &serde_json::Value, key: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .take(MAX_WRITE_ITEMS)
         .collect()
+}
+
+/// A trimmed, non-blank string field.
+fn name(value: &serde_json::Value, key: &str) -> Option<String> {
+    let text = value[key].as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Lenient parse of the write-planner reply into an executable action.
@@ -163,6 +181,8 @@ pub fn parse_write_action(
                 title,
                 content,
                 items,
+                labels: string_list(&value, "labels"),
+                collection: name(&value, "collection"),
             })
         }
         "append" => {
@@ -212,8 +232,14 @@ pub fn parse_write_action(
                 Some(serde_json::Value::String(v)) => Some(Some(v.clone())),
                 _ => None,
             };
+            let add_labels = string_list(&value, "add_labels");
+            let remove_labels = string_list(&value, "remove_labels");
+            let collection = name(&value, "collection");
+            let refiles =
+                !add_labels.is_empty() || !remove_labels.is_empty() || collection.is_some();
             if !permissions.organize
-                && (color.is_some()
+                && (refiles
+                    || color.is_some()
                     || pinned.is_some()
                     || archived.is_some()
                     || trashed.is_some()
@@ -222,7 +248,8 @@ pub fn parse_write_action(
             {
                 return None;
             }
-            if title.is_none()
+            if !refiles
+                && title.is_none()
                 && content.is_none()
                 && items.is_none()
                 && color.is_none()
@@ -245,6 +272,9 @@ pub fn parse_write_action(
                 trashed,
                 reminder_at,
                 reminder_repeat,
+                add_labels,
+                remove_labels,
+                collection,
             })
         }
         _ => None,
@@ -292,6 +322,8 @@ mod tests {
                 title: "Groceries".into(),
                 content: String::new(),
                 items: vec!["milk".into(), "eggs".into()],
+                labels: vec![],
+                collection: None,
             })
         );
         // Unknown kind clamps to text; fences and prose tolerated.
@@ -306,6 +338,8 @@ mod tests {
                 title: String::new(),
                 content: "remember this".into(),
                 items: vec![],
+                labels: vec![],
+                collection: None,
             })
         );
         // A wholly empty create is rejected.
@@ -373,11 +407,26 @@ mod tests {
                 trashed: None,
                 reminder_at: None,
                 reminder_repeat: None,
+                add_labels: vec![],
+                remove_labels: vec![],
+                collection: None,
             })
         );
         assert_eq!(
             parse_write_action(
                 r#"{"action":"update","note_id":"abc","pinned":true}"#,
+                &ids,
+                WritePermissions {
+                    create: true,
+                    edit: true,
+                    organize: false,
+                },
+            ),
+            None
+        );
+        assert_eq!(
+            parse_write_action(
+                r#"{"action":"update","note_id":"abc","add_labels":["urgent"]}"#,
                 &ids,
                 WritePermissions {
                     create: true,

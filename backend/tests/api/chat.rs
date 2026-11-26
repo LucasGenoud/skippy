@@ -16,6 +16,17 @@ async fn chat_turn_in(
     history: Value,
     workspace_id: Option<&str>,
 ) -> Vec<Value> {
+    let request = json!({
+        "token": token,
+        "message": message,
+        "history": history,
+        "workspace_id": workspace_id,
+    });
+    chat_request(state, request).await
+}
+
+/// One turn from a whole request frame, for fields the shorthands omit.
+async fn chat_request(state: AppState, request: Value) -> Vec<Value> {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
@@ -29,17 +40,7 @@ async fn chat_turn_in(
     let (mut ws, _) = tokio_tungstenite::connect_async(url)
         .await
         .expect("ws connect");
-    ws.send(WsMessage::text(
-        json!({
-            "token": token,
-            "message": message,
-            "history": history,
-            "workspace_id": workspace_id,
-        })
-        .to_string(),
-    ))
-    .await
-    .unwrap();
+    ws.send(WsMessage::text(request.to_string())).await.unwrap();
 
     let mut frames = Vec::new();
     while let Ok(Some(Ok(frame))) =
@@ -586,4 +587,149 @@ async fn chat_in_a_workspace_runs_on_its_owners_provider() {
     let frames = chat_turn_in(state, &bob, "hi", json!([]), Some(&team)).await;
     assert_eq!(frames.last().unwrap()["type"], "error", "{frames:?}");
     assert_eq!(configs.lock().unwrap().len(), calls_before);
+}
+
+/// A search-backed chat state on a fake model that replies in turn.
+async fn chat_state(replies: &[&str]) -> (AppState, LlmCalls) {
+    let (llm, calls) = FakeLlm::new_seq(replies);
+    let index = Arc::new(
+        SqliteVectorIndex::connect(":memory:", HASH_EMBED_DIMS, "hash-test:64")
+            .await
+            .unwrap(),
+    );
+    let state = state()
+        .await
+        .with_search(Arc::new(SearchService::new(Arc::new(HashEmbedder), index)))
+        .with_llm(llm);
+    (state, calls)
+}
+
+/// The default workspace's id, after adding a "Work" collection to it.
+async fn workspace_with_work(app: &Router, token: &str) -> String {
+    let (_, workspaces) = send(app, "GET", "/api/workspaces", Some(token), None).await;
+    let id = workspaces[0]["id"].as_str().unwrap().to_string();
+    let (status, body) = send(
+        app,
+        "PUT",
+        &format!("/api/workspaces/{id}/collections/work"),
+        Some(token),
+        Some(json!({"id":"work","workspace_id":id,"name":"Work","layout":"masonry","sort":"custom","position":1.0})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    id
+}
+
+/// The prompts name the open collection, the others, and the labels, and a
+/// created note is filed in the open collection with the labels it named.
+#[tokio::test]
+async fn chat_knows_the_collection_and_labels_it_writes_with() {
+    let (state, calls) = chat_state(&[
+        r#"{"write": "standup"}"#,
+        r#"{"action":"create","kind":"text","title":"Standup","content":"notes","labels":["URGENT","nope"]}"#,
+    ])
+    .await;
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+    let workspace = workspace_with_work(&app, &token).await;
+    let urgent = make_label(&app, &token, "urgent").await;
+
+    let frames = chat_request(
+        state,
+        json!({"token": token, "message": "note the standup, it's urgent",
+               "workspace_id": workspace, "collection_id": "work"}),
+    )
+    .await;
+    assert!(frames.iter().any(|f| f["type"] == "created"), "{frames:?}");
+
+    for prompt in calls.lock().unwrap().iter() {
+        let system = &prompt[0].content;
+        assert!(system.contains("Open collection: Work"), "{system}");
+        assert!(system.contains("General"), "{system}");
+        assert!(system.contains("urgent"), "{system}");
+    }
+    let note = list_notes(&app, &token)
+        .await
+        .into_iter()
+        .find(|n| n["title"] == "Standup")
+        .unwrap();
+    assert_eq!(note["collection_id"], "work");
+    assert_eq!(note["label_ids"], json!([urgent]));
+}
+
+/// An update can move a note to another collection and change its labels,
+/// and the undo patch restores both.
+#[tokio::test]
+async fn chat_moves_and_relabels_a_note() {
+    let (state, _calls) = chat_state(&[
+        r#"{"write": "taxes"}"#,
+        r#"{"action":"update","note_id":"tax","collection":"work","add_labels":["urgent"],"remove_labels":["home"]}"#,
+    ])
+    .await;
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+    let workspace = workspace_with_work(&app, &token).await;
+    let urgent = make_label(&app, &token, "urgent").await;
+    let home = make_label(&app, &token, "home").await;
+    let note = create_note(
+        &app,
+        &token,
+        json!({"id":"tax","title":"Taxes","content":"taxes due","label_ids":[home]}),
+    )
+    .await;
+    let general = note["collection_id"].as_str().unwrap().to_string();
+    settle_index().await;
+
+    let frames = chat_turn_in(
+        state,
+        &token,
+        "file my taxes under work and mark them urgent",
+        json!([]),
+        Some(&workspace),
+    )
+    .await;
+    let changed = frames
+        .iter()
+        .find(|f| f["type"] == "created")
+        .expect("change frame");
+    assert_eq!(changed["undo"]["collection_id"], general);
+    assert_eq!(changed["undo"]["label_ids"], json!([home]));
+
+    let note = list_notes(&app, &token)
+        .await
+        .into_iter()
+        .find(|n| n["id"] == "tax")
+        .unwrap();
+    assert_eq!(note["collection_id"], "work");
+    assert_eq!(note["label_ids"], json!([urgent]));
+}
+
+/// A read-only turn answers a change request instead of planning it.
+#[tokio::test]
+async fn chat_read_only_turn_never_writes() {
+    let (state, calls) =
+        chat_state(&[r#"{"write": "groceries"}"#, "I can't change notes now."]).await;
+    let app = build_app(state.clone());
+    let (token, _) = register(&app, "ada").await;
+    configure_llm(&app, &token).await;
+
+    let frames = chat_request(
+        state,
+        json!({"token": token, "message": "make a grocery list", "read_only": true}),
+    )
+    .await;
+    assert!(!frames.iter().any(|f| f["type"] == "created"), "{frames:?}");
+    assert_eq!(frames.last().unwrap()["type"], "done");
+    assert!(list_notes(&app, &token).await.is_empty());
+
+    // Route, then answer: no planner call.
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert!(
+        calls[1][0].content.contains("read-only"),
+        "{}",
+        calls[1][0].content
+    );
 }

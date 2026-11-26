@@ -74,8 +74,9 @@ pub fn route_messages(
              thanks, chit-chat, or questions already answered in the \
              conversation).\n\
              {{\"write\": \"<topic>\"}}, when the user asks to CHANGE notes: \
-             create, edit, append, pin, archive, trash, color, or schedule one \
-             (\"make a list\", \"add milk\", \"pin my grocery list\"); set topic \
+             create, edit, append, pin, archive, trash, color, label, move to \
+             another collection, or schedule one (\"make a list\", \"add \
+             milk\", \"pin my grocery list\", \"tag it urgent\"); set topic \
              to a few words describing the note's subject so an existing note \
              to change can be found.{}",
             custom_prompt(prompt)
@@ -196,6 +197,41 @@ pub fn chat_messages(
     context.push_str(&custom_prompt(prompt));
     with_conversation(vec![ChatMessage::system(context)], history, message)
 }
+
+/// Where a turn takes place: the workspace's collections, the one the user
+/// has open, and the labels they can apply. Names only, never ids: the
+/// model reads and writes names, and the handler maps them back.
+pub struct ChatPlace {
+    pub collection: Option<String>,
+    pub collections: Vec<String>,
+    pub labels: Vec<String>,
+}
+
+/// The place rendered for the end of a system prompt.
+pub fn place_text(place: &ChatPlace) -> String {
+    let list = |names: &[String]| {
+        if names.is_empty() {
+            "none".to_string()
+        } else {
+            names.join(", ")
+        }
+    };
+    let mut text = String::from("\n\nWhere the user is:");
+    if let Some(open) = &place.collection {
+        text.push_str(&format!("\nOpen collection: {open}."));
+    }
+    text.push_str(&format!(
+        "\nCollections in this workspace: {}.\nLabels available: {}.",
+        list(&place.collections),
+        list(&place.labels),
+    ));
+    text
+}
+
+/// Appended to the answer prompt when the user turned chat read-only.
+pub const READ_ONLY_NOTE: &str = "\n\nRead-only mode is on: you cannot \
+    change notes this turn. If the user asks for a change, say that read-only \
+    mode is on and that they can switch it off to let you make it.";
 
 /// The no-lookup variant: the routing call decided this turn needs no notes,
 /// so the model answers from the conversation alone (and must not pretend it

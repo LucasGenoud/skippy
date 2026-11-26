@@ -118,14 +118,17 @@ class _ChatScreenState extends State<ChatScreen> {
       _turns.add(pending);
       _input.clear();
     });
-    final api = context.read<SettingsStore>().api;
+    final settings = context.read<SettingsStore>();
+    final notes = context.read<NotesStore>();
     // Answer over the workspace the user is looking at, and file anything the
-    // turn writes there too.
-    _sub = api
+    // turn writes in the collection they have open.
+    _sub = settings.api
         .chat(
           message,
           history,
-          workspaceId: context.read<NotesStore>().activeWorkspaceId,
+          workspaceId: notes.activeWorkspaceId,
+          collectionId: notes.activeCollection?.id,
+          readOnly: settings.chatReadOnly,
         )
         .listen(
           (event) => _handle(pending, event),
@@ -217,10 +220,19 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final settings = context.watch<SettingsStore>();
+    final readOnly = settings.chatReadOnly;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chat with your notes'),
         actions: [
+          IconButton(
+            tooltip: 'Read-only',
+            isSelected: readOnly,
+            onPressed: () => settings.setChatReadOnly(!readOnly),
+            icon: const Icon(Icons.edit_outlined),
+            selectedIcon: const Icon(Icons.edit_off_outlined),
+          ),
           IconButton(
             tooltip: 'New conversation',
             onPressed: _turns.isEmpty ? null : _newConversation,
@@ -279,7 +291,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
                           decoration: InputDecoration(
-                            hintText: 'Ask about your notes…',
+                            hintText: readOnly
+                                ? 'Ask about your notes (read-only)…'
+                                : 'Ask about your notes…',
+
                             filled: true,
                             border: OutlineInputBorder(
                               borderRadius: kBorderRadius,

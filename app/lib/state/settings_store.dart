@@ -287,6 +287,10 @@ class SettingsStore extends ChangeNotifier {
   bool llmChatEditEnabled = true;
   bool llmChatOrganizeEnabled = true;
 
+  /// The chat screen's own switch: answer only, never change notes. Personal,
+  /// unlike the workspace owner's create/edit/organize permissions above.
+  bool chatReadOnly = false;
+
   // Settings keys the self-hoster pinned via server env vars (backend
   // `config.rs`). A present key is locked in the UI and its value is
   // authoritative; secret keys carry no value. Fetched from
@@ -505,6 +509,7 @@ class SettingsStore extends ChangeNotifier {
     llmChatCreateEnabled = json['llm_chat_create'] != false;
     llmChatEditEnabled = json['llm_chat_edit'] != false;
     llmChatOrganizeEnabled = json['llm_chat_organize'] != false;
+    chatReadOnly = json['chat_read_only'] == true;
     // Taken here rather than in [_applyManaged], which also runs on a load that
     // skipped this method (a local save still in flight) and would then snapshot
     // the previous overlay instead of the user's own values.
@@ -589,6 +594,7 @@ class SettingsStore extends ChangeNotifier {
     'llm_chat_create': llmChatCreateEnabled,
     'llm_chat_edit': llmChatEditEnabled,
     'llm_chat_organize': llmChatOrganizeEnabled,
+    'chat_read_only': chatReadOnly,
     // toJson rebuilds the whole settings document, so every notify key must
     // appear here or a save from this device would erase it.
     for (final key in kNotifyFieldKeys) key: notifyValues[key] ?? '',
@@ -717,6 +723,8 @@ class SettingsStore extends ChangeNotifier {
     llmChatEditEnabled = edit;
     llmChatOrganizeEnabled = organize;
   });
+
+  void setChatReadOnly(bool value) => _mutate(() => chatReadOnly = value);
 
   void setNotifyValues(Map<String, String> values) => _mutate(() {
     notifyValues = {
