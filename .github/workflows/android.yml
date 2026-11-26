@@ -1,0 +1,80 @@
+name: build-android
+
+# Started by hand from the Actions sidebar ("Run workflow"). Builds the signed
+# release APK for sideloading and the app bundle Google Play takes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Matches the SDK the app is developed and tested against.
+  FLUTTER_VERSION: 3.47.1
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Flutter
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      # The keystore and its passwords live only in repository secrets; the
+      # files written here are gitignored and die with the runner.
+      - name: Write the upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] ||
+            [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "Set the ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,"
+            echo "ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD repository secrets."
+            exit 1
+          fi
+
+          mkdir -p app/android/signing
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode \
+            > app/android/signing/skippy-upload.jks
+          {
+            echo "storeFile=signing/skippy-upload.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > app/android/key.properties
+
+      - name: Fetch packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Build the APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Build the app bundle
+        working-directory: app
+        run: flutter build appbundle --release
+
+      - name: Name the outputs after the version
+        id: outputs
+        run: |
+          VERSION=$(awk '$1 == "version:" { print $2; exit }' app/pubspec.yaml)
+          mkdir -p dist
+          cp app/build/app/outputs/flutter-apk/app-release.apk \
+            "dist/skippy-$VERSION.apk"
+          cp app/build/app/outputs/bundle/release/app-release.aab \
+            "dist/skippy-$VERSION.aab"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: skippy-android-${{ steps.outputs.outputs.version }}
+          path: dist/
+          if-no-files-found: error
