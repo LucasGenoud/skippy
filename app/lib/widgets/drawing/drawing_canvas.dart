@@ -26,6 +26,11 @@ const double _eraserRadius = 14;
 /// carry on drawing and the canvas grows as the sketch does.
 const double _roomBelow = 250;
 
+/// The sheet grows by whole steps of this many drawing units, so a stroke
+/// near the bottom adds a page rather than nudging the editor taller after
+/// every line.
+const double _growStep = 500;
+
 /// Size of one tool button and the inset that keeps its shape off the tray's
 /// edge.
 const double _toolSize = 36;
@@ -61,6 +66,10 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
   Offset? _eraserAt;
 
   double _scale = 1;
+
+  /// The tallest the sheet has been while open, in drawing units. It never
+  /// shrinks under the pen: erasing the lowest stroke keeps the page.
+  double _sheetHeight = 0;
 
   bool get _readOnly => widget.onChanged == null;
 
@@ -153,16 +162,15 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
         LayoutBuilder(
           builder: (context, constraints) {
             _scale = constraints.maxWidth / kDrawingWidth;
-            final height = math.max(
-              kDrawingMinHeight,
-              _shown.contentHeight + _roomBelow,
-            );
+            final height = _sheetHeightFor(_shown);
             final sheet = DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: kBorderRadius,
                 border: Border.all(color: hairlineColor(scheme)),
               ),
-              child: SizedBox(
+              child: AnimatedContainer(
+                duration: Motion.base,
+                curve: Motion.standard,
                 height: height * _scale,
                 child: ClipRRect(
                   borderRadius: kBorderRadius,
@@ -209,6 +217,19 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
         ),
       ],
     );
+  }
+
+  /// The sheet's height for [drawing]: at least [kDrawingMinHeight], grown
+  /// in [_growStep]s to keep [_roomBelow] under the lowest stroke, and never
+  /// less than it has already been.
+  double _sheetHeightFor(Drawing drawing) {
+    final needed = drawing.contentHeight + _roomBelow;
+    var height = math.max(kDrawingMinHeight, _sheetHeight);
+    while (height < needed) {
+      height += _growStep;
+    }
+    _sheetHeight = height;
+    return height;
   }
 
   Widget _toolTray(ColorScheme scheme) {

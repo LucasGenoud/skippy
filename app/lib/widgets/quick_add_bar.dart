@@ -72,7 +72,7 @@ const _kBarKinds = [
 const _kEditorKinds = [
   (icon: Icons.draw_outlined, tooltip: 'New drawing', kind: NoteKind.drawing),
   (
-    icon: Icons.exposure_plus_1,
+    icon: Icons.track_changes_outlined,
     tooltip: 'New counter or habit',
     kind: NoteKind.tracker,
   ),
@@ -608,6 +608,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
     final defaultKind = context.select<SettingsStore, NoteKind>(
       (s) => s.defaultNoteKind,
     );
+    final hidden = context.select<SettingsStore, Set<NoteKind>>(
+      (s) => s.hiddenNoteKinds,
+    );
 
     Widget kindButton(IconData icon, String tooltip, NoteKind kind) =>
         IconButton(
@@ -642,16 +645,17 @@ class _QuickAddBarState extends State<QuickAddBar> {
               ),
               // The two kinds the bar itself does not start as.
               for (final kind in _kBarKinds)
-                if (kind.kind != defaultKind)
+                if (kind.kind != defaultKind && !hidden.contains(kind.kind))
                   kindButton(kind.icon, kind.tooltip, kind.kind),
               // Kinds that open the editor straight away.
               for (final kind in _kEditorKinds)
-                IconButton(
-                  icon: Icon(kind.icon, size: 22),
-                  color: scheme.onSurfaceVariant,
-                  tooltip: kind.tooltip,
-                  onPressed: () => _openEditorFor(kind.kind),
-                ),
+                if (!hidden.contains(kind.kind))
+                  IconButton(
+                    icon: Icon(kind.icon, size: 22),
+                    color: scheme.onSurfaceVariant,
+                    tooltip: kind.tooltip,
+                    onPressed: () => _openEditorFor(kind.kind),
+                  ),
               // The spinner takes the image button's slot while the picture
               // uploads, fading across rather than swapping.
               StateCrossFade(

@@ -5,6 +5,7 @@ import 'package:skippy/screens/editor_screen.dart';
 import 'package:skippy/state/drawing.dart';
 import 'package:skippy/state/notes_store.dart';
 import 'package:skippy/util/note_export.dart';
+import 'package:skippy/widgets/drawing/drawing_canvas.dart';
 import 'package:skippy/widgets/drawing/drawing_painter.dart';
 
 import 'fake_api.dart';
@@ -126,5 +127,62 @@ void main() {
     expect(text, contains('Cat'));
     expect(text, contains('(drawing)'));
     expect(text, isNot(contains('"s"')));
+  });
+
+  Drawing dot(double x, double y) => Drawing([
+    Stroke(width: 8, points: [Offset(x, y)]),
+  ]);
+
+  Widget bare(Widget child) => MaterialApp(
+    home: Scaffold(
+      body: SingleChildScrollView(child: SizedBox(width: 500, child: child)),
+    ),
+  );
+
+  testWidgets('the sheet grows by a page and keeps it while erasing', (
+    tester,
+  ) async {
+    Future<double> height(Drawing drawing) async {
+      await tester.pumpWidget(
+        bare(DrawingCanvas(drawing: drawing, onChanged: (_) {})),
+      );
+      await tester.pumpAndSettle();
+      return tester.getSize(sheet()).height;
+    }
+
+    final start = await height(dot(500, 100));
+    expect(await height(dot(500, 400)), start);
+
+    // A stroke near the bottom adds a whole page, not just what it needs.
+    final grown = await height(dot(500, 600));
+    expect(grown, greaterThan(start + 200));
+    expect(await height(dot(500, 620)), grown);
+
+    // Erasing the low stroke leaves the page where it is.
+    expect(await height(Drawing.empty), grown);
+  });
+
+  testWidgets('a card preview keeps its scale wherever a stroke lands', (
+    tester,
+  ) async {
+    /// The slice of the sheet the card shows.
+    Future<Rect?> preview(Drawing drawing) async {
+      await tester.pumpWidget(bare(DrawingPreview(drawing: drawing)));
+      final paint = tester.widget<CustomPaint>(sheet());
+      return (paint.painter! as DrawingPainter).viewport;
+    }
+
+    final left = await preview(dot(100, 100));
+    final right = await preview(dot(900, 100));
+    expect(right, left);
+
+    // A second stroke beside the first does not zoom the card out.
+    final both = await preview(
+      Drawing([
+        Stroke(width: 8, points: const [Offset(100, 100)]),
+        Stroke(width: 8, points: const [Offset(900, 100)]),
+      ]),
+    );
+    expect(both, left);
   });
 }

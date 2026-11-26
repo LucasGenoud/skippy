@@ -243,6 +243,15 @@ class SettingsStore extends ChangeNotifier {
   /// shortcut. Audio is never a default: it needs a recording first.
   NoteKind defaultNoteKind = NoteKind.text;
 
+  /// Kinds left out of the new-note buttons and shortcuts. Stored as the
+  /// hidden ones, so a kind added later shows up until someone hides it.
+  /// Text is always offered: it is what everything else falls back to.
+  /// Replaced, never changed in place, so a widget can select it by identity.
+  Set<NoteKind> hiddenNoteKinds = const {};
+
+  /// Whether the new-note buttons and shortcuts offer [kind].
+  bool offersKind(NoteKind kind) => !hiddenNoteKinds.contains(kind);
+
   /// Personal board exits, keyed by collection id. They change how this user
   /// sees the board, not the workspace's shared stage taxonomy.
   Map<String, Set<String>> boardExitColumns = {};
@@ -471,6 +480,16 @@ class SettingsStore extends ChangeNotifier {
     defaultNoteKind = kind == null || kind == NoteKind.audio
         ? NoteKind.text
         : kind;
+    final rawHidden = json['hidden_note_kinds'];
+    hiddenNoteKinds = Set.unmodifiable({
+      if (rawHidden is List)
+        for (final name in rawHidden)
+          if (NoteKind.values.asNameMap()[name] case final kind?)
+            if (kind != NoteKind.text) kind,
+    });
+    if (hiddenNoteKinds.contains(defaultNoteKind)) {
+      defaultNoteKind = NoteKind.text;
+    }
     final rawBoardExits = json['board_exit_columns'];
     boardExitColumns = rawBoardExits is Map
         ? {
@@ -578,6 +597,7 @@ class SettingsStore extends ChangeNotifier {
     'grid_density': gridDensity.name,
     'grid_width': gridWidth.name,
     'default_note_kind': defaultNoteKind.name,
+    'hidden_note_kinds': [for (final kind in hiddenNoteKinds) kind.name],
     'board_exit_columns': {
       for (final entry in boardExitColumns.entries)
         entry.key: entry.value.toList(),
@@ -670,6 +690,25 @@ class SettingsStore extends ChangeNotifier {
   void setGridWidth(GridWidth value) => _mutate(() => gridWidth = value);
   void setDefaultNoteKind(NoteKind kind) =>
       _mutate(() => defaultNoteKind = kind);
+
+  /// Shows or hides [kind] among the new-note buttons. Hiding the default
+  /// kind makes text the default again.
+  void setKindOffered(NoteKind kind, bool offered) {
+    if (kind == NoteKind.text) {
+      return;
+    }
+    _mutate(() {
+      hiddenNoteKinds = Set.unmodifiable(
+        offered
+            ? hiddenNoteKinds.difference({kind})
+            : hiddenNoteKinds.union({kind}),
+      );
+      if (!offered && defaultNoteKind == kind) {
+        defaultNoteKind = NoteKind.text;
+      }
+    });
+  }
+
   Set<String> boardExitsFor(String? collectionId) =>
       boardExitColumns[collectionId] ?? const {};
 

@@ -107,15 +107,13 @@ const double _maxPreviewAspect = 1.25;
 /// The shortest, so a single line still reads as a drawing.
 const double _minPreviewAspect = 0.3;
 
-/// Margin kept around the strokes on a card, in drawing units.
+/// Margin kept above and below the strokes on a card, in drawing units.
 const double _previewMargin = 40;
 
-/// The narrowest slice of the sheet a card shows, so a small doodle is
-/// enlarged at most twice rather than blown up to fill the card.
-const double _minPreviewWidth = kDrawingWidth / 2;
-
-/// A drawing at card size, framed to its strokes: the blank sheet around a
-/// sketch is cropped, and a tall one is cut at [_maxPreviewAspect].
+/// A drawing at card size. The whole width of the sheet is always shown, at
+/// the same scale and place as in the editor, so a new stroke never zooms or
+/// recentres the card; only the blank sheet above and below the strokes is
+/// cropped, and a tall sketch is cut at [_maxPreviewAspect].
 class DrawingPreview extends StatelessWidget {
   final Drawing drawing;
 
@@ -123,7 +121,7 @@ class DrawingPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final view = _frame(drawing.bounds.inflate(_previewMargin));
+    final view = _previewFrame(drawing.bounds);
     return AspectRatio(
       aspectRatio: view.width / view.height,
       child: ClipRect(
@@ -137,18 +135,16 @@ class DrawingPreview extends StatelessWidget {
       ),
     );
   }
+}
 
-  /// [content] widened to at least [_minPreviewWidth] around its centre and
-  /// given a height within the preview's aspect bounds, top kept in place.
-  static Rect _frame(Rect content) {
-    final width = math.max(content.width, _minPreviewWidth);
-    final height = content.height.clamp(
-      width * _minPreviewAspect,
-      width * _maxPreviewAspect,
-    );
-    final top = content.height < height
-        ? content.center.dy - height / 2
-        : content.top;
-    return Rect.fromLTWH(content.center.dx - width / 2, top, width, height);
-  }
+/// The slice of the sheet a card shows for strokes inside [content]: full
+/// width, from just above the top stroke to just below the lowest, its
+/// height held within the preview's aspect bounds.
+Rect _previewFrame(Rect content) {
+  final top = math.max(0.0, content.top - _previewMargin);
+  final height = (content.bottom + _previewMargin - top).clamp(
+    kDrawingWidth * _minPreviewAspect,
+    kDrawingWidth * _maxPreviewAspect,
+  );
+  return Rect.fromLTWH(0, top, kDrawingWidth, height);
 }

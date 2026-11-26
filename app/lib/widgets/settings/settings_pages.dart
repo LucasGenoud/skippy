@@ -152,21 +152,44 @@ class SettingsPageBody extends StatelessWidget {
       const SectionHeader('Notes grid'),
       const GridLayoutSection(),
       // Phones pick a kind from the new-note button every time.
-      if (!isTouchPrimaryPlatform)
+      if (!isTouchPrimaryPlatform &&
+          (settings.offersKind(NoteKind.checklist) ||
+              settings.offersKind(NoteKind.markdown)))
         ListTile(
           leading: const Icon(Icons.note_add_outlined),
           title: const Text('New notes start as'),
           subtitle: const Text('The composer and the N shortcut'),
           trailing: SegmentedButton<NoteKind>(
-            segments: const [
-              ButtonSegment(value: NoteKind.text, label: Text('Text')),
-              ButtonSegment(value: NoteKind.checklist, label: Text('List')),
-              ButtonSegment(value: NoteKind.markdown, label: Text('Markdown')),
+            segments: [
+              const ButtonSegment(value: NoteKind.text, label: Text('Text')),
+              if (settings.offersKind(NoteKind.checklist))
+                const ButtonSegment(
+                  value: NoteKind.checklist,
+                  label: Text('List'),
+                ),
+              if (settings.offersKind(NoteKind.markdown))
+                const ButtonSegment(
+                  value: NoteKind.markdown,
+                  label: Text('Markdown'),
+                ),
             ],
             selected: {settings.defaultNoteKind},
             onSelectionChanged: (s) => settings.setDefaultNoteKind(s.first),
             showSelectedIcon: false,
           ),
+        ),
+      const Divider(height: 32),
+      const SectionHeader('New note types'),
+      const _Hint(
+        'Choose which kinds of note the new-note buttons offer. '
+        'Notes you already have are not affected.',
+      ),
+      for (final (kind, icon, label) in _kOfferableKinds)
+        CheckboxListTile(
+          secondary: Icon(icon),
+          title: Text(label),
+          value: settings.offersKind(kind),
+          onChanged: (on) => settings.setKindOffered(kind, on ?? true),
         ),
       const Divider(height: 32),
       const SectionHeader('Note colors'),
@@ -438,6 +461,16 @@ class _FontField extends StatelessWidget {
     );
   }
 }
+
+/// The kinds a person may leave out of the new-note buttons. Text is not
+/// among them: it is always offered.
+const _kOfferableKinds = [
+  (NoteKind.checklist, Icons.check_box_outlined, 'Checklist'),
+  (NoteKind.markdown, Icons.article_outlined, 'Markdown'),
+  (NoteKind.audio, Icons.mic_none, 'Audio'),
+  (NoteKind.drawing, Icons.draw_outlined, 'Drawing'),
+  (NoteKind.tracker, Icons.track_changes_outlined, 'Counter or habit'),
+];
 
 class _Hint extends StatelessWidget {
   final String text;

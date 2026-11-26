@@ -52,6 +52,27 @@ void main() {
     expect(api.log, ['fetchCapabilities']);
   });
 
+  test('hidden note kinds roundtrip and give up the default', () async {
+    await settings.load();
+    expect(settings.offersKind(NoteKind.drawing), isTrue);
+
+    settings.setDefaultNoteKind(NoteKind.markdown);
+    settings.setKindOffered(NoteKind.drawing, false);
+    settings.setKindOffered(NoteKind.markdown, false);
+    settings.setKindOffered(NoteKind.text, false);
+    expect(settings.offersKind(NoteKind.text), isTrue);
+    expect(settings.defaultNoteKind, NoteKind.text);
+    await settleSave();
+
+    final other = SettingsStore(api: api);
+    await other.load();
+    expect(other.hiddenNoteKinds, {NoteKind.drawing, NoteKind.markdown});
+
+    other.setKindOffered(NoteKind.drawing, true);
+    expect(other.offersKind(NoteKind.drawing), isTrue);
+    other.dispose();
+  });
+
   test('mutations persist to the server and roundtrip', () async {
     await settings.load();
     settings.setThemeMode(ThemeMode.dark);

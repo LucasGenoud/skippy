@@ -146,21 +146,25 @@ class _NewNoteFabsState extends State<NewNoteFabs>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final transcriptionAvailable = context
-        .watch<SettingsStore>()
-        .audioTranscriptionCapable;
+    final settings = context.watch<SettingsStore>();
+    final offers = settings.offersKind;
 
     // Top to bottom, so the kind nearest the button is the last one here.
     final kinds = [
-      _AudioNoteFab(
-        labelIds: widget.labelIds,
-        transcriptionAvailable: transcriptionAvailable,
-        onRecord: () => _setOpen(false),
-      ),
-      _noteKind(Icons.exposure_plus_1, 'Tracker', NoteKind.tracker),
-      _noteKind(Icons.draw_outlined, 'Drawing', NoteKind.drawing),
-      _noteKind(Icons.article_outlined, 'Markdown', NoteKind.markdown),
-      _noteKind(Icons.check_box_outlined, 'Checklist', NoteKind.checklist),
+      if (offers(NoteKind.audio))
+        _AudioNoteFab(
+          labelIds: widget.labelIds,
+          transcriptionAvailable: settings.audioTranscriptionCapable,
+          onRecord: () => _setOpen(false),
+        ),
+      if (offers(NoteKind.tracker))
+        _noteKind(Icons.track_changes_outlined, 'Tracker', NoteKind.tracker),
+      if (offers(NoteKind.drawing))
+        _noteKind(Icons.draw_outlined, 'Drawing', NoteKind.drawing),
+      if (offers(NoteKind.markdown))
+        _noteKind(Icons.article_outlined, 'Markdown', NoteKind.markdown),
+      if (offers(NoteKind.checklist))
+        _noteKind(Icons.check_box_outlined, 'Checklist', NoteKind.checklist),
       _noteKind(Icons.edit_outlined, 'Note', NoteKind.text),
     ];
 

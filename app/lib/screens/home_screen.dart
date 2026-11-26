@@ -494,7 +494,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // widgets/shortcut_help.dart and the README document the full set.
   /// [kind] null is the user's default kind.
   void _newNote([NoteKind? requested]) {
-    final kind = requested ?? context.read<SettingsStore>().defaultNoteKind;
+    final settings = context.read<SettingsStore>();
+    final kind = requested ?? settings.defaultNoteKind;
+    if (!settings.offersKind(kind)) {
+      return;
+    }
     if (context.read<NotesStore>().activeCollection == null) {
       CollectionSettings.show(context);
       return;
