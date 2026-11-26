@@ -2,7 +2,19 @@
 # single slim runtime that serves both on :8787.
 
 # --- 1. Flutter web bundle ---------------------------------------------------
-FROM ghcr.io/cirruslabs/flutter:stable AS web
+# Flutter comes from its own tag rather than a prebuilt image: the cirruslabs
+# image stopped at 3.44, older than the Dart SDK the lockfile needs.
+FROM debian:trixie-slim AS web
+ARG FLUTTER_VERSION=3.47.1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl git unzip xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch ${FLUTTER_VERSION} \
+        https://github.com/flutter/flutter.git /opt/flutter
+ENV PATH=/opt/flutter/bin:$PATH
+RUN flutter config --no-analytics --no-cli-animations \
+    && flutter precache --web
 WORKDIR /src
 ARG CLIENT_VERSION=0.0.0
 ARG VERSION_SUFFIX=-dev+local
