@@ -254,7 +254,7 @@ async fn checklist_items_roundtrip_and_kind_validation() {
         "POST",
         "/api/notes",
         Some(&token),
-        Some(json!({"kind": "drawing"})),
+        Some(json!({"kind": "doodle"})),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

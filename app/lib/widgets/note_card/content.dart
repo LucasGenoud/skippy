@@ -26,8 +26,10 @@ class _NoteCardContent extends StatelessWidget {
     this.showLabelsInBody = true,
   });
 
+  /// The link strips under the card. A bookmark leads with its link
+  /// instead, so it has none.
   static List<String> _linkPreviewUrls(Note note) =>
-      linkPreviewUrls(noteLinkText(note));
+      bookmarkOf(note) != null ? const [] : linkPreviewUrls(noteLinkText(note));
 
   @override
   Widget build(BuildContext context) {
@@ -67,12 +69,14 @@ class _NoteCardContent extends StatelessWidget {
     final visibleFileCount = compactMetadata ? 1 : 2;
     final visibleLabelCount = compactMetadata ? 2 : 3;
 
+    final bookmark = bookmarkOf(note);
     final linkPreviewUrls = _linkPreviewUrls(note);
     final hasLinkPreviews = linkPreviewUrls.isNotEmpty;
 
     final hasTextBlock =
         note.title.isNotEmpty ||
         note.isAudio ||
+        note.isTracker ||
         (!note.isChecklist && note.content.isNotEmpty) ||
         (note.isChecklist && visibleItems.isNotEmpty) ||
         note.isEmpty; // truly empty draft shows the placeholder
@@ -92,133 +96,207 @@ class _NoteCardContent extends StatelessWidget {
         if (hasTextBlock)
           Flexible(
             fit: FlexFit.loose,
-            child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  16,
-                  16,
-                  images.isNotEmpty || hasFooter
-                      ? 0
-                      : (hasLinkPreviews ? 12 : (reserveActions ? 4 : 16)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (note.title.isNotEmpty)
-                      Padding(
-                        // Always reserve room for the pin button (it appears
-                        // on hover): tying this to hover made titles reflow
-                        // under the cursor.
-                        padding: EdgeInsets.only(right: note.trashed ? 0 : 28),
-                        child: _CardTitle(title: note.title, query: query),
-                      ),
-                    if (note.title.isNotEmpty &&
-                        (note.content.isNotEmpty || previewItems.isNotEmpty))
-                      const SizedBox(height: kSpaceSm),
-                    if (note.isAudio) ...[
-                      if (note.title.isNotEmpty)
-                        const SizedBox(height: kSpaceSm),
-                      const _AudioPill(),
-                      if (note.transcribing)
-                        const Padding(
-                          padding: EdgeInsets.only(top: kSpaceSm),
-                          child: TranscribingIndicator(compact: true),
-                        )
-                      else if (note.transcriptFailed)
-                        const Padding(
-                          padding: EdgeInsets.only(top: kSpaceSm),
-                          child: TranscriptFailed(compact: true),
-                        )
-                      else if (note.content.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: kSpaceSm),
-                          child: LinkedText(
-                            text: note.content,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              height: 1.45,
-                            ),
-                            maxLines: _maxAudioTranscriptLines,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+            // A note turning into a bookmark, or back, cross-fades and
+            // resizes rather than swapping in a single frame.
+            child: AnimatedSize(
+              duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+              curve: Motion.emphasized,
+              alignment: Alignment.topCenter,
+              child: StateCrossFade(
+                state: bookmark != null,
+                child: bookmark != null
+                    ? Padding(
+                        padding: EdgeInsets.only(
+                          bottom: hasFooter ? 0 : (reserveActions ? 4 : 16),
                         ),
-                    ] else if (note.kind == NoteKind.markdown &&
-                        note.content.isNotEmpty)
-                      // Rendered markdown preview, clipped like long text.
-                      // The never-scrollable scroll view absorbs the
-                      // unbounded height so tall content clips without a
-                      // layout overflow.
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxHeight: _maxMarkdownPreviewHeight,
-                        ),
-                        child: ClipRect(
-                          child: IgnorePointer(
-                            child: SingleChildScrollView(
-                              physics: const NeverScrollableScrollPhysics(),
-                              child: _MarkdownPreview(
-                                content: markdownNoteLinks(
-                                  note.content,
-                                  titleFor: store.linkTitleFor,
-                                ),
-                              ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            BookmarkCard(
+                              url: bookmark.url,
+                              noteTitle: note.title,
+                              body: bookmark.body,
                             ),
-                          ),
+                            // A summary on its way lands under the link, and
+                            // the indicator grows in where it will appear.
+                            AnimatedReveal(
+                              child: note.summarizingLinks
+                                  ? Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        kSpaceSm,
+                                        16,
+                                        0,
+                                      ),
+                                      child: LinkSummaryIndicator(
+                                        compact: true,
+                                        onCancel: () => context
+                                            .read<NotesStore>()
+                                            .cancelLinkSummaries(note.id),
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ],
                         ),
                       )
-                    else if (!note.isChecklist && note.content.isNotEmpty)
-                      LinkedText(
-                        text: note.content,
-                        noteTitleFor: store.linkTitleFor,
-                        query: query,
-                        highlight: TextStyle(
-                          backgroundColor: scheme.primary.withValues(
-                            alpha: 0.30,
+                    : SingleChildScrollView(
+                        physics: const NeverScrollableScrollPhysics(),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            16,
+                            16,
+                            images.isNotEmpty || hasFooter
+                                ? 0
+                                : (hasLinkPreviews
+                                      ? 12
+                                      : (reserveActions ? 4 : 16)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (note.title.isNotEmpty)
+                                Padding(
+                                  // Always reserve room for the pin button (it appears
+                                  // on hover): tying this to hover made titles reflow
+                                  // under the cursor.
+                                  padding: EdgeInsets.only(
+                                    right: note.trashed ? 0 : 28,
+                                  ),
+                                  child: _CardTitle(
+                                    title: note.title,
+                                    query: query,
+                                  ),
+                                ),
+                              if (note.title.isNotEmpty &&
+                                  (note.content.isNotEmpty ||
+                                      previewItems.isNotEmpty))
+                                const SizedBox(height: kSpaceSm),
+                              if (note.isDrawing) ...[
+                                if (note.content.isNotEmpty)
+                                  DrawingPreview(
+                                    drawing: Drawing.parse(note.content),
+                                  ),
+                              ] else if (note.isTracker) ...[
+                                TrackerCard(
+                                  tracker: Tracker.parse(note.content),
+                                  today: DateTime.now(),
+                                  onChanged: note.trashed
+                                      ? null
+                                      : (tracker) => store.updateNoteContent(
+                                          note.id,
+                                          content: tracker.encode(),
+                                        ),
+                                ),
+                              ] else if (note.isAudio) ...[
+                                if (note.title.isNotEmpty)
+                                  const SizedBox(height: kSpaceSm),
+                                const _AudioPill(),
+                                if (note.transcribing)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: kSpaceSm),
+                                    child: TranscribingIndicator(compact: true),
+                                  )
+                                else if (note.transcriptFailed)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: kSpaceSm),
+                                    child: TranscriptFailed(compact: true),
+                                  )
+                                else if (note.content.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: kSpaceSm,
+                                    ),
+                                    child: LinkedText(
+                                      text: note.content,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(height: 1.45),
+                                      maxLines: _maxAudioTranscriptLines,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                              ] else if (note.kind == NoteKind.markdown &&
+                                  note.content.isNotEmpty)
+                                // Rendered markdown preview, clipped like long text.
+                                // The never-scrollable scroll view absorbs the
+                                // unbounded height so tall content clips without a
+                                // layout overflow.
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxHeight: _maxMarkdownPreviewHeight,
+                                  ),
+                                  child: ClipRect(
+                                    child: IgnorePointer(
+                                      child: SingleChildScrollView(
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
+                                        child: _MarkdownPreview(
+                                          content: markdownNoteLinks(
+                                            note.content,
+                                            titleFor: store.linkTitleFor,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else if (!note.isChecklist &&
+                                  note.content.isNotEmpty)
+                                LinkedText(
+                                  text: note.content,
+                                  noteTitleFor: store.linkTitleFor,
+                                  query: query,
+                                  highlight: TextStyle(
+                                    backgroundColor: scheme.primary.withValues(
+                                      alpha: 0.30,
+                                    ),
+                                  ),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    height: 1.45,
+                                  ),
+                                  maxLines: _maxTextPreviewLines,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              if (note.isChecklist) ...[
+                                for (final item in previewItems)
+                                  _ChecklistRow(note: note, item: item),
+                                if (unchecked.length > previewItems.length)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: _kCardCheckTextInset,
+                                      top: kSpaceHair,
+                                    ),
+                                    child: Text(
+                                      '+ ${unchecked.length - previewItems.length} more',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ),
+                              ],
+                              if (note.isEmpty)
+                                Text(
+                                  'Empty note',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              if (note.summarizingLinks)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: kSpaceSm),
+                                  child: LinkSummaryIndicator(
+                                    compact: true,
+                                    onCancel: () => context
+                                        .read<NotesStore>()
+                                        .cancelLinkSummaries(note.id),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.45,
-                        ),
-                        maxLines: _maxTextPreviewLines,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    if (note.isChecklist) ...[
-                      for (final item in previewItems)
-                        _ChecklistRow(note: note, item: item),
-                      if (unchecked.length > previewItems.length)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: _kCardCheckTextInset,
-                            top: kSpaceHair,
-                          ),
-                          child: Text(
-                            '+ ${unchecked.length - previewItems.length} more',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                    ],
-                    if (note.isEmpty)
-                      Text(
-                        'Empty note',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    if (note.summarizingLinks)
-                      Padding(
-                        padding: const EdgeInsets.only(top: kSpaceSm),
-                        child: LinkSummaryIndicator(
-                          compact: true,
-                          onCancel: () => context
-                              .read<NotesStore>()
-                              .cancelLinkSummaries(note.id),
-                        ),
-                      ),
-                  ],
-                ),
               ),
             ),
           ),

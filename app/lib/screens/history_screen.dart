@@ -3,11 +3,14 @@ import '../theme.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note.dart';
+import '../state/drawing.dart';
 import '../state/notes_store.dart';
+import '../state/tracker.dart';
 import '../state/settings_store.dart';
 import '../util/motion.dart';
 import '../util/snack.dart';
 import '../widgets/checklist/check_mark.dart';
+import '../widgets/drawing/drawing_painter.dart';
 import '../widgets/form_dialog.dart';
 import '../widgets/state_cross_fade.dart';
 
@@ -385,6 +388,23 @@ class _VersionCard extends StatelessWidget {
           ),
         );
       }
+    } else if (kind == NoteKind.tracker) {
+      children.add(
+        Padding(
+          padding: EdgeInsets.only(top: hasTitle ? 4 : 0),
+          child: Text(
+            Tracker.parse(content).summary(DateTime.now()),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      );
+    } else if (kind == NoteKind.drawing) {
+      children.add(
+        Padding(
+          padding: EdgeInsets.only(top: hasTitle ? 4 : 0),
+          child: DrawingPreview(drawing: Drawing.parse(content)),
+        ),
+      );
     } else if (content.trim().isNotEmpty) {
       children.add(
         Padding(

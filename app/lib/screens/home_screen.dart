@@ -1588,6 +1588,8 @@ const _homeShortcuts = <ShortcutActivator, Intent>{
   CharacterActivator('n'): _NewNoteIntent(),
   CharacterActivator('l'): _NewNoteIntent(NoteKind.checklist),
   CharacterActivator('m'): _NewNoteIntent(NoteKind.markdown),
+  CharacterActivator('d'): _NewNoteIntent(NoteKind.drawing),
+  CharacterActivator('t'): _NewNoteIntent(NoteKind.tracker),
   CharacterActivator('/'): _FocusSearchIntent(),
   CharacterActivator('?'): _ShortcutHelpIntent(),
   SingleActivator(LogicalKeyboardKey.keyK, control: true): _FocusSearchIntent(

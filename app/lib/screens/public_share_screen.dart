@@ -4,13 +4,16 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../api/api_client.dart';
 import '../models/note.dart';
 import '../models/share_link.dart';
+import '../state/drawing.dart';
 import '../state/settings_store.dart' show kDefaultPalette;
+import '../state/tracker.dart';
 import '../theme.dart';
 import '../util/attachment_image.dart';
 import '../util/label_style.dart';
 import '../util/motion.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/checklist/check_mark.dart';
+import '../widgets/drawing/drawing_painter.dart';
 import '../widgets/linked_text.dart';
 import '../widgets/masonry.dart';
 import '../widgets/state_cross_fade.dart';
@@ -527,6 +530,13 @@ class PublicNoteCard extends StatelessWidget {
                   ],
                   if (note.isChecklist)
                     _Checklist(note: note, expanded: expanded)
+                  else if (note.isDrawing)
+                    DrawingPreview(drawing: Drawing.parse(note.content))
+                  else if (note.isTracker)
+                    Text(
+                      Tracker.parse(note.content).summary(DateTime.now()),
+                      style: theme.textTheme.bodyMedium,
+                    )
                   else if (note.kind == NoteKind.markdown)
                     MarkdownBody(
                       data: note.content,

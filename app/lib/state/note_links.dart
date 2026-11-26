@@ -144,7 +144,7 @@ List<Note> linkCandidates(
           note.id != excludeId &&
           (needle.isEmpty ||
               note.title.toLowerCase().contains(needle) ||
-              note.content.toLowerCase().contains(needle)))
+              note.prose.toLowerCase().contains(needle)))
         note,
   ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   return matches.take(limit).toList();

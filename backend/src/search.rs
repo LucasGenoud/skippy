@@ -529,7 +529,8 @@ impl SearchService {
             .map(|i| i.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        let content = crate::note_links::plain_text(&record.content);
+        let content =
+            crate::note_links::plain_text(crate::models::prose(&record.kind, &record.content));
         format!("{}\n{}\n{}", record.title, content, items)
             .trim()
             .to_string()

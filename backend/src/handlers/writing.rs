@@ -20,6 +20,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::llm::{ChatMessage, LlmConfig};
 use crate::models::{
     ChecklistItem, KIND_AUDIO, KIND_CHECKLIST, KIND_MARKDOWN, NoteRecord, NoteView, UpdateNote,
+    holds_data,
 };
 
 use super::workspace_ai::{AiFeature, workspace_ai};
@@ -94,10 +95,11 @@ pub async fn rewrite_note(
             "cannot edit a trashed note".to_string(),
         ));
     }
-    if record.kind == KIND_AUDIO {
-        return Err(ApiError::BadRequest(
-            "AI editing is unavailable for audio notes".to_string(),
-        ));
+    if record.kind == KIND_AUDIO || holds_data(&record.kind) {
+        return Err(ApiError::BadRequest(format!(
+            "AI editing is unavailable for {} notes",
+            record.kind
+        )));
     }
     if note_chars(&record) > MAX_REWRITE_CHARS {
         return Err(ApiError::BadRequest(

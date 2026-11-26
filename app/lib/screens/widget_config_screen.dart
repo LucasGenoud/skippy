@@ -147,6 +147,8 @@ class _NoteRow extends StatelessWidget {
         NoteKind.checklist => Icons.checklist,
         NoteKind.markdown => Icons.data_object,
         NoteKind.audio => Icons.graphic_eq,
+        NoteKind.drawing => Icons.draw_outlined,
+        NoteKind.tracker => Icons.exposure_plus_1,
         NoteKind.text => Icons.notes_outlined,
       }),
       title: Text(

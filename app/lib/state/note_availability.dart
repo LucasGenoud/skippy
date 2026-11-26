@@ -62,6 +62,7 @@ class NoteAvailability {
       _live &&
       _hasContent &&
       !(_note?.isAudio ?? false) &&
+      !(_note?.kind.holdsData ?? false) &&
       _ai.allows(AiFeature.writing) &&
       _ai.rewriteTasks.isNotEmpty;
 
@@ -73,5 +74,6 @@ class NoteAvailability {
       _live &&
       !(_note?.isChecklist ?? false) &&
       !(_note?.isAudio ?? false) &&
+      !(_note?.kind.holdsData ?? false) &&
       _ai.allows(AiFeature.writing);
 }

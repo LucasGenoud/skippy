@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS notes (
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
     kind TEXT NOT NULL DEFAULT 'text'
-        CHECK (kind IN ('text', 'markdown', 'checklist', 'audio')),
+        CHECK (kind IN ('text', 'markdown', 'checklist', 'audio', 'drawing', 'tracker')),
     title TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
     items TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(items)),
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS note_item_reminders (
 CREATE TABLE IF NOT EXISTS note_versions (
     id TEXT PRIMARY KEY,
     note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-    kind TEXT NOT NULL CHECK (kind IN ('text', 'markdown', 'checklist', 'audio')),
+    kind TEXT NOT NULL CHECK (kind IN ('text', 'markdown', 'checklist', 'audio', 'drawing', 'tracker')),
     title TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
     items TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(items)),
@@ -316,6 +316,7 @@ pub(super) async fn initialize(pool: &SqlitePool) -> anyhow::Result<()> {
     migrate_note_pattern(pool).await?;
     migrate_workspace_ai(pool).await?;
     migrate_token_workspace(pool).await?;
+    migrate_note_kinds(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS workspace_copies (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE) STRICT").execute(pool).await?;
     import_personal_views(pool).await?;
     Ok(())
@@ -391,6 +392,74 @@ async fn migrate_workspace_ai(pool: &SqlitePool) -> anyhow::Result<()> {
     }
     tx.commit().await?;
     Ok(())
+}
+
+/// The note kinds the `kind` checks on `notes` and `note_versions` allow.
+/// `SCHEMA` spells the same list; [`migrate_note_kinds`] brings an older
+/// database's checks up to it.
+const NOTE_KINDS: &str = "'text', 'markdown', 'checklist', 'audio', 'drawing', 'tracker'";
+
+/// Widens the `kind` check of a database created before a kind existed.
+///
+/// SQLite cannot alter a CHECK, so this rewrites the stored table definition,
+/// the procedure SQLite documents for loosening a constraint: every existing
+/// row already satisfies the wider list, so nothing on disk changes, and the
+/// table's triggers, indexes and foreign keys stay as they are.
+async fn migrate_note_kinds(pool: &SqlitePool) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    let mut widened = Vec::new();
+    for table in ["notes", "note_versions"] {
+        let sql: String =
+            sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+                .bind(table)
+                .fetch_one(&mut *tx)
+                .await?;
+        if let Some(sql) = widen_kind_check(&sql) {
+            widened.push((table, sql));
+        }
+    }
+    if widened.is_empty() {
+        return Ok(());
+    }
+
+    let version: i64 = sqlx::query_scalar("PRAGMA schema_version")
+        .fetch_one(&mut *tx)
+        .await?;
+    sqlx::query("PRAGMA writable_schema = ON")
+        .execute(&mut *tx)
+        .await?;
+    for (table, sql) in widened {
+        sqlx::query("UPDATE sqlite_master SET sql=? WHERE type='table' AND name=?")
+            .bind(sql)
+            .bind(table)
+            .execute(&mut *tx)
+            .await?;
+    }
+    // Other connections re-read the schema once its version moves.
+    sqlx::query(&format!("PRAGMA schema_version = {}", version + 1))
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("PRAGMA writable_schema = OFF")
+        .execute(&mut *tx)
+        .await?;
+    let check: String = sqlx::query_scalar("PRAGMA quick_check")
+        .fetch_one(&mut *tx)
+        .await?;
+    anyhow::ensure!(check == "ok", "note kind migration left {check}");
+    tx.commit().await?;
+    Ok(())
+}
+
+/// `sql` with its `kind IN (...)` list replaced by [`NOTE_KINDS`], or `None`
+/// when it already allows exactly those.
+fn widen_kind_check(sql: &str) -> Option<String> {
+    const OPEN: &str = "kind IN (";
+    let start = sql.find(OPEN)? + OPEN.len();
+    let end = start + sql[start..].find(')')?;
+    if &sql[start..end] == NOTE_KINDS {
+        return None;
+    }
+    Some(format!("{}{NOTE_KINDS}{}", &sql[..start], &sql[end..]))
 }
 
 async fn table_exists(tx: &mut Transaction<'_, Sqlite>, table: &str) -> anyhow::Result<bool> {
@@ -815,6 +884,55 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(reach, None);
+    }
+
+    #[tokio::test]
+    async fn older_kind_checks_widen_without_touching_notes() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        // A database from before drawings, in both spellings the check has had.
+        let old = super::SCHEMA
+            .replacen(
+                super::NOTE_KINDS,
+                "'text', 'markdown', 'checklist', 'audio'",
+                1,
+            )
+            .replacen(
+                super::NOTE_KINDS,
+                "'text','markdown','checklist','audio'",
+                1,
+            );
+        assert!(!old.contains("'drawing'"));
+        assert!(!old.contains("'tracker'"));
+        sqlx::raw_sql(&old).execute(&pool).await.unwrap();
+        sqlx::raw_sql("INSERT INTO users VALUES ('u','User','u@test','hash','now');
+            INSERT INTO workspaces(id,owner_id,name,created_at) VALUES('w','u','Work','now');
+            INSERT INTO notes(id,workspace_id,title,created_at,updated_at) VALUES('n','w','Keep me','now','now');")
+            .execute(&pool).await.unwrap();
+
+        super::initialize(&pool).await.unwrap();
+        super::initialize(&pool).await.unwrap();
+
+        sqlx::raw_sql("INSERT INTO notes(id,workspace_id,kind,created_at,updated_at) VALUES('d','w','drawing','now','now');
+            INSERT INTO note_versions(id,note_id,kind,created_at) VALUES('v','d','drawing','now');")
+            .execute(&pool).await.unwrap();
+        let kept: String = sqlx::query_scalar("SELECT title FROM notes WHERE id='n'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(kept, "Keep me");
+        let refused = sqlx::raw_sql("INSERT INTO notes(id,workspace_id,kind,created_at,updated_at) VALUES('x','w','sketch','now','now')")
+            .execute(&pool)
+            .await;
+        assert!(refused.is_err());
+        let check: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(check, "ok");
     }
 
     #[tokio::test]

@@ -225,6 +225,15 @@ class SettingsStore extends ChangeNotifier {
   Color accentColor = kDefaultAccent;
   AppFont font = AppFont.system;
   AppDateFormat dateFormat = AppDateFormat.dayFirst;
+
+  /// The day calendars open their weeks on. Countries that write the month
+  /// first also start the week on Sunday.
+  int get firstWeekday =>
+      dateFormat == AppDateFormat.monthFirst ||
+          dateFormat == AppDateFormat.numericUS
+      ? DateTime.sunday
+      : DateTime.monday;
+
   bool use24hTime = true;
   bool defaultListMode = false;
   GridDensity gridDensity = GridDensity.comfortable;

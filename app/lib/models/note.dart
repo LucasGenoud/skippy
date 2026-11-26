@@ -4,15 +4,27 @@ enum NoteKind {
   text,
   checklist,
   markdown,
-  audio;
+  audio,
+
+  /// Freehand strokes, encoded into `content` by `state/drawing.dart`.
+  drawing,
+
+  /// A counter or habit log, encoded into `content` by `state/tracker.dart`.
+  tracker;
 
   /// Wire name used by the API.
   String get wire => name;
+
+  /// Whether `content` is data this kind encodes rather than text, so it is
+  /// never searched, exported, rewritten or converted as words.
+  bool get holdsData => this == drawing || this == tracker;
 
   static NoteKind fromWire(String? value) => switch (value) {
     'checklist' => NoteKind.checklist,
     'markdown' => NoteKind.markdown,
     'audio' => NoteKind.audio,
+    'drawing' => NoteKind.drawing,
+    'tracker' => NoteKind.tracker,
     _ => NoteKind.text,
   };
 }
@@ -380,6 +392,13 @@ class Note {
 
   bool get isChecklist => kind == NoteKind.checklist;
   bool get isAudio => kind == NoteKind.audio;
+  bool get isDrawing => kind == NoteKind.drawing;
+
+  bool get isTracker => kind == NoteKind.tracker;
+
+  /// The part of [content] that reads as words: none of it for a kind that
+  /// [NoteKind.holdsData], which search, exports and previews must never show.
+  String get prose => kind.holdsData ? '' : content;
 
   /// The recorded clip, if this audio note has one.
   Attachment? get audioClip {

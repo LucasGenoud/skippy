@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/note.dart';
 import '../state/note_links.dart';
+import '../state/tracker.dart';
 import '../models/workspace.dart';
 
 /// Serialization targets for a bulk note export.
@@ -131,6 +132,10 @@ String _toMarkdown(
         );
       }
       buf.writeln();
+    } else if (n.isDrawing) {
+      buf.writeln('_(drawing)_\n');
+    } else if (n.isTracker) {
+      buf.writeln('_${Tracker.parse(n.content).summary(DateTime.now())}_\n');
     } else if (n.content.trim().isNotEmpty) {
       // text and markdown notes both round-trip as their raw body, less the
       // ids of their note links, which mean nothing outside Skippy.
@@ -158,6 +163,10 @@ String noteToPlainText(Note note, {List<String> labels = const []}) {
       buf.writeln('${' ' * (i.depth * 2)}[${i.done ? 'x' : ' '}] ${i.text}');
     }
     buf.writeln();
+  } else if (note.isDrawing) {
+    buf.writeln('(drawing)\n');
+  } else if (note.isTracker) {
+    buf.writeln('${Tracker.parse(note.content).summary(DateTime.now())}\n');
   } else if (note.content.trim().isNotEmpty) {
     buf.writeln('${plainNoteLinks(note.content).trimRight()}\n');
   }

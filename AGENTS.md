@@ -68,6 +68,7 @@ Format touched Dart files with `dart format`. Format touched Rust files with `ca
 - `state/sparse_position.dart`: the sparse `position` arithmetic every drag-reorder shares (cards, columns, labels, collections, smart views).
 - `state/starter_notes.dart`: the notes a just-created account opens on; `NotesStore` adds them after its first successful load.
 - `state/bulk_import.dart`: the awaited server writes behind backup restore and Keep import; `NotesStore` only decides when one may run.
+- `state/drawing.dart`, `state/tracker.dart`, `state/bookmark.dart`: drawing strokes, the counter/habit log, and when a note reads as a bookmark. Their widgets live in `widgets/drawing/` and `widgets/tracker/`; the bookmark card is in `widgets/link_preview.dart`.
 - `state/notes_cache_doc.dart`: encoding of the offline snapshot (notes, taxonomy, queue, sync issues); `state/sync_issue.dart`: a write the server refused for good.
 
 The WebSocket is a change nudge, not a stream of note patches. Multiple notifications are debounced and lead to a refetch. Last-write-wins remains the collaboration model.
@@ -226,7 +227,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 
 Rust payloads in `backend/src/models.rs`, Dart models in `app/lib/models`, methods in `ApiClient`, and `FakeApi` form one contract. When a field or endpoint changes, update every affected side and both test suites. Confirm null semantics: omission and explicit `null` are intentionally different for some PATCH fields such as reminders.
 
-Supported note kinds are `text`, `markdown`, `checklist`, and `audio`. Audio transcript state is separately represented as none, pending, done, or failed. Do not infer transcription state only from whether transcript text is empty.
+Supported note kinds are `text`, `markdown`, `checklist`, `audio`, `drawing`, and `tracker`. A drawing's `content` is its strokes and a tracker's is its day-by-day log, both client-encoded JSON (`state/drawing.dart`, `state/tracker.dart`). Such content is data, not words: `holds_data`/`prose` on the server and `NoteKind.holdsData`/`Note.prose` on the client keep it out of search, the LLM, assistants, exports, AI rewrites, appends and kind conversion. Allowing a new kind widens the `kind` CHECK on `notes` and `note_versions`, which `migrate_note_kinds` brings existing databases up to. A bookmark is not a kind: `state/bookmark.dart` shows a text or markdown note whose first line is its only link as one. Audio transcript state is separately represented as none, pending, done, or failed. Do not infer transcription state only from whether transcript text is empty.
 
 `workspace_id` is optional on note and label creation and resolves to the caller's default workspace; that is a deliberate API default, not a compatibility shim. On the client, a note filed in a workspace the user does not belong to, reached through a per-note share, surfaces in their default workspace; `WorkspaceScope` in `state/note_collection.dart` is the single place that rule lives.
 

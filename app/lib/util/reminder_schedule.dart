@@ -147,7 +147,7 @@ String _capBody(String body) {
 ({String title, String body}) reminderText(Note note) {
   final trimmedTitle = note.title.trim();
   final body = note.items.isEmpty
-      ? note.content.trim()
+      ? note.prose.trim()
       : [
           for (final item in note.items)
             if (!item.done) item.text,

@@ -100,16 +100,21 @@ class NoteActionsButton extends StatelessWidget {
   };
 
   /// Audio notes come from a recording, so they are convertible away from but
-  /// never a conversion target.
-  List<NoteKind> get _convertTargets => onConvert == null
+  /// never a conversion target. Drawings and trackers have no text form, so
+  /// they are neither.
+  List<NoteKind> get _convertTargets => onConvert == null || kind.holdsData
       ? const []
       : [
           for (final target in NoteKind.values)
-            if (target != kind && target != NoteKind.audio) target,
+            if (target != kind && target != NoteKind.audio && !target.holdsData)
+              target,
         ];
 
   bool get _offersRewrite =>
-      onRewrite != null && rewriteTasks.isNotEmpty && kind != NoteKind.audio;
+      onRewrite != null &&
+      rewriteTasks.isNotEmpty &&
+      kind != NoteKind.audio &&
+      !kind.holdsData;
 
   bool get _offersMove => onMove != null && moveTargets.isNotEmpty;
 

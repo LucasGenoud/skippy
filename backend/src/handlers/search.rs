@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::{ApiError, ApiResult};
-use crate::models::NoteView;
+use crate::models::{NoteView, prose};
 
 /// Whether a note has any text the embedder would index: its title, content, a
 /// checklist item, or words an OCR service read out of one of its pictures.
@@ -17,7 +17,7 @@ use crate::models::NoteView;
 fn has_embeddable_text(view: &NoteView) -> bool {
     let note = &view.note;
     !note.title.trim().is_empty()
-        || !note.content.trim().is_empty()
+        || !prose(&note.kind, &note.content).trim().is_empty()
         || note.items.iter().any(|i| !i.text.trim().is_empty())
         || view
             .attachments

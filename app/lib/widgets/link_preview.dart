@@ -430,3 +430,184 @@ class _LinkPreviewListState extends State<LinkPreviewList> {
     );
   }
 }
+
+/// Width over height of the image a bookmark leads with, the Open Graph
+/// standard, so pages' share images fit without cropping.
+const double _bookmarkImageAspect = 1.91;
+const double _bookmarkFaviconSize = 16;
+const int _bookmarkTitleLines = 3;
+const int _bookmarkBodyLines = 4;
+
+/// A note that is just a link, shown as what the link is: the page's image
+/// full width, its title and description, and where it lives. Under the link
+/// the note's own text, when there is any, takes the description's place.
+///
+/// Metadata arriving grows the card smoothly rather than popping it taller,
+/// and the image fades in over its slot.
+class BookmarkCard extends StatelessWidget {
+  final String url;
+
+  /// The note's own title, which leads when set: it is the name the user
+  /// gave the bookmark.
+  final String noteTitle;
+
+  /// Text written under the link.
+  final String body;
+
+  final BorderRadius imageRadius;
+
+  const BookmarkCard({
+    super.key,
+    required this.url,
+    this.noteTitle = '',
+    this.body = '',
+    this.imageRadius = const BorderRadius.vertical(top: kCardCorner),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cache = context.read<LinkPreviewCache>();
+    return FutureBuilder<LinkPreview?>(
+      future: cache.preview(url),
+      initialData: cache.resolved(url),
+      builder: (context, snapshot) => AnimatedSize(
+        duration: Motion.reduced(context) ? Duration.zero : Motion.base,
+        curve: Motion.emphasized,
+        alignment: Alignment.topCenter,
+        child: _bookmark(context, snapshot.data),
+      ),
+    );
+  }
+
+  Widget _bookmark(BuildContext context, LinkPreview? preview) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final host = preview?.host ?? _Strip._hostOf(url);
+    final image = preview?.image;
+    final imageProvider = image == null ? null : _previewImageProvider(image);
+    final pageTitle = preview?.title;
+    final description = body.isNotEmpty ? body : preview?.description;
+    final title = noteTitle.isNotEmpty ? noteTitle : (pageTitle ?? host);
+    final subtitle = noteTitle.isNotEmpty ? pageTitle : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (imageProvider != null)
+          ClipRRect(
+            borderRadius: imageRadius,
+            child: AspectRatio(
+              aspectRatio: _bookmarkImageAspect,
+              child: ColoredBox(
+                color: scheme.onSurface.withValues(alpha: 0.06),
+                child: Image(
+                  image: imageProvider,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  frameBuilder: Motion.fadeInFrame,
+                  errorBuilder: (context, _, _) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // The host gives way to the page title once it is known.
+              StateCrossFade(
+                state: title,
+                child: Text(
+                  title,
+                  maxLines: _bookmarkTitleLines,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: kSpaceXs),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+              if (description != null && description.isNotEmpty) ...[
+                const SizedBox(height: kSpaceXs),
+                Text(
+                  description,
+                  maxLines: _bookmarkBodyLines,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(height: kSpaceXs),
+              Row(
+                children: [
+                  _BookmarkFavicon(favicon: preview?.favicon),
+                  const SizedBox(width: kSpaceInline),
+                  Expanded(
+                    child: Text(
+                      host,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Open link',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: kCompactIconSize,
+                    color: scheme.onSurfaceVariant,
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: () => launchLinkUrl(url),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BookmarkFavicon extends StatelessWidget {
+  final String? favicon;
+
+  const _BookmarkFavicon({required this.favicon});
+
+  @override
+  Widget build(BuildContext context) {
+    final globe = Icon(
+      Icons.public,
+      size: _bookmarkFaviconSize,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    final icon = favicon;
+    final provider = icon == null || icon.isEmpty
+        ? null
+        : _previewImageProvider(icon);
+    if (provider == null) {
+      return globe;
+    }
+    return Image(
+      image: provider,
+      width: _bookmarkFaviconSize,
+      height: _bookmarkFaviconSize,
+      fit: BoxFit.contain,
+      frameBuilder: Motion.fadeInFrame,
+      errorBuilder: (context, _, _) => globe,
+    );
+  }
+}

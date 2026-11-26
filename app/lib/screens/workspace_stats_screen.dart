@@ -198,6 +198,8 @@ class _ContentMix extends StatelessWidget {
     NoteKind.checklist => 'Checklists',
     NoteKind.markdown => 'Markdown',
     NoteKind.audio => 'Audio',
+    NoteKind.drawing => 'Drawings',
+    NoteKind.tracker => 'Trackers',
   };
 
   @override

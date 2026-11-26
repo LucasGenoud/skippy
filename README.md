@@ -33,7 +33,7 @@ Open <http://localhost:8123>. The app itself remains available at
 
 ## Features
 
-- Text, Markdown, checklist, audio, image, and attachment notes
+- Text, Markdown, checklist, audio, drawing, counter/habit tracker, image, and attachment notes; a note that is just a link shows as a bookmark
 - Nested checklists with up to three levels, reminders, labels, and links
 - Links between notes: type `[[` to link one, and see what links back
 - Workspaces, collections, masonry, list, and Kanban board layouts

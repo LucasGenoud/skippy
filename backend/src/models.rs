@@ -292,6 +292,22 @@ pub const KIND_TEXT: &str = "text";
 pub const KIND_CHECKLIST: &str = "checklist";
 pub const KIND_MARKDOWN: &str = "markdown";
 pub const KIND_AUDIO: &str = "audio";
+/// Freehand strokes, kept as client-written JSON in `content`.
+pub const KIND_DRAWING: &str = "drawing";
+/// A counter or habit log, kept as client-written JSON in `content`.
+pub const KIND_TRACKER: &str = "tracker";
+
+/// Whether a kind's `content` is client-written data rather than text, so
+/// nothing may read it as words or write words into it.
+pub fn holds_data(kind: &str) -> bool {
+    matches!(kind, KIND_DRAWING | KIND_TRACKER)
+}
+
+/// The part of a note's `content` that reads as words: none of it for a kind
+/// that [`holds_data`], so search, the LLM, and assistants never see it.
+pub fn prose<'a>(kind: &str, content: &'a str) -> &'a str {
+    if holds_data(kind) { "" } else { content }
+}
 
 /// A note drawn on a plain background.
 pub const NO_PATTERN: &str = "none";

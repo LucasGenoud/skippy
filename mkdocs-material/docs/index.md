@@ -7,7 +7,7 @@ Windows. It works offline and syncs when a device reconnects.
 
 ## Features
 
-- Text, Markdown, checklist, and audio notes with files, images, and links.
+- Text, Markdown, checklist, audio, drawing, and counter/habit notes with files, images, and links. A note that is just a link shows as a bookmark.
 - Links between notes: type `[[` in a note to link another, and each note
   lists the notes linking to it.
 - Workspaces, collections, labels, boards, reminders, search, and backups.

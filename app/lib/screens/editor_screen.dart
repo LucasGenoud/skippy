@@ -13,6 +13,8 @@ import 'package:uuid/uuid.dart';
 import '../models/dropped_file.dart';
 import '../models/note.dart';
 import '../state/checklist_tree.dart';
+import '../state/drawing.dart';
+import '../state/tracker.dart';
 import '../state/editor_history.dart';
 import '../state/note_links.dart';
 import '../state/note_availability.dart';
@@ -33,6 +35,8 @@ import '../widgets/animated_presence.dart';
 import '../widgets/animated_reveal.dart';
 import '../widgets/audio_player.dart';
 import '../widgets/color_picker.dart';
+import '../widgets/drawing/drawing_canvas.dart';
+import '../widgets/tracker/tracker_editor.dart';
 import '../widgets/editor/add_to_home_screen_help.dart';
 import '../widgets/editor/attachment_tiles.dart';
 import '../widgets/editor/compose_bar_reveal.dart';
@@ -582,6 +586,23 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() {});
   }
 
+  /// New content for a kind that [NoteKind.holdsData], such as a finished
+  /// stroke or a count: saved at once and recorded as its own undo step,
+  /// since there is no typing burst to group it into.
+  void _setDataContent(String content) {
+    _restoring = true;
+    _contentController.text = content;
+    _restoring = false;
+    _ensureNote();
+    _store.updateNoteContent(
+      _noteId!,
+      title: _titleController.text,
+      content: content,
+    );
+    _afterChange(discrete: true);
+    setState(() {});
+  }
+
   // -------------------------------------------------------------------
   // Undo / redo
 
@@ -1110,7 +1131,7 @@ class _EditorScreenState extends State<EditorScreen> {
     if (note.isChecklist) {
       return note.items.where((i) => i.text.toLowerCase().contains(q)).length;
     }
-    return note.content.toLowerCase().split(q).length - 1;
+    return note.prose.toLowerCase().split(q).length - 1;
   }
 
   /// Enters find-in-note mode with the search field focused.
@@ -1809,6 +1830,29 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget _contentEditor({required bool trashed, required String query}) {
     if (_kind == NoteKind.audio) {
       return _audioEditor(trashed: trashed, query: query);
+    }
+    if (_kind == NoteKind.drawing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: kSpaceMd),
+        child: DrawingCanvas(
+          drawing: Drawing.parse(_contentController.text),
+          onChanged: trashed
+              ? null
+              : (drawing) => _setDataContent(drawing.encode()),
+        ),
+      );
+    }
+    if (_kind == NoteKind.tracker) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: kSpaceMd),
+        child: TrackerEditor(
+          tracker: Tracker.parse(_contentController.text),
+          today: DateTime.now(),
+          onChanged: trashed
+              ? null
+              : (tracker) => _setDataContent(tracker.encode()),
+        ),
+      );
     }
     if (_kind == NoteKind.checklist) {
       return AnimatedChecklist(

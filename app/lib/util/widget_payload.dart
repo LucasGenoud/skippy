@@ -55,7 +55,7 @@ typedef WidgetColorResolver = WidgetNoteColors Function(String colorKey);
 String widgetDisplayTitle(Note note) {
   final title = note.title.trim();
   if (title.isNotEmpty) return title;
-  for (final line in note.content.split('\n')) {
+  for (final line in note.prose.split('\n')) {
     final trimmed = line.trim();
     if (trimmed.isNotEmpty) return _cap(trimmed, 60);
   }
@@ -128,7 +128,7 @@ Map<String, dynamic> buildWidgetNote(
     // say "+3 more" honestly even past [maxItems].
     'itemCount': note.items.length,
     'pendingCount': note.items.where((i) => !i.done).length,
-    'content': _cap(note.content.trim(), kWidgetContentChars),
+    'content': _cap(note.prose.trim(), kWidgetContentChars),
     'updatedAt': note.updatedAt.toUtc().toIso8601String(),
   };
 }

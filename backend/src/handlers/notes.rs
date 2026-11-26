@@ -34,7 +34,10 @@ fn validate_grid_span(span: i64) -> ApiResult<()> {
 }
 
 pub(super) fn validate_kind(kind: &str) -> ApiResult<()> {
-    if kind == KIND_TEXT || kind == KIND_CHECKLIST || kind == KIND_MARKDOWN || kind == KIND_AUDIO {
+    if matches!(
+        kind,
+        KIND_TEXT | KIND_CHECKLIST | KIND_MARKDOWN | KIND_AUDIO | KIND_DRAWING | KIND_TRACKER
+    ) {
         Ok(())
     } else {
         Err(ApiError::BadRequest(format!("unknown note kind '{kind}'")))

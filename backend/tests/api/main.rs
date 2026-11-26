@@ -12,6 +12,7 @@ mod auth;
 mod chat;
 mod checklist_history;
 mod cors;
+mod data_notes;
 mod events;
 mod labels;
 mod llm;

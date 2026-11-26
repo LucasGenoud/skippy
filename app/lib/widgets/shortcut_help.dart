@@ -30,6 +30,8 @@ class ShortcutHelpDialog extends StatelessWidget {
           (['C', 'N'], 'New note'),
           (['L'], 'New checklist'),
           (['M'], 'New markdown note'),
+          (['D'], 'New drawing'),
+          (['T'], 'New counter or habit'),
           (['/', '$mod K'], 'Search'),
           (['Esc'], 'Exit selection / clear search'),
           (['$mod G'], 'Collection settings'),

@@ -134,9 +134,9 @@ void main() {
       expect(parseSearchQuery('is:pinned').unknownFilters, isEmpty);
       expect(
         parseSearchQuery(
-          'is:favourite has:sketch kind:drawing',
+          'is:favourite has:sketch kind:doodle',
         ).unknownFilters.map((f) => f.value),
-        ['favourite', 'sketch', 'drawing'],
+        ['favourite', 'sketch', 'doodle'],
       );
       // A label that does not exist is a normal empty result, not a typo the
       // box should complain about: labels come and go.

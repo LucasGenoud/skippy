@@ -141,7 +141,7 @@ pub fn retrieval_query(history: &[(String, String)], message: &str) -> String {
 /// [`SearchService::note_text`]: crate::search::SearchService::note_text
 pub fn note_prompt_text(record: &NoteRecord) -> String {
     let mut parts: Vec<String> = Vec::new();
-    let content = record.content.trim();
+    let content = crate::models::prose(&record.kind, &record.content).trim();
     if !content.is_empty() {
         parts.push(content.to_string());
     }

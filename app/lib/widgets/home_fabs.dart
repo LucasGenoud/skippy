@@ -86,13 +86,15 @@ class _NewNoteFabsState extends State<NewNoteFabs>
   /// The [index]th kind up from the button: fades in and rises into place,
   /// a beat after the one below it; folding runs the same steps backwards.
   /// Never scaled: the morph lays the kind's face out at its on-screen size.
-  Widget _unfolding(int index, Widget child) {
+  /// Every kind runs for the same length, so the topmost of [count] still
+  /// lands as the unfold ends.
+  Widget _unfolding(int index, int count, Widget child) {
     final start = index * _stagger;
     final animation = CurvedAnimation(
       parent: _controller,
       curve: Interval(
         start,
-        start + 1 - 3 * _stagger,
+        start + 1 - (count - 1) * _stagger,
         curve: Motion.emphasized,
       ),
     );
@@ -155,6 +157,8 @@ class _NewNoteFabsState extends State<NewNoteFabs>
         transcriptionAvailable: transcriptionAvailable,
         onRecord: () => _setOpen(false),
       ),
+      _noteKind(Icons.exposure_plus_1, 'Tracker', NoteKind.tracker),
+      _noteKind(Icons.draw_outlined, 'Drawing', NoteKind.drawing),
       _noteKind(Icons.article_outlined, 'Markdown', NoteKind.markdown),
       _noteKind(Icons.check_box_outlined, 'Checklist', NoteKind.checklist),
       _noteKind(Icons.edit_outlined, 'Note', NoteKind.text),
@@ -177,7 +181,11 @@ class _NewNoteFabsState extends State<NewNoteFabs>
                   for (var i = 0; i < kinds.length; i++)
                     Padding(
                       padding: const EdgeInsets.only(bottom: kSpaceSm),
-                      child: _unfolding(kinds.length - 1 - i, kinds[i]),
+                      child: _unfolding(
+                        kinds.length - 1 - i,
+                        kinds.length,
+                        kinds[i],
+                      ),
                     ),
                 ],
               ),

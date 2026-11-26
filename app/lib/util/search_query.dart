@@ -432,7 +432,7 @@ String cycleSearchFilter(String query, String token) {
 
 bool _containsText(Note note, String needle, SearchContext context) {
   if (note.title.toLowerCase().contains(needle)) return true;
-  if (note.content.toLowerCase().contains(needle)) return true;
+  if (note.prose.toLowerCase().contains(needle)) return true;
   if (note.items.any((item) => item.text.toLowerCase().contains(needle))) {
     return true;
   }

@@ -120,13 +120,8 @@ class _ReminderCalendarState extends State<ReminderCalendar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    // Countries that write the month first also start the week on Sunday.
     final firstWeekday = context.select<SettingsStore, int>(
-      (s) =>
-          s.dateFormat == AppDateFormat.monthFirst ||
-              s.dateFormat == AppDateFormat.numericUS
-          ? DateTime.sunday
-          : DateTime.monday,
+      (s) => s.firstWeekday,
     );
     final month = _monthAt(_page);
     final today = dayOf(widget.now);

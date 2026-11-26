@@ -441,6 +441,9 @@ async fn append_to_note(state: &AppState, reach: Reach<'_>, args: &Value) -> Out
     if record.trashed {
         return Err("that note is in the trash".into());
     }
+    if holds_data(&record.kind) {
+        return Err(format!("a {} note has no text to append to", record.kind));
+    }
 
     let mut body = UpdateNote::default();
     if record.kind == KIND_CHECKLIST {
@@ -560,7 +563,7 @@ async fn open_to_assistants(
 fn body_text(view: &NoteView) -> String {
     let note = &view.note;
     if note.kind != KIND_CHECKLIST {
-        return note_links::plain_text(&note.content);
+        return note_links::plain_text(prose(&note.kind, &note.content));
     }
     note.items
         .iter()

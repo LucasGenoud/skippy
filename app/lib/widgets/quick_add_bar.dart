@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/dropped_file.dart';
+import '../screens/editor_screen.dart';
 import '../models/note.dart';
 import 'note_pattern.dart';
 import '../models/saved_location.dart';
@@ -28,6 +29,7 @@ import 'file_drop.dart';
 import 'labels_sheet.dart';
 import 'markdown_toolbar.dart';
 import 'note_actions.dart';
+import 'note_zoom.dart';
 import 'paste_files.dart';
 import 'pick_image.dart';
 import 'pin_icon.dart';
@@ -63,6 +65,16 @@ const _kBarKinds = [
     icon: Icons.notes_outlined,
     tooltip: 'New markdown note',
     kind: NoteKind.markdown,
+  ),
+];
+
+/// The kinds the collapsed bar opens straight in the editor, in order.
+const _kEditorKinds = [
+  (icon: Icons.draw_outlined, tooltip: 'New drawing', kind: NoteKind.drawing),
+  (
+    icon: Icons.exposure_plus_1,
+    tooltip: 'New counter or habit',
+    kind: NoteKind.tracker,
   ),
 ];
 
@@ -484,6 +496,21 @@ class _QuickAddBarState extends State<QuickAddBar> {
     if (target != NoteKind.checklist) _contentFocus.requestFocus();
   }
 
+  /// A drawing or tracker needs the whole editor, so it opens there rather
+  /// than growing the bar.
+  void _openEditorFor(NoteKind kind) {
+    openNoteEditor(
+      context,
+      kind: kind,
+      labelIds: widget.labelIds,
+      openFullscreen: () => Navigator.of(context).push(
+        NoteZoomRoute(
+          builder: (_) => EditorScreen(kind: kind, labelIds: widget.labelIds),
+        ),
+      ),
+    );
+  }
+
   Future<void> _quickImageNote() async {
     final store = context.read<NotesStore>();
     try {
@@ -617,6 +644,14 @@ class _QuickAddBarState extends State<QuickAddBar> {
               for (final kind in _kBarKinds)
                 if (kind.kind != defaultKind)
                   kindButton(kind.icon, kind.tooltip, kind.kind),
+              // Kinds that open the editor straight away.
+              for (final kind in _kEditorKinds)
+                IconButton(
+                  icon: Icon(kind.icon, size: 22),
+                  color: scheme.onSurfaceVariant,
+                  tooltip: kind.tooltip,
+                  onPressed: () => _openEditorFor(kind.kind),
+                ),
               // The spinner takes the image button's slot while the picture
               // uploads, fading across rather than swapping.
               StateCrossFade(
@@ -961,9 +996,11 @@ class _QuickAddBarState extends State<QuickAddBar> {
             onCanceled: () => _modalOpen = false,
             onSelected: _onMenuSelected,
             itemBuilder: (context) => [
-              // Audio notes come from a recording, never a conversion target.
+              // Audio, drawing and tracker notes are never made from text.
               for (final target in NoteKind.values)
-                if (target != _kind && target != NoteKind.audio)
+                if (target != _kind &&
+                    target != NoteKind.audio &&
+                    !target.holdsData)
                   _menuItem(
                     value: 'convert:${target.name}',
                     icon: _kindIcons[target]!,

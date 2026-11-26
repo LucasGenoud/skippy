@@ -832,3 +832,6 @@ fn titled(title: &str) -> String {
 fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
+    if holds_data(&record.kind) {
+        return Ok(None);
+    }
