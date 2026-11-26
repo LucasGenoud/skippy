@@ -111,6 +111,38 @@ void main() {
       expect(sendButton(tester).onPressed, isNotNull);
     });
 
+    // The question sits on the accent fill, so it takes the accent's own
+    // foreground; the default ink is white in dark mode, unreadable on it.
+    testWidgets('the question is legible on its bubble in dark mode', (
+      tester,
+    ) async {
+      api.chatScript = const [ChatDeltaEvent('Yes.'), ChatDoneEvent()];
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider.value(value: store),
+            ChangeNotifierProvider.value(value: settings),
+          ],
+          child: MaterialApp(theme: ThemeData.dark(), home: const ChatScreen()),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), 'is it legible?');
+      await tester.tap(findAction('Send'));
+      await tester.pumpAndSettle();
+
+      final scheme = Theme.of(
+        tester.element(find.byType(ChatScreen)),
+      ).colorScheme;
+      final text = tester.widget<RichText>(
+        find.descendant(
+          of: find.text('is it legible?'),
+          matching: find.byType(RichText),
+        ),
+      );
+      expect(text.text.style?.color, scheme.onPrimaryContainer);
+    });
+
     testWidgets('a write turn shows a chip that opens the created note', (
       tester,
     ) async {

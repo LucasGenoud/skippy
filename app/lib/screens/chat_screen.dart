@@ -423,7 +423,8 @@ class _Bubble extends StatelessWidget {
               },
             )
           else
-            Text(turn.text),
+            // On the accent fill, so in the accent's own foreground.
+            Text(turn.text, style: TextStyle(color: scheme.onPrimaryContainer)),
           if (turn.error != null && turn.text.isNotEmpty) ...[
             const SizedBox(height: kSpaceInline),
             Text(
