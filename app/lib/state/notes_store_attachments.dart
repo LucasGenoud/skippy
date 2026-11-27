@@ -95,6 +95,10 @@ extension NotesStoreAttachments on NotesStore {
   /// time-limited URL so image/audio element loads stay authorized).
   String fileUrl(Attachment attachment) => api.attachmentUrl(attachment);
 
+  /// An attachment's bytes, for a backup to carry.
+  Future<Uint8List> attachmentBytes(Attachment attachment) =>
+      api.attachmentBytes(attachment);
+
   // ---------------------------------------------------------------------
   // Audio notes
 

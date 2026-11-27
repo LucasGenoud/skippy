@@ -302,6 +302,9 @@ abstract class Api {
   /// authorized); falls back to the bare path for older servers.
   String attachmentUrl(Attachment attachment);
 
+  /// An attachment's bytes, loaded through its signed URL.
+  Future<Uint8List> attachmentBytes(Attachment attachment);
+
   /// Origin of the server this client talks to, for building links a person
   /// can paste elsewhere (see [publicShareUrl]).
   String get baseUrl;
@@ -418,6 +421,9 @@ class ApiClient extends _ApiTransport implements Api {
   /// short enough that a dead connection is a fast failure rather than a hang.
   /// Attachment uploads bypass it (see [_uploadClient]).
   static const requestTimeout = Duration(seconds: 15);
+
+  /// Longest wait for one attachment's bytes, as a backup reads every file.
+  static const _attachmentTimeout = Duration(seconds: 60);
 
   /// Ceiling on a request a model answers: a rewrite or a page summary. A
   /// model on a home server can take most of a minute, and the server gives
@@ -1078,6 +1084,19 @@ class ApiClient extends _ApiTransport implements Api {
     final signed = attachment.url;
     if (signed != null && signed.isNotEmpty) return '$baseUrl$signed';
     return fileUrl(attachment.id);
+  }
+
+  @override
+  Future<Uint8List> attachmentBytes(Attachment attachment) async {
+    // The signed URL is the capability; no session header is needed. Not
+    // through [_client]: a large file outlasts the ordinary request timeout.
+    final response = await _uploadClient
+        .get(Uri.parse(attachmentUrl(attachment)))
+        .timeout(_attachmentTimeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, response.body);
+    }
+    return response.bodyBytes;
   }
 
   // -- settings -----------------------------------------------------------------

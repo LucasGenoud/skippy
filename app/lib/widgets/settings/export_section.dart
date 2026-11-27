@@ -2,9 +2,9 @@ import '../form_dialog.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
+import '../../api/api_client.dart';
 import '../../models/note.dart';
 import '../../models/workspace.dart';
 import '../../state/notes_store.dart';
@@ -56,15 +56,13 @@ class _ExportSectionState extends State<ExportSection> {
     NotesStore store,
     Attachment attachment,
   ) async {
-    final response = await http
-        .get(Uri.parse(store.fileUrl(attachment)))
-        .timeout(const Duration(seconds: 60));
-    if (response.statusCode != 200) {
+    try {
+      return await store.attachmentBytes(attachment);
+    } on ApiException {
       throw StateError(
         "Couldn't download ${attachment.filename.isEmpty ? 'an attachment' : attachment.filename}",
       );
     }
-    return response.bodyBytes;
   }
 
   Future<void> _exportBackup() async {

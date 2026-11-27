@@ -1036,6 +1036,10 @@ class FakeApi implements Api {
   String fileUrl(String attachmentId) => 'http://fake.test/files/$attachmentId';
 
   @override
+  Future<Uint8List> attachmentBytes(Attachment attachment) =>
+      _run('attachmentBytes:${attachment.id}', () => Uint8List(0));
+
+  @override
   String attachmentUrl(Attachment attachment) => attachment.url != null
       ? 'http://fake.test${attachment.url}'
       : fileUrl(attachment.id);
