@@ -125,7 +125,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/stages.rs`: workspace board columns. A near-copy of `labels.rs` on purpose; see the stages/labels contract below before merging the two.
 - `backend/src/handlers/settings.rs`: opaque per-user settings document and managed descriptors.
 - `backend/src/handlers/search.rs`: semantic query, stats, and background reindex endpoints.
-- `backend/src/handlers/chat.rs`: streaming note-chat WebSocket and optional writes.
+- `backend/src/handlers/chat.rs`: streaming note-chat WebSocket: routing, retrieval and the answer. Its child module `chat/writes.rs` applies a planned create, append or update and confirms it.
 - `backend/src/handlers/events.rs`: ordinary change-event WebSocket.
 - `backend/src/handlers/unfurl.rs`: authenticated link-preview endpoint and cache integration.
 - `backend/src/handlers/probes.rs`: tests for unsaved LLM and notification configurations.
@@ -136,7 +136,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `backend/src/handlers/workspace_ai.rs`: the AI a workspace runs on, its owner's provider behind its own switches. Every AI read site resolves through it.
 - `backend/src/store/mod.rs`: shared SQLite result and cleanup types.
 - `backend/src/store/sqlite.rs`: SQLite account, workspace, note, and taxonomy implementation plus shared helpers.
-- `backend/src/store/sqlite_attachments.rs`, `sqlite_avatars.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`, `sqlite_tokens.rs`: focused SQLite repository implementations.
+- `backend/src/store/sqlite_accounts.rs` (users, sessions, password resets), `sqlite_reminders.rs`, `sqlite_labels.rs`, `sqlite_stages.rs`, `sqlite_attachments.rs`, `sqlite_avatars.rs`, `sqlite_history.rs`, `sqlite_sharing.rs`, `sqlite_infrastructure.rs`, `sqlite_tokens.rs`, `sqlite_views.rs`: focused SQLite repository implementations. `sqlite.rs` keeps the pool, shared query fragments, workspaces, collections and notes.
 - `backend/src/store/sqlite_schema.rs`: current clean-break schema creation.
 - `backend/src/store/sqlite_rows.rs`: SQL row structs and conversion into domain models.
 - `backend/src/cleanup.rs`: durable retry worker for attachment and vector cleanup enqueued by relational deletes.

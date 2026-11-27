@@ -1,11 +1,15 @@
 pub mod sqlite;
+mod sqlite_accounts;
 mod sqlite_attachments;
 mod sqlite_avatars;
 mod sqlite_history;
 mod sqlite_infrastructure;
+mod sqlite_labels;
+mod sqlite_reminders;
 mod sqlite_rows;
 mod sqlite_schema;
 mod sqlite_sharing;
+mod sqlite_stages;
 mod sqlite_tokens;
 mod sqlite_views;
 
