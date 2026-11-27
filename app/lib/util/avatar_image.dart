@@ -12,16 +12,12 @@ const int kAvatarSide = 160;
 Future<Uint8List?> squareAvatarPng(Uint8List bytes) async {
   try {
     // Decode at no more than twice the target, so a camera photo never sits
-    // in memory at full resolution.
+    // in memory at full resolution. Not through ImageDescriptor: its width
+    // and height throw on web. The call disposes the buffer.
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-    final descriptor = await ui.ImageDescriptor.encoded(buffer);
-    final scale = math.min(
-      1.0,
-      2 * kAvatarSide / math.min(descriptor.width, descriptor.height),
-    );
-    final codec = await descriptor.instantiateCodec(
-      targetWidth: (descriptor.width * scale).round(),
-      targetHeight: (descriptor.height * scale).round(),
+    final codec = await ui.instantiateImageCodecWithSize(
+      buffer,
+      getTargetSize: _decodeSize,
     );
     final source = (await codec.getNextFrame()).image;
 
@@ -54,10 +50,17 @@ Future<Uint8List?> squareAvatarPng(Uint8List bytes) async {
     square.dispose();
     source.dispose();
     codec.dispose();
-    descriptor.dispose();
-    buffer.dispose();
     return data?.buffer.asUint8List();
   } catch (_) {
     return null;
   }
+}
+
+/// [width] x [height] shrunk so the short side is at most twice [kAvatarSide].
+ui.TargetImageSize _decodeSize(int width, int height) {
+  final scale = math.min(1.0, 2 * kAvatarSide / math.min(width, height));
+  return ui.TargetImageSize(
+    width: (width * scale).round(),
+    height: (height * scale).round(),
+  );
 }
