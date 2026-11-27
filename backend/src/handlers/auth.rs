@@ -8,7 +8,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use std::time::Duration;
 
 use crate::AppState;
-use crate::auth::{AuthUser, SessionToken, hash_password, verify_password};
+use crate::auth::{AuthUser, SessionToken, hash_password, verify_login, verify_password};
 use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 
@@ -140,12 +140,12 @@ pub async fn login(
         .auth_attempts
         .check(&limit_key, LOGIN_ATTEMPTS, LOGIN_WINDOW)
         .map_err(ApiError::RateLimited)?;
-    let user = state
-        .repo
-        .user_by_email(&email)
-        .await?
-        .filter(|u| verify_password(&request.password, &u.password_hash))
-        .ok_or(ApiError::Unauthorized)?;
+    let user = state.repo.user_by_email(&email).await?;
+    let stored = user.as_ref().map(|u| u.password_hash.as_str());
+    if !verify_login(&request.password, stored) {
+        return Err(ApiError::Unauthorized);
+    }
+    let user = user.ok_or(ApiError::Unauthorized)?;
     state.auth_attempts.reset(&limit_key);
     let token = new_id();
     state.repo.create_session(&token, &user.id).await?;
@@ -178,6 +178,7 @@ pub async fn me(
 pub async fn update_account(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
+    SessionToken(session): SessionToken,
     Json(request): Json<UpdateAccountRequest>,
 ) -> ApiResult<Json<AccountPublic>> {
     if request.name.is_none() && request.email.is_none() && request.new_password.is_none() {
@@ -215,6 +216,7 @@ pub async fn update_account(
         }
     }
 
+    let changing_password = request.new_password.is_some();
     let password_hash = match request.new_password {
         Some(password) => {
             validate_password(&password)?;
@@ -226,6 +228,12 @@ pub async fn update_account(
         .repo
         .update_user(&user_id, &name, &email, &password_hash)
         .await?;
+    // Like a reset: whoever knew the old password keeps no way back in,
+    // but the device making the change stays signed in.
+    if changing_password {
+        state.repo.delete_other_sessions(&user_id, &session).await?;
+        state.repo.delete_api_tokens_for_user(&user_id).await?;
+    }
     if name_changed {
         let audience = state.repo.account_audience(&user_id).await?;
         state.hub.notify(&audience, CHANGED_MSG);

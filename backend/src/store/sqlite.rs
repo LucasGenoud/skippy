@@ -369,6 +369,17 @@ impl SqliteRepository {
         Ok(())
     }
 
+    /// Every session of `user_id` except the one presenting `keep`.
+    pub async fn delete_other_sessions(&self, user_id: &str, keep: &str) -> RepoResult<()> {
+        sqlx::query("DELETE FROM sessions WHERE user_id = ? AND token != ? AND token != ?")
+            .bind(user_id)
+            .bind(session_token_digest(keep))
+            .bind(keep)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     // -- password resets ----------------------------------------------------
 
     pub async fn create_password_reset(

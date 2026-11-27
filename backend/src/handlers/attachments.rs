@@ -148,6 +148,30 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+/// `attachment` with the filename twice over (RFC 6266): an ASCII stand-in
+/// for old clients, and the exact name percent-encoded as UTF-8. Header
+/// values must be ASCII; raw UTF-8 reaches browsers as mojibake.
+fn download_disposition(filename: &str) -> String {
+    let fallback: String = filename
+        .chars()
+        .map(|c| match c {
+            '"' | '\\' => '_',
+            c if c.is_ascii_graphic() || c == ' ' => c,
+            _ => '_',
+        })
+        .collect();
+    let mut encoded = String::new();
+    for byte in filename.bytes() {
+        // RFC 5987 attr-char: everything else is percent-encoded.
+        if byte.is_ascii_alphanumeric() || b"!#$&+-.^_`|~".contains(&byte) {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    format!("attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
+}
+
 pub async fn delete_attachment(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
@@ -253,10 +277,7 @@ pub async fn serve_file(
     let disposition = if inline {
         "inline".to_string()
     } else {
-        format!(
-            "attachment; filename=\"{}\"",
-            attachment.filename.replace('"', "")
-        )
+        download_disposition(&attachment.filename)
     };
     let total = bytes.len() as u64;
     // Common headers on every response. `Accept-Ranges` advertises range

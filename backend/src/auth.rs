@@ -3,10 +3,11 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use rand_core::OsRng;
+use std::sync::LazyLock;
 
 use crate::AppState;
 use crate::error::ApiError;
-use crate::models::TokenScope;
+use crate::models::{NO_PASSWORD, TokenScope};
 
 /// Argon2id, the hybrid variant, named rather than left to `Argon2::default()`
 /// so a change in the crate's default can't quietly move us off it.
@@ -31,6 +32,24 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
     hasher()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok()
+}
+
+/// A real hash of nothing anyone knows, checked when there is no usable
+/// stored hash, so a login costs one Argon2 run whether or not the account
+/// exists and its timing does not say which addresses are registered.
+static DECOY_HASH: LazyLock<String> = LazyLock::new(|| {
+    let secret = SaltString::generate(&mut OsRng);
+    hash_password(secret.as_str()).expect("argon2 hashes a fixed-size secret")
+});
+
+/// Password check for sign-in, constant-cost across missing accounts and
+/// single sign-on accounts.
+pub fn verify_login(password: &str, stored: Option<&str>) -> bool {
+    let Some(hash) = stored.filter(|hash| *hash != NO_PASSWORD) else {
+        verify_password(password, &DECOY_HASH);
+        return false;
+    };
+    verify_password(password, hash)
 }
 
 fn bearer_token(parts: &Parts) -> Option<String> {
@@ -99,5 +118,19 @@ impl FromRequestParts<AppState> for SessionToken {
         bearer_token(parts)
             .map(SessionToken)
             .ok_or(ApiError::Unauthorized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_without_an_account_still_runs_argon2() {
+        assert!(PasswordHash::new(&DECOY_HASH).is_ok());
+        assert!(!verify_login("hunter22", None));
+        assert!(!verify_login("", Some(crate::models::NO_PASSWORD)));
+        let stored = hash_password("hunter22").unwrap();
+        assert!(verify_login("hunter22", Some(&stored)));
     }
 }

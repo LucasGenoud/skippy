@@ -296,3 +296,48 @@ async fn attachment_rules() {
     let (status, _) = upload(&app, &bob, note_id, "image/png", b"x").await;
     assert_eq!(status, StatusCode::CREATED);
 }
+
+#[tokio::test]
+async fn non_ascii_filenames_are_still_forced_to_download() {
+    let app = app().await;
+    let (ada, _) = register(&app, "ada").await;
+    let note = create_note(&app, &ada, json!({"title": "n"})).await;
+    let note_id = note["id"].as_str().unwrap();
+
+    let boundary = "XSTICKYBOUNDARY";
+    let body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"résumé.html\"\r\nContent-Type: text/html\r\n\r\n<p>hi</p>\r\n--{boundary}--\r\n"
+    );
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/notes/{note_id}/attachments"))
+        .header(header::AUTHORIZATION, format!("Bearer {ada}"))
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let attachment: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(attachment["filename"], "résumé.html");
+
+    let request = Request::builder()
+        .uri(attachment["url"].as_str().unwrap())
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let disposition = response
+        .headers()
+        .get(header::CONTENT_DISPOSITION)
+        .expect("a download disposition")
+        .to_str()
+        .unwrap();
+    assert!(disposition.starts_with("attachment"), "{disposition}");
+    assert!(
+        disposition.contains("filename*=UTF-8''r%C3%A9sum%C3%A9.html"),
+        "{disposition}"
+    );
+}

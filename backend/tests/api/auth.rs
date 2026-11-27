@@ -208,6 +208,50 @@ async fn account_name_email_and_password_can_be_changed() {
 }
 
 #[tokio::test]
+async fn password_change_signs_out_everything_but_the_current_session() {
+    let app = app().await;
+    let (current, _) = register(&app, "ada").await;
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/auth/login",
+        None,
+        Some(json!({"email": test_email("ada"), "password": "hunter22"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let other = body["token"].as_str().unwrap().to_string();
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/tokens",
+        Some(&current),
+        Some(json!({"name": "Claude", "scope": "read"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let secret = body["secret"].as_str().unwrap().to_string();
+
+    let (status, _) = send(
+        &app,
+        "PATCH",
+        "/api/auth/me",
+        Some(&current),
+        Some(json!({"new_password": "analytical-engine", "current_password": "hunter22"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = send(&app, "GET", "/api/auth/me", Some(&current), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(&app, "GET", "/api/auth/me", Some(&other), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let ping = json!({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}});
+    let (status, _) = send(&app, "POST", "/api/mcp", Some(&secret), Some(ping)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn sensitive_account_changes_require_current_password() {
     let app = app().await;
     let (token, _) = register(&app, "ada").await;
