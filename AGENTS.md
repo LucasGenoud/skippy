@@ -185,7 +185,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/screens/login_screen.dart`: server selection, authentication, and the "Forgot password?" request dialog.
 - `app/lib/screens/reset_password_screen.dart`: the form behind an emailed reset link; runs outside the signed-in app like the public share page.
 - `app/lib/screens/home_screen.dart`: main coordinator for views, selection, search, reorder, navigation, keyboard shortcuts, and share intake.
-- `app/lib/screens/editor_screen.dart`: note-kind editing, drafts, attachments, recording, find-in-note, and save lifecycle.
+- `app/lib/screens/editor_screen.dart`: note-kind editing, drafts, attachments, recording, find-in-note, and save lifecycle. Its `part` files add the rest as extensions on the state: `editor_screen_actions.dart` (pin, archive, move, duplicate, AI rewrite, convert), `_checklist`, `_uploads`, `_links`, and `_edge_swipe`. Fields, overrides and `setState` (reached through `_rebuild`) stay in the class.
 - `app/lib/screens/history_screen.dart`: version display and restore.
 - `app/lib/screens/settings_screen.dart`: the account settings index. A phone opens one page at a time; a wide window keeps the index beside the open page.
 - `app/lib/widgets/settings/settings_pages.dart`: the `SettingsPage` groups (account, appearance, reminders, AI & search, sharing & access, backup & import, about) and each page's rows.
