@@ -38,13 +38,13 @@ impl SqliteRepository {
     }
 
     pub async fn checklist_history(&self, user_id: &str) -> RepoResult<Vec<HistoryEntry>> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT h.note_id, h.text, h.uses FROM checklist_history h
              JOIN notes n ON n.id = h.note_id
              WHERE {}
              ORDER BY h.uses DESC, h.last_used_at DESC",
             visible_notes("n")
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .bind(user_id)

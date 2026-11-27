@@ -375,18 +375,18 @@ async fn migrate_workspace_ai(pool: &SqlitePool) -> anyhow::Result<()> {
         return Ok(());
     }
     for (column, _) in SWITCHES {
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "ALTER TABLE workspaces ADD COLUMN {column} INTEGER NOT NULL DEFAULT 1 CHECK ({column} IN (0, 1))"
-        ))
+        )))
         .execute(&mut *tx)
         .await?;
     }
     for (column, setting) in SWITCHES.into_iter().filter(|(_, s)| !s.is_empty()) {
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE workspaces SET {column} = 0 WHERE owner_id IN (
                  SELECT user_id FROM user_settings WHERE json_type(data, '$.{setting}') = 'false'
              )"
-        ))
+        )))
         .execute(&mut *tx)
         .await?;
     }
@@ -436,9 +436,12 @@ async fn migrate_note_kinds(pool: &SqlitePool) -> anyhow::Result<()> {
             .await?;
     }
     // Other connections re-read the schema once its version moves.
-    sqlx::query(&format!("PRAGMA schema_version = {}", version + 1))
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA schema_version = {}",
+        version + 1
+    )))
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("PRAGMA writable_schema = OFF")
         .execute(&mut *tx)
         .await?;
@@ -812,10 +815,12 @@ mod tests {
             "ai_writing",
             "assistant_access",
         ] {
-            sqlx::query(&format!("ALTER TABLE workspaces DROP COLUMN {column}"))
-                .execute(&pool)
-                .await
-                .unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "ALTER TABLE workspaces DROP COLUMN {column}"
+            )))
+            .execute(&pool)
+            .await
+            .unwrap();
         }
         sqlx::raw_sql(
             r#"INSERT INTO users VALUES ('u','User','u@test','hash','now'), ('v','Other','v@test','hash','now');
@@ -907,7 +912,10 @@ mod tests {
             );
         assert!(!old.contains("'drawing'"));
         assert!(!old.contains("'tracker'"));
-        sqlx::raw_sql(&old).execute(&pool).await.unwrap();
+        sqlx::raw_sql(sqlx::AssertSqlSafe(old.as_str()))
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::raw_sql("INSERT INTO users VALUES ('u','User','u@test','hash','now');
             INSERT INTO workspaces(id,owner_id,name,created_at) VALUES('w','u','Work','now');
             INSERT INTO notes(id,workspace_id,title,created_at,updated_at) VALUES('n','w','Keep me','now','now');")

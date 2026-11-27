@@ -88,17 +88,19 @@ impl SqliteRepository {
     }
 
     pub async fn share_link(&self, token: &str) -> RepoResult<Option<ShareLink>> {
-        let row = sqlx::query(&format!("{SHARE_LINK_COLUMNS} WHERE token = ?"))
-            .bind(token)
-            .fetch_optional(&self.pool)
-            .await?;
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "{SHARE_LINK_COLUMNS} WHERE token = ?"
+        )))
+        .bind(token)
+        .fetch_optional(&self.pool)
+        .await?;
         Ok(row.as_ref().map(share_link_from_row))
     }
 
     pub async fn share_links_for_user(&self, user_id: &str) -> RepoResult<Vec<ShareLink>> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "{SHARE_LINK_COLUMNS} WHERE created_by = ? ORDER BY created_at DESC"
-        ))
+        )))
         .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
@@ -114,11 +116,11 @@ impl SqliteRepository {
         label_id: Option<&str>,
         collection_id: Option<&str>,
     ) -> RepoResult<Option<ShareLink>> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
             "{SHARE_LINK_COLUMNS}
              WHERE created_by = ? AND target = ?
                AND note_id IS ? AND workspace_id IS ? AND label_id IS ? AND collection_id IS ?"
-        ))
+        )))
         .bind(user_id)
         .bind(target)
         .bind(note_id)

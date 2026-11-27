@@ -138,7 +138,7 @@ impl AppState {
         // Random per-process fallback so file URLs are signed even before a
         // persisted secret is loaded (and in tests, which never persist one).
         let mut secret = vec![0u8; 32];
-        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut secret);
+        getrandom::fill(&mut secret).expect("the OS random source is available");
         Self {
             repo,
             hub: Hub::default(),

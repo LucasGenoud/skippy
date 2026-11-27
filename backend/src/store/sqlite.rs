@@ -120,22 +120,22 @@ impl SqliteRepository {
     }
 
     pub async fn user_by_email(&self, email: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT {USER_COLUMNS} FROM users WHERE email = ? COLLATE NOCASE"
-        ))
-            .bind(email)
-            .fetch_optional(&self.pool)
-            .await?;
+        )))
+        .bind(email)
+        .fetch_optional(&self.pool)
+        .await?;
         Ok(row.map(|r| user_from_row(&r)))
     }
 
     /// The account a single sign-on identity is tied to.
     pub async fn user_by_identity(&self, issuer: &str, subject: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT {USER_COLUMNS} FROM user_identities
              JOIN users ON users.id = user_identities.user_id
              WHERE issuer = ? AND subject = ?"
-        ))
+        )))
         .bind(issuer)
         .bind(subject)
         .fetch_optional(&self.pool)
@@ -165,10 +165,12 @@ impl SqliteRepository {
     }
 
     pub async fn user_by_id(&self, id: &str) -> RepoResult<Option<User>> {
-        let row = sqlx::query(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = ?"))
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?;
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SELECT {USER_COLUMNS} FROM users WHERE id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
         Ok(row.map(|r| user_from_row(&r)))
     }
 
@@ -452,16 +454,16 @@ impl SqliteRepository {
     }
 
     pub async fn collections_for_user(&self, user_id: &str) -> RepoResult<Vec<Collection>> {
-        Ok(sqlx::query_as::<_, Collection>(&format!("SELECT * FROM collections WHERE deleted=0 AND workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies) ORDER BY position,id"))
+        Ok(sqlx::query_as::<_, Collection>(sqlx::AssertSqlSafe(format!("SELECT * FROM collections WHERE deleted=0 AND workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies) ORDER BY position,id")))
             .bind(user_id).bind(user_id).fetch_all(&self.pool).await?)
     }
 
     pub async fn put_collection(&self, user_id: &str, c: &Collection) -> RepoResult<bool> {
-        let result = sqlx::query(&format!("INSERT INTO collections(id,workspace_id,name,icon,color,layout,sort,position)
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!("INSERT INTO collections(id,workspace_id,name,icon,color,layout,sort,position)
             SELECT ?,id,?,?,?,?,?,? FROM workspaces WHERE id=? AND id IN ({MY_WORKSPACES})
             ON CONFLICT(id) DO UPDATE SET name=excluded.name,icon=excluded.icon,color=excluded.color,
             layout=excluded.layout,sort=excluded.sort,position=excluded.position
-            WHERE collections.workspace_id=excluded.workspace_id AND collections.deleted=0"))
+            WHERE collections.workspace_id=excluded.workspace_id AND collections.deleted=0")))
             .bind(&c.id).bind(&c.name).bind(&c.icon).bind(&c.color).bind(&c.layout).bind(&c.sort).bind(c.position)
             .bind(&c.workspace_id).bind(user_id).bind(user_id).execute(&self.pool).await?;
         Ok(result.rows_affected() > 0)
@@ -474,7 +476,7 @@ impl SqliteRepository {
         id: &str,
     ) -> RepoResult<Option<Vec<String>>> {
         let mut tx = self.pool.begin().await?;
-        let result = sqlx::query(&format!("UPDATE collections SET deleted=1 WHERE id=? AND workspace_id=? AND workspace_id IN ({MY_WORKSPACES})"))
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE collections SET deleted=1 WHERE id=? AND workspace_id=? AND workspace_id IN ({MY_WORKSPACES})")))
             .bind(id).bind(workspace_id).bind(user_id).bind(user_id).execute(&mut *tx).await?;
         if result.rows_affected() == 0 {
             return Ok(None);
@@ -495,11 +497,11 @@ impl SqliteRepository {
         workspace_id: &str,
         view: &SavedView,
     ) -> RepoResult<bool> {
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!(
             "INSERT INTO smart_views (workspace_id, id, data)
              SELECT id, ?, ? FROM workspaces WHERE id = ? AND id IN ({MY_WORKSPACES})
              ON CONFLICT(workspace_id, id) DO UPDATE SET data = excluded.data"
-        ))
+        )))
         .bind(&view.id)
         .bind(serde_json::to_string(view)?)
         .bind(workspace_id)
@@ -516,20 +518,20 @@ impl SqliteRepository {
         workspace_id: &str,
         id: &str,
     ) -> RepoResult<bool> {
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!(
             "DELETE FROM smart_views WHERE workspace_id = ? AND id = ? AND workspace_id IN ({MY_WORKSPACES})"
-        ))
+        )))
         .bind(workspace_id).bind(id).bind(user_id).bind(user_id)
         .execute(&self.pool).await?;
         Ok(result.rows_affected() > 0)
     }
 
     pub async fn workspaces_for_user(&self, user_id: &str) -> RepoResult<Vec<WorkspaceView>> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT w.*, u.name AS owner_name, {AVATAR_OF_U} FROM workspaces w
              JOIN users u ON u.id = w.owner_id WHERE w.id IN ({MY_WORKSPACES}) AND w.id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY w.is_default DESC, w.created_at ASC"
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -553,18 +555,18 @@ impl SqliteRepository {
         }
 
         let mut views: HashMap<String, Vec<SavedView>> = HashMap::new();
-        for row in sqlx::query(&format!(
+        for row in sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT workspace_id, data FROM smart_views WHERE workspace_id IN ({MY_WORKSPACES}) ORDER BY json_extract(data, '$.position'), id"
-        )).bind(user_id).bind(user_id).fetch_all(&self.pool).await? {
+        ))).bind(user_id).bind(user_id).fetch_all(&self.pool).await? {
             views.entry(row.get("workspace_id")).or_default()
                 .push(serde_json::from_str(row.get::<&str, _>("data"))?);
         }
         let collections = self.collections_for_user(user_id).await?;
         let mut members_by_workspace: HashMap<String, Vec<UserPublic>> = HashMap::new();
-        for row in sqlx::query(&format!(
+        for row in sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT m.workspace_id, u.id, u.name, {AVATAR_OF_U} FROM workspace_members m
              JOIN users u ON u.id = m.user_id WHERE m.workspace_id IN ({MY_WORKSPACES})"
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -803,10 +805,10 @@ impl SqliteRepository {
 
 impl SqliteRepository {
     pub async fn notes_for_user(&self, user_id: &str) -> RepoResult<Vec<NoteView>> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT * FROM notes WHERE {} AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies) ORDER BY position ASC",
             visible_notes("notes")
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .bind(user_id)
@@ -823,10 +825,10 @@ impl SqliteRepository {
         user_id: &str,
         workspace_id: &str,
     ) -> RepoResult<HashSet<String>> {
-        let ids: Vec<String> = sqlx::query_scalar(&format!(
+        let ids: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT id FROM notes WHERE workspace_id = ? AND {} AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)",
             visible_notes("notes")
-        ))
+        )))
         .bind(workspace_id)
         .bind(user_id)
         .bind(user_id)
@@ -839,10 +841,10 @@ impl SqliteRepository {
     /// Every workspace holding a note `user_id` can see, direct shares
     /// included: the collections an unscoped search or chat reads.
     pub async fn visible_note_workspaces(&self, user_id: &str) -> RepoResult<Vec<String>> {
-        Ok(sqlx::query_scalar(&format!(
+        Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT DISTINCT workspace_id FROM notes WHERE {} AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)",
             visible_notes("notes")
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .bind(user_id)
@@ -867,10 +869,10 @@ impl SqliteRepository {
         note_id: &str,
         user_id: &str,
     ) -> RepoResult<Option<NoteRecord>> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT * FROM notes WHERE id = ? AND {}",
             visible_notes("notes")
-        ))
+        )))
         .bind(note_id)
         .bind(user_id)
         .bind(user_id)
@@ -1044,10 +1046,10 @@ impl SqliteRepository {
     }
 
     pub async fn min_position_for_user(&self, user_id: &str) -> RepoResult<f64> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT COALESCE(MIN(position), 0.0) AS m FROM notes WHERE {}",
             visible_notes("notes")
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .bind(user_id)
@@ -1063,7 +1065,7 @@ impl SqliteRepository {
         );
         let mut tx = self.pool.begin().await?;
         for (i, id) in ids.iter().enumerate() {
-            sqlx::query(&statement)
+            sqlx::query(sqlx::AssertSqlSafe(statement.as_str()))
                 .bind(((i + 1) as f64) * 1024.0)
                 .bind(id)
                 .bind(user_id)
@@ -1388,11 +1390,11 @@ impl SqliteRepository {
 
 impl SqliteRepository {
     pub async fn labels_for_user(&self, user_id: &str) -> RepoResult<Vec<Label>> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT id, workspace_id, name, color, icon, position FROM labels
              WHERE workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY position, name COLLATE NOCASE"
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -1441,10 +1443,10 @@ impl SqliteRepository {
         // Membership, not authorship: a workspace's labels belong to everyone
         // in it. An absent position leaves the label where it is, so renaming
         // one never reshuffles the sidebar (mirrors update_stage).
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE labels SET name = ?, color = ?, icon = ?, position = COALESCE(?, position)
              WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
-        ))
+        )))
         .bind(name)
         .bind(color)
         .bind(icon)
@@ -1470,9 +1472,9 @@ impl SqliteRepository {
     }
 
     pub async fn delete_label(&self, user_id: &str, label_id: &str) -> RepoResult<bool> {
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!(
             "DELETE FROM labels WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
-        ))
+        )))
         .bind(label_id)
         .bind(user_id)
         .bind(user_id)
@@ -1516,11 +1518,11 @@ impl SqliteRepository {
     // -- stages (board columns) ------------------------------------------------
 
     pub async fn stages_for_user(&self, user_id: &str) -> RepoResult<Vec<Stage>> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT id, workspace_id, collection_id, name, color, position FROM stages
              WHERE collection_id IN (SELECT id FROM collections WHERE deleted=0) AND workspace_id IN ({MY_WORKSPACES}) AND workspace_id NOT IN (SELECT workspace_id FROM workspace_copies)
              ORDER BY position, name COLLATE NOCASE"
-        ))
+        )))
         .bind(user_id)
         .bind(user_id)
         .fetch_all(&self.pool)
@@ -1568,10 +1570,10 @@ impl SqliteRepository {
         // Membership, not authorship: a workspace's board belongs to everyone
         // in it. An absent position leaves the column where it is, so renaming
         // a stage never reshuffles the board.
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE stages SET name = ?, color = ?, position = COALESCE(?, position)
              WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
-        ))
+        )))
         .bind(name)
         .bind(color)
         .bind(position)
@@ -1588,9 +1590,9 @@ impl SqliteRepository {
         // Resolve authorization before clearing dependent notes. The
         // composite stage/workspace foreign key then guarantees there are no
         // cross-workspace references hiding behind this operation.
-        let exists: Option<i64> = sqlx::query_scalar(&format!(
+        let exists: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT 1 FROM stages WHERE id = ? AND workspace_id IN ({MY_WORKSPACES})"
-        ))
+        )))
         .bind(stage_id)
         .bind(user_id)
         .bind(user_id)

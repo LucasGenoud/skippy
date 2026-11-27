@@ -46,7 +46,7 @@ impl SqliteRepository {
     /// collaborator of a note the viewer can see. Anyone else gets nothing,
     /// so a picture never confirms that an account exists.
     pub async fn avatar_for(&self, viewer: &str, target: &str) -> RepoResult<Option<Avatar>> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!(
             "SELECT mime, bytes FROM user_avatars WHERE user_id = ?1 AND (
                  ?1 = ?2
                  OR EXISTS (
@@ -61,7 +61,7 @@ impl SqliteRepository {
                  )
              )",
             visible = visible_notes("n").replace('?', "?2"),
-        ))
+        )))
         .bind(target)
         .bind(viewer)
         .fetch_optional(&self.pool)

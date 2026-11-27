@@ -39,12 +39,12 @@ pub(super) async fn build_note_views(
     // Labels are workspace state. A direct collaborator outside the workspace
     // receives no label ids even though the note itself is visible.
     let mut labels_by_note: HashMap<String, Vec<String>> = HashMap::new();
-    for row in sqlx::query(&format!(
+    for row in sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT nl.note_id, nl.label_id FROM note_labels nl
          JOIN labels l ON l.id = nl.label_id
          WHERE nl.note_id IN (SELECT value FROM json_each(?))
            AND l.workspace_id IN ({MY_WORKSPACES})"
-    ))
+    )))
     .bind(&note_ids)
     .bind(viewer_id)
     .bind(viewer_id)
@@ -58,11 +58,11 @@ pub(super) async fn build_note_views(
     }
 
     let mut collaborators_by_note: HashMap<String, Vec<UserPublic>> = HashMap::new();
-    for row in sqlx::query(&format!(
+    for row in sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT ns.note_id, u.id, u.name, {AVATAR_OF_U} FROM note_shares ns
          JOIN users u ON u.id = ns.user_id
          WHERE ns.note_id IN (SELECT value FROM json_each(?))"
-    ))
+    )))
     .bind(&note_ids)
     .fetch_all(pool)
     .await?
@@ -123,11 +123,11 @@ pub(super) async fn build_note_views(
             });
     }
 
-    let workspace_owners: HashMap<String, UserPublic> = sqlx::query(&format!(
+    let workspace_owners: HashMap<String, UserPublic> = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT w.id AS workspace_id, u.id, u.name, {AVATAR_OF_U} FROM workspaces w
          JOIN users u ON u.id = w.owner_id
          WHERE w.id IN (SELECT value FROM json_each(?))"
-    ))
+    )))
     .bind(&workspace_ids)
     .fetch_all(pool)
     .await?

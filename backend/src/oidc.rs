@@ -611,7 +611,7 @@ fn is_loopback(url: &Url) -> bool {
 
 fn random_secret() -> String {
     let mut bytes = [0u8; SECRET_BYTES];
-    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
+    getrandom::fill(&mut bytes).expect("the OS random source is available");
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

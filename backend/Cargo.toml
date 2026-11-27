@@ -2,7 +2,7 @@
 name = "sticky-notes-server"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.94"
 
 [lib]
 name = "sticky_notes_server"
@@ -17,16 +17,14 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "v5"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 anyhow = "1"
 async-trait = "0.1"
-argon2 = "0.5"
-# Held at 0.6 by argon2 0.5 (the newest release): SaltString::generate takes the
-# RNG through password-hash 0.5, which is built against this rand_core.
-rand_core = { version = "0.6", features = ["getrandom"] }
+argon2 = "0.6"
+getrandom = "0.4"
 futures = "0.3"
 # vec0 virtual table for the semantic-search index; registered process-wide
 # via sqlite3_auto_extension, so libsqlite3-sys must stay the version sqlx uses.
@@ -41,7 +39,7 @@ reqwest = { version = "0.12", default-features = false, features = ["multipart",
 hmac = "0.13"
 sha2 = "0.11"
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 form_urlencoded = "1"
 # SMTP for the email notification connector. rustls to match reqwest's TLS
 # stack (no OpenSSL in the build image); default features would pull native-tls.
@@ -52,4 +50,4 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 uuid = "1"
 # WS client for exercising the /api/chat websocket end to end.
-tokio-tungstenite = "0.26"
+tokio-tungstenite = "0.30"

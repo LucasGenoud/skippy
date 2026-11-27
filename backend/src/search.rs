@@ -235,9 +235,11 @@ impl SqliteVectorIndex {
                 if table_name != Self::table_name(&workspace_id) {
                     anyhow::bail!("invalid vector collection metadata for workspace");
                 }
-                sqlx::raw_sql(&format!("DROP TABLE IF EXISTS {table_name}"))
-                    .execute(&pool)
-                    .await?;
+                sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                    "DROP TABLE IF EXISTS {table_name}"
+                )))
+                .execute(&pool)
+                .await?;
             }
             sqlx::raw_sql(
                 "DELETE FROM note_vec_locations;
@@ -269,12 +271,12 @@ impl SqliteVectorIndex {
 
     async fn ensure_collection(&self, workspace_id: &str, dims: usize) -> anyhow::Result<String> {
         let table_name = Self::table_name(workspace_id);
-        sqlx::raw_sql(&format!(
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(
                  note_id TEXT,
                  embedding FLOAT[{dims}] distance_metric=cosine
              )"
-        ))
+        )))
         .execute(&self.pool)
         .await?;
         sqlx::query(
@@ -330,19 +332,23 @@ impl SqliteVectorIndex {
         };
         let mut tx = self.pool.begin().await?;
         if let Some(previous_table) = previous_table {
-            sqlx::query(&format!("DELETE FROM {previous_table} WHERE note_id = ?"))
-                .bind(note_id)
-                .execute(&mut *tx)
-                .await?;
-        }
-        sqlx::query(&format!("DELETE FROM {table_name} WHERE note_id = ?"))
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "DELETE FROM {previous_table} WHERE note_id = ?"
+            )))
             .bind(note_id)
             .execute(&mut *tx)
             .await?;
+        }
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DELETE FROM {table_name} WHERE note_id = ?"
+        )))
+        .bind(note_id)
+        .execute(&mut *tx)
+        .await?;
         let blob = vector_to_blob(&vector);
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             "INSERT INTO {table_name} (note_id, embedding) VALUES (?, ?)"
-        ))
+        )))
         .bind(note_id)
         .bind(&blob)
         .execute(&mut *tx)
@@ -369,10 +375,12 @@ impl SqliteVectorIndex {
         if let Some(workspace_id) = workspace_id
             && let Some(table_name) = self.collection(&workspace_id).await?
         {
-            sqlx::query(&format!("DELETE FROM {table_name} WHERE note_id = ?"))
-                .bind(note_id)
-                .execute(&self.pool)
-                .await?;
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "DELETE FROM {table_name} WHERE note_id = ?"
+            )))
+            .bind(note_id)
+            .execute(&self.pool)
+            .await?;
         }
         sqlx::query("DELETE FROM note_vec_locations WHERE note_id = ?")
             .bind(note_id)
@@ -384,9 +392,11 @@ impl SqliteVectorIndex {
     async fn remove_workspace(&self, workspace_id: &str) -> anyhow::Result<()> {
         let _write = self.write_lock.lock().await;
         if let Some(table_name) = self.collection(workspace_id).await? {
-            sqlx::raw_sql(&format!("DROP TABLE IF EXISTS {table_name}"))
-                .execute(&self.pool)
-                .await?;
+            sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                "DROP TABLE IF EXISTS {table_name}"
+            )))
+            .execute(&self.pool)
+            .await?;
         }
         sqlx::query("DELETE FROM note_vec_locations WHERE workspace_id = ?")
             .bind(workspace_id)
@@ -421,10 +431,10 @@ impl SqliteVectorIndex {
             let Some(table_name) = self.collection(workspace_id).await? else {
                 continue;
             };
-            let rows = sqlx::query(&format!(
+            let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
                 "SELECT note_id, distance FROM {table_name}
                  WHERE embedding MATCH ? AND k = ? ORDER BY distance"
-            ))
+            )))
             .bind(&blob)
             .bind(limit as i64)
             .fetch_all(&self.pool)

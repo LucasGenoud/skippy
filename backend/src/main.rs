@@ -58,7 +58,7 @@ async fn load_file_secret(repo: &SqliteRepository) -> anyhow::Result<Vec<u8>> {
         return Ok(bytes);
     }
     let mut bytes = vec![0u8; 32];
-    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
+    getrandom::fill(&mut bytes).expect("the OS random source is available");
     repo.meta_set("file_secret", &hex::encode(&bytes))
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;

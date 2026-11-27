@@ -1,8 +1,8 @@
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::{Algorithm, Argon2, Params, Version};
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use rand_core::OsRng;
 use std::sync::LazyLock;
 
 use crate::AppState;
@@ -16,11 +16,11 @@ fn hasher() -> Argon2<'static> {
 }
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    Ok(hasher()
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("hash failure: {e}"))?
-        .to_string())
+    // The salt is drawn from the OS random source by the hasher itself.
+    let hash: PasswordHash = hasher()
+        .hash_password(password.as_bytes())
+        .map_err(|e| anyhow::anyhow!("hash failure: {e}"))?;
+    Ok(hash.to_string())
 }
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
@@ -38,8 +38,9 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 /// stored hash, so a login costs one Argon2 run whether or not the account
 /// exists and its timing does not say which addresses are registered.
 static DECOY_HASH: LazyLock<String> = LazyLock::new(|| {
-    let secret = SaltString::generate(&mut OsRng);
-    hash_password(secret.as_str()).expect("argon2 hashes a fixed-size secret")
+    let mut secret = [0u8; 32];
+    getrandom::fill(&mut secret).expect("the OS random source is available");
+    hash_password(&hex::encode(secret)).expect("argon2 hashes a fixed-size secret")
 });
 
 /// Password check for sign-in, constant-cost across missing accounts and
@@ -124,6 +125,13 @@ impl FromRequestParts<AppState> for SessionToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hashes_written_by_argon2_0_5_still_verify() {
+        let stored = "$argon2id$v=19$m=19456,t=2,p=1$BjWcY/XmBd4hIXqVMKWK9A$MMdBG6lEkK/OEscfhS8Jz0fDrRSbECI/gkGtrT+Gv/o";
+        assert!(verify_password("hunter22", stored));
+        assert!(!verify_password("hunter23", stored));
+    }
 
     #[test]
     fn login_without_an_account_still_runs_argon2() {

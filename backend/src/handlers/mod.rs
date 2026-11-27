@@ -88,7 +88,7 @@ const TOKEN_BYTES: usize = 24;
 
 fn new_token() -> String {
     let mut bytes = [0u8; TOKEN_BYTES];
-    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
+    getrandom::fill(&mut bytes).expect("the OS random source is available");
     hex::encode(bytes)
 }
 
