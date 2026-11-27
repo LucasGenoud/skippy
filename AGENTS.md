@@ -201,7 +201,7 @@ Notes chat uses one WebSocket connection per turn. The assistant router can answ
 - `app/lib/widgets/reminder_chip.dart`: the shared "when" pill, used by the card
   for a note's reminder and by the checklist editor for a row's.
 - `app/lib/widgets/swipe_to_archive.dart`: the touch-only swipe that archives a card from the grid.
-- `app/lib/widgets/checklist/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions. Its `part` file `checklist_row_input.dart` holds the row text-input workarounds (empty-row marker, iOS space repair).
+- `app/lib/widgets/checklist/animated_checklist.dart`: checklist editing, reordering, checked-section animation, and suggestions. Its `part` files are `checklist_row_input.dart` (the row text-input workarounds: empty-row marker, iOS space repair), `checklist_drag.dart` (nesting and reorder drags) and `checklist_suggestion_popup.dart`.
 - `app/lib/widgets/quick_add_bar.dart`: inline text, checklist, and markdown drafts plus image-note creation.
 - `app/lib/widgets/editor/`: extracted editor attachment, text-field, and bottom-bar pieces, the desktop open/close morph, and the home-screen widget help.
 - `app/lib/widgets/settings/`: extracted settings sections and shared managed/probe UI.
