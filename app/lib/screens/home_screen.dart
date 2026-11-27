@@ -50,6 +50,9 @@ import '../widgets/skeleton.dart';
 import 'editor_screen.dart';
 import '../widgets/view_swap.dart';
 
+part 'home_screen_selection.dart';
+part 'home_screen_shortcuts.dart';
+
 /// What one build of the home screen shows, worked out once in `build` and
 /// handed to the pieces that draw it.
 typedef _HomeView = ({
@@ -83,6 +86,9 @@ class HomeScreen extends StatefulWidget {
 const Duration _instantResize = Duration(milliseconds: 1);
 
 class _HomeScreenState extends State<HomeScreen> {
+  /// [setState] for this library's extensions, which may not call it.
+  void _rebuild(VoidCallback change) => setState(change);
+
   ViewSelection _selection = ViewSelection.notes;
   String? _shownWorkspaceId;
   String _query = '';
@@ -338,148 +344,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedNoteIds.clear();
     });
     _selectionModeNotifier.value = false;
-  }
-
-  void _cancelSelection() {
-    setState(() {
-      _selectionMode = false;
-      _selectedNoteIds.clear();
-    });
-    _selectionModeNotifier.value = false;
-  }
-
-  void _toggleNoteSelection(String id, bool selected) {
-    setState(() {
-      if (selected) {
-        _selectionMode = true;
-        _selectedNoteIds.add(id);
-      } else {
-        _selectedNoteIds.remove(id);
-      }
-      // An empty selection has nothing to act on: deselecting the last note
-      // leaves the mode instead of stranding the user in an inert action bar.
-      _selectionMode = _selectedNoteIds.isNotEmpty;
-    });
-    _selectionModeNotifier.value = _selectionMode;
-  }
-
-  void _toggleSelectAll(Iterable<Note> visibleNotes) {
-    final ids = {for (final note in visibleNotes) note.id};
-    setState(() {
-      if (ids.isNotEmpty && ids.every(_selectedNoteIds.contains)) {
-        _selectedNoteIds.removeAll(ids);
-      } else {
-        _selectedNoteIds.addAll(ids);
-      }
-      _selectionMode = _selectedNoteIds.isNotEmpty;
-    });
-    _selectionModeNotifier.value = _selectionMode;
-  }
-
-  List<Note> _selectedNotes(NotesStore store) => [
-    for (final id in _selectedNoteIds)
-      if (store.noteById(id) case final Note note) note,
-  ];
-
-  Future<void> _addLabelToSelected(NotesStore store) =>
-      LabelsSheet.showForNotes(
-        context,
-        _selectedNotes(store).map((note) => note.id),
-      );
-
-  /// Bulk-file the selection into a column, then leave selection mode, the
-  /// selection was a means to the move, not a state to stay in.
-  Future<void> _moveSelectedToStage(NotesStore store) async {
-    await MoveToStageSheet.showForNotes(
-      context,
-      _selectedNotes(store).map((note) => note.id),
-    );
-    if (mounted) _cancelSelection();
-  }
-
-  Future<void> _setColorForSelected(NotesStore store) => ColorPickerSheet.show(
-    context,
-    selected: () {
-      final colors = {for (final note in _selectedNotes(store)) note.color};
-      return colors.length == 1 ? colors.single : 'default';
-    },
-    onSelect: (color) {
-      for (final note in _selectedNotes(store)) {
-        store.setColor(note.id, color);
-      }
-    },
-    selectedPattern: () {
-      final patterns = {for (final note in _selectedNotes(store)) note.pattern};
-      return patterns.length == 1 ? patterns.single : NotePattern.none;
-    },
-    onSelectPattern: (pattern) {
-      for (final note in _selectedNotes(store)) {
-        store.setPattern(note.id, pattern);
-      }
-    },
-  );
-
-  void _setPinnedForSelected(NotesStore store, bool pinned) {
-    final notes = _selectedNotes(store);
-    for (final note in notes) {
-      if (note.pinned != pinned) store.togglePin(note.id);
-    }
-  }
-
-  Future<void> _shareSelected(NotesStore store) => BulkShareDialog.show(
-    context,
-    _selectedNotes(store).map((note) => note.id),
-  );
-
-  void _setArchivedForSelected(NotesStore store, bool archived) {
-    final notes = _selectedNotes(
-      store,
-    ).where((note) => note.archived != archived).toList();
-    for (final note in notes) {
-      store.setArchived(note.id, archived);
-    }
-    _cancelSelection();
-  }
-
-  Future<void> _restoreSelected(NotesStore store) async {
-    final notes = _selectedNotes(store).where((note) => note.trashed).toList();
-    for (final note in notes) {
-      if (!mounted) {
-        return;
-      }
-      await CollectionPicker.restore(context, note.id);
-    }
-    _cancelSelection();
-  }
-
-  void _trashSelected(NotesStore store) {
-    final notes = _selectedNotes(
-      store,
-    ).where((note) => store.canTrash(note.id)).toList();
-    final skipped = _selectedNoteIds.length - notes.length;
-    for (final note in notes) {
-      store.moveToTrash(note.id);
-    }
-    _cancelSelection();
-    if (notes.isNotEmpty) {
-      showAppSnack(
-        '${notes.length} ${notes.length == 1 ? 'note' : 'notes'} moved to Trash${skipped > 0 ? '; shared notes were skipped' : ''}',
-        icon: Icons.delete_outline,
-        kind: SnackKind.danger,
-        actionLabel: 'Undo',
-        onAction: () {
-          for (final note in notes) {
-            store.restoreFromTrash(note.id);
-          }
-        },
-      );
-    } else if (skipped > 0) {
-      showAppSnack(
-        'Only note owners can move notes to Trash',
-        icon: Icons.error_outline,
-        kind: SnackKind.warning,
-      );
-    }
   }
 
   /// Labels a note composed right now should start with: the label being
@@ -1580,77 +1444,3 @@ class _OfflineBannerState extends State<_OfflineBanner> {
 // while a text field has focus (modifier chords, Escape); printable keys
 // leave it false so their action stays disabled during typing and the
 // keystroke falls through to the field.
-
-// Printable keys use CharacterActivator so they match what the keystroke
-// actually produced on any layout ("/" is Shift+7 on Swiss keyboards), and
-// _HomeAction suppresses them while a text field has focus, the event then
-// falls through unhandled and the letter is typed instead of firing a
-// shortcut. Chords and Escape (whileTyping: true) stay live during typing; the
-// quick-add bar consumes its own Escape before it ever bubbles up here.
-const _homeShortcuts = <ShortcutActivator, Intent>{
-  CharacterActivator('c'): _NewNoteIntent(),
-  CharacterActivator('n'): _NewNoteIntent(),
-  CharacterActivator('l'): _NewNoteIntent(NoteKind.checklist),
-  CharacterActivator('m'): _NewNoteIntent(NoteKind.markdown),
-  CharacterActivator('d'): _NewNoteIntent(NoteKind.drawing),
-  CharacterActivator('t'): _NewNoteIntent(NoteKind.tracker),
-  CharacterActivator('/'): _FocusSearchIntent(),
-  CharacterActivator('?'): _ShortcutHelpIntent(),
-  SingleActivator(LogicalKeyboardKey.keyK, control: true): _FocusSearchIntent(
-    whileTyping: true,
-  ),
-  SingleActivator(LogicalKeyboardKey.keyK, meta: true): _FocusSearchIntent(
-    whileTyping: true,
-  ),
-  SingleActivator(LogicalKeyboardKey.keyG, control: true): _ToggleLayoutIntent(
-    whileTyping: true,
-  ),
-  SingleActivator(LogicalKeyboardKey.keyG, meta: true): _ToggleLayoutIntent(
-    whileTyping: true,
-  ),
-  SingleActivator(LogicalKeyboardKey.escape): _EscapeIntent(whileTyping: true),
-};
-
-abstract class _HomeIntent extends Intent {
-  const _HomeIntent({this.whileTyping = false});
-
-  final bool whileTyping;
-}
-
-class _NewNoteIntent extends _HomeIntent {
-  const _NewNoteIntent([this.kind]);
-
-  /// Null starts the user's default kind.
-  final NoteKind? kind;
-}
-
-class _FocusSearchIntent extends _HomeIntent {
-  const _FocusSearchIntent({super.whileTyping});
-}
-
-class _EscapeIntent extends _HomeIntent {
-  const _EscapeIntent({super.whileTyping});
-}
-
-class _ToggleLayoutIntent extends _HomeIntent {
-  const _ToggleLayoutIntent({super.whileTyping});
-}
-
-class _ShortcutHelpIntent extends _HomeIntent {
-  const _ShortcutHelpIntent();
-}
-
-/// Runs a home-screen shortcut unless the binding defers to an active text
-/// field. A disabled action leaves the key event unhandled, which is what
-/// lets the character reach the field instead of being swallowed.
-class _HomeAction<T extends _HomeIntent> extends CallbackAction<T> {
-  _HomeAction({required super.onInvoke});
-
-  @override
-  bool isEnabled(T intent) => intent.whileTyping || !_editingText;
-
-  static bool get _editingText =>
-      FocusManager.instance.primaryFocus?.context
-          ?.findAncestorStateOfType<EditableTextState>() !=
-      null;
-}
